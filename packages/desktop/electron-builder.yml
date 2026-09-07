@@ -1,0 +1,86 @@
+appId: com.pos-system.desktop
+productName: POS System
+copyright: Copyright © 2024 POS System
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - from: .
+    filter:
+      - main/**/*
+      - preload/**/*
+      - renderer/**/*
+      - assets/**/*
+      - package.json
+      - .env
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.ico
+  publisherName: POS System
+  certificateFile: ''
+  certificatePassword: ''
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: POS System
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.icns
+  category: public.app-category.business
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+  icon: assets/icon.png
+  category: Office
+  desktop:
+    Name: POS System
+    Comment: Point of Sale System
+    Type: Application
+
+publish:
+  - provider: github
+    owner: your-organization
+    repo: pos-system
+    releaseType: release
+
+# Auto-update settings
+updater:
+  autoDownload: true
+  allowPrerelease: false
+  

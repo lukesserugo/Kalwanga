@@ -1,0 +1,60 @@
+{
+  "name": "@pos/desktop",
+  "version": "1.0.0",
+  "description": "POS Desktop Application",
+  "main": "main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch main/index.ts",
+    "start": "electron .",
+    "build": "tsup main/index.ts --format esm --dts && tsup preload/index.ts --format esm --dts",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.7",
+    "react": "^18.2.0",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "electron": "^28.1.4",
+    "electron-builder": "^24.9.1",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.10"
+  },
+  "build": {
+    "appId": "com.pos-system.desktop",
+    "productName": "POS System",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main/**/*",
+      "preload/**/*",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  }
+}

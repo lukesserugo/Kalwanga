@@ -1,0 +1,23 @@
+﻿node_modules
+.pnpm-store
+dist
+build
+.next
+out
+.env
+.env.local
+logs
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+coverage
+tmp
+docker-data
+packages/mobile/.expo
+packages/backend/prisma/migrations/*.sql
+
+
+# Expo local state
+.expo/

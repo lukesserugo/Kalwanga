@@ -1,0 +1,23 @@
+﻿{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@pos/shared/*": ["./packages/shared/src/*"],
+      "@/backend/*": ["./packages/backend/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build", "packages/*/dist", "packages/*/build"]
+}

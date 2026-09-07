@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POS System</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      overflow: hidden;
+      height: 100vh;
+    }
+    #app {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .title-bar {
+      -webkit-app-region: drag;
+      height: 38px;
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      flex-shrink: 0;
+      user-select: none;
+      position: relative;
+    }
+    .title-bar-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+    }
+    .title-bar-controls {
+      -webkit-app-region: no-drag;
+      position: absolute;
+      right: 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .title-bar-controls button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #666;
+      padding: 0;
+      transition: background 0.2s;
+    }
+    .title-bar-controls button:hover {
+      background: rgba(0,0,0,0.1);
+    }
+    .title-bar-controls .close:hover {
+      background: rgba(255,0,0,0.2);
+      color: #ff0000;
+    }
+    #frame {
+      flex: 1;
+      border: none;
+      width: 100%;
+      height: calc(100vh - 38px);
+    }
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      flex-direction: column;
+      gap: 16px;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #fff;
+      z-index: 10;
+    }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #007AFF;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .loading-text {
+      font-size: 16px;
+      color: #666;
+    }
+    .loading-error {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+    .loading-error .error-icon {
+      font-size: 48px;
+      color: #FF3B30;
+    }
+    .loading-error .error-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin-top: 12px;
+    }
+    .loading-error .error-desc {
+      font-size: 14px;
+      color: #666;
+      margin-top: 8px;
+    }
+    .loading-error .retry-btn {
+      margin-top: 16px;
+      padding: 8px 24px;
+      background: #007AFF;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .loading-error .retry-btn:hover {
+      background: #0055CC;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="title-bar">
+      <span class="title-bar-text">POS System</span>
+      <div class="title-bar-controls">
+        <button id="minimizeBtn" title="Minimize">─</button>
+        <button id="maximizeBtn" title="Maximize">□</button>
+        <button id="closeBtn" class="close" title="Close">✕</button>
+      </div>
+    </div>
+    <iframe id="frame" src="about:blank"></iframe>
+  </div>
+  
+  <div id="loading" class="loading">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Loading POS System...</div>
+    <div id="loadingError" class="loading-error">
+      <div class="error-icon">⚠️</div>
+      <div class="error-title">Failed to load application</div>
+      <div class="error-desc">Make sure the web server is running</div>
+      <button class="retry-btn" onclick="retryLoad()">Retry</button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    // Window controls
+    document.getElementById('minimizeBtn').addEventListener('click', () => {
+      ipcRenderer.send('window-control', 'minimize');
+    });
+
+    document.getElementById('maximizeBtn').addEventListener('click', () => {
+      ipcRenderer.send('window-control', 'maximize');
+    });
+
+    document.getElementById('closeBtn').addEventListener('click', () => {
+      ipcRenderer.send('window-control', 'close');
+    });
+
+    // Get environment
+    const frame = document.getElementById('frame');
+    const loading = document.getElementById('loading');
+    const loadingError = document.getElementById('loadingError');
+    
+    const API_URL = process.env.API_URL || 'http://localhost:3001';
+    const WEB_URL = process.env.WEB_URL || 'http://localhost:3000';
+
+    function loadApp() {
+      loadingError.style.display = 'none';
+      loading.querySelector('.loading-spinner').style.display = 'block';
+      loading.querySelector('.loading-text').textContent = 'Loading POS System...';
+      
+      frame.src = WEB_URL;
+    }
+
+    function retryLoad() {
+      loadApp();
+    }
+
+    // Handle frame load
+    frame.addEventListener('load', () => {
+      loading.style.display = 'none';
+    });
+
+    // Handle frame errors
+    frame.addEventListener('error', () => {
+      loading.querySelector('.loading-spinner').style.display = 'none';
+      loading.querySelector('.loading-text').textContent = '';
+      loadingError.style.display = 'block';
+    });
+
+    // Handle timeout
+    let loadTimeout = setTimeout(() => {
+      if (frame.src !== 'about:blank') {
+        // Check if loading is still showing
+        if (loading.style.display !== 'none') {
+          frame.dispatchEvent(new Event('error'));
+        }
+      }
+    }, 10000);
+
+    // Start loading
+    loadApp();
+
+    // Handle keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Ctrl+Shift+I for dev tools
+      if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+        ipcRenderer.send('toggle-dev-tools');
+      }
+      // F5 for reload
+      if (e.key === 'F5') {
+        e.preventDefault();
+        loadApp();
+      }
+      // Ctrl+R for reload
+      if (e.ctrlKey && e.key === 'r') {
+        e.preventDefault();
+        loadApp();
+      }
+    });
+  </script>
+</body>
+</html>
