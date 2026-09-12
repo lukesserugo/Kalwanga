@@ -169,13 +169,13 @@ interface CategoryOption {
 }
 
 // ============================================
-// ✅ FIX: NORMALIZATION HELPERS
+// ✅ FIX: CENTRALIZED NORMALIZATION HELPERS
 // ============================================
 
 /**
  * Normalize inventory item to ensure product ID is available at top level
- * This ensures that when inventory items are returned to the frontend,
- * the product ID is accessible at the top level for ProductCard.
+ * ✅ UNIFIED: Single source of truth for normalization
+ * ✅ UPDATED: Properly handles images, description, weight, taxRate, tags
  */
 function normalizeInventoryItem(item: any): any {
   if (!item) return item;
@@ -187,13 +187,21 @@ function normalizeInventoryItem(item: any): any {
       return {
         ...item,
         id: item.product.id,
-        // Also ensure other product fields are available at top level
+        // Copy product fields to top level with fallback
         name: item.name || item.product.name,
         unitPrice: item.unitPrice || item.product.unitPrice,
-        images: item.images || item.product.images || [],
+        // Use inventory images first, then product images
+        images: (item.images && item.images.length > 0) ? item.images : (item.product.images || []),
+        // Use inventory description first, then product description
+        description: item.description || item.product.description,
+        // Use inventory weight first, then product weight
+        weight: item.weight !== undefined ? item.weight : item.product.weight,
+        // Use inventory taxRate first, then product taxRate
+        taxRate: item.taxRate !== undefined ? item.taxRate : item.product.taxRate,
+        // Use inventory tags first, then product tags
+        tags: (item.tags && item.tags.length > 0) ? item.tags : (item.product.tags || []),
         isActive: item.isActive !== undefined ? item.isActive : item.product?.isActive,
         sku: item.sku || item.product.sku,
-        description: item.description || item.product.description,
         category: item.category || item.product.category,
         categoryId: item.categoryId || item.product.categoryId,
         supplier: item.supplier || item.product.supplier,
@@ -202,11 +210,8 @@ function normalizeInventoryItem(item: any): any {
         maxStock: item.maxStock || item.product.maxStock,
         featured: item.featured || item.product.featured,
         isDigital: item.isDigital || item.product.isDigital,
-        tags: item.tags || item.product.tags || [],
         attributes: item.attributes || item.product.attributes || {},
         notes: item.notes || item.product.notes,
-        taxRate: item.taxRate || item.product.taxRate,
-        weight: item.weight || item.product.weight,
         costPrice: item.costPrice || item.product.costPrice,
         // Keep the original product reference for backward compatibility
         _product: item.product,
@@ -221,6 +226,16 @@ function normalizeInventoryItem(item: any): any {
         stock: item.quantity || item.stock || 0,
         // Ensure price field exists
         price: item.price || item.unitPrice || item.product?.unitPrice || 0,
+        // Ensure available field exists
+        available: item.available !== undefined ? item.available : 
+          (item.quantity || 0) - (item.reserved || 0),
+        // Ensure status field exists
+        status: item.status || item.product?.status || 'ACTIVE',
+        // Ensure businessUnitId is set
+        businessUnitId: item.businessUnitId || item.product?.businessUnitId,
+        // Ensure createdAt and updatedAt
+        createdAt: item.createdAt || item.product?.createdAt,
+        updatedAt: item.updatedAt || item.product?.updatedAt,
       };
     }
   }
@@ -243,21 +258,35 @@ function normalizeInventoryItem(item: any): any {
   
   // Ensure inventory array exists
   if (item && !item.inventory) {
-    return {
-      ...item,
-      inventory: [{
-        quantity: item.quantity || item.stock || 0,
-        reserved: item.reserved || 0,
-      }],
-    };
+    item.inventory = [{
+      quantity: item.quantity || item.stock || 0,
+      reserved: item.reserved || 0,
+    }];
   }
   
   // Ensure stock field exists
   if (item && item.quantity !== undefined && item.stock === undefined) {
-    return {
-      ...item,
-      stock: item.quantity,
-    };
+    item.stock = item.quantity;
+  }
+  
+  // Ensure available field exists
+  if (item && item.available === undefined) {
+    item.available = (item.quantity || 0) - (item.reserved || 0);
+  }
+  
+  // Ensure images is always an array
+  if (item && !item.images) {
+    item.images = [];
+  }
+  
+  // Ensure tags is always an array
+  if (item && !item.tags) {
+    item.tags = [];
+  }
+  
+  // Ensure price field exists
+  if (item && item.price === undefined) {
+    item.price = item.unitPrice || 0;
   }
   
   return item;
@@ -515,75 +544,81 @@ export class InventoryService extends BaseService {
 
   /**
    * Format inventory item for consistent response
-   * ✅ FIXED: Returns normalized item with product ID at top level
+   * ✅ UPDATED: Unified formatting with normalization
    */
-    private formatInventoryItem(item: any): any {
-      if (!item) return null;
-      
-      // First normalize the item
-      const normalized = normalizeInventoryItem(item);
-      
-      const availableStock = normalized.available !== undefined && normalized.available !== null
-        ? normalized.available
-        : Math.max(0, (normalized.quantity || 0) - (normalized.reserved || 0));
-      
-      const status = normalized.quantity === 0 
-        ? 'out_of_stock' 
-        : normalized.quantity <= (normalized.reorderPoint || 5) 
-          ? 'low_stock' 
-          : normalized.status === 'INACTIVE' 
-            ? 'inactive' 
-            : 'active';
+  private formatInventoryItem(item: any): any {
+    if (!item) return null;
+    
+    // First normalize the item
+    const normalized = normalizeInventoryItem(item);
+    
+    const availableStock = normalized.available !== undefined && normalized.available !== null
+      ? normalized.available
+      : Math.max(0, (normalized.quantity || 0) - (normalized.reserved || 0));
+    
+    const status = normalized.quantity === 0 
+      ? 'out_of_stock' 
+      : normalized.quantity <= (normalized.reorderPoint || 5) 
+        ? 'low_stock' 
+        : normalized.status === 'INACTIVE' 
+          ? 'inactive' 
+          : 'active';
 
-      // Get product info from the relation
-      const product = normalized.product;
-      const variant = normalized.variant;
+    // Get product info from the relation
+    const product = normalized.product;
+    const variant = normalized.variant;
 
-      // ✅ FIX: Return object with no duplicate properties
-      return {
-        id: normalized.id || item.id,
-        productId: product?.id || normalized.productId || null,
-        product: product || null,
-        variantId: variant?.id || normalized.variantId || null,
-        variant: variant || null,
-        name: product?.name || variant?.name || normalized.name || 'Unknown Product',
-        description: product?.description || normalized.description || null,
-        sku: product?.sku || variant?.sku || normalized.sku || 'N/A',
-        barcode: product?.barcode || normalized.barcode || null,
+    // Return unified formatted item
+    return {
+      id: normalized.id || item.id,
+      productId: product?.id || normalized.productId || null,
+      product: product || null,
+      variantId: variant?.id || normalized.variantId || null,
+      variant: variant || null,
+      name: product?.name || variant?.name || normalized.name || 'Unknown Product',
+      description: normalized.description || product?.description || null,
+      sku: product?.sku || variant?.sku || normalized.sku || 'N/A',
+      barcode: product?.barcode || normalized.barcode || null,
+      quantity: normalized.quantity || 0,
+      stock: normalized.quantity || 0,
+      reserved: normalized.reserved || 0,
+      available: availableStock,
+      price: product?.unitPrice || variant?.price || normalized.unitPrice || 0,
+      unitPrice: product?.unitPrice || variant?.price || normalized.unitPrice || 0,
+      costPrice: product?.costPrice || normalized.costPrice || 0,
+      reorderPoint: normalized.reorderPoint || 5,
+      reorderQuantity: normalized.reorderQuantity || 10,
+      category: product?.category?.name || normalized.category || 'Uncategorized',
+      categoryId: product?.category?.id || normalized.categoryId || null,
+      location: normalized.location || 'Warehouse',
+      shelfNumber: normalized.shelfNumber || null,
+      supplier: normalized.supplier || product?.supplier?.name || null,
+      supplierId: product?.supplierId || normalized.supplierId || null,
+      notes: normalized.notes || null,
+      lastUpdated: normalized.updatedAt || item.updatedAt,
+      createdAt: normalized.createdAt || item.createdAt,
+      updatedAt: normalized.updatedAt || item.updatedAt,
+      status,
+      isActive: product?.isActive ?? normalized.isActive ?? true,
+      // Use inventory images first, then product images
+      images: (normalized.images && normalized.images.length > 0) ? normalized.images : (product?.images || []),
+      // Use inventory tags first, then product tags
+      tags: (normalized.tags && normalized.tags.length > 0) ? normalized.tags : (product?.tags || []),
+      // Use inventory weight first, then product weight
+      weight: normalized.weight ?? product?.weight ?? 0,
+      // Use inventory taxRate first, then product taxRate
+      taxRate: normalized.taxRate ?? product?.taxRate ?? 0,
+      isDigital: product?.isDigital || normalized.isDigital || false,
+      featured: product?.featured || normalized.featured || false,
+      inventory: normalized.inventory || [{
         quantity: normalized.quantity || 0,
-        stock: normalized.quantity || 0,
         reserved: normalized.reserved || 0,
-        available: availableStock,
-        price: product?.unitPrice || variant?.price || normalized.unitPrice || 0,
-        unitPrice: product?.unitPrice || variant?.price || normalized.unitPrice || 0,
-        costPrice: product?.costPrice || normalized.costPrice || 0,
-        reorderPoint: normalized.reorderPoint || 5,
-        reorderQuantity: normalized.reorderQuantity || 10,
-        category: product?.category?.name || normalized.category || 'Uncategorized',
-        categoryId: product?.category?.id || normalized.categoryId || null,
-        location: normalized.location || 'Warehouse',
-        shelfNumber: normalized.shelfNumber || null,
-        supplier: normalized.supplier || product?.supplier?.name || null,
-        supplierId: product?.supplierId || normalized.supplierId || null,
-        notes: normalized.notes || null,
-        lastUpdated: normalized.updatedAt || item.updatedAt,
-        createdAt: normalized.createdAt || item.createdAt,
-        updatedAt: normalized.updatedAt || item.updatedAt,
-        status,
-        isActive: product?.isActive ?? normalized.isActive ?? true,
-        images: product?.images || normalized.images || [],
-        tags: product?.tags || normalized.tags || [],
-        weight: product?.weight || normalized.weight || 0,
-        taxRate: product?.taxRate || normalized.taxRate || 0,
-        isDigital: product?.isDigital || normalized.isDigital || false,
-        featured: product?.featured || normalized.featured || false,
-        inventory: normalized.inventory || [{
-          quantity: normalized.quantity || 0,
-          reserved: normalized.reserved || 0,
-        }],
-        businessUnitId: normalized.businessUnitId || item.businessUnitId,
-      };
-    }
+      }],
+      businessUnitId: normalized.businessUnitId || item.businessUnitId,
+      // ✅ FIXED: Removed duplicate productId property
+      // The productId is already defined at the top of this object
+    };
+  }
 
   // ============================================
   // FIXED: getCategories()
@@ -1192,6 +1227,10 @@ export class InventoryService extends BaseService {
     }
   }
 
+  // ============================================
+  // GET ALL INVENTORY - UPDATED
+  // ============================================
+
   async getAllInventory(businessUnitId: string): Promise<{ items: any[]; stats: InventoryStats }> {
     try {
       if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
@@ -1225,7 +1264,7 @@ export class InventoryService extends BaseService {
         orderBy: { updatedAt: 'desc' },
       });
 
-      // ✅ FIX: Format items properly with normalization
+      // Format items properly with all new fields
       const formattedItems = items.map((item: any) => {
         const product = item.product;
         const variant = item.variant;
@@ -1255,15 +1294,19 @@ export class InventoryService extends BaseService {
           notes: item.notes || null,
           hasProduct: !!product,
           isActive: product?.isActive ?? true,
-          images: product?.images || [],
-          description: product?.description || null,
+          // Use inventory fields first, then product fields
+          images: (item.images && item.images.length > 0) ? item.images : (product?.images || []),
+          description: item.description || product?.description || null,
+          weight: item.weight ?? product?.weight ?? 0,
+          taxRate: item.taxRate ?? product?.taxRate ?? 0,
+          tags: (item.tags && item.tags.length > 0) ? item.tags : (product?.tags || []),
           createdAt: item.createdAt,
           updatedAt: item.updatedAt,
           status: item.status || 'ACTIVE',
           businessUnitId: item.businessUnitId,
         };
         
-        // ✅ Apply normalization to ensure product ID is at top level
+        // Apply normalization to ensure product ID is at top level
         return normalizeInventoryItem(baseItem);
       });
 
@@ -1275,6 +1318,10 @@ export class InventoryService extends BaseService {
       throw error;
     }
   }
+
+  // ============================================
+  // GET INVENTORY BY PRODUCT - UPDATED
+  // ============================================
 
   async getInventoryByProduct(productId: string, businessUnitId: string) {
     try {
@@ -1314,7 +1361,7 @@ export class InventoryService extends BaseService {
         throw new AppError('Product not found in inventory', 404);
       }
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItem(this.formatInventoryItem(product.inventory));
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryByProduct');
@@ -1324,6 +1371,10 @@ export class InventoryService extends BaseService {
   async getInventoryByProductLegacy(productId: string, businessUnitId: string) {
     return this.getInventoryByProduct(productId, businessUnitId);
   }
+
+  // ============================================
+  // GET INVENTORY ITEM BY ID - UPDATED
+  // ============================================
 
   async getInventoryItemById(id: string, businessUnitId?: string) {
     try {
@@ -1378,12 +1429,16 @@ export class InventoryService extends BaseService {
         throw new AppError('Inventory item not found', 404);
       }
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItem(this.formatInventoryItem(item));
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryItemById');
     }
   }
+
+  // ============================================
+  // GET INVENTORY ITEM - UPDATED
+  // ============================================
 
   async getInventoryItem(id: string) {
     try {
@@ -1420,12 +1475,16 @@ export class InventoryService extends BaseService {
         throw new AppError('Inventory item not found', 404);
       }
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItem(this.formatInventoryItem(inventory));
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryItem');
     }
   }
+
+  // ============================================
+  // LOW STOCK ITEMS - UPDATED
+  // ============================================
 
   async getLowStockItems(businessUnitId: string) {
     try {
@@ -1442,12 +1501,16 @@ export class InventoryService extends BaseService {
         orderBy: { quantity: 'asc' },
       });
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItems(items);
     } catch (error) {
       this.handleError(error, 'InventoryService.getLowStockItems');
     }
   }
+
+  // ============================================
+  // OUT OF STOCK ITEMS - UPDATED
+  // ============================================
 
   async getOutOfStockItems(businessUnitId: string) {
     try {
@@ -1464,12 +1527,16 @@ export class InventoryService extends BaseService {
         orderBy: { updatedAt: 'desc' },
       });
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItems(items);
     } catch (error) {
       this.handleError(error, 'InventoryService.getOutOfStockItems');
     }
   }
+
+  // ============================================
+  // GET INVENTORY VALUE - UPDATED
+  // ============================================
 
   async getInventoryValue(businessUnitId: string) {
     try {
@@ -1496,6 +1563,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.getInventoryValue');
     }
   }
+
+  // ============================================
+  // GET INVENTORY TRANSACTIONS - UPDATED
+  // ============================================
 
   async getInventoryTransactions(params: {
     page?: number;
@@ -1559,6 +1630,10 @@ export class InventoryService extends BaseService {
     }
   }
 
+  // ============================================
+  // GET INVENTORY BY LOCATION - UPDATED
+  // ============================================
+
   async getInventoryByLocation(location: string, businessUnitId: string) {
     try {
       if (!location || !businessUnitId) throw new AppError('Location and business unit ID are required', 400);
@@ -1572,12 +1647,16 @@ export class InventoryService extends BaseService {
         },
       });
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItems(items);
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryByLocation');
     }
   }
+
+  // ============================================
+  // GET INVENTORY BY CATEGORY - UPDATED
+  // ============================================
 
   async getInventoryByCategory(category: string, businessUnitId: string) {
     try {
@@ -1595,12 +1674,16 @@ export class InventoryService extends BaseService {
         },
       });
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItems(items);
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryByCategory');
     }
   }
+
+  // ============================================
+  // SEARCH PRODUCTS - UPDATED
+  // ============================================
 
   async searchProducts(params: {
     query: string;
@@ -1638,14 +1721,28 @@ export class InventoryService extends BaseService {
         include: {
           category: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
-          inventory: { where: { businessUnitId: resolvedBU.id }, select: { id: true, quantity: true, reserved: true, reorderPoint: true, location: true } },
+          inventory: { 
+            where: { businessUnitId: resolvedBU.id }, 
+            select: { 
+              id: true, 
+              quantity: true, 
+              reserved: true, 
+              reorderPoint: true, 
+              location: true,
+              images: true,
+              description: true,
+              weight: true,
+              taxRate: true,
+              tags: true,
+            } 
+          },
           variants: { where: { isActive: true } },
         },
         orderBy: { name: 'asc' },
         take: 50,
       });
 
-      // ✅ Apply normalization to inventory items
+      // Apply normalization to inventory items
       return products.map((product: any) => ({
         ...product,
         inventory: product.inventory ? normalizeInventoryItem(product.inventory[0]) : null,
@@ -1654,6 +1751,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.searchProducts');
     }
   }
+
+  // ============================================
+  // GET TOTAL ITEMS
+  // ============================================
 
   async getTotalItems(businessUnitId: string) {
     try {
@@ -1664,6 +1765,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.getTotalItems');
     }
   }
+
+  // ============================================
+  // GET STOCK MOVEMENTS
+  // ============================================
 
   async getStockMovements(params: {
     productId?: string;
@@ -1703,6 +1808,10 @@ export class InventoryService extends BaseService {
     }
   }
 
+  // ============================================
+  // GET INVENTORY STATS - UPDATED
+  // ============================================
+
   async getInventoryStats(businessUnitId: string) {
     try {
       if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
@@ -1734,6 +1843,10 @@ export class InventoryService extends BaseService {
     }
   }
 
+  // ============================================
+  // GET INVENTORY REPORT - UPDATED
+  // ============================================
+
   async getInventoryReport(businessUnitId: string, params?: {
     includeInactive?: boolean;
     categoryId?: string;
@@ -1754,7 +1867,14 @@ export class InventoryService extends BaseService {
       const [items, transactions] = await Promise.all([
         this.prisma.inventory.findMany({
           where,
-          include: { product: { include: { category: true, supplier: true } } },
+          include: { 
+            product: { 
+              include: { 
+                category: true, 
+                supplier: true 
+              } 
+            } 
+          },
         }),
         this.prisma.inventoryTransaction.findMany({
           where: {
@@ -1819,7 +1939,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // CREATE ENDPOINTS
+  // CREATE ITEM - UPDATED
   // ============================================
 
   async createItem(data: CreateItemData): Promise<{ product: any; inventory: any }> {
@@ -1917,6 +2037,7 @@ export class InventoryService extends BaseService {
         });
 
         // 2. Create the inventory linked to the product
+        // Copy product fields to inventory
         const inventory = await tx.inventory.create({
           data: {
             businessUnitId: businessUnitId,
@@ -1929,6 +2050,12 @@ export class InventoryService extends BaseService {
             supplier: data.supplier || null,
             notes: data.notes || null,
             status: 'ACTIVE',
+            // Copy product fields to inventory
+            images: data.images || [],
+            description: data.description || '',
+            weight: data.weight || 0,
+            taxRate: data.taxRate || 0,
+            tags: data.tags || [],
           },
         });
 
@@ -1959,7 +2086,7 @@ export class InventoryService extends BaseService {
 
         console.log('✅ Service: Item created successfully:', { productId: product.id, inventoryId: inventory.id });
 
-        // ✅ Return normalized item
+        // Return normalized item with all fields
         const result = {
           id: inventory.id,
           productId: product.id,
@@ -1982,12 +2109,16 @@ export class InventoryService extends BaseService {
           category: updatedProduct.category?.name || null,
           categoryId: updatedProduct.categoryId || null,
           supplierId: updatedProduct.supplierId || null,
-          description: updatedProduct.description,
+          description: updatedProduct.description || inventory.description || '',
           barcode: updatedProduct.barcode,
-          images: updatedProduct.images || [],
-          tags: updatedProduct.tags || [],
-          weight: updatedProduct.weight || 0,
-          taxRate: updatedProduct.taxRate || 0,
+          // Use inventory images
+          images: inventory.images || updatedProduct.images || [],
+          // Use inventory tags
+          tags: inventory.tags || updatedProduct.tags || [],
+          // Use inventory weight
+          weight: inventory.weight ?? updatedProduct.weight ?? 0,
+          // Use inventory taxRate
+          taxRate: inventory.taxRate ?? updatedProduct.taxRate ?? 0,
           isActive: updatedProduct.isActive,
           isDigital: updatedProduct.isDigital,
           featured: updatedProduct.featured,
@@ -2008,6 +2139,10 @@ export class InventoryService extends BaseService {
       throw error;
     }
   }
+
+  // ============================================
+  // CREATE INVENTORY - UPDATED
+  // ============================================
 
   async createInventory(data: {
     name: string;
@@ -2071,6 +2206,10 @@ export class InventoryService extends BaseService {
     }
   }
 
+  // ============================================
+  // CREATE PRODUCT WITH INVENTORY - UPDATED
+  // ============================================
+
   async createProductWithInventory(data: CreateProductData) {
     try {
       if (!data.name || !data.sku || !data.businessUnitId || !data.userId) {
@@ -2088,6 +2227,7 @@ export class InventoryService extends BaseService {
           throw new AppError('Product with this SKU already exists', 400);
         }
 
+        // Create inventory with product fields
         const inventory = await tx.inventory.create({
           data: {
             businessUnitId: resolvedBU.id,
@@ -2099,6 +2239,12 @@ export class InventoryService extends BaseService {
             location: data.location || 'Warehouse',
             supplier: data.supplier || null,
             status: 'ACTIVE',
+            // Copy product fields to inventory
+            images: data.images || [],
+            description: data.description || '',
+            weight: 0,
+            taxRate: 0,
+            tags: [],
           },
         });
 
@@ -2143,7 +2289,7 @@ export class InventoryService extends BaseService {
 
         this.safeEmitInventoryUpdate({ productId: product.id, quantity: data.stock || 0 }, resolvedBU.id);
 
-        // ✅ Return normalized item
+        // Return normalized item
         const result = { 
           product, 
           inventory: { ...inventory, product },
@@ -2158,7 +2304,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // UPDATE ENDPOINTS
+  // UPDATE ITEM - UPDATED
   // ============================================
 
   async updateItem(id: string, data: any) {
@@ -2177,6 +2323,7 @@ export class InventoryService extends BaseService {
 
         if (!inventoryItem) throw new AppError('Inventory item not found', 404);
 
+        // Update product
         const productUpdateData: any = {};
         if (data.name !== undefined) productUpdateData.name = data.name;
         if (data.unitPrice !== undefined) { 
@@ -2186,6 +2333,10 @@ export class InventoryService extends BaseService {
         if (data.description !== undefined) productUpdateData.description = data.description;
         if (data.notes !== undefined) productUpdateData.notes = data.notes;
         if (data.barcode !== undefined) productUpdateData.barcode = data.barcode;
+        if (data.tags !== undefined) productUpdateData.tags = data.tags;
+        if (data.images !== undefined) productUpdateData.images = data.images;
+        if (data.weight !== undefined) productUpdateData.weight = data.weight;
+        if (data.taxRate !== undefined) productUpdateData.taxRate = data.taxRate;
 
         let product = inventoryItem.product;
         if (Object.keys(productUpdateData).length > 0 && product) {
@@ -2195,11 +2346,18 @@ export class InventoryService extends BaseService {
           });
         }
 
+        // Update inventory with new fields
         const inventoryUpdateData: any = {};
         if (data.location !== undefined) inventoryUpdateData.location = data.location;
         if (data.minStock !== undefined) inventoryUpdateData.reorderPoint = data.minStock;
         if (data.supplier !== undefined) inventoryUpdateData.supplier = data.supplier;
         if (data.notes !== undefined) inventoryUpdateData.notes = data.notes;
+        // Copy product fields to inventory
+        if (data.images !== undefined) inventoryUpdateData.images = data.images;
+        if (data.description !== undefined) inventoryUpdateData.description = data.description;
+        if (data.weight !== undefined) inventoryUpdateData.weight = data.weight;
+        if (data.taxRate !== undefined) inventoryUpdateData.taxRate = data.taxRate;
+        if (data.tags !== undefined) inventoryUpdateData.tags = data.tags;
 
         let inventory: any = inventoryItem;
         if (Object.keys(inventoryUpdateData).length > 0) {
@@ -2227,7 +2385,7 @@ export class InventoryService extends BaseService {
 
         const inventoryWithProduct = { ...inventory, product };
 
-        // ✅ Return normalized item
+        // Return normalized item
         const result = { 
           product, 
           inventory: inventoryWithProduct,
@@ -2240,6 +2398,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.updateItem');
     }
   }
+
+  // ============================================
+  // UPDATE PRODUCT - UPDATED
+  // ============================================
 
   async updateProduct(id: string, data: UpdateProductData) {
     try {
@@ -2273,16 +2435,20 @@ export class InventoryService extends BaseService {
           });
         }
 
+        // Update inventory with product field changes
         const inventoryUpdateData: any = {};
         if (data.location !== undefined) inventoryUpdateData.location = data.location;
         if (data.status !== undefined) inventoryUpdateData.status = data.status;
+        // Sync product fields to inventory
+        if (data.description !== undefined) inventoryUpdateData.description = data.description;
+        if (data.images !== undefined) inventoryUpdateData.images = data.images;
 
         let inventory: any = inventoryItem;
         if (Object.keys(inventoryUpdateData).length > 0) {
           inventory = await tx.inventory.update({ where: { id }, data: inventoryUpdateData });
         }
 
-        // ✅ Return normalized item
+        // Return normalized item
         const result = { 
           product, 
           inventory: { ...inventory, product },
@@ -2295,6 +2461,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.updateProduct');
     }
   }
+
+  // ============================================
+  // UPDATE INVENTORY - UPDATED
+  // ============================================
 
   async updateInventory(id: string, data: {
     name?: string;
@@ -2311,6 +2481,10 @@ export class InventoryService extends BaseService {
     barcode?: string;
     notes?: string;
     isActive?: boolean;
+    images?: string[];
+    tags?: string[];
+    weight?: number;
+    taxRate?: number;
   }) {
     try {
       console.log('📦 Updating inventory item:', id, data);
@@ -2328,6 +2502,7 @@ export class InventoryService extends BaseService {
         throw new AppError('Associated product not found for this inventory item', 404);
       }
 
+      // Update product
       const productData: any = {};
       if (data.name !== undefined) productData.name = data.name;
       if (data.sku !== undefined) productData.sku = data.sku.toUpperCase();
@@ -2340,18 +2515,29 @@ export class InventoryService extends BaseService {
       if (data.categoryId !== undefined) productData.categoryId = data.categoryId;
       if (data.supplierId !== undefined) productData.supplierId = data.supplierId;
       if (data.isActive !== undefined) productData.isActive = data.isActive;
+      if (data.images !== undefined) productData.images = data.images;
+      if (data.tags !== undefined) productData.tags = data.tags;
+      if (data.weight !== undefined) productData.weight = data.weight;
+      if (data.taxRate !== undefined) productData.taxRate = data.taxRate;
 
       const updatedProduct = await this.prisma.product.update({
         where: { id: inventory.product.id },
         data: productData,
       });
 
+      // Update inventory with new fields
       const inventoryData: any = {};
       if (data.quantity !== undefined) inventoryData.quantity = data.quantity;
       if (data.minStock !== undefined) inventoryData.reorderPoint = data.minStock;
       if (data.maxStock !== undefined) inventoryData.reorderQuantity = data.maxStock;
       if (data.location !== undefined) inventoryData.location = data.location;
       if (data.notes !== undefined) inventoryData.notes = data.notes;
+      // Sync product fields to inventory
+      if (data.images !== undefined) inventoryData.images = data.images;
+      if (data.description !== undefined) inventoryData.description = data.description;
+      if (data.weight !== undefined) inventoryData.weight = data.weight;
+      if (data.taxRate !== undefined) inventoryData.taxRate = data.taxRate;
+      if (data.tags !== undefined) inventoryData.tags = data.tags;
 
       const updatedInventory = await this.prisma.inventory.update({
         where: { id },
@@ -2361,7 +2547,7 @@ export class InventoryService extends BaseService {
         },
       });
 
-      // ✅ Return normalized item
+      // Return normalized item
       const result = {
         product: updatedProduct,
         inventory: updatedInventory,
@@ -2375,7 +2561,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // DELETE ENDPOINTS
+  // DELETE PRODUCT - UPDATED
   // ============================================
 
   async deleteProduct(id: string, businessUnitId: string, userId: string) {
@@ -2430,7 +2616,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // STOCK OPERATIONS
+  // UPDATE STOCK - UPDATED
   // ============================================
 
   async updateStock(data: UpdateStockData) {
@@ -2468,6 +2654,12 @@ export class InventoryService extends BaseService {
             reorderQuantity: 10,
             location: 'Warehouse',
             status: 'ACTIVE',
+            // Copy product fields to inventory
+            images: product.images || [],
+            description: product.description || '',
+            weight: product.weight || 0,
+            taxRate: product.taxRate || 0,
+            tags: product.tags || [],
           },
         });
 
@@ -2536,12 +2728,16 @@ export class InventoryService extends BaseService {
         });
       }
 
-      // ✅ Return normalized item
+      // Return normalized item
       return normalizeInventoryItem(updatedInventory);
     } catch (error) {
       this.handleError(error, 'InventoryService.updateStock');
     }
   }
+
+  // ============================================
+  // RESERVE STOCK - UPDATED
+  // ============================================
 
   async reserveStock(productId: string, quantity: number, businessUnitId: string, variantId?: string) {
     try {
@@ -2575,12 +2771,16 @@ export class InventoryService extends BaseService {
         },
       });
 
-      // ✅ Return normalized item
+      // Return normalized item
       return normalizeInventoryItem(result);
     } catch (error) {
       this.handleError(error, 'InventoryService.reserveStock');
     }
   }
+
+  // ============================================
+  // RELEASE RESERVED STOCK - UPDATED
+  // ============================================
 
   async releaseReservedStock(productId: string, quantity: number, businessUnitId: string, variantId?: string) {
     try {
@@ -2610,12 +2810,16 @@ export class InventoryService extends BaseService {
         },
       });
 
-      // ✅ Return normalized item
+      // Return normalized item
       return normalizeInventoryItem(result);
     } catch (error) {
       this.handleError(error, 'InventoryService.releaseReservedStock');
     }
   }
+
+  // ============================================
+  // TRANSFER STOCK - UPDATED
+  // ============================================
 
   async transferStock(data: TransferStockData) {
     try {
@@ -2668,6 +2872,12 @@ export class InventoryService extends BaseService {
               reorderPoint: product.minStock || 5,
               reorderQuantity: 10,
               status: 'ACTIVE',
+              // Copy product fields to inventory
+              images: product.images || [],
+              description: product.description || '',
+              weight: product.weight || 0,
+              taxRate: product.taxRate || 0,
+              tags: product.tags || [],
             },
           });
         }
@@ -2730,7 +2940,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // ISSUE / RETURN / RESTOCK OPERATIONS
+  // ISSUE ITEM - UPDATED
   // ============================================
 
   async issueItem(data: IssueItemData) {
@@ -2822,7 +3032,7 @@ export class InventoryService extends BaseService {
 
         this.safeEmitInventoryUpdate({ productId: productId, quantity: newQuantity }, resolvedBU.id);
 
-        // ✅ Return normalized item
+        // Return normalized item
         const result = { 
           issue, 
           inventory: normalizeInventoryItem(updatedInventory),
@@ -2834,6 +3044,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.issueItem');
     }
   }
+
+  // ============================================
+  // RETURN ITEM - UPDATED
+  // ============================================
 
   async returnItem(data: ReturnItemData) {
     try {
@@ -2904,7 +3118,7 @@ export class InventoryService extends BaseService {
 
         this.safeEmitInventoryUpdate({ productId: productId, quantity: newQuantity }, resolvedBU.id);
 
-        // ✅ Return normalized item
+        // Return normalized item
         const result = { 
           issue: updatedIssue, 
           inventory: normalizeInventoryItem(inventory), 
@@ -2917,6 +3131,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.returnItem');
     }
   }
+
+  // ============================================
+  // RESTOCK ITEM - UPDATED
+  // ============================================
 
   async restockItem(data: RestockItemData) {
     try {
@@ -2978,7 +3196,7 @@ export class InventoryService extends BaseService {
 
         this.safeEmitInventoryUpdate({ productId: productId, quantity: newQuantity }, resolvedBU.id);
 
-        // ✅ Return normalized item
+        // Return normalized item
         const result = { 
           inventory: normalizeInventoryItem(updatedInventory), 
           message: 'Item restocked successfully' 
@@ -2992,7 +3210,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // EXPORT / REPORT METHODS
+  // EXPORT INVENTORY - UPDATED
   // ============================================
 
   async exportInventory(businessUnitId: string, format: string = 'json') {
@@ -3021,6 +3239,12 @@ export class InventoryService extends BaseService {
         location: item.location || 'Warehouse',
         price: item.product?.unitPrice || 0,
         costPrice: item.product?.costPrice || 0,
+        // Include new fields
+        description: item.description || item.product?.description || '',
+        weight: item.weight ?? item.product?.weight ?? 0,
+        taxRate: item.taxRate ?? item.product?.taxRate ?? 0,
+        tags: (item.tags && item.tags.length > 0) ? item.tags.join(', ') : (item.product?.tags || []).join(', '),
+        images: (item.images && item.images.length > 0) ? item.images.join(', ') : (item.product?.images || []).join(', '),
         lastUpdated: item.updatedAt.toISOString(),
       }));
 
@@ -3029,6 +3253,10 @@ export class InventoryService extends BaseService {
       this.handleError(error, 'InventoryService.exportInventory');
     }
   }
+
+  // ============================================
+  // EXPORT INVENTORY TO FILE - UPDATED
+  // ============================================
 
   async exportInventoryToFile(businessUnitId: string, format: 'csv' | 'excel' | 'json' = 'json') {
     try {
@@ -3060,7 +3288,7 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // BARCODE / QR CODE METHODS
+  // BARCODE / QR CODE METHODS - UPDATED
   // ============================================
 
   async getInventoryByBarcode(barcode: string, businessUnitId: string): Promise<any> {
@@ -3123,7 +3351,7 @@ export class InventoryService extends BaseService {
         return null;
       }
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItem(this.formatInventoryItem(inventory));
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryByBarcode');
@@ -3165,7 +3393,7 @@ export class InventoryService extends BaseService {
         return null;
       }
 
-      // ✅ Apply normalization
+      // Apply normalization
       return normalizeInventoryItem(this.formatInventoryItem(inventory));
     } catch (error) {
       this.handleError(error, 'InventoryService.getInventoryBySku');
@@ -3209,6 +3437,10 @@ export class InventoryService extends BaseService {
         barcode: barcode,
         location: inventory.location || 'Warehouse',
         quantity: inventory.quantity,
+        // Include new fields in QR data
+        description: inventory.description || inventory.product?.description || '',
+        weight: inventory.weight ?? inventory.product?.weight ?? 0,
+        taxRate: inventory.taxRate ?? inventory.product?.taxRate ?? 0,
         timestamp: new Date().toISOString(),
       };
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
@@ -3252,6 +3484,11 @@ export class InventoryService extends BaseService {
         location: inventory.location || 'Warehouse',
         quantity: inventory.quantity,
         minStock: inventory.reorderPoint || 5,
+        // Include new fields in QR data
+        description: inventory.description || inventory.product?.description || '',
+        weight: inventory.weight ?? inventory.product?.weight ?? 0,
+        taxRate: inventory.taxRate ?? inventory.product?.taxRate ?? 0,
+        tags: (inventory.tags && inventory.tags.length > 0) ? inventory.tags : (inventory.product?.tags || []),
         timestamp: new Date().toISOString(),
       };
 
@@ -3303,6 +3540,12 @@ export class InventoryService extends BaseService {
         supplier: { select: { name: true } },
         categoryId: true,
         category: { select: { name: true } },
+        // Include new fields for sync
+        images: true,
+        description: true,
+        weight: true,
+        taxRate: true,
+        tags: true,
       },
     });
 
@@ -3314,6 +3557,12 @@ export class InventoryService extends BaseService {
         reorderPoint: product.minStock || 5,
         reorderQuantity: product.maxStock || 100,
         supplier: product.supplier?.name || null,
+        // Sync new fields
+        images: product.images || [],
+        description: product.description || '',
+        weight: product.weight || 0,
+        taxRate: product.taxRate || 0,
+        tags: product.tags || [],
       },
     });
   }
@@ -3328,6 +3577,12 @@ export class InventoryService extends BaseService {
         reorderPoint: true,
         reorderQuantity: true,
         location: true,
+        // Include new fields for sync
+        images: true,
+        description: true,
+        weight: true,
+        taxRate: true,
+        tags: true,
       },
     });
 
@@ -3338,6 +3593,12 @@ export class InventoryService extends BaseService {
       data: {
         minStock: inventory.reorderPoint,
         maxStock: inventory.reorderQuantity,
+        // Sync new fields
+        images: inventory.images || [],
+        description: inventory.description || '',
+        weight: inventory.weight || 0,
+        taxRate: inventory.taxRate || 0,
+        tags: inventory.tags || [],
       },
     });
   }
@@ -3348,7 +3609,7 @@ export class InventoryService extends BaseService {
 
   /**
    * Get inventory items with optional filtering
-   * ✅ FIXED: Returns normalized items with product ID at top level
+   * ✅ UPDATED: Returns normalized items with all new fields
    */
   async getInventoryItems(params: {
     page?: number;
@@ -3418,7 +3679,7 @@ export class InventoryService extends BaseService {
         this.prisma.inventory.count({ where }),
       ]);
 
-      // ✅ Format and normalize items
+      // Format and normalize items with all fields
       const formattedItems = items.map((item: any) => {
         const baseItem = {
           id: item.id,
@@ -3446,11 +3707,16 @@ export class InventoryService extends BaseService {
           updatedAt: item.updatedAt,
           stock: item.quantity,
           price: item.product?.unitPrice || item.variant?.price || 0,
-          images: item.product?.images || [],
+          // Include all new fields
+          images: (item.images && item.images.length > 0) ? item.images : (item.product?.images || []),
           isActive: item.product?.isActive ?? true,
+          description: item.description || item.product?.description || null,
+          weight: item.weight ?? item.product?.weight ?? 0,
+          taxRate: item.taxRate ?? item.product?.taxRate ?? 0,
+          tags: (item.tags && item.tags.length > 0) ? item.tags : (item.product?.tags || []),
         };
         
-        // ✅ Apply normalization
+        // Apply normalization
         return normalizeInventoryItem(baseItem);
       });
 

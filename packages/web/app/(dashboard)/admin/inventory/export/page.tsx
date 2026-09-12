@@ -1,26 +1,62 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\inventory\export\page.tsx
 
 'use client';
 
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Download, Loader2, FileText, FileSpreadsheet,
-  CheckCircle, AlertCircle, Package, Filter, Calendar,
-  Building, Tag, Truck, RefreshCw, X, ChevronDown, ChevronUp,
-  Info, Shield, Clock, DollarSign
+  ArrowLeft,
+  Download,
+  Loader2,
+  FileText,
+  FileSpreadsheet,
+  CheckCircle,
+  AlertCircle,
+  AlertTriangle,
+  Package,
+  Filter,
+  Calendar,
+  Building,
+  Tag,
+  Truck,
+  RefreshCw,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  Shield,
+  Clock,
+  DollarSign,
+  Lock,
+  Database,
+  BarChart3,
+  PieChart,
+  TrendingUp,
+  TrendingDown,
+  Users,
+  Layers,
+  Search,
+  Plus,
+  Minus,
+  Edit,
+  Eye,
+  Trash2,
+  Copy,
+  Printer,
+  Link2,
+  ExternalLink,
 } from 'lucide-react';
+
 import { inventoryService } from '../../../../../services/inventoryService';
 import { toast } from '../../../../../utils/toast-manager';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
 import { useAuth } from '../../../../../hooks/useAuth';
-import { formatCurrency, formatDate } from '../../../../../utils/formatters';
-
-// ============================================
-// TYPES
-// ============================================
+import {
+  formatCurrency,
+  formatDate,
+  formatNumber,
+} from '../../../../../utils/formatters';
 
 interface ExportFilters {
   category: string;
@@ -32,6 +68,12 @@ interface ExportFilters {
   includeInactive: boolean;
   includeLowStock: boolean;
   includeOutOfStock: boolean;
+  includeImages: boolean;
+  includeTags: boolean;
+  includeDescription: boolean;
+  includeCostPrice: boolean;
+  includeTaxRate: boolean;
+  includeWeight: boolean;
 }
 
 interface ExportItem {
@@ -40,29 +82,51 @@ interface ExportItem {
   sku: string;
   category: string;
   quantity: number;
+  stock?: number;
   unit: string;
   unitPrice: number;
+  price?: number;
+  costPrice?: number;
   location: string;
   supplier: string;
   minStock: number;
   maxStock: number;
+  description?: string;
+  tags?: string[];
+  images?: string[];
+  weight?: number;
+  taxRate?: number;
   createdAt: string;
   updatedAt: string;
-  stock?: number;
-  price?: number;
+  isActive?: boolean;
+  isDigital?: boolean;
+  featured?: boolean;
+  expiryDate?: string;
+  batchNumber?: string;
 }
 
 interface ExportStats {
   totalItems: number;
   totalValue: number;
+  totalCost?: number;
+  potentialProfit?: number;
   lowStockCount: number;
   outOfStockCount: number;
   categories: number;
+  suppliers: number;
+  withImages: number;
+  withBarcode: number;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
+interface ExportHistory {
+  id: string;
+  fileName: string;
+  format: string;
+  date: string;
+  count: number;
+  status: 'completed' | 'failed' | 'processing';
+  size?: string;
+}
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
@@ -70,292 +134,195 @@ const STATUS_OPTIONS = [
   { value: 'inactive', label: 'Inactive' },
   { value: 'low_stock', label: 'Low Stock' },
   { value: 'out_of_stock', label: 'Out of Stock' },
+  { value: 'discontinued', label: 'Discontinued' },
 ];
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
+const EXPORT_FORMATS = [
+  { value: 'csv', label: 'CSV', icon: FileText, color: 'blue' },
+  { value: 'excel', label: 'Excel', icon: FileSpreadsheet, color: 'green' },
+];
+
+const FormatOption: React.FC<{
+  format: {
+    value: string;
+    label: string;
+    icon: React.ElementType;
+    color: string;
+  };
+  isSelected: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}> = ({ format, isSelected, onClick, disabled, loading }) => {
+  const Icon = format.icon;
+
+  return (
+    <motion.button
+      type="button"
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      disabled={disabled}
+      className={`
+        bg-white dark:bg-gray-800 rounded-xl shadow-sm border-2 p-6 text-left
+        transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-1
+        transform hover:scale-[1.02] active:scale-[0.98]
+        ${
+          isSelected
+            ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/20'
+            : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
+        }
+      `}
+    >
+      <div
+        className={`p-3 rounded-lg inline-block mb-3 ${
+          isSelected
+            ? 'bg-blue-100 dark:bg-blue-900/30'
+            : 'bg-gray-100 dark:bg-gray-700'
+        }`}
+      >
+        <Icon
+          className={`w-6 h-6 ${
+            isSelected
+              ? 'text-blue-600 dark:text-blue-400'
+              : 'text-gray-600 dark:text-gray-400'
+          }`}
+        />
+      </div>
+
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        {format.label}
+      </h3>
+
+      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        Export as {format.label} file
+      </p>
+
+      <div className="mt-4 flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
+        {loading && isSelected ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Exporting...
+          </>
+        ) : (
+          <>
+            <Download className="w-4 h-4" />
+            Export {format.label}
+          </>
+        )}
+      </div>
+
+      {isSelected && (
+        <div className="mt-3">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-full">
+            <CheckCircle className="w-3 h-3" />
+            Selected
+          </span>
+        </div>
+      )}
+    </motion.button>
+  );
+};
+
+const StatCard: React.FC<{
+  label: string;
+  value: string | number;
+  icon: React.ElementType;
+  color: string;
+  subtext?: string;
+}> = ({ label, value, icon: Icon, color, subtext }) => {
+  const colorClasses: Record<string, string> = {
+    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
+    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
+    red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+    indigo: 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400',
+    teal: 'bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400',
+    orange: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`${colorClasses[color] || colorClasses.blue} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {label}
+          </p>
+
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            {value}
+          </p>
+
+          {subtext && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              {subtext}
+            </p>
+          )}
+        </div>
+
+        <div className="p-2 rounded-lg bg-white dark:bg-gray-700/50">
+          <Icon className="w-5 h-5" />
+        </div>
+      </div>
+    </motion.div>
+  );
+};
 
 export default function InventoryExportPage() {
   const router = useRouter();
   const { hasPermission } = usePermission();
-  const { user } = useAuth();
-  
-  // State
-  const [exporting, setExporting] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'csv' | 'excel'>('csv');
+  const { user, isAuthenticated } = useAuth();
+
+  /*
+   * IMPORTANT:
+   * Each of these variables is declared exactly once.
+   * Do not redeclare them later in this component.
+   */
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const [selectedFormat, setSelectedFormat] =
+    useState<'csv' | 'excel'>('csv');
+
+  const [exportProgress, setExportProgress] = useState(0);
+
+  const [exportError, setExportError] =
+    useState<string | null>(null);
+
+  const [exportSuccess, setExportSuccess] = useState(false);
+
+  const [showFilters, setShowFilters] = useState(false);
+
+  const [exportHistory, setExportHistory] =
+    useState<ExportHistory[]>([]);
+
+  const [loadingStats, setLoadingStats] = useState(true);
+
   const [lastExport, setLastExport] = useState<{
     format: string;
     date: string;
     count: number;
     fileName: string;
   } | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
-  const [filters, setFilters] = useState<ExportFilters>({
-    category: '',
-    location: '',
-    supplier: '',
-    status: 'all',
-    dateFrom: '',
-    dateTo: '',
-    includeInactive: false,
-    includeLowStock: false,
-    includeOutOfStock: false,
+
+  const [stats, setStats] = useState<ExportStats>({
+    totalItems: 0,
+    totalValue: 0,
+    lowStockCount: 0,
+    outOfStockCount: 0,
+    categories: 0,
+    suppliers: 0,
+    withImages: 0,
+    withBarcode: 0,
   });
 
-  const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || 'default';
-  
-  // Fix: hasPermission expects only one argument - the permission string
-  // The PermissionResource enum provides the full permission string
-  const canExportInventory = hasPermission(`${PermissionResource.INVENTORY}:export`) || 
-                             hasPermission(`${PermissionResource.INVENTORY}:manage`);
-
-  // ============================================
-  // HELPERS
-  // ============================================
-
-  const normalizeInventoryItem = (item: any): ExportItem => {
-    return {
-      id: item.id || '',
-      name: item.name || item.product?.name || 'Unknown',
-      sku: item.sku || item.product?.sku || 'N/A',
-      category: item.category || item.product?.category?.name || 'Uncategorized',
-      quantity: item.quantity || item.stock || 0,
-      unit: item.unit || 'each',
-      unitPrice: item.unitPrice || item.price || item.product?.unitPrice || 0,
-      location: item.location || 'Warehouse',
-      supplier: item.supplier || '',
-      minStock: item.minStock || item.reorderPoint || 5,
-      maxStock: item.maxStock || 100,
-      createdAt: item.createdAt || new Date().toISOString(),
-      updatedAt: item.updatedAt || new Date().toISOString(),
-      stock: item.quantity || item.stock || 0,
-      price: item.unitPrice || item.price || item.product?.unitPrice || 0,
-    };
-  };
-
-  const getActiveFilterCount = (): number => {
-    let count = 0;
-    if (filters.category) count++;
-    if (filters.location) count++;
-    if (filters.supplier) count++;
-    if (filters.status !== 'all') count++;
-    if (filters.dateFrom) count++;
-    if (filters.dateTo) count++;
-    if (filters.includeInactive) count++;
-    if (filters.includeLowStock) count++;
-    if (filters.includeOutOfStock) count++;
-    return count;
-  };
-
-  // ============================================
-  // EXPORT HANDLERS
-  // ============================================
-
-  const handleExport = async () => {
-    if (!canExportInventory) {
-      toast.error('You don\'t have permission to export inventory');
-      return;
-    }
-
-    setExporting(true);
-    setExportProgress(0);
-    
-    try {
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setExportProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
-
-      // Fix: exportInventory expects only businessUnitId
-      const blob = await inventoryService.exportInventory(businessUnitId, exportFormat);
-      
-      clearInterval(progressInterval);
-      setExportProgress(100);
-      
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const timestamp = new Date().toISOString().split('T')[0];
-      const extension = exportFormat === 'csv' ? 'csv' : 'xlsx';
-      const fileName = `inventory-export-${timestamp}.${extension}`;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-
-      setLastExport({
-        format: exportFormat.toUpperCase(),
-        date: new Date().toLocaleString(),
-        count: 0,
-        fileName,
-      });
-
-      toast.success(`Inventory exported as ${exportFormat.toUpperCase()}`);
-    } catch (error: any) {
-      console.error('Export failed:', error);
-      toast.error(error?.response?.data?.message || 'Failed to export inventory');
-    } finally {
-      setExporting(false);
-      setExportProgress(0);
-    }
-  };
-
-  const handleExportAll = async () => {
-    if (!canExportInventory) {
-      toast.error('You don\'t have permission to export inventory');
-      return;
-    }
-
-    setExporting(true);
-    setExportProgress(0);
-    
-    try {
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setExportProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
-
-      // Fix: getAllInventory expects only businessUnitId
-      const response = await inventoryService.getAllInventory(businessUnitId);
-      
-      clearInterval(progressInterval);
-      setExportProgress(100);
-      
-      // Normalize the response data - handle various response formats
-      let items: ExportItem[] = [];
-      
-      if (response && typeof response === 'object') {
-        // Check if response has items array
-        if (Array.isArray(response)) {
-          items = response.map(normalizeInventoryItem);
-        } else if (Array.isArray(response.items)) {
-          items = response.items.map(normalizeInventoryItem);
-        } else {
-          // Try to find any array in the response
-          const possibleArray = Object.values(response).find(val => Array.isArray(val));
-          if (possibleArray && Array.isArray(possibleArray)) {
-            items = possibleArray.map(normalizeInventoryItem);
-          }
-        }
-      }
-      
-      // If no items found, try to get from inventoryService.getInventory
-      if (items.length === 0) {
-        try {
-          const inventoryResponse = await inventoryService.getInventory({ 
-            businessUnitId, 
-            limit: 1000 
-          });
-          
-          // ✅ FIX: InventoryListResponse has 'inventory' and optional 'items', not 'data'
-          if (inventoryResponse && Array.isArray(inventoryResponse.inventory)) {
-            items = inventoryResponse.inventory.map(normalizeInventoryItem);
-          } else if (inventoryResponse && Array.isArray(inventoryResponse.items)) {
-            items = inventoryResponse.items.map(normalizeInventoryItem);
-          } else if (inventoryResponse && Array.isArray(inventoryResponse)) {
-            items = inventoryResponse.map(normalizeInventoryItem);
-          }
-        } catch (e) {
-          console.warn('Could not fetch inventory from getInventory:', e);
-        }
-      }
-      
-      let csvContent = '';
-      
-      if (exportFormat === 'csv') {
-        const headers = ['Name', 'SKU', 'Category', 'Quantity', 'Unit', 'Unit Price', 'Location', 'Supplier', 'Min Stock', 'Max Stock', 'Created At'];
-        csvContent = headers.join(',') + '\n';
-        
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          const row = [
-            `"${item.name || ''}"`,
-            `"${item.sku || ''}"`,
-            `"${item.category || ''}"`,
-            item.quantity || 0,
-            `"${item.unit || 'each'}"`,
-            item.unitPrice || 0,
-            `"${item.location || ''}"`,
-            `"${item.supplier || ''}"`,
-            item.minStock || 5,
-            item.maxStock || 100,
-            `"${item.createdAt || ''}"`,
-          ];
-          csvContent += row.join(',') + '\n';
-        }
-      } else {
-        // Excel XML format
-        csvContent = '<?xml version="1.0"?>\n';
-        csvContent += '<?mso-application progid="Excel.Sheet"?>\n';
-        csvContent += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n';
-        csvContent += ' xmlns:o="urn:schemas-microsoft-com:office:office"\n';
-        csvContent += ' xmlns:x="urn:schemas-microsoft-com:office:excel"\n';
-        csvContent += ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n';
-        csvContent += ' <Worksheet ss:Name="Inventory">\n';
-        csvContent += '  <Table>\n';
-        csvContent += '   <Row>\n';
-        ['Name', 'SKU', 'Category', 'Quantity', 'Unit', 'Unit Price', 'Location', 'Supplier', 'Min Stock', 'Max Stock'].forEach((header: string) => {
-          csvContent += `    <Cell><Data ss:Type="String">${header}</Data></Cell>\n`;
-        });
-        csvContent += '   </Row>\n';
-        
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          csvContent += '   <Row>\n';
-          [
-            item.name || '', item.sku || '', item.category || '', 
-            item.quantity || 0, item.unit || 'each', item.unitPrice || 0,
-            item.location || '', item.supplier || '', item.minStock || 5, item.maxStock || 100
-          ].forEach((value: any) => {
-            const type = typeof value === 'number' ? 'Number' : 'String';
-            csvContent += `    <Cell><Data ss:Type="${type}">${value}</Data></Cell>\n`;
-          });
-          csvContent += '   </Row>\n';
-        }
-        
-        csvContent += '  </Table>\n';
-        csvContent += ' </Worksheet>\n';
-        csvContent += '</Workbook>';
-      }
-
-      const mimeType = exportFormat === 'csv' 
-        ? 'text/csv;charset=utf-8;' 
-        : 'application/vnd.ms-excel';
-      const blob = new Blob([csvContent], { type: mimeType });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      const timestamp = new Date().toISOString().split('T')[0];
-      const extension = exportFormat === 'csv' ? 'csv' : 'xls';
-      const fileName = `inventory-full-export-${timestamp}.${extension}`;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-
-      setLastExport({
-        format: exportFormat.toUpperCase(),
-        date: new Date().toLocaleString(),
-        count: items.length,
-        fileName,
-      });
-
-      toast.success(`${items.length} items exported as ${exportFormat.toUpperCase()}`);
-    } catch (error: any) {
-      console.error('Export failed:', error);
-      toast.error(error?.message || 'Failed to export inventory');
-    } finally {
-      setExporting(false);
-      setExportProgress(0);
-    }
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
+  const [filterState, setFilterState] =
+    useState<ExportFilters>({
       category: '',
       location: '',
       supplier: '',
@@ -365,71 +332,879 @@ export default function InventoryExportPage() {
       includeInactive: false,
       includeLowStock: false,
       includeOutOfStock: false,
+      includeImages: false,
+      includeTags: false,
+      includeDescription: false,
+      includeCostPrice: false,
+      includeTaxRate: false,
+      includeWeight: false,
     });
-  };
 
-  // ============================================
-  // RENDER
-  // ============================================
+  /*
+   * Derived values.
+   * These must also exist only once.
+   */
+  const businessUnitId =
+    user?.businessUnits?.[0]?.businessUnitId ||
+    (user?.businessUnits?.[0] as { id?: string } | undefined)?.id ||
+    (typeof window !== 'undefined'
+      ? window.localStorage.getItem('businessUnitId')
+      : null) ||
+    '';
 
-  const exportOptions = [
-    {
-      id: 'csv',
-      title: 'CSV Export',
-      description: 'Export inventory data as CSV file for spreadsheet applications',
-      icon: FileText,
-      color: 'blue',
-      format: 'csv' as const,
+  const canExportInventory =
+    hasPermission(`${PermissionResource.INVENTORY}:export`) ||
+    hasPermission(`${PermissionResource.INVENTORY}:manage`) ||
+    user?.role === 'SUPER_ADMIN';
+
+  const normalizeInventoryItem = useCallback(
+    (item: any): ExportItem => {
+      return {
+        id: item?.id || '',
+        name: item?.name || item?.product?.name || 'Unknown',
+        sku: item?.sku || item?.product?.sku || 'N/A',
+        category:
+          item?.category ||
+          item?.product?.category?.name ||
+          'Uncategorized',
+        quantity: item?.quantity ?? item?.stock ?? 0,
+        stock: item?.quantity ?? item?.stock ?? 0,
+        unit: item?.unit || 'each',
+        unitPrice:
+          item?.unitPrice ??
+          item?.price ??
+          item?.product?.unitPrice ??
+          0,
+        price:
+          item?.unitPrice ??
+          item?.price ??
+          item?.product?.unitPrice ??
+          0,
+        costPrice:
+          item?.costPrice ??
+          item?.product?.costPrice ??
+          0,
+        location: item?.location || 'Warehouse',
+        supplier:
+          item?.supplier ||
+          item?.product?.supplier?.name ||
+          '',
+        minStock:
+          item?.minStock ??
+          item?.reorderPoint ??
+          5,
+        maxStock:
+          item?.maxStock ??
+          item?.reorderQuantity ??
+          100,
+        description:
+          item?.description ||
+          item?.product?.description ||
+          '',
+        tags:
+          Array.isArray(item?.tags)
+            ? item.tags
+            : Array.isArray(item?.product?.tags)
+              ? item.product.tags
+              : [],
+        images:
+          Array.isArray(item?.images)
+            ? item.images
+            : Array.isArray(item?.product?.images)
+              ? item.product.images
+              : [],
+        weight:
+          item?.weight ??
+          item?.product?.weight ??
+          0,
+        taxRate:
+          item?.taxRate ??
+          item?.product?.taxRate ??
+          0,
+        createdAt:
+          item?.createdAt ||
+          new Date().toISOString(),
+        updatedAt:
+          item?.updatedAt ||
+          new Date().toISOString(),
+        isActive:
+          item?.isActive !== undefined
+            ? item.isActive
+            : true,
+        isDigital: item?.isDigital || false,
+        featured: item?.featured || false,
+        expiryDate: item?.expiryDate || '',
+        batchNumber: item?.batchNumber || '',
+      };
     },
-    {
-      id: 'excel',
-      title: 'Excel Export',
-      description: 'Export inventory data as Excel spreadsheet',
-      icon: FileSpreadsheet,
-      color: 'green',
-      format: 'excel' as const,
-    },
-  ];
+    [],
+  );
 
-  const activeFilterCount = getActiveFilterCount();
+  const getActiveFilterCount = useCallback((): number => {
+    let count = 0;
+
+    if (filterState.category) count++;
+    if (filterState.location) count++;
+    if (filterState.supplier) count++;
+    if (filterState.status !== 'all') count++;
+    if (filterState.dateFrom) count++;
+    if (filterState.dateTo) count++;
+    if (filterState.includeInactive) count++;
+    if (filterState.includeLowStock) count++;
+    if (filterState.includeOutOfStock) count++;
+    if (filterState.includeImages) count++;
+    if (filterState.includeTags) count++;
+    if (filterState.includeDescription) count++;
+    if (filterState.includeCostPrice) count++;
+    if (filterState.includeTaxRate) count++;
+    if (filterState.includeWeight) count++;
+
+    return count;
+  }, [filterState]);
+
+  const loadStats = useCallback(async () => {
+    if (!businessUnitId) {
+      setLoadingStats(false);
+      return;
+    }
+
+    setLoadingStats(true);
+
+    try {
+      const summary =
+        await inventoryService.getInventorySummary(
+          businessUnitId,
+        );
+
+      const lowStockItems =
+        await inventoryService.getLowStockItems(
+          businessUnitId,
+        );
+
+      const outOfStockItems =
+        await inventoryService.getOutOfStockItems(
+          businessUnitId,
+        );
+
+      setStats({
+        totalItems: summary?.totalItems || 0,
+        totalValue: summary?.totalValue || 0,
+        totalCost: summary?.totalCost || 0,
+        potentialProfit:
+          (summary?.totalValue || 0) -
+          (summary?.totalCost || 0),
+        lowStockCount:
+          lowStockItems?.length || 0,
+        outOfStockCount:
+          outOfStockItems?.length || 0,
+        categories:
+          summary?.categories?.length || 0,
+        suppliers: 0,
+        withImages: 0,
+        withBarcode: 0,
+      });
+    } catch (error) {
+      console.warn(
+        'Failed to load inventory statistics:',
+        error,
+      );
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [businessUnitId]);
+
+  useEffect(() => {
+    if (isAuthenticated && businessUnitId) {
+      void loadStats();
+    }
+  }, [
+    isAuthenticated,
+    businessUnitId,
+    loadStats,
+  ]);
+
+  const handleExport = useCallback(async () => {
+    if (!canExportInventory) {
+      toast.error(
+        "You don't have permission to export inventory",
+      );
+      return;
+    }
+
+    if (!businessUnitId) {
+      const message =
+        'No business unit is available for export.';
+
+      setExportError(message);
+      toast.error(message);
+      return;
+    }
+
+    setIsExporting(true);
+    setExportProgress(0);
+    setExportError(null);
+    setExportSuccess(false);
+
+    let progressInterval: ReturnType<
+      typeof setInterval
+    > | null = null;
+
+    try {
+      progressInterval = setInterval(() => {
+        setExportProgress((previous) =>
+          Math.min(previous + 8, 90),
+        );
+      }, 200);
+
+      const response =
+        await inventoryService.getAllInventory(
+          businessUnitId,
+        );
+
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+
+      setExportProgress(95);
+
+      let items: ExportItem[] = [];
+
+      if (Array.isArray(response)) {
+        items = response.map(normalizeInventoryItem);
+      } else if (
+        response &&
+        typeof response === 'object' &&
+        Array.isArray(
+          (response as { items?: unknown[] }).items,
+        )
+      ) {
+        items = (
+          response as { items: unknown[] }
+        ).items.map(normalizeInventoryItem);
+      } else if (
+        response &&
+        typeof response === 'object'
+      ) {
+        const possibleArray = Object.values(
+          response as unknown as Record<string, unknown>,
+        ).find((value) => Array.isArray(value));
+
+        if (Array.isArray(possibleArray)) {
+          items =
+            possibleArray.map(normalizeInventoryItem);
+        }
+      }
+
+      let filteredItems = [...items];
+
+      if (filterState.category) {
+        const category =
+          filterState.category.toLowerCase();
+
+        filteredItems = filteredItems.filter((item) =>
+          item.category
+            .toLowerCase()
+            .includes(category),
+        );
+      }
+
+      if (filterState.location) {
+        const location =
+          filterState.location.toLowerCase();
+
+        filteredItems = filteredItems.filter((item) =>
+          item.location
+            .toLowerCase()
+            .includes(location),
+        );
+      }
+
+      if (filterState.supplier) {
+        const supplier =
+          filterState.supplier.toLowerCase();
+
+        filteredItems = filteredItems.filter((item) =>
+          item.supplier
+            .toLowerCase()
+            .includes(supplier),
+        );
+      }
+
+      if (filterState.status === 'active') {
+        filteredItems = filteredItems.filter(
+          (item) => item.isActive !== false,
+        );
+      } else if (
+        filterState.status === 'inactive'
+      ) {
+        filteredItems = filteredItems.filter(
+          (item) => item.isActive === false,
+        );
+      } else if (
+        filterState.status === 'low_stock'
+      ) {
+        filteredItems = filteredItems.filter(
+          (item) => {
+            const quantity = item.quantity || 0;
+            const reorderPoint =
+              item.minStock || 5;
+
+            return (
+              quantity > 0 &&
+              quantity <= reorderPoint
+            );
+          },
+        );
+      } else if (
+        filterState.status === 'out_of_stock'
+      ) {
+        filteredItems = filteredItems.filter(
+          (item) =>
+            (item.quantity || 0) === 0,
+        );
+      }
+
+      if (filterState.includeLowStock) {
+        filteredItems = filteredItems.filter(
+          (item) => {
+            const quantity = item.quantity || 0;
+            const reorderPoint =
+              item.minStock || 5;
+
+            return (
+              quantity > 0 &&
+              quantity <= reorderPoint
+            );
+          },
+        );
+      }
+
+      if (filterState.includeOutOfStock) {
+        filteredItems = filteredItems.filter(
+          (item) =>
+            (item.quantity || 0) === 0,
+        );
+      }
+
+      if (!filterState.includeInactive) {
+        filteredItems = filteredItems.filter(
+          (item) => item.isActive !== false,
+        );
+      }
+
+      setExportProgress(100);
+
+      const headers: string[] = [
+        'ID',
+        'Name',
+        'SKU',
+        'Category',
+        'Quantity',
+        'Unit',
+        'Unit Price',
+      ];
+
+      if (filterState.includeCostPrice) {
+        headers.push('Cost Price');
+      }
+
+      if (filterState.includeTaxRate) {
+        headers.push('Tax Rate');
+      }
+
+      if (filterState.includeWeight) {
+        headers.push('Weight (kg)');
+      }
+
+      if (filterState.includeDescription) {
+        headers.push('Description');
+      }
+
+      if (filterState.includeTags) {
+        headers.push('Tags');
+      }
+
+      if (filterState.includeImages) {
+        headers.push('Images');
+      }
+
+      headers.push(
+        'Location',
+        'Supplier',
+        'Min Stock',
+        'Max Stock',
+        'Created At',
+        'Updated At',
+        'Status',
+      );
+
+      let exportContent = '';
+
+      const escapeCsv = (value: unknown): string => {
+        const stringValue =
+          value == null ? '' : String(value);
+
+        return `"${stringValue.replace(
+          /"/g,
+          '""',
+        )}"`;
+      };
+
+      const escapeXml = (value: unknown): string => {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+      };
+
+      if (selectedFormat === 'csv') {
+        exportContent =
+          headers.map(escapeCsv).join(',') +
+          '\n';
+
+        for (const item of filteredItems) {
+          const row: string[] = [
+            escapeCsv(item.id),
+            escapeCsv(item.name),
+            escapeCsv(item.sku),
+            escapeCsv(item.category),
+            String(item.quantity || 0),
+            escapeCsv(item.unit),
+            String(item.unitPrice || 0),
+          ];
+
+          if (filterState.includeCostPrice) {
+            row.push(
+              String(item.costPrice || 0),
+            );
+          }
+
+          if (filterState.includeTaxRate) {
+            row.push(
+              String(item.taxRate || 0),
+            );
+          }
+
+          if (filterState.includeWeight) {
+            row.push(
+              String(item.weight || 0),
+            );
+          }
+
+          if (
+            filterState.includeDescription
+          ) {
+            row.push(
+              escapeCsv(item.description || ''),
+            );
+          }
+
+          if (filterState.includeTags) {
+            row.push(
+              escapeCsv(
+                (item.tags || []).join(', '),
+              ),
+            );
+          }
+
+          if (filterState.includeImages) {
+            row.push(
+              escapeCsv(
+                (item.images || []).join(', '),
+              ),
+            );
+          }
+
+          row.push(
+            escapeCsv(item.location),
+            escapeCsv(item.supplier),
+            String(item.minStock || 5),
+            String(item.maxStock || 100),
+            escapeCsv(item.createdAt),
+            escapeCsv(item.updatedAt),
+            escapeCsv(
+              item.isActive !== false
+                ? 'Active'
+                : 'Inactive',
+            ),
+          );
+
+          exportContent +=
+            row.join(',') + '\n';
+        }
+      } else {
+        exportContent =
+          '<?xml version="1.0"?>\n';
+        exportContent +=
+          '<?mso-application progid="Excel.Sheet"?>\n';
+        exportContent +=
+          '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n';
+        exportContent +=
+          ' xmlns:o="urn:schemas-microsoft-com:office:office"\n';
+        exportContent +=
+          ' xmlns:x="urn:schemas-microsoft-com:office:excel"\n';
+        exportContent +=
+          ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n';
+        exportContent +=
+          ' <Worksheet ss:Name="Inventory">\n';
+        exportContent += '  <Table>\n';
+        exportContent += '   <Row>\n';
+
+        for (const header of headers) {
+          exportContent +=
+            `    <Cell><Data ss:Type="String">${escapeXml(
+              header,
+            )}</Data></Cell>\n`;
+        }
+
+        exportContent += '   </Row>\n';
+
+        for (const item of filteredItems) {
+          exportContent +=
+            '   <Row>\n';
+
+          const values: Array<
+            string | number
+          > = [
+            item.id,
+            item.name,
+            item.sku,
+            item.category,
+            item.quantity || 0,
+            item.unit,
+            item.unitPrice || 0,
+          ];
+
+          if (filterState.includeCostPrice) {
+            values.push(
+              item.costPrice || 0,
+            );
+          }
+
+          if (filterState.includeTaxRate) {
+            values.push(
+              item.taxRate || 0,
+            );
+          }
+
+          if (filterState.includeWeight) {
+            values.push(
+              item.weight || 0,
+            );
+          }
+
+          if (
+            filterState.includeDescription
+          ) {
+            values.push(
+              item.description || '',
+            );
+          }
+
+          if (filterState.includeTags) {
+            values.push(
+              (item.tags || []).join(', '),
+            );
+          }
+
+          if (filterState.includeImages) {
+            values.push(
+              (item.images || []).join(', '),
+            );
+          }
+
+          values.push(
+            item.location,
+            item.supplier,
+            item.minStock || 5,
+            item.maxStock || 100,
+            item.createdAt,
+            item.updatedAt,
+            item.isActive !== false
+              ? 'Active'
+              : 'Inactive',
+          );
+
+          for (const value of values) {
+            const type =
+              typeof value === 'number'
+                ? 'Number'
+                : 'String';
+
+            exportContent +=
+              `    <Cell><Data ss:Type="${type}">${escapeXml(
+                value,
+              )}</Data></Cell>\n`;
+          }
+
+          exportContent +=
+            '   </Row>\n';
+        }
+
+        exportContent +=
+          '  </Table>\n';
+        exportContent +=
+          ' </Worksheet>\n';
+        exportContent +=
+          '</Workbook>';
+      }
+
+      const mimeType =
+        selectedFormat === 'csv'
+          ? 'text/csv;charset=utf-8;'
+          : 'application/vnd.ms-excel';
+
+      const blob = new Blob(
+        [exportContent],
+        { type: mimeType },
+      );
+
+      const url =
+        window.URL.createObjectURL(blob);
+
+      const timestamp =
+        new Date()
+          .toISOString()
+          .split('T')[0];
+
+      const extension =
+        selectedFormat === 'csv'
+          ? 'csv'
+          : 'xls';
+
+      const fileName =
+        `inventory-export-${timestamp}.${extension}`;
+
+      const link =
+        document.createElement('a');
+
+      link.href = url;
+      link.setAttribute(
+        'download',
+        fileName,
+      );
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+
+      const historyEntry: ExportHistory = {
+        id: `export-${Date.now()}`,
+        fileName,
+        format:
+          selectedFormat.toUpperCase(),
+        date:
+          new Date().toLocaleString(),
+        count: filteredItems.length,
+        status: 'completed',
+      };
+
+      setExportHistory((previous) => [
+        historyEntry,
+        ...previous,
+      ]);
+
+      setLastExport({
+        format:
+          selectedFormat.toUpperCase(),
+        date:
+          new Date().toLocaleString(),
+        count: filteredItems.length,
+        fileName,
+      });
+
+      setExportSuccess(true);
+
+      toast.success(
+        `${filteredItems.length} items exported as ${selectedFormat.toUpperCase()}`,
+      );
+
+      window.setTimeout(
+        () => setExportSuccess(false),
+        5000,
+      );
+    } catch (error: unknown) {
+      console.error(
+        'Export failed:',
+        error,
+      );
+
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to export inventory';
+
+      setExportError(errorMessage);
+      toast.error(errorMessage);
+
+      const historyEntry: ExportHistory = {
+        id: `export-${Date.now()}`,
+        fileName:
+          `export-failed-${new Date()
+            .toISOString()
+            .split('T')[0]}`,
+        format:
+          selectedFormat.toUpperCase(),
+        date:
+          new Date().toLocaleString(),
+        count: 0,
+        status: 'failed',
+      };
+
+      setExportHistory((previous) => [
+        historyEntry,
+        ...previous,
+      ]);
+    } finally {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+
+      setIsExporting(false);
+      setExportProgress(0);
+    }
+  }, [
+    businessUnitId,
+    selectedFormat,
+    filterState,
+    canExportInventory,
+    normalizeInventoryItem,
+  ]);
+
+  const handleClearFilters = useCallback(() => {
+    setFilterState({
+      category: '',
+      location: '',
+      supplier: '',
+      status: 'all',
+      dateFrom: '',
+      dateTo: '',
+      includeInactive: false,
+      includeLowStock: false,
+      includeOutOfStock: false,
+      includeImages: false,
+      includeTags: false,
+      includeDescription: false,
+      includeCostPrice: false,
+      includeTaxRate: false,
+      includeWeight: false,
+    });
+  }, []);
+
+  const activeFilterCount =
+    getActiveFilterCount();
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+          <Lock className="w-12 h-12 text-gray-400" />
+        </div>
+
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Please Login
+        </h2>
+
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You need to be logged in to export inventory.
+        </p>
+      </div>
+    );
+  }
+
+  if (!canExportInventory) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+          <Shield className="w-12 h-12 text-gray-400" />
+        </div>
+
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Denied
+        </h2>
+
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You don't have permission to export inventory.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">
-        {/* ============================================
-            HEADER - Fix: Use button instead of Link
-            ============================================ */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <button
+              type="button"
               onClick={() => router.back()}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
+
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Download className="w-6 h-6 text-blue-500" />
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Download className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
                 Export Inventory
               </h1>
+
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Export your inventory data in various formats
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              {businessUnitId !== 'default' ? `BU: ${businessUnitId.slice(0, 8)}...` : 'Default BU'}
-            </span>
-          </div>
+
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {businessUnitId
+              ? `BU: ${businessUnitId.slice(0, 8)}...`
+              : 'No BU'}
+          </span>
         </div>
 
-        {/* ============================================
-            EXPORT PROGRESS
-            ============================================ */}
+        {exportError && (
+          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+
+            <div className="flex-1">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {exportError}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setExportError(null)}
+              className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+              aria-label="Dismiss error"
+            >
+              <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            </button>
+          </div>
+        )}
+
+        {exportSuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3"
+          >
+            <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+
+            <p className="text-sm text-green-700 dark:text-green-300">
+              Export completed successfully!
+            </p>
+          </motion.div>
+        )}
+
         <AnimatePresence>
-          {exporting && (
+          {isExporting && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -438,19 +1213,26 @@ export default function InventoryExportPage() {
             >
               <div className="flex items-center gap-3">
                 <Loader2 className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />
+
                 <div className="flex-1">
                   <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
                     Exporting inventory...
                   </p>
+
                   <div className="w-full bg-blue-200 dark:bg-blue-700 rounded-full h-2 mt-1">
                     <motion.div
                       className="bg-blue-600 dark:bg-blue-400 rounded-full h-2"
                       initial={{ width: 0 }}
-                      animate={{ width: `${exportProgress}%` }}
-                      transition={{ duration: 0.3 }}
+                      animate={{
+                        width: `${exportProgress}%`,
+                      }}
+                      transition={{
+                        duration: 0.3,
+                      }}
                     />
                   </div>
                 </div>
+
                 <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
                   {exportProgress}%
                 </span>
@@ -459,110 +1241,114 @@ export default function InventoryExportPage() {
           )}
         </AnimatePresence>
 
-        {/* ============================================
-            EXPORT OPTIONS
-            ============================================ */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {exportOptions.map((option, index) => {
-            const Icon = option.icon;
-            const isActive = exportFormat === option.format;
-            
-            return (
-              <motion.button
-                key={option.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                onClick={() => {
-                  setExportFormat(option.format);
-                  handleExportAll();
-                }}
-                disabled={exporting}
-                className={`
-                  bg-white dark:bg-gray-800 rounded-xl shadow-sm border-2 p-6 text-left 
-                  transition-all disabled:opacity-50 disabled:cursor-not-allowed
-                  transform hover:scale-[1.02] active:scale-[0.98]
-                  ${isActive 
-                    ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/20' 
-                    : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
-                  }
-                `}
-              >
-                <div className={`p-3 rounded-lg inline-block mb-4 ${
-                  isActive 
-                    ? 'bg-blue-100 dark:bg-blue-900/30' 
-                    : 'bg-gray-100 dark:bg-gray-700'
-                }`}>
-                  <Icon className={`w-6 h-6 ${
-                    isActive 
-                      ? 'text-blue-600 dark:text-blue-400' 
-                      : 'text-gray-600 dark:text-gray-400'
-                  }`} />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {option.title}
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  {option.description}
-                </p>
-                <div className="mt-4 flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
-                  {exporting && exportFormat === option.format ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Exporting...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      Export as {option.format.toUpperCase()}
-                    </>
-                  )}
-                </div>
-                {isActive && (
-                  <div className="mt-3">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-full">
-                      <CheckCircle className="w-3 h-3" />
-                      Selected
-                    </span>
-                  </div>
-                )}
-              </motion.button>
-            );
-          })}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <StatCard
+            label="Total Items"
+            value={formatNumber(stats.totalItems)}
+            icon={Package}
+            color="blue"
+          />
+
+          <StatCard
+            label="Total Value"
+            value={formatCurrency(stats.totalValue)}
+            icon={DollarSign}
+            color="green"
+          />
+
+          <StatCard
+            label="Low Stock"
+            value={stats.lowStockCount}
+            icon={AlertTriangle}
+            color="yellow"
+          />
+
+          <StatCard
+            label="Out of Stock"
+            value={stats.outOfStockCount}
+            icon={AlertCircle}
+            color="red"
+          />
         </div>
 
-        {/* ============================================
-            EXPORT FILTERS
-            ============================================ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          {EXPORT_FORMATS.map((format) => (
+            <FormatOption
+              key={format.value}
+              format={format}
+              isSelected={
+                selectedFormat === format.value
+              }
+              onClick={() =>
+                setSelectedFormat(
+                  format.value as
+                    | 'csv'
+                    | 'excel',
+                )
+              }
+              disabled={isExporting}
+              loading={isExporting}
+            />
+          ))}
+        </div>
+
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
           <button
-            onClick={() => setShowFilters(!showFilters)}
+            type="button"
+            onClick={() =>
+              setShowFilters((previous) => !previous)
+            }
             className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
             <div className="flex items-center gap-2">
               <Filter className="w-5 h-5 text-gray-500" />
-              <h3 className="font-semibold text-gray-900 dark:text-white">Export Filters</h3>
-              <span className="text-sm text-gray-500">(Optional)</span>
+
+              <h3 className="font-semibold text-gray-900 dark:text-white">
+                Export Filters
+              </h3>
+
+              <span className="text-sm text-gray-500">
+                (Optional)
+              </span>
+
               {activeFilterCount > 0 && (
                 <span className="ml-2 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded-full">
                   {activeFilterCount}
                 </span>
               )}
             </div>
+
             <div className="flex items-center gap-2">
               {activeFilterCount > 0 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    event.stopPropagation();
                     handleClearFilters();
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' ||
+                      event.key === ' '
+                    ) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      handleClearFilters();
+                    }
                   }}
                   className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
                 >
                   Clear All
-                </button>
+                </span>
               )}
+
               <span className="text-gray-400">
-                {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                {showFilters ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
               </span>
             </div>
           </button>
@@ -570,10 +1356,21 @@ export default function InventoryExportPage() {
           <AnimatePresence>
             {showFilters && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
+                initial={{
+                  opacity: 0,
+                  height: 0,
+                }}
+                animate={{
+                  opacity: 1,
+                  height: 'auto',
+                }}
+                exit={{
+                  opacity: 0,
+                  height: 0,
+                }}
+                transition={{
+                  duration: 0.2,
+                }}
                 className="overflow-hidden"
               >
                 <div className="p-6 pt-0 border-t border-gray-200 dark:border-gray-700">
@@ -582,74 +1379,138 @@ export default function InventoryExportPage() {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Category
                       </label>
+
                       <input
                         type="text"
-                        value={filters.category}
-                        onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value={filterState.category}
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              category:
+                                event.target.value,
+                            }),
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                         placeholder="Filter by category"
                       />
                     </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Location
                       </label>
+
                       <input
                         type="text"
-                        value={filters.location}
-                        onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value={filterState.location}
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              location:
+                                event.target.value,
+                            }),
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                         placeholder="Filter by location"
                       />
                     </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Supplier
                       </label>
+
                       <input
                         type="text"
-                        value={filters.supplier}
-                        onChange={(e) => setFilters({ ...filters, supplier: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value={filterState.supplier}
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              supplier:
+                                event.target.value,
+                            }),
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                         placeholder="Filter by supplier"
                       />
                     </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Status
                       </label>
+
                       <select
-                        value={filters.status}
-                        onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value={filterState.status}
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              status:
+                                event.target.value,
+                            }),
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       >
-                        {STATUS_OPTIONS.map(option => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
+                        {STATUS_OPTIONS.map(
+                          (option) => (
+                            <option
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Date From
                       </label>
+
                       <input
                         type="date"
-                        value={filters.dateFrom}
-                        onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value={filterState.dateFrom}
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              dateFrom:
+                                event.target.value,
+                            }),
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Date To
                       </label>
+
                       <input
                         type="date"
-                        value={filters.dateTo}
-                        onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        value={filterState.dateTo}
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              dateTo:
+                                event.target.value,
+                            }),
+                          )
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
@@ -658,30 +1519,139 @@ export default function InventoryExportPage() {
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={filters.includeInactive}
-                        onChange={(e) => setFilters({ ...filters, includeInactive: e.target.checked })}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        checked={
+                          filterState.includeInactive
+                        }
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              includeInactive:
+                                event.target.checked,
+                            }),
+                          )
+                        }
+                        className="w-4 h-4 text-blue-600 rounded"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Include inactive items</span>
+
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        Include inactive items
+                      </span>
                     </label>
+
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={filters.includeLowStock}
-                        onChange={(e) => setFilters({ ...filters, includeLowStock: e.target.checked })}
-                        className="w-4 h-4 text-yellow-600 rounded focus:ring-yellow-500"
+                        checked={
+                          filterState.includeLowStock
+                        }
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              includeLowStock:
+                                event.target.checked,
+                            }),
+                          )
+                        }
+                        className="w-4 h-4 text-yellow-600 rounded"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Only low stock items</span>
+
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        Only low stock items
+                      </span>
                     </label>
+
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={filters.includeOutOfStock}
-                        onChange={(e) => setFilters({ ...filters, includeOutOfStock: e.target.checked })}
-                        className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
+                        checked={
+                          filterState.includeOutOfStock
+                        }
+                        onChange={(event) =>
+                          setFilterState(
+                            (previous) => ({
+                              ...previous,
+                              includeOutOfStock:
+                                event.target.checked,
+                            }),
+                          )
+                        }
+                        className="w-4 h-4 text-red-600 rounded"
                       />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Only out of stock items</span>
+
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        Only out of stock items
+                      </span>
                     </label>
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Include Additional Fields
+                    </p>
+
+                    <div className="flex flex-wrap gap-4">
+                      {[
+                        [
+                          'includeImages',
+                          'Images',
+                        ],
+                        [
+                          'includeTags',
+                          'Tags',
+                        ],
+                        [
+                          'includeDescription',
+                          'Description',
+                        ],
+                        [
+                          'includeCostPrice',
+                          'Cost Price',
+                        ],
+                        [
+                          'includeTaxRate',
+                          'Tax Rate',
+                        ],
+                        [
+                          'includeWeight',
+                          'Weight',
+                        ],
+                      ].map(
+                        ([field, label]) => (
+                          <label
+                            key={field}
+                            className="flex items-center gap-2 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={
+                                Boolean(
+                                  filterState[
+                                    field as keyof ExportFilters
+                                  ],
+                                )
+                              }
+                              onChange={(event) =>
+                                setFilterState(
+                                  (previous) => ({
+                                    ...previous,
+                                    [field]:
+                                      event.target
+                                        .checked,
+                                  }),
+                                )
+                              }
+                              className="w-4 h-4 text-blue-600 rounded"
+                            />
+
+                            <span className="text-sm text-gray-700 dark:text-gray-300">
+                              {label}
+                            </span>
+                          </label>
+                        ),
+                      )}
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -689,92 +1659,125 @@ export default function InventoryExportPage() {
           </AnimatePresence>
         </div>
 
-        {/* ============================================
-            LAST EXPORT INFO
-            ============================================ */}
-        <AnimatePresence>
-          {lastExport && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-6"
-            >
-              <div className="flex items-start gap-3">
-                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-green-800 dark:text-green-300">Last Export</h4>
-                  <p className="text-sm text-green-700 dark:text-green-400">
-                    Format: {lastExport.format} • Date: {lastExport.date}
-                    {lastExport.count > 0 && ` • Items: ${lastExport.count}`}
-                  </p>
-                  <p className="text-xs text-green-600 dark:text-green-500 mt-1 break-all">
-                    File: {lastExport.fileName}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setLastExport(null)}
-                  className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            {stats.totalItems > 0
+              ? `${formatNumber(
+                  stats.totalItems,
+                )} items available`
+              : 'No items to export'}
+          </div>
 
-        {/* ============================================
-            EXPORT HISTORY
-            ============================================ */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mt-6">
-          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Clock className="w-4 h-4 text-gray-500" />
-              Export History
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Recent export activity</p>
-          </div>
-          <div className="p-6">
-            {lastExport ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                        {lastExport.fileName}
-                      </p>
-                      <p className="text-xs text-gray-500">{lastExport.date}</p>
-                    </div>
-                  </div>
-                  <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded-full flex-shrink-0">
-                    Completed
-                  </span>
-                </div>
-              </div>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={
+              isExporting ||
+              stats.totalItems === 0
+            }
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <div className="text-center py-8">
-                <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-500 dark:text-gray-400">No exports yet</p>
-                <p className="text-sm text-gray-400 dark:text-gray-500">Exported files will appear here</p>
-              </div>
+              <Download className="w-4 h-4" />
             )}
-          </div>
+
+            {isExporting
+              ? 'Exporting...'
+              : `Export ${selectedFormat.toUpperCase()}`}
+          </button>
         </div>
 
-        {/* ============================================
-            EXPORT TIPS
-            ============================================ */}
+        {exportHistory.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mt-6">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Clock className="w-4 h-4 text-gray-500" />
+                Export History
+              </h3>
+            </div>
+
+            <div className="p-4 space-y-2">
+              {exportHistory
+                .slice(0, 10)
+                .map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {entry.format === 'CSV' ? (
+                        <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      ) : (
+                        <FileSpreadsheet className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      )}
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {entry.fileName}
+                        </p>
+
+                        <p className="text-xs text-gray-500">
+                          {entry.date} •{' '}
+                          {entry.count} items
+                        </p>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${
+                        entry.status ===
+                        'completed'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                          : entry.status ===
+                              'failed'
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                      }`}
+                    >
+                      {entry.status ===
+                      'completed'
+                        ? '✓ Done'
+                        : entry.status ===
+                            'failed'
+                          ? 'Failed'
+                          : 'Processing'}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mt-6">
           <div className="flex items-start gap-3">
             <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+
             <div>
-              <h4 className="font-medium text-blue-800 dark:text-blue-300">Export Tips</h4>
+              <h4 className="font-medium text-blue-800 dark:text-blue-300">
+                Export Tips
+              </h4>
+
               <ul className="space-y-1 text-sm text-blue-700 dark:text-blue-400 mt-1">
-                <li>• CSV format is compatible with Excel, Google Sheets, and most spreadsheet applications</li>
-                <li>• Use filters to export specific subsets of your inventory</li>
-                <li>• Exports include all item details including pricing and stock levels</li>
-                <li>• Large inventories may take a few moments to export</li>
+                <li>
+                  • CSV format is compatible with
+                  Excel, Google Sheets, and most
+                  spreadsheet applications
+                </li>
+                <li>
+                  • Use filters to export specific
+                  subsets of your inventory
+                </li>
+                <li>
+                  • Select additional fields to
+                  include more details in your
+                  export
+                </li>
+                <li>
+                  • Large inventories may take a
+                  few moments to export
+                </li>
               </ul>
             </div>
           </div>

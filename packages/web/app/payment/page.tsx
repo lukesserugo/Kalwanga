@@ -147,7 +147,7 @@ export default function PaymentPage() {
           const order = await checkoutService.getCheckoutById(orderIdParam);
           setPaymentData({
             amount: order.total,
-            reference: order.receiptNumber || order.orderNumber || `ORD-${orderIdParam.slice(0, 8)}`,
+            reference: order.receiptNumber || `ORD-${orderIdParam.slice(0, 8)}`,
             customer: order.customer,
             items: order.items,
             orderId: order.id,
@@ -507,17 +507,16 @@ export default function PaymentPage() {
                     </div>
                   )}
 
-                  <PaymentForm
-                    amount={paymentData.amount}
-                    currency="USD"
-                    paymentMethod={selectedMethod}
-                    provider={selectedProvider}
-                    customerId={user?.id}
-                    customerLoyaltyPoints={customerLoyaltyPoints}
-                    onSuccess={handlePaymentComplete}
-                    onError={handlePaymentError}
-                    onCancel={() => setStep('select')}
-                  />
+                    <PaymentForm
+                      amount={paymentData.amount}
+                      currency="USD"
+                      paymentMethod={selectedMethod}
+                      customerId={user?.id}
+                      customerLoyaltyPoints={customerLoyaltyPoints}
+                      onSuccess={handlePaymentComplete}
+                      onError={handlePaymentError}
+                      onCancel={() => setStep('select')}
+                    />
                 </div>
               )}
 

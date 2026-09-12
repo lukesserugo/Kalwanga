@@ -49,13 +49,12 @@ interface GetAllInventoryResponse {
 }
 
 // ============================================
-// ✅ FIX: NORMALIZATION HELPERS
+// ✅ FIX: NORMALIZATION HELPERS - UPDATED
 // ============================================
 
 /**
  * Normalize inventory item to ensure product ID is available at top level
- * This ensures that when inventory items are returned to the frontend,
- * the product ID is accessible at the top level for ProductCard.
+ * ✅ UPDATED: Now properly handles images, description, weight, taxRate, tags
  */
 function normalizeInventoryItem(item: any): any {
   if (!item) return item;
@@ -70,10 +69,18 @@ function normalizeInventoryItem(item: any): any {
         // Also ensure other product fields are available at top level
         name: item.name || item.product.name,
         unitPrice: item.unitPrice || item.product.unitPrice,
-        images: item.images || item.product.images || [],
+        // ✅ UPDATED: Use inventory images first, then product images
+        images: (item.images && item.images.length > 0) ? item.images : (item.product.images || []),
+        // ✅ UPDATED: Use inventory description first, then product description
+        description: item.description || item.product.description,
+        // ✅ UPDATED: Use inventory weight first, then product weight
+        weight: item.weight !== undefined ? item.weight : item.product.weight,
+        // ✅ UPDATED: Use inventory taxRate first, then product taxRate
+        taxRate: item.taxRate !== undefined ? item.taxRate : item.product.taxRate,
+        // ✅ UPDATED: Use inventory tags first, then product tags
+        tags: (item.tags && item.tags.length > 0) ? item.tags : (item.product.tags || []),
         isActive: item.isActive !== undefined ? item.isActive : item.product?.isActive,
         sku: item.sku || item.product.sku,
-        description: item.description || item.product.description,
         category: item.category || item.product.category,
         categoryId: item.categoryId || item.product.categoryId,
         supplier: item.supplier || item.product.supplier,
@@ -82,11 +89,8 @@ function normalizeInventoryItem(item: any): any {
         maxStock: item.maxStock || item.product.maxStock,
         featured: item.featured || item.product.featured,
         isDigital: item.isDigital || item.product.isDigital,
-        tags: item.tags || item.product.tags || [],
         attributes: item.attributes || item.product.attributes || {},
         notes: item.notes || item.product.notes,
-        taxRate: item.taxRate || item.product.taxRate,
-        weight: item.weight || item.product.weight,
         costPrice: item.costPrice || item.product.costPrice,
         // Keep the original product reference for backward compatibility
         _product: item.product,
@@ -97,6 +101,10 @@ function normalizeInventoryItem(item: any): any {
           quantity: item.quantity || item.product?.stock || 0,
           reserved: item.reserved || 0,
         }],
+        // Ensure stock field exists for compatibility
+        stock: item.quantity || item.stock || 0,
+        // Ensure price field exists
+        price: item.price || item.unitPrice || item.product?.unitPrice || 0,
       };
     }
   }
@@ -126,6 +134,24 @@ function normalizeInventoryItem(item: any): any {
         reserved: item.reserved || 0,
       }],
     };
+  }
+  
+  // Ensure stock field exists
+  if (item && item.quantity !== undefined && item.stock === undefined) {
+    return {
+      ...item,
+      stock: item.quantity,
+    };
+  }
+  
+  // ✅ UPDATED: Ensure images is always an array
+  if (item && !item.images) {
+    item.images = [];
+  }
+  
+  // ✅ UPDATED: Ensure tags is always an array
+  if (item && !item.tags) {
+    item.tags = [];
   }
   
   return item;
@@ -672,6 +698,7 @@ export const inventoryController = {
       
       const result = await inventoryService.getAllInventory(businessUnitId) as GetAllInventoryResponse;
       
+      // ✅ UPDATED: Normalize items with all fields
       const normalizedItems = normalizeInventoryItems(result?.items || []);
       
       console.log(`✅ Found ${normalizedItems.length} inventory items`);
@@ -1422,6 +1449,7 @@ export const inventoryController = {
         ...(validatedData.purchaseDate && { purchaseDate: validatedData.purchaseDate }),
         ...(validatedData.expiryDate && { expiryDate: validatedData.expiryDate }),
         ...(validatedData.notes && { notes: validatedData.notes }),
+        // ✅ UPDATED: Include new fields
         ...(validatedData.description && { description: validatedData.description }),
         ...(validatedData.barcode && { barcode: validatedData.barcode }),
         ...(validatedData.weight !== undefined && { weight: validatedData.weight }),
@@ -2093,6 +2121,7 @@ export const inventoryController = {
         location: req.body.location || 'Warehouse',
         barcode: req.body.barcode,
         notes: req.body.notes,
+        // ✅ UPDATED: Include new fields
         weight: req.body.weight,
         taxRate: req.body.taxRate,
         tags: req.body.tags,
@@ -2142,6 +2171,11 @@ export const inventoryController = {
         barcode: req.body.barcode,
         notes: req.body.notes,
         isActive: req.body.isActive,
+        // ✅ UPDATED: Include new fields
+        images: req.body.images,
+        tags: req.body.tags,
+        weight: req.body.weight,
+        taxRate: req.body.taxRate,
       });
 
       const normalizedResult = normalizeInventoryItem(result);
@@ -2281,6 +2315,7 @@ export const inventoryController = {
 
       const result = await inventoryService.getInventoryItems(params);
 
+      // ✅ UPDATED: Normalize items with all fields
       const normalizedItems = normalizeInventoryItems(result?.items || []);
 
       res.status(200).json({

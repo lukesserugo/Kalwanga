@@ -16,10 +16,13 @@ import {
   Grid, List, LayoutGrid, Barcode, QrCode, Scan,
   Printer, Copy, ExternalLink, MoreVertical,
   Archive, RefreshCcw, FileSpreadsheet, FileText,
-  Building2, ChevronUp, Database, Minus, Loader2 
+  Building2, ChevronUp, Database, Minus, Loader2,
+  Weight, Percent, Calendar, Hash, Globe,
+  Star, Image as ImageIcon, Link, AlertOctagon,
+  Activity, ClipboardList, FileCheck, ShoppingBag
 } from 'lucide-react';
 import { usePermission } from '../../../../hooks/usePermission';
-import { inventoryService } from '../../../../services/inventoryService';
+import { inventoryService, type InventoryStats, InventoryListResponse } from '../../../../services/inventoryService';
 import { companyService } from '../../../../services/companyService';
 import { toast } from '../../../../utils/toast-manager';
 import { formatCurrency, formatDate, formatNumber } from '../../../../utils/formatters';
@@ -34,8 +37,12 @@ interface InventoryItem {
   name: string;
   sku: string;
   stock: number;
+  quantity?: number;
   price: number;
+  unitPrice?: number;
   reorderPoint: number;
+  minStock?: number;
+  maxStock?: number;
   category?: string;
   categoryId?: string;
   location?: string;
@@ -45,16 +52,12 @@ interface InventoryItem {
   lastUpdated?: string;
   images?: string[];
   reserved?: number;
-  quantity?: number;
-  unitPrice?: number;
   barcode?: string | null;
   createdAt?: string;
   updatedAt?: string;
   costPrice?: number;
   taxRate?: number;
   unit?: string;
-  minStock?: number;
-  maxStock?: number;
   isActive?: boolean;
   productId?: string;
   variantId?: string;
@@ -65,6 +68,14 @@ interface InventoryItem {
     name: string;
     code: string;
   };
+  description?: string | null;
+  weight?: number;
+  tags?: string[];
+  isDigital?: boolean;
+  featured?: boolean;
+  expiryDate?: string | null;
+  batchNumber?: string | null;
+  available?: number;
 }
 
 interface InventoryStatsData {
@@ -85,6 +96,7 @@ interface InventoryStatsData {
   inStock?: number;
   inStockValue?: number;
   locations?: Array<{ location: string; count: number; value: number }>;
+  categories?: Array<{ category: string; count: number; value: number }>;
 }
 
 interface InventoryFilters {
@@ -102,6 +114,10 @@ interface InventoryFilters {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   businessUnitId?: string;
+  hasImages?: 'all' | 'yes' | 'no';
+  isDigital?: 'all' | 'yes' | 'no';
+  featured?: 'all' | 'yes' | 'no';
+  isActive?: 'all' | 'yes' | 'no';
 }
 
 interface PaginationData {
@@ -334,7 +350,8 @@ const QuickActions: React.FC<{
   const actions = [
     { id: 'add', label: 'Add Item', icon: Plus, visible: permissions.canCreate, color: 'blue' },
     { id: 'scan', label: 'Scan Barcode', icon: Scan, visible: true, color: 'purple' },
-    { id: 'transfer', label: 'Transfer', icon: Truck, visible: permissions.canTransfer, color: 'orange' },
+    { id: 'adjust', label: 'Adjust Stock', icon: RefreshCcw, visible: permissions.canAdjust, color: 'orange' },
+    { id: 'transfer', label: 'Transfer', icon: Truck, visible: permissions.canTransfer, color: 'amber' },
     { id: 'export', label: 'Export', icon: Download, visible: permissions.canExport, color: 'green' },
     { id: 'import', label: 'Import', icon: Upload, visible: permissions.canCreate, color: 'indigo' },
     { id: 'settings', label: 'Settings', icon: Settings, visible: permissions.canAdjust, color: 'gray' },
@@ -351,6 +368,7 @@ const QuickActions: React.FC<{
     green: 'bg-green-600 hover:bg-green-700 text-white',
     indigo: 'bg-indigo-600 hover:bg-indigo-700 text-white',
     gray: 'bg-gray-600 hover:bg-gray-700 text-white',
+    amber: 'bg-amber-600 hover:bg-amber-700 text-white',
   };
 
   return (
@@ -401,20 +419,28 @@ const InventoryFilters: React.FC<{
     { value: 'no', label: 'No Barcode' },
   ];
 
+  const booleanOptions = [
+    { value: 'all', label: 'All' },
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' },
+  ];
+
   const sortOptions = [
     { value: 'name', label: 'Name' },
     { value: 'stock', label: 'Stock' },
     { value: 'price', label: 'Price' },
+    { value: 'value', label: 'Total Value' },
     { value: 'createdAt', label: 'Created Date' },
     { value: 'updatedAt', label: 'Last Updated' },
   ];
 
-  const defaultLocations = ['Warehouse', 'Storefront', 'Backroom', 'Supplier', 'In Transit', 'Distribution Center'];
+  const defaultLocations = ['Warehouse', 'Storefront', 'Backroom', 'Supplier', 'In Transit', 'Distribution Center', 'Store A', 'Store B', 'Online Store'];
 
   const allLocations = locations.length > 0 ? locations : defaultLocations;
   const allCategories = categories.length > 0 ? categories : [];
 
   const activeFilterCount = [
+    filters.search ? 1 : 0,
     filters.category ? 1 : 0,
     filters.categoryId ? 1 : 0,
     filters.location ? 1 : 0,
@@ -424,7 +450,11 @@ const InventoryFilters: React.FC<{
     filters.minPrice ? 1 : 0,
     filters.maxPrice ? 1 : 0,
     filters.supplier ? 1 : 0,
-    filters.inStock !== undefined ? 1 : 0,
+    filters.inStock ? 1 : 0,
+    filters.hasImages !== 'all' ? 1 : 0,
+    filters.isDigital !== 'all' ? 1 : 0,
+    filters.featured !== 'all' ? 1 : 0,
+    filters.isActive !== 'all' ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
   return (
@@ -496,25 +526,29 @@ const InventoryFilters: React.FC<{
         {activeFilterCount > 0 && (
           <button
             onClick={() => {
+              onFilterChange('search', '');
               onFilterChange('category', '');
               onFilterChange('categoryId', '');
               onFilterChange('location', '');
               onFilterChange('status', 'all');
               onFilterChange('lowStock', false);
               onFilterChange('hasBarcode', 'all');
-              onFilterChange('search', '');
               onFilterChange('minPrice', undefined);
               onFilterChange('maxPrice', undefined);
               onFilterChange('supplier', '');
               onFilterChange('inStock', undefined);
               onFilterChange('sortBy', 'name');
               onFilterChange('sortOrder', 'asc');
+              onFilterChange('hasImages', 'all');
+              onFilterChange('isDigital', 'all');
+              onFilterChange('featured', 'all');
+              onFilterChange('isActive', 'all');
             }}
             disabled={loading}
             className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1 disabled:opacity-50"
           >
             <X className="w-4 h-4" />
-            Clear
+            Clear All
           </button>
         )}
       </div>
@@ -626,7 +660,7 @@ const InventoryFilters: React.FC<{
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                     <input
                       type="checkbox"
@@ -635,7 +669,7 @@ const InventoryFilters: React.FC<{
                       disabled={loading}
                       className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50"
                     />
-                    Low Stock Only
+                    Low Stock
                   </label>
                   <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                     <input
@@ -651,7 +685,7 @@ const InventoryFilters: React.FC<{
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Min Price
@@ -678,6 +712,66 @@ const InventoryFilters: React.FC<{
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Has Images
+                </label>
+                <select
+                  value={filters.hasImages || 'all'}
+                  onChange={(e) => onFilterChange('hasImages', e.target.value)}
+                  disabled={loading}
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {booleanOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Digital Product
+                </label>
+                <select
+                  value={filters.isDigital || 'all'}
+                  onChange={(e) => onFilterChange('isDigital', e.target.value)}
+                  disabled={loading}
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {booleanOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Featured
+                </label>
+                <select
+                  value={filters.featured || 'all'}
+                  onChange={(e) => onFilterChange('featured', e.target.value)}
+                  disabled={loading}
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {booleanOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Active Status
+                </label>
+                <select
+                  value={filters.isActive || 'all'}
+                  onChange={(e) => onFilterChange('isActive', e.target.value)}
+                  disabled={loading}
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  {booleanOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </motion.div>
         )}
@@ -701,6 +795,7 @@ const InventoryTable: React.FC<{
   onDelete: (id: string) => void;
   onView: (item: InventoryItem) => void;
   onPrintBarcode: (item: InventoryItem) => void;
+  onAdjust: (item: InventoryItem) => void;
   pagination: PaginationData;
   onPageChange: (page: number) => void;
   onLimitChange: (limit: number) => void;
@@ -715,6 +810,7 @@ const InventoryTable: React.FC<{
   onDelete,
   onView,
   onPrintBarcode,
+  onAdjust,
   pagination,
   onPageChange,
   onLimitChange,
@@ -730,6 +826,12 @@ const InventoryTable: React.FC<{
       return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' };
     }
     return { label: 'In Stock', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' };
+  };
+
+  const getStockValue = (item: InventoryItem) => {
+    const stock = item.stock || item.quantity || 0;
+    const price = item.price || item.unitPrice || 0;
+    return stock * price;
   };
 
   if (loading) {
@@ -772,6 +874,7 @@ const InventoryTable: React.FC<{
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Barcode</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Price</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stock</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Value</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">Status</th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
             </tr>
@@ -781,13 +884,14 @@ const InventoryTable: React.FC<{
               const status = getStatusBadge(item);
               const isSelected = selectedItems.includes(item.id);
               const stock = item.stock || item.quantity || 0;
+              const stockValue = getStockValue(item);
+              const hasImages = item.images && item.images.length > 0;
+              const hasBarcode = !!item.barcode;
 
               return (
                 <tr
                   key={item.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${
-                    isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''
-                  }`}
+                  className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''}`}
                   onClick={() => onView(item)}
                 >
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -801,22 +905,41 @@ const InventoryTable: React.FC<{
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {item.images?.[0] ? (
-                          <img src={item.images[0]} alt={item.name} className="w-full h-full object-cover" />
+                        {hasImages ? (
+                          <img src={item.images![0]} alt={item.name} className="w-full h-full object-cover" />
                         ) : (
                           <Package className="w-5 h-5 text-gray-400" />
                         )}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
+                        <p className="font-medium text-gray-900 dark:text-white truncate max-w-[150px] sm:max-w-[200px]">
+                          {item.name}
+                        </p>
                         {item.variantName && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">{item.variantName}</span>
                         )}
-                        {item.category && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500 block">{item.category}</span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                          {item.category && (
+                            <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-0.5">
+                              <Tag className="w-3 h-3" />
+                              {item.category}
+                            </span>
+                          )}
+                          {item.isDigital && (
+                            <span className="text-xs text-blue-400 flex items-center gap-0.5">
+                              <Globe className="w-3 h-3" />
+                              Digital
+                            </span>
+                          )}
+                          {item.featured && (
+                            <span className="text-xs text-yellow-400 flex items-center gap-0.5">
+                              <Star className="w-3 h-3" />
+                              Featured
+                            </span>
+                          )}
+                        </div>
                         {item.businessUnit && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1 mt-0.5">
+                          <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
                             <Building className="w-3 h-3" />
                             {item.businessUnit.name}
                           </span>
@@ -826,10 +949,10 @@ const InventoryTable: React.FC<{
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono hidden md:table-cell">{item.sku}</td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    {item.barcode ? (
+                    {hasBarcode ? (
                       <div className="flex items-center gap-1">
                         <Barcode className="w-4 h-4 text-green-500" />
-                        <span className="text-xs font-mono text-gray-600 dark:text-gray-300">{item.barcode}</span>
+                        <span className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate max-w-[100px]">{item.barcode}</span>
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400">No barcode</span>
@@ -840,15 +963,18 @@ const InventoryTable: React.FC<{
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className={`font-medium ${
-                      stock === 0 ? 'text-red-600' :
-                      stock <= (item.reorderPoint || item.minStock || 5) ? 'text-yellow-600' :
-                      'text-green-600'
+                      stock === 0 ? 'text-red-600 dark:text-red-400' :
+                      stock <= (item.reorderPoint || item.minStock || 5) ? 'text-yellow-600 dark:text-yellow-400' :
+                      'text-green-600 dark:text-green-400'
                     }`}>
                       {stock}
                       {item.reserved !== undefined && item.reserved > 0 && (
                         <span className="text-xs text-gray-400 ml-1">({item.reserved} reserved)</span>
                       )}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm text-gray-500 dark:text-gray-400 hidden lg:table-cell">
+                    {formatCurrency(stockValue)}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
@@ -857,7 +983,7 @@ const InventoryTable: React.FC<{
                   </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      {item.barcode && (
+                      {hasBarcode && (
                         <button
                           onClick={() => onPrintBarcode(item)}
                           className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
@@ -866,6 +992,13 @@ const InventoryTable: React.FC<{
                           <Printer className="w-4 h-4 text-green-500" />
                         </button>
                       )}
+                      <button
+                        onClick={() => onAdjust(item)}
+                        className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded transition-colors"
+                        title="Adjust Stock"
+                      >
+                        <RefreshCcw className="w-4 h-4 text-amber-500" />
+                      </button>
                       <button
                         onClick={() => onView(item)}
                         className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
@@ -1017,7 +1150,7 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId 
             <div className="flex-1 min-w-0">
               <p className="text-gray-700 dark:text-gray-300">
                 <span className="font-medium">{activity.product?.name || 'Unknown'}</span>
-                <span className={`ml-1 ${activity.quantity && activity.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <span className={`ml-1 ${activity.quantity && activity.quantity > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                   {activity.quantity && activity.quantity > 0 ? '+' : ''}{activity.quantity || 0}
                 </span>
               </p>
@@ -1037,14 +1170,19 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId 
 // ============================================
 
 const InventoryCharts: React.FC<{ data: InventoryItem[]; stats: InventoryStatsData }> = ({ data, stats }) => {
-  const categoryMap = new Map<string, number>();
+  const categoryMap = new Map<string, { count: number; value: number }>();
   data.forEach(item => {
     const cat = item.category || 'Uncategorized';
-    categoryMap.set(cat, (categoryMap.get(cat) || 0) + (item.stock || item.quantity || 0));
+    const stock = item.stock || item.quantity || 0;
+    const price = item.price || item.unitPrice || 0;
+    const existing = categoryMap.get(cat) || { count: 0, value: 0 };
+    existing.count += stock;
+    existing.value += stock * price;
+    categoryMap.set(cat, existing);
   });
 
   const categories = Array.from(categoryMap.entries())
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 5);
 
   const total = data.reduce((sum, item) => sum + (item.stock || item.quantity || 0), 0) || 1;
@@ -1059,13 +1197,13 @@ const InventoryCharts: React.FC<{ data: InventoryItem[]; stats: InventoryStatsDa
         <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No category data</p>
       ) : (
         <div className="space-y-2">
-          {categories.map(([name, count]) => {
-            const percentage = (count / total) * 100;
+          {categories.map(([name, data]) => {
+            const percentage = (data.count / total) * 100;
             return (
               <div key={name}>
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-600 dark:text-gray-400 truncate flex-1 mr-2">{name}</span>
-                  <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">{count} units</span>
+                  <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">{data.count} units</span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-0.5">
                   <div
@@ -1184,7 +1322,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
 
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-            <Plus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <RefreshCcw className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">Adjust Stock</h3>
@@ -1208,11 +1346,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
             )}
             <div>
               <span className="text-gray-600 dark:text-gray-300">Available</span>
-              <p className={`font-semibold ${
-                availableStock === 0 ? 'text-red-600 dark:text-red-400' : 
-                isLowStock ? 'text-yellow-600 dark:text-yellow-400' : 
-                'text-green-600 dark:text-green-400'
-              }`}>
+              <p className={`font-semibold ${availableStock === 0 ? 'text-red-600 dark:text-red-400' : isLowStock ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
                 {availableStock} units
               </p>
             </div>
@@ -1223,14 +1357,8 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
           </div>
           {(isLowStock || isOutOfStock) && (
             <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-              <p className={`text-sm flex items-center gap-1 ${
-                isOutOfStock ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'
-              }`}>
-                {isOutOfStock ? (
-                  <AlertCircle className="w-4 h-4" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4" />
-                )}
+              <p className={`text-sm flex items-center gap-1 ${isOutOfStock ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                {isOutOfStock ? <AlertCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
                 {isOutOfStock ? 'Out of stock!' : 'Low stock alert!'}
               </p>
             </div>
@@ -1308,11 +1436,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-300">New stock:</span>
-                  <span className={`font-semibold ${
-                    isNewStockOut ? 'text-red-600 dark:text-red-400' :
-                    isNewStockLow ? 'text-yellow-600 dark:text-yellow-400' :
-                    'text-green-600 dark:text-green-400'
-                  }`}>
+                  <span className={`font-semibold ${isNewStockOut ? 'text-red-600 dark:text-red-400' : isNewStockLow ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
                     {newStock} units
                   </span>
                 </div>
@@ -1363,17 +1487,8 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={
-              loading || 
-              isSubmitting || 
-              localQuantity <= 0 || 
-              (localType === 'ADJUSTMENT_OUT' && localQuantity > currentStock)
-            }
-            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto ${
-              localType === 'ADJUSTMENT_IN'
-                ? 'bg-green-600 hover:bg-green-700 text-white'
-                : 'bg-red-600 hover:bg-red-700 text-white'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            disabled={loading || isSubmitting || localQuantity <= 0 || (localType === 'ADJUSTMENT_OUT' && localQuantity > currentStock)}
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto ${localType === 'ADJUSTMENT_IN' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isSubmitting ? (
               <>
@@ -1450,6 +1565,10 @@ export default function InventoryDashboardPage() {
     sortBy: 'name',
     sortOrder: 'asc',
     businessUnitId: '',
+    hasImages: 'all',
+    isDigital: 'all',
+    featured: 'all',
+    isActive: 'all',
   });
   const [pagination, setPagination] = useState<PaginationData>({
     page: 1,
@@ -1494,33 +1613,41 @@ export default function InventoryDashboardPage() {
       name: item.name || item.product?.name || 'Unknown',
       sku: item.sku || item.product?.sku || 'N/A',
       stock: item.quantity || item.stock || 0,
+      quantity: item.quantity || item.stock || 0,
       price: item.unitPrice || item.price || item.product?.unitPrice || 0,
+      unitPrice: item.unitPrice || item.price || item.product?.unitPrice || 0,
       reorderPoint: item.reorderPoint || item.minStock || 5,
+      minStock: item.minStock || item.reorderPoint || 5,
+      maxStock: item.maxStock || item.reorderQuantity || 100,
       category: item.category || item.product?.category?.name || undefined,
       categoryId: item.categoryId || item.product?.categoryId || undefined,
       location: item.location || 'Warehouse',
-      supplier: item.supplier || undefined,
-      supplierId: item.supplierId || undefined,
+      supplier: item.supplier || item.product?.supplier?.name || undefined,
+      supplierId: item.supplierId || item.product?.supplier?.id || undefined,
       status: item.status || 'ACTIVE',
       lastUpdated: item.updatedAt || new Date().toISOString(),
       images: item.images || item.product?.images || [],
       reserved: item.reserved || 0,
-      quantity: item.quantity || item.stock || 0,
-      unitPrice: item.unitPrice || item.price || item.product?.unitPrice || 0,
       barcode: item.barcode || item.product?.barcode || null,
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: item.updatedAt || new Date().toISOString(),
-      costPrice: item.costPrice || item.product?.costPrice || undefined,
-      taxRate: item.taxRate || item.product?.taxRate || undefined,
+      costPrice: item.costPrice || item.product?.costPrice || 0,
+      taxRate: item.taxRate || item.product?.taxRate || 0,
       unit: item.unit || 'each',
-      minStock: item.minStock || item.reorderPoint || 5,
-      maxStock: item.maxStock || undefined,
       isActive: item.isActive !== undefined ? item.isActive : true,
-      productId: item.productId || undefined,
+      productId: item.productId || item.product?.id || undefined,
       variantId: item.variantId || undefined,
       variantName: item.variantName || item.variant?.name || undefined,
       businessUnitId: item.businessUnitId || undefined,
       businessUnit: item.businessUnit || undefined,
+      description: item.description || item.product?.description || null,
+      weight: item.weight || item.product?.weight || 0,
+      tags: item.tags || item.product?.tags || [],
+      isDigital: item.isDigital || item.product?.isDigital || false,
+      featured: item.featured || item.product?.featured || false,
+      expiryDate: item.expiryDate || null,
+      batchNumber: item.batchNumber || null,
+      available: (item.quantity || item.stock || 0) - (item.reserved || 0),
     };
   }, []);
 
@@ -1689,23 +1816,41 @@ export default function InventoryDashboardPage() {
       
       console.log(`📤 Fetching inventory for business unit: ${effectiveBusinessUnitId}`);
       
-      // Use getAllInventory with businessUnitId
-      const allInventory = await inventoryService.getAllInventory(effectiveBusinessUnitId);
-      console.log('📥 getAllInventory response:', allInventory);
-      
-      let data: any[] = [];
-      
-      if (allInventory && allInventory.items && Array.isArray(allInventory.items)) {
-        data = allInventory.items;
-        console.log(`✅ Loaded ${data.length} inventory items from getAllInventory`);
-      } else if (Array.isArray(allInventory)) {
-        data = allInventory;
-        console.log(`✅ Loaded ${data.length} inventory items from getAllInventory (array)`);
+      // Try getAllInventory first
+      let allData: any[] = [];
+      try {
+        const allInventory = await inventoryService.getAllInventory(effectiveBusinessUnitId);
+        console.log('📥 getAllInventory response:', allInventory);
+        
+        if (allInventory && allInventory.items && Array.isArray(allInventory.items)) {
+          allData = allInventory.items;
+          console.log(`✅ Loaded ${allData.length} inventory items from getAllInventory`);
+        }
+      } catch (error) {
+        console.warn('getAllInventory failed, trying getInventory:', error);
       }
       
-      if (data.length > 0) {
+      // Fallback to getInventory if getAllInventory failed or returned empty
+      if (allData.length === 0) {
+        try {
+          const inventoryResponse = await inventoryService.getInventory({
+            businessUnitId: effectiveBusinessUnitId,
+            limit: 1000,
+          });
+          console.log('📥 getInventory response:', inventoryResponse);
+          
+          if (inventoryResponse && inventoryResponse.inventory && Array.isArray(inventoryResponse.inventory)) {
+            allData = inventoryResponse.inventory;
+            console.log(`✅ Loaded ${allData.length} inventory items from getInventory`);
+          }
+        } catch (error) {
+          console.warn('getInventory also failed:', error);
+        }
+      }
+      
+      if (allData.length > 0) {
         // Add business unit info to each item
-        const normalizedData = data.map((item: any) => {
+        const normalizedData = allData.map((item: any) => {
           const normalized = normalizeInventoryItem(item);
           const bu = businessUnits.find(b => b.id === effectiveBusinessUnitId);
           if (bu) {
@@ -1743,14 +1888,18 @@ export default function InventoryDashboardPage() {
           sum + (item.stock || 0) * (item.costPrice || 0), 0
         );
         
+        // Get unique categories and suppliers
+        const uniqueCategories = new Set(normalizedData.map((item: InventoryItem) => item.category).filter(Boolean));
+        const uniqueSuppliers = new Set(normalizedData.map((item: InventoryItem) => item.supplier).filter(Boolean));
+        
         setStats({
           totalItems: normalizedData.length,
           totalValue: totalValue,
           totalCost: totalCost,
           lowStock: lowStockCount,
           outOfStock: outOfStockCount,
-          totalCategories: 0,
-          totalSuppliers: 0,
+          totalCategories: uniqueCategories.size,
+          totalSuppliers: uniqueSuppliers.size,
           profitMargin: totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0,
           withBarcode,
           withoutBarcode,
@@ -1824,6 +1973,179 @@ export default function InventoryDashboardPage() {
       loadInventoryData();
     }
   }, [selectedBusinessUnitId, businessUnitsLoadedRef, loadInventoryData]);
+
+  // ============================================
+  // FILTER LOGIC - UPDATED
+  // ============================================
+
+  useEffect(() => {
+    if (inventory.length === 0) {
+      setFilteredInventory([]);
+      return;
+    }
+
+    let filtered = [...inventory];
+
+    // Search
+    if (filters.search.trim()) {
+      const searchLower = filters.search.toLowerCase().trim();
+      filtered = filtered.filter(item =>
+        item.name.toLowerCase().includes(searchLower) ||
+        item.sku.toLowerCase().includes(searchLower) ||
+        (item.barcode && item.barcode.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Category
+    if (filters.categoryId) {
+      filtered = filtered.filter(item => item.categoryId === filters.categoryId);
+    } else if (filters.category) {
+      filtered = filtered.filter(item => 
+        item.category && item.category.toLowerCase().includes(filters.category.toLowerCase())
+      );
+    }
+
+    // Location
+    if (filters.location) {
+      filtered = filtered.filter(item => item.location === filters.location);
+    }
+
+    // Status
+    if (filters.status !== 'all') {
+      switch (filters.status) {
+        case 'active':
+          filtered = filtered.filter(item => item.isActive !== false);
+          break;
+        case 'inactive':
+          filtered = filtered.filter(item => item.isActive === false);
+          break;
+        case 'low_stock':
+          filtered = filtered.filter(item => {
+            const stock = item.stock || 0;
+            const reorderPoint = item.reorderPoint || item.minStock || 5;
+            return stock <= reorderPoint && stock > 0;
+          });
+          break;
+        case 'out_of_stock':
+          filtered = filtered.filter(item => (item.stock || 0) === 0);
+          break;
+        case 'discontinued':
+          filtered = filtered.filter(item => item.status === 'DISCONTINUED');
+          break;
+      }
+    }
+
+    // Low Stock
+    if (filters.lowStock) {
+      filtered = filtered.filter(item => {
+        const stock = item.stock || 0;
+        const reorderPoint = item.reorderPoint || item.minStock || 5;
+        return stock <= reorderPoint && stock > 0;
+      });
+    }
+
+    // In Stock
+    if (filters.inStock !== undefined) {
+      filtered = filtered.filter(item => {
+        const stock = item.stock || 0;
+        return filters.inStock ? stock > 0 : stock === 0;
+      });
+    }
+
+    // Barcode
+    if (filters.hasBarcode !== 'all') {
+      const hasBarcode = filters.hasBarcode === 'yes';
+      filtered = filtered.filter(item => hasBarcode ? !!item.barcode : !item.barcode);
+    }
+
+    // Has Images
+    if (filters.hasImages && filters.hasImages !== 'all') {
+      const hasImages = filters.hasImages === 'yes';
+      filtered = filtered.filter(item => hasImages ? (item.images && item.images.length > 0) : (!item.images || item.images.length === 0));
+    }
+
+    // Digital
+    if (filters.isDigital && filters.isDigital !== 'all') {
+      const isDigital = filters.isDigital === 'yes';
+      filtered = filtered.filter(item => item.isDigital === isDigital);
+    }
+
+    // Featured
+    if (filters.featured && filters.featured !== 'all') {
+      const isFeatured = filters.featured === 'yes';
+      filtered = filtered.filter(item => item.featured === isFeatured);
+    }
+
+    // Active
+    if (filters.isActive && filters.isActive !== 'all') {
+      const isActive = filters.isActive === 'yes';
+      filtered = filtered.filter(item => item.isActive === isActive);
+    }
+
+    // Price Range
+    if (filters.minPrice !== undefined) {
+      filtered = filtered.filter(item => (item.price || 0) >= filters.minPrice!);
+    }
+    if (filters.maxPrice !== undefined) {
+      filtered = filtered.filter(item => (item.price || 0) <= filters.maxPrice!);
+    }
+
+    // Supplier
+    if (filters.supplier) {
+      filtered = filtered.filter(item => 
+        item.supplier && item.supplier.toLowerCase().includes(filters.supplier!.toLowerCase())
+      );
+    }
+
+    // Sort
+    if (filters.sortBy) {
+      const sortOrder = filters.sortOrder || 'asc';
+      filtered.sort((a, b) => {
+        let aVal: any;
+        let bVal: any;
+        switch (filters.sortBy) {
+          case 'name':
+            aVal = a.name;
+            bVal = b.name;
+            break;
+          case 'stock':
+            aVal = a.stock || 0;
+            bVal = b.stock || 0;
+            break;
+          case 'price':
+            aVal = a.price || 0;
+            bVal = b.price || 0;
+            break;
+          case 'value':
+            aVal = (a.stock || 0) * (a.price || 0);
+            bVal = (b.stock || 0) * (b.price || 0);
+            break;
+          case 'createdAt':
+            aVal = a.createdAt || '';
+            bVal = b.createdAt || '';
+            break;
+          case 'updatedAt':
+            aVal = a.updatedAt || '';
+            bVal = b.updatedAt || '';
+            break;
+          default:
+            aVal = a.name;
+            bVal = b.name;
+        }
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+          return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        }
+        return sortOrder === 'asc' ? (aVal - bVal) : (bVal - aVal);
+      });
+    }
+
+    setFilteredInventory(filtered);
+    setPagination(prev => ({
+      ...prev,
+      total: filtered.length,
+      totalPages: Math.ceil(filtered.length / prev.limit) || 1,
+    }));
+  }, [inventory, filters]);
 
   // ============================================
   // HANDLERS
@@ -1911,6 +2233,9 @@ export default function InventoryDashboardPage() {
       case 'scan':
         router.push('/admin/inventory/scan');
         break;
+      case 'adjust':
+        router.push('/admin/inventory/adjust');
+        break;
       case 'transfer':
         router.push('/admin/inventory/transfer');
         break;
@@ -1966,19 +2291,19 @@ export default function InventoryDashboardPage() {
     router.push(`/admin/inventory/${item.id}/barcode`);
   };
 
-  // ============================================
-  // ADJUSTMENT MODAL HANDLERS
-  // ============================================
-
-  const openAdjustmentModal = (item: InventoryItem) => {
+  const handleAdjustItem = (item: InventoryItem) => {
     setAdjustingItem(item);
     setAdjustmentData({
-      quantity: 0,
+      quantity: 1,
       type: 'ADJUSTMENT_IN',
       notes: '',
     });
     setShowAdjustmentModal(true);
   };
+
+  // ============================================
+  // ADJUSTMENT MODAL HANDLERS
+  // ============================================
 
   const closeAdjustmentModal = () => {
     setShowAdjustmentModal(false);
@@ -2059,6 +2384,12 @@ export default function InventoryDashboardPage() {
       </div>
     );
   }
+
+  // Paginate filtered inventory
+  const paginatedItems = filteredInventory.slice(
+    (pagination.page - 1) * pagination.limit,
+    pagination.page * pagination.limit
+  );
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -2184,7 +2515,7 @@ export default function InventoryDashboardPage() {
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         <div className="xl:col-span-3">
           <InventoryTable
-            data={filteredInventory}
+            data={paginatedItems}
             loading={loading}
             viewMode={viewMode}
             selectedItems={selectedItems}
@@ -2194,7 +2525,12 @@ export default function InventoryDashboardPage() {
             onDelete={handleDeleteItem}
             onView={handleViewItem}
             onPrintBarcode={handlePrintBarcode}
-            pagination={pagination}
+            onAdjust={handleAdjustItem}
+            pagination={{
+              ...pagination,
+              total: filteredInventory.length,
+              totalPages: Math.ceil(filteredInventory.length / pagination.limit) || 1,
+            }}
             onPageChange={handlePageChange}
             onLimitChange={handleLimitChange}
           />

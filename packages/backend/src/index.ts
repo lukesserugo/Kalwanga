@@ -27,7 +27,6 @@ import categoryRoutes from './routes/categories.js';
 import productRoutes from './routes/products.js';
 import paymentRoutes from './routes/payment.js';
 import providerRoutes from './routes/providers.js'; 
-import mpesaRoutes from './routes/mpesa.js';
 import reportRoutes from './routes/reports.js';
 import supplierRoutes from './routes/suppliers.js';
 import purchaseOrderRoutes from './routes/purchaseOrders.js';
@@ -289,8 +288,6 @@ app.post('/webhooks/clerk', (req: express.Request, res: express.Response) => {
   logger.info('Clerk webhook received');
   res.status(200).json({ received: true });
 });
-
-app.use('/api/mpesa', mpesaRoutes);
 
 // ============================================
 // REALTIME ROUTES (Public - SSE/WebSocket)

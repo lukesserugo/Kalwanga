@@ -1,8 +1,8 @@
 // D:\Projects\Kalwanga\packages\backend\src\services\providers\paypalProviderService.ts
 
-import { BaseService } from '../BaseService.js';
-import { AppError } from '../../middleware/errorHandler.js';
-import { logger } from '../../lib/logger.js';
+import { BaseService } from './BaseService.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../lib/logger.js';
 import * as crypto from 'crypto';
 
 interface PayPalConfig {
@@ -99,7 +99,7 @@ export class PayPalService extends BaseService {
       this.tokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // Buffer 1 minute
 
       logger.info('PayPal access token obtained successfully');
-      return this.accessToken;
+      return this.accessToken as string;
     } catch (error) {
       logger.error('PayPal authentication error:', error);
       throw new AppError('Failed to authenticate with PayPal', 500);

@@ -1300,6 +1300,12 @@ model Inventory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  images      String[] @default([]) // Copy from product
+  description String? // Copy from product
+  weight      Float? // Copy from product
+  taxRate     Float? // Copy from product
+  tags        String[] @default([]) // Copy from product
+
   transactions InventoryTransaction[]
   issues       InventoryIssue[]
 

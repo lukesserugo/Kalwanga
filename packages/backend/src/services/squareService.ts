@@ -1,8 +1,9 @@
 // D:\Projects\Kalwanga\packages\backend\src\services\providers\squareProviderService.ts
 
-import { BaseService } from '../BaseService.js';
-import { AppError } from '../../middleware/errorHandler.js';
-import { logger } from '../../lib/logger.js';
+import { BaseService } from './BaseService.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../lib/logger.js';
+import { PaymentStatus } from '../generated/prisma/index.js';
 import * as crypto from 'crypto';
 
 // Note: Square uses OAuth and requires additional setup
@@ -122,7 +123,7 @@ export class SquareService extends BaseService {
         data: {
           amount: data.amount,
           paymentMethod: 'CREDIT_CARD',
-          status: payment.status === 'COMPLETED' ? 'PAID' : 'PENDING',
+          status: payment.status === 'COMPLETED' ? PaymentStatus.PAID : PaymentStatus.PENDING,
           transactionId: payment.id,
           reference: payment.id,
           userId: data.userId || 'system',
@@ -150,7 +151,7 @@ export class SquareService extends BaseService {
         orderId: payment.order_id,
       };
     } catch (error) {
-      this.handleError(error, 'SquareProviderService.processPayment');
+      this.handleError(error, 'SquareService.processPayment');
       throw error;
     }
   }
@@ -235,7 +236,7 @@ export class SquareService extends BaseService {
       await this.prisma.payment.updateMany({
         where: { transactionId: paymentId },
         data: {
-          status: 'REFUNDED',
+          status: PaymentStatus.REFUNDED,
           refundedAt: new Date(),
           notes: `Square refunded: ${refund.id} - ${data.reason || 'No reason provided'}`,
           metadata: { squareRefund: refund },
@@ -252,7 +253,7 @@ export class SquareService extends BaseService {
         refundData: refund,
       };
     } catch (error) {
-      this.handleError(error, 'SquareProviderService.refundPayment');
+      this.handleError(error, 'SquareService.refundPayment');
       throw error;
     }
   }
@@ -302,7 +303,7 @@ export class SquareService extends BaseService {
         orderId: payment.order_id,
       };
     } catch (error) {
-      this.handleError(error, 'SquareProviderService.getTransactionStatus');
+      this.handleError(error, 'SquareService.getTransactionStatus');
       throw error;
     }
   }
@@ -346,7 +347,7 @@ export class SquareService extends BaseService {
           return { unhandled: true, eventType };
       }
     } catch (error) {
-      this.handleError(error, 'SquareProviderService.handleWebhook');
+      this.handleError(error, 'SquareService.handleWebhook');
       throw error;
     }
   }
@@ -356,6 +357,18 @@ export class SquareService extends BaseService {
     // Uses HMAC-SHA1 with the webhook signature key
     // For production, implement proper verification
     // Reference: https://developer.squareup.com/docs/webhooks/step3-validate
+    // This is a placeholder - implement proper verification in production
+    if (!signature) {
+      throw new AppError('Missing webhook signature', 400);
+    }
+    // In production, you would verify the signature here
+    // const expectedSignature = crypto
+    //   .createHmac('sha256', this.webhookSignatureKey)
+    //   .update(JSON.stringify(payload))
+    //   .digest('hex');
+    // if (signature !== expectedSignature) {
+    //   throw new AppError('Invalid webhook signature', 400);
+    // }
   }
 
   private async handlePaymentCreated(data: any): Promise<any> {
@@ -373,7 +386,7 @@ export class SquareService extends BaseService {
       await this.prisma.payment.updateMany({
         where: { transactionId: paymentId },
         data: {
-          status: this.mapSquareStatus(status),
+          status: this.mapSquareStatusToPaymentStatus(status),
           metadata: { squareUpdate: data },
         },
       });
@@ -388,7 +401,7 @@ export class SquareService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: paymentId },
       data: {
-        status: 'PAID',
+        status: PaymentStatus.PAID,
         processedAt: new Date(),
         notes: `Square payment completed: ${paymentId}`,
         metadata: { squarePayment: data },
@@ -406,7 +419,7 @@ export class SquareService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: paymentId },
       data: {
-        status: 'FAILED',
+        status: PaymentStatus.FAILED,
         notes: `Square payment failed: ${data?.error?.message || 'Unknown error'}`,
         metadata: { squarePayment: data },
       },
@@ -421,7 +434,7 @@ export class SquareService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: paymentId },
       data: {
-        status: 'CANCELLED',
+        status: PaymentStatus.FAILED,
         notes: `Square payment canceled: ${paymentId}`,
         metadata: { squarePayment: data },
       },
@@ -436,7 +449,7 @@ export class SquareService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: paymentId },
       data: {
-        status: 'REFUNDED',
+        status: PaymentStatus.REFUNDED,
         refundedAt: new Date(),
         notes: `Square refund created: ${data?.id}`,
         metadata: { squareRefund: data },
@@ -453,7 +466,7 @@ export class SquareService extends BaseService {
       await this.prisma.payment.updateMany({
         where: { transactionId: paymentId },
         data: {
-          status: 'REFUNDED',
+          status: PaymentStatus.REFUNDED,
           refundedAt: new Date(),
           metadata: { squareRefund: data },
         },
@@ -463,16 +476,16 @@ export class SquareService extends BaseService {
     return { success: true, event: 'REFUND_UPDATED' };
   }
 
-  private mapSquareStatus(status: string): string {
-    const map: Record<string, string> = {
-      'PENDING': 'PENDING',
-      'APPROVED': 'PROCESSING',
-      'COMPLETED': 'PAID',
-      'CANCELED': 'CANCELLED',
-      'FAILED': 'FAILED',
-      'REFUNDED': 'REFUNDED',
+  private mapSquareStatusToPaymentStatus(status: string): PaymentStatus {
+    const map: Record<string, PaymentStatus> = {
+      'PENDING': PaymentStatus.PENDING,
+      'APPROVED': PaymentStatus.PROCESSING,
+      'COMPLETED': PaymentStatus.PAID,
+      'CANCELED': PaymentStatus.FAILED,
+      'FAILED': PaymentStatus.FAILED,
+      'REFUNDED': PaymentStatus.REFUNDED,
     };
-    return map[status] || 'PENDING';
+    return map[status] || PaymentStatus.PENDING;
   }
 
   // ============================================
@@ -511,7 +524,7 @@ export class SquareService extends BaseService {
       const result = await response.json();
       return result.customer;
     } catch (error) {
-      this.handleError(error, 'SquareProviderService.createCustomer');
+      this.handleError(error, 'SquareService.createCustomer');
       throw error;
     }
   }
@@ -538,7 +551,7 @@ export class SquareService extends BaseService {
       const result = await response.json();
       return result.locations || [];
     } catch (error) {
-      this.handleError(error, 'SquareProviderService.getLocations');
+      this.handleError(error, 'SquareService.getLocations');
       throw error;
     }
   }

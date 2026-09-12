@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import Link from 'next/link';
 import {
   CreditCard, Banknote, Wallet, Building, QrCode, Gift, Star,
   Search, Filter, RefreshCw, Loader2, Eye, Download,
@@ -99,30 +98,6 @@ interface PaymentFilters {
   businessUnitId?: string;
 }
 
-// Provider status display helper
-interface ProviderDisplay {
-  id: string;
-  name: string;
-  code: string;
-  icon: string;
-  isActive: boolean;
-  isHealthy: boolean;
-  configured: boolean;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-  textColor: string;
-  description: string;
-  transactionStats: {
-    transactions24h: number;
-    volume24h: number;
-    transactions7d: number;
-    volume7d: number;
-    transactions30d: number;
-    volume30d: number;
-  };
-}
-
 // ============================================
 // CONSTANTS
 // ============================================
@@ -155,11 +130,11 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   SQUARE: CreditCard,
 };
 
-// EXACT PROVIDER LOGO URLs
+// ✅ FIXED: Actual working provider logo URLs
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
   PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.svg',
   PAYSTACK: 'https://paystack.com/assets/images/logo.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
@@ -173,11 +148,10 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
-// Dark mode versions
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
   PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.svg',
   PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
@@ -274,6 +248,287 @@ const PROVIDER_CONFIGS: Record<string, { icon: string; color: string; bgColor: s
   },
 };
 
+const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
+  {
+    id: 'default_cash',
+    provider: 'CASH',
+    name: 'Cash',
+    code: 'CASH',
+    type: 'OFFLINE',
+    isActive: true,
+    isHealthy: true,
+    configured: true,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Cash',
+      type: 'OFFLINE',
+      supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+      supportedMethods: ['CASH'],
+      description: 'Pay with cash at the counter',
+      icon: '💰',
+      feePercentage: 0,
+      feeFixed: 0,
+    },
+  },
+  {
+    id: 'default_stripe',
+    provider: 'STRIPE',
+    name: 'Stripe',
+    code: 'STRIPE',
+    type: 'ONLINE',
+    isActive: true,
+    isHealthy: true,
+    configured: true,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Stripe',
+      type: 'ONLINE',
+      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedMethods: ['CREDIT_CARD', 'DEBIT_CARD'],
+      description: 'Pay with credit card (Visa, Mastercard, Amex)',
+      icon: '💳',
+      minAmount: 1,
+      maxAmount: 100000,
+      feePercentage: 2.9,
+      feeFixed: 0.30,
+    },
+  },
+  {
+    id: 'default_mobile_money',
+    provider: 'MOBILE_MONEY',
+    name: 'Mobile Money',
+    code: 'MOBILE_MONEY',
+    type: 'ONLINE',
+    isActive: true,
+    isHealthy: true,
+    configured: true,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Mobile Money',
+      type: 'ONLINE',
+      supportedCurrencies: ['TZS', 'KES', 'UGX', 'USD'],
+      supportedMethods: ['MOBILE_MONEY'],
+      description: 'M-Pesa, Tigo Pesa, Airtel Money',
+      icon: '📱',
+      minAmount: 1,
+      maxAmount: 10000,
+      feePercentage: 1.5,
+      feeFixed: 0.10,
+    },
+  },
+  {
+    id: 'default_bank_transfer',
+    provider: 'BANK_TRANSFER',
+    name: 'Bank Transfer',
+    code: 'BANK_TRANSFER',
+    type: 'ONLINE',
+    isActive: true,
+    isHealthy: true,
+    configured: true,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Bank Transfer',
+      type: 'ONLINE',
+      supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+      supportedMethods: ['BANK_TRANSFER'],
+      description: 'Direct bank transfer',
+      icon: '🏦',
+      minAmount: 10,
+      maxAmount: 1000000,
+      feePercentage: 0,
+      feeFixed: 0,
+    },
+  },
+  {
+    id: 'default_gift_card',
+    provider: 'GIFT_CARD',
+    name: 'Gift Card',
+    code: 'GIFT_CARD',
+    type: 'ONLINE',
+    isActive: true,
+    isHealthy: true,
+    configured: true,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Gift Card',
+      type: 'ONLINE',
+      supportedCurrencies: ['USD'],
+      supportedMethods: ['GIFT_CARD'],
+      description: 'Redeem your gift card',
+      icon: '🎁',
+      minAmount: 1,
+      maxAmount: 1000,
+      feePercentage: 0,
+      feeFixed: 0,
+    },
+  },
+  {
+    id: 'default_loyalty_points',
+    provider: 'LOYALTY_POINTS',
+    name: 'Loyalty Points',
+    code: 'LOYALTY_POINTS',
+    type: 'OFFLINE',
+    isActive: true,
+    isHealthy: true,
+    configured: true,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Loyalty Points',
+      type: 'OFFLINE',
+      supportedCurrencies: ['USD'],
+      supportedMethods: ['LOYALTY_POINTS'],
+      description: 'Pay with your loyalty points',
+      icon: '⭐',
+      minAmount: 1,
+      maxAmount: 1000,
+      feePercentage: 0,
+      feeFixed: 0,
+    },
+  },
+  {
+    id: 'default_paypal',
+    provider: 'PAYPAL',
+    name: 'PayPal',
+    code: 'PAYPAL',
+    type: 'ONLINE',
+    isActive: false,
+    isHealthy: true,
+    configured: false,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'PayPal',
+      type: 'ONLINE',
+      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedMethods: ['PAYPAL'],
+      description: 'Pay with PayPal',
+      icon: '💸',
+      minAmount: 1,
+      maxAmount: 100000,
+      feePercentage: 3.5,
+      feeFixed: 0.30,
+    },
+  },
+  {
+    id: 'default_flutterwave',
+    provider: 'FLUTTERWAVE',
+    name: 'Flutterwave',
+    code: 'FLUTTERWAVE',
+    type: 'ONLINE',
+    isActive: false,
+    isHealthy: true,
+    configured: false,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Flutterwave',
+      type: 'ONLINE',
+      supportedCurrencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
+      supportedMethods: ['FLUTTERWAVE'],
+      description: 'Pay with Flutterwave (Cards, Mobile Money, Bank Transfer)',
+      icon: '🌊',
+      minAmount: 1,
+      maxAmount: 100000,
+      feePercentage: 1.9,
+      feeFixed: 0.20,
+    },
+  },
+  {
+    id: 'default_paystack',
+    provider: 'PAYSTACK',
+    name: 'Paystack',
+    code: 'PAYSTACK',
+    type: 'ONLINE',
+    isActive: false,
+    isHealthy: true,
+    configured: false,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Paystack',
+      type: 'ONLINE',
+      supportedCurrencies: ['NGN', 'GHS', 'USD'],
+      supportedMethods: ['PAYSTACK'],
+      description: 'Pay with Paystack (Cards, Bank Transfer, USSD)',
+      icon: '🔷',
+      minAmount: 1,
+      maxAmount: 100000,
+      feePercentage: 1.5,
+      feeFixed: 0.20,
+    },
+  },
+  {
+    id: 'default_square',
+    provider: 'SQUARE',
+    name: 'Square',
+    code: 'SQUARE',
+    type: 'ONLINE',
+    isActive: false,
+    isHealthy: true,
+    configured: false,
+    transactions24h: 0,
+    volume24h: 0,
+    transactions7d: 0,
+    volume7d: 0,
+    transactions30d: 0,
+    volume30d: 0,
+    config: {
+      name: 'Square',
+      type: 'ONLINE',
+      supportedCurrencies: ['USD', 'EUR', 'GBP'],
+      supportedMethods: ['SQUARE'],
+      description: 'Pay with Square (Cards, Digital Wallet)',
+      icon: '⬜',
+      minAmount: 1,
+      maxAmount: 100000,
+      feePercentage: 2.6,
+      feeFixed: 0.30,
+    },
+  },
+];
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -315,14 +570,14 @@ export default function AdminPaymentsPage() {
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
 
   // Provider Management State
-  const [providers, setProviders] = useState<PaymentProviderStatus[]>([]);
+  const [providers, setProviders] = useState<PaymentProviderStatus[]>(DEFAULT_PROVIDERS);
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [editingProvider, setEditingProvider] = useState<PaymentProviderStatus | null>(null);
   const [providerFormData, setProviderFormData] = useState<Partial<PaymentProviderStatus>>({});
   const [savingProvider, setSavingProvider] = useState(false);
-  const [showProviderToggle, setShowProviderToggle] = useState<string | null>(null);
   const [showProviderSettings, setShowProviderSettings] = useState<string | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
 
   const canViewPayments = canView(PermissionResource.PAYMENT) || canManage(PermissionResource.PAYMENT);
   const canManagePayments = canManage(PermissionResource.PAYMENT);
@@ -337,9 +592,10 @@ export default function AdminPaymentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewPayments, pagination.page, filters, dateRange, selectedProvider]);
 
-  const loadPayments = async () => {
+  const loadPayments = useCallback(async () => {
     try {
       setLoading(true);
+      setProviderError(null);
       const params: any = {
         page: pagination.page,
         limit: pagination.limit,
@@ -353,7 +609,6 @@ export default function AdminPaymentsPage() {
       if (filters.businessUnitId) params.businessUnitId = filters.businessUnitId;
       if (search) params.search = search;
 
-      // Handle date range
       const now = new Date();
       if (dateRange === 'today') {
         const start = new Date(now);
@@ -396,16 +651,19 @@ export default function AdminPaymentsPage() {
       });
     } catch (error: any) {
       console.error('Failed to load payments:', error);
-      toast.error('Failed to load payments');
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to load payments';
+      toast.error(errorMessage);
+      setProviderError(errorMessage);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [pagination.page, pagination.limit, filters, search, dateRange, selectedProvider]);
 
-  const loadSummary = async () => {
+  const loadSummary = useCallback(async () => {
     try {
       setLoadingSummary(true);
+      setProviderError(null);
       const params: any = {};
 
       if (filters.startDate) params.startDate = filters.startDate;
@@ -415,322 +673,56 @@ export default function AdminPaymentsPage() {
       if (filters.provider && filters.provider !== 'all') params.provider = filters.provider;
       if (filters.businessUnitId) params.businessUnitId = filters.businessUnitId;
 
+      // ✅ FIXED: getPaymentSummary returns PaymentSummary directly
       const response = await paymentService.getPaymentSummary(params);
       setSummary(response);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load summary:', error);
+      setSummary({
+        totalAmount: 0,
+        byMethod: {},
+        count: 0,
+        averageAmount: 0,
+        totalRefunds: 0,
+        refundCount: 0,
+        netAmount: 0,
+      });
+      if (error?.response?.status !== 404) {
+        toast.error('Failed to load payment summary');
+      }
     } finally {
       setLoadingSummary(false);
     }
-  };
+  }, [filters]);
 
-  const loadProviders = async () => {
+  const loadProviders = useCallback(async () => {
     try {
       setLoadingProviders(true);
+      setProviderError(null);
       const response = await paymentService.getPaymentProviders();
-      if (response.success && response.data) {
+      if (response?.success && response?.data && Array.isArray(response.data) && response.data.length > 0) {
         setProviders(response.data);
       } else {
-        setProviders(getDefaultProviders());
+        setProviders(DEFAULT_PROVIDERS);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load providers:', error);
-      setProviders(getDefaultProviders());
+      setProviders(DEFAULT_PROVIDERS);
     } finally {
       setLoadingProviders(false);
     }
-  };
+  }, []);
 
-  const getDefaultProviders = (): PaymentProviderStatus[] => {
-    return [
-      {
-        id: 'default_cash',
-        provider: 'CASH',
-        name: 'Cash',
-        code: 'CASH',
-        type: 'OFFLINE',
-        isActive: true,
-        isHealthy: true,
-        configured: true,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Cash',
-          type: 'OFFLINE',
-          supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
-          supportedMethods: ['CASH'],
-          description: 'Pay with cash at the counter',
-          icon: '💰',
-          feePercentage: 0,
-          feeFixed: 0,
-        },
-      },
-      {
-        id: 'default_stripe',
-        provider: 'STRIPE',
-        name: 'Stripe',
-        code: 'STRIPE',
-        type: 'ONLINE',
-        isActive: true,
-        isHealthy: true,
-        configured: true,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Stripe',
-          type: 'ONLINE',
-          supportedCurrencies: ['USD', 'EUR', 'GBP'],
-          supportedMethods: ['CREDIT_CARD', 'DEBIT_CARD'],
-          description: 'Pay with credit card (Visa, Mastercard, Amex)',
-          icon: '💳',
-          minAmount: 1,
-          maxAmount: 100000,
-          feePercentage: 2.9,
-          feeFixed: 0.30,
-        },
-      },
-      {
-        id: 'default_mobile_money',
-        provider: 'MOBILE_MONEY',
-        name: 'Mobile Money',
-        code: 'MOBILE_MONEY',
-        type: 'ONLINE',
-        isActive: true,
-        isHealthy: true,
-        configured: true,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Mobile Money',
-          type: 'ONLINE',
-          supportedCurrencies: ['TZS', 'KES', 'UGX', 'USD'],
-          supportedMethods: ['MOBILE_MONEY'],
-          description: 'M-Pesa, Tigo Pesa, Airtel Money',
-          icon: '📱',
-          minAmount: 1,
-          maxAmount: 10000,
-          feePercentage: 1.5,
-          feeFixed: 0.10,
-        },
-      },
-      {
-        id: 'default_bank_transfer',
-        provider: 'BANK_TRANSFER',
-        name: 'Bank Transfer',
-        code: 'BANK_TRANSFER',
-        type: 'ONLINE',
-        isActive: true,
-        isHealthy: true,
-        configured: true,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Bank Transfer',
-          type: 'ONLINE',
-          supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
-          supportedMethods: ['BANK_TRANSFER'],
-          description: 'Direct bank transfer',
-          icon: '🏦',
-          minAmount: 10,
-          maxAmount: 1000000,
-          feePercentage: 0,
-          feeFixed: 0,
-        },
-      },
-      {
-        id: 'default_gift_card',
-        provider: 'GIFT_CARD',
-        name: 'Gift Card',
-        code: 'GIFT_CARD',
-        type: 'ONLINE',
-        isActive: true,
-        isHealthy: true,
-        configured: true,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Gift Card',
-          type: 'ONLINE',
-          supportedCurrencies: ['USD'],
-          supportedMethods: ['GIFT_CARD'],
-          description: 'Redeem your gift card',
-          icon: '🎁',
-          minAmount: 1,
-          maxAmount: 1000,
-          feePercentage: 0,
-          feeFixed: 0,
-        },
-      },
-      {
-        id: 'default_loyalty_points',
-        provider: 'LOYALTY_POINTS',
-        name: 'Loyalty Points',
-        code: 'LOYALTY_POINTS',
-        type: 'OFFLINE',
-        isActive: true,
-        isHealthy: true,
-        configured: true,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Loyalty Points',
-          type: 'OFFLINE',
-          supportedCurrencies: ['USD'],
-          supportedMethods: ['LOYALTY_POINTS'],
-          description: 'Pay with your loyalty points',
-          icon: '⭐',
-          minAmount: 1,
-          maxAmount: 1000,
-          feePercentage: 0,
-          feeFixed: 0,
-        },
-      },
-      {
-        id: 'default_paypal',
-        provider: 'PAYPAL',
-        name: 'PayPal',
-        code: 'PAYPAL',
-        type: 'ONLINE',
-        isActive: false,
-        isHealthy: true,
-        configured: false,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'PayPal',
-          type: 'ONLINE',
-          supportedCurrencies: ['USD', 'EUR', 'GBP'],
-          supportedMethods: ['PAYPAL'],
-          description: 'Pay with PayPal',
-          icon: '💸',
-          minAmount: 1,
-          maxAmount: 100000,
-          feePercentage: 3.5,
-          feeFixed: 0.30,
-        },
-      },
-      {
-        id: 'default_flutterwave',
-        provider: 'FLUTTERWAVE',
-        name: 'Flutterwave',
-        code: 'FLUTTERWAVE',
-        type: 'ONLINE',
-        isActive: false,
-        isHealthy: true,
-        configured: false,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Flutterwave',
-          type: 'ONLINE',
-          supportedCurrencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
-          supportedMethods: ['FLUTTERWAVE'],
-          description: 'Pay with Flutterwave (Cards, Mobile Money, Bank Transfer)',
-          icon: '🌊',
-          minAmount: 1,
-          maxAmount: 100000,
-          feePercentage: 1.9,
-          feeFixed: 0.20,
-        },
-      },
-      {
-        id: 'default_paystack',
-        provider: 'PAYSTACK',
-        name: 'Paystack',
-        code: 'PAYSTACK',
-        type: 'ONLINE',
-        isActive: false,
-        isHealthy: true,
-        configured: false,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Paystack',
-          type: 'ONLINE',
-          supportedCurrencies: ['NGN', 'GHS', 'USD'],
-          supportedMethods: ['PAYSTACK'],
-          description: 'Pay with Paystack (Cards, Bank Transfer, USSD)',
-          icon: '🔷',
-          minAmount: 1,
-          maxAmount: 100000,
-          feePercentage: 1.5,
-          feeFixed: 0.20,
-        },
-      },
-      {
-        id: 'default_square',
-        provider: 'SQUARE',
-        name: 'Square',
-        code: 'SQUARE',
-        type: 'ONLINE',
-        isActive: false,
-        isHealthy: true,
-        configured: false,
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-        config: {
-          name: 'Square',
-          type: 'ONLINE',
-          supportedCurrencies: ['USD', 'EUR', 'GBP'],
-          supportedMethods: ['SQUARE'],
-          description: 'Pay with Square (Cards, Digital Wallet)',
-          icon: '⬜',
-          minAmount: 1,
-          maxAmount: 100000,
-          feePercentage: 2.6,
-          feeFixed: 0.30,
-        },
-      },
-    ];
-  };
-
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadPayments();
-    await loadSummary();
-    await loadProviders();
-    toast.success('Data refreshed');
-  };
+    setProviderError(null);
+    await Promise.all([
+      loadPayments(),
+      loadSummary(),
+      loadProviders()
+    ]);
+    toast.success('Data refreshed successfully');
+  }, [loadPayments, loadSummary, loadProviders]);
 
   const handleRefund = async () => {
     if (!selectedPayment) return;
@@ -746,6 +738,7 @@ export default function AdminPaymentsPage() {
     }
 
     setRefundLoading(true);
+    setProviderError(null);
     try {
       const result = await paymentService.refundPayment(selectedPayment.id, {
         amount: refundAmount,
@@ -755,58 +748,103 @@ export default function AdminPaymentsPage() {
       toast.success(`Refund of ${formatCurrency(refundAmount)} processed successfully`);
       setShowRefundModal(false);
       setSelectedPayment(null);
-      await loadPayments();
-      await loadSummary();
+      setRefundAmount(0);
+      setRefundReason('');
+      await Promise.all([loadPayments(), loadSummary()]);
     } catch (error: any) {
       console.error('Refund failed:', error);
-      toast.error(error?.message || 'Failed to process refund');
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to process refund';
+      toast.error(errorMessage);
+      setProviderError(errorMessage);
     } finally {
       setRefundLoading(false);
     }
   };
 
-  // Provider Management Handlers
-  const handleToggleProvider = async (providerId: string, currentStatus: boolean) => {
+  // ============================================
+  // PROVIDER MANAGEMENT HANDLERS
+  // ============================================
+
+  const handleToggleProvider = useCallback(async (providerId: string, currentStatus: boolean) => {
     try {
+      setProviderError(null);
+
+      if (providerId.startsWith('default_')) {
+        toast.info('Default providers cannot be toggled. Please create a provider in the database first.');
+        setProviders(prev => prev.map(p =>
+          p.id === providerId ? { ...p, isActive: currentStatus } : p
+        ));
+        return;
+      }
+
+      setProviders(prev => prev.map(p =>
+        p.id === providerId ? { ...p, isActive: !currentStatus } : p
+      ));
+
       const response = await paymentService.togglePaymentProvider(providerId, !currentStatus);
-      if (response.success) {
+      if (response?.success) {
         toast.success(`Provider ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
         await loadProviders();
       } else {
-        toast.error(response.message || 'Failed to toggle provider');
+        setProviders(prev => prev.map(p =>
+          p.id === providerId ? { ...p, isActive: currentStatus } : p
+        ));
+        toast.error(response?.message || 'Failed to toggle provider');
       }
     } catch (error: any) {
       console.error('Failed to toggle provider:', error);
-      toast.error(error?.message || 'Failed to toggle provider');
+      setProviders(prev => prev.map(p =>
+        p.id === providerId ? { ...p, isActive: currentStatus } : p
+      ));
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to toggle provider';
+      toast.error(errorMessage);
+      setProviderError(errorMessage);
     }
-  };
+  }, [loadProviders]);
 
-  const handleConfigureProvider = async (providerId: string, configData: any) => {
+  const isProviderConfigurable = useCallback((provider: PaymentProviderStatus) => {
+    return !provider.id?.startsWith('default_') && provider.configured !== undefined;
+  }, []);
+
+  const handleConfigureProvider = useCallback(async (providerId: string, configData: any) => {
     try {
+      setProviderError(null);
+
+      if (providerId.startsWith('default_')) {
+        toast.info('Default providers cannot be configured. Please create a provider in the database first.');
+        return;
+      }
+
       const response = await paymentService.configurePaymentProvider(providerId, configData);
-      if (response.success) {
+      if (response?.success) {
         toast.success('Provider configured successfully');
         await loadProviders();
         setShowProviderSettings(null);
       } else {
-        toast.error(response.message || 'Failed to configure provider');
+        toast.error(response?.message || 'Failed to configure provider');
       }
     } catch (error: any) {
       console.error('Failed to configure provider:', error);
-      toast.error(error?.message || 'Failed to configure provider');
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to configure provider';
+      toast.error(errorMessage);
+      setProviderError(errorMessage);
     }
-  };
+  }, [loadProviders]);
 
-  const getStatusColor = (status: string) => {
+  // ============================================
+  // UI HELPERS
+  // ============================================
+
+  const getStatusColor = useCallback((status: string) => {
     return PAYMENT_STATUS_COLORS[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
-  };
+  }, []);
 
-  const getPaymentIcon = (method: string) => {
+  const getPaymentIcon = useCallback((method: string) => {
     const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
     return <Icon className="w-5 h-5" />;
-  };
+  }, []);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = useCallback((status: string) => {
     switch (status) {
       case 'PAID':
         return <CheckCircle className="w-4 h-4" />;
@@ -822,13 +860,13 @@ export default function AdminPaymentsPage() {
       default:
         return <AlertCircle className="w-4 h-4" />;
     }
-  };
+  }, []);
 
-  const formatMethod = (method: string) => {
-    return method.toLowerCase().replace(/_/g, ' ');
-  };
+  const formatMethod = useCallback((method: string) => {
+    return method?.toLowerCase().replace(/_/g, ' ') || 'unknown';
+  }, []);
 
-  const getProviderName = (provider: string) => {
+  const getProviderName = useCallback((provider: string) => {
     const names: Record<string, string> = {
       STRIPE: 'Stripe',
       CASH: 'Cash',
@@ -842,51 +880,192 @@ export default function AdminPaymentsPage() {
       SQUARE: 'Square',
     };
     return names[provider] || provider || 'N/A';
-  };
+  }, []);
 
-  const getProviderConfig = (provider: string) => {
+  const getProviderConfig = useCallback((provider: string) => {
     return PROVIDER_CONFIGS[provider] || PROVIDER_CONFIGS.STRIPE;
-  };
+  }, []);
 
-  const getProviderImageUrl = (provider: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[provider] 
-      ? PROVIDER_DARK_IMAGE_URLS[provider] 
+  const getProviderImageUrl = useCallback((provider: string): string => {
+    if (!provider) return '';
+    return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
       : PROVIDER_IMAGE_URLS[provider] || '';
-  };
+  }, [isDark]);
 
-  const getActiveProviders = () => {
+  const getActiveProviders = useCallback(() => {
     return providers.filter(p => p.isActive);
-  };
+  }, [providers]);
 
-  const getVisibleProviders = () => {
+  const getVisibleProviders = useCallback(() => {
     return providers.filter(p => p.isActive && p.isHealthy);
-  };
+  }, [providers]);
 
-  // Helper functions for building receipt data
-  const getCustomerName = (user?: { firstName: string; lastName: string }) => {
+  const getCustomerName = useCallback((user?: { firstName: string; lastName: string }) => {
     if (!user) return 'N/A';
-    return `${user.firstName} ${user.lastName}`;
-  };
+    return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'N/A';
+  }, []);
 
-  const getCustomerEmail = (user?: { email: string }) => {
+  const getCustomerEmail = useCallback((user?: { email: string }) => {
     return user?.email || '';
-  };
+  }, []);
 
-  const getCustomerPhone = (user?: { phone?: string }) => {
+  const getCustomerPhone = useCallback((user?: { phone?: string }) => {
     return user?.phone || '';
-  };
+  }, []);
 
-  const getBusinessUnitData = (businessUnit?: Payment['businessUnit']) => {
+  const getBusinessUnitData = useCallback((businessUnit?: Payment['businessUnit']) => {
     if (!businessUnit) return undefined;
     return {
-      name: businessUnit.name,
+      name: businessUnit.name || '',
       address: businessUnit.address || '',
       phone: businessUnit.phone || '',
       email: businessUnit.email || '',
     };
-  };
+  }, []);
 
-  // Permission check
+  const clearFilters = useCallback(() => {
+    setFilters({
+      status: 'all',
+      paymentMethod: 'all',
+      provider: 'all',
+      startDate: '',
+      endDate: '',
+    });
+    setSearch('');
+    setDateRange('month');
+    setSelectedProvider('all');
+    setPagination(prev => ({ ...prev, page: 1 }));
+    setShowFilters(false);
+  }, []);
+
+  const goToPage = useCallback((page: number) => {
+    setPagination(prev => ({ ...prev, page }));
+  }, []);
+
+  const copyReference = useCallback((reference: string) => {
+    navigator.clipboard.writeText(reference).then(() => {
+      toast.success('Reference copied to clipboard');
+    }).catch(() => {
+      toast.error('Failed to copy reference');
+    });
+  }, []);
+
+  const renderMethodBreakdown = useCallback(() => {
+    if (!summary?.byMethod || Object.keys(summary.byMethod).length === 0) {
+      return (
+        <div className={`text-center py-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          No payment method data available
+        </div>
+      );
+    }
+
+    const total = summary.totalAmount || 1;
+    return Object.entries(summary.byMethod).map(([method, amount]) => {
+      const percentage = (amount / total) * 100;
+      return (
+        <div key={method} className={`p-3 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+          <div className="flex items-center gap-2">
+            {getPaymentIcon(method)}
+            <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              {formatMethod(method)}
+            </span>
+          </div>
+          <div className="mt-2">
+            <div className="flex justify-between text-sm">
+              <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                {formatCurrency(amount)}
+              </span>
+              <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
+                {percentage.toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-1">
+              <div
+                className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(percentage, 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    });
+  }, [summary, isDark, getPaymentIcon, formatMethod]);
+
+  const renderPagination = useCallback(() => {
+    if (pagination.totalPages <= 1) return null;
+
+    const pages = [];
+    const maxVisible = 5;
+    let startPage = 1;
+    let endPage = pagination.totalPages;
+
+    if (pagination.totalPages > maxVisible) {
+      if (pagination.page <= 3) {
+        startPage = 1;
+        endPage = maxVisible;
+      } else if (pagination.page >= pagination.totalPages - 2) {
+        startPage = pagination.totalPages - maxVisible + 1;
+        endPage = pagination.totalPages;
+      } else {
+        startPage = pagination.page - 2;
+        endPage = pagination.page + 2;
+      }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(i);
+    }
+
+    return (
+      <div className="flex gap-1">
+        <button
+          onClick={() => goToPage(pagination.page - 1)}
+          disabled={pagination.page === 1}
+          className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${
+            isDark
+              ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+              : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+          } border`}
+        >
+          <ChevronLeft className="w-4 h-4 inline" />
+          Previous
+        </button>
+        {pages.map((pageNum) => (
+          <button
+            key={pageNum}
+            onClick={() => goToPage(pageNum)}
+            className={`px-3 py-1 rounded-lg text-sm transition ${
+              pagination.page === pageNum
+                ? 'bg-blue-600 text-white'
+                : isDark
+                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+            } border`}
+          >
+            {pageNum}
+          </button>
+        ))}
+        <button
+          onClick={() => goToPage(pagination.page + 1)}
+          disabled={pagination.page === pagination.totalPages}
+          className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${
+            isDark
+              ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+              : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+          } border`}
+        >
+          Next
+          <ChevronRight className="w-4 h-4 inline" />
+        </button>
+      </div>
+    );
+  }, [pagination, isDark, goToPage]);
+
+  // ============================================
+  // PERMISSION CHECKS
+  // ============================================
+
   if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -915,10 +1094,31 @@ export default function AdminPaymentsPage() {
     );
   }
 
+  // ============================================
+  // RENDER
+  // ============================================
+
   return (
-    <div className={`min-h-screen p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div className={`min-h-screen p-4 md:p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      {/* Error Banner */}
+      {providerError && (
+        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-red-700 dark:text-red-300 font-medium">Error loading data</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{providerError}</p>
+          </div>
+          <button
+            onClick={() => setProviderError(null)}
+            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded-lg transition"
+          >
+            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Payment Management
@@ -935,7 +1135,8 @@ export default function AdminPaymentsPage() {
               isDark
                 ? 'bg-gray-800 hover:bg-gray-700 text-white'
                 : 'bg-white hover:bg-gray-100 text-gray-700'
-            } border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
+            } border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}
+            aria-label="Refresh data"
           >
             <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -970,7 +1171,7 @@ export default function AdminPaymentsPage() {
       {/* Provider Management Section */}
       {canManagePayments && (
         <div className={`p-4 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 Payment Providers
@@ -999,7 +1200,8 @@ export default function AdminPaymentsPage() {
                 const config = getProviderConfig(provider.provider);
                 const isActive = provider.isActive && provider.isHealthy && provider.configured;
                 const imageUrl = getProviderImageUrl(provider.provider);
-                
+                const isDefault = provider.id?.startsWith('default_');
+
                 return (
                   <div
                     key={provider.id}
@@ -1012,18 +1214,20 @@ export default function AdminPaymentsPage() {
                     } ${isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-100/50'}`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         {imageUrl ? (
                           <div className="relative w-10 h-10 flex-shrink-0">
                             <Image
                               src={imageUrl}
-                              alt={provider.name}
+                              alt={provider.name || provider.provider || 'Payment provider'}
                               width={40}
                               height={40}
-                              className="rounded-lg object-contain"
+                              style={{ width: 'auto', height: 'auto' }}
+                              className="rounded-lg object-contain max-w-[40px] max-h-[40px]"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                const parent = (e.target as HTMLImageElement).parentElement;
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const parent = target.parentElement;
                                 if (parent) {
                                   const fallback = document.createElement('span');
                                   fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
@@ -1036,18 +1240,22 @@ export default function AdminPaymentsPage() {
                         ) : (
                           <span className="text-2xl">{config.icon}</span>
                         )}
-                        <div>
-                          <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.name}
+                        <div className="min-w-0">
+                          <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'} truncate`}>
+                            {provider.name || provider.provider || 'Unknown'}
                           </p>
-                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {provider.provider}
+                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'} truncate`}>
+                            {provider.provider || ''}
+                            {isDefault && (
+                              <span className="ml-1 text-yellow-500 dark:text-yellow-400" title="Default provider - needs database setup">
+                                ⚠️
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        {/* Status indicators */}
-                        <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <div className="flex items-center gap-1" title={`Active: ${provider.isActive}, Healthy: ${provider.isHealthy}, Configured: ${provider.configured}`}>
                           {provider.isActive ? (
                             <span className="w-2 h-2 rounded-full bg-green-500" title="Active" />
                           ) : (
@@ -1064,13 +1272,11 @@ export default function AdminPaymentsPage() {
                             <span className="w-2 h-2 rounded-full bg-yellow-500" title="Not Configured" />
                           )}
                         </div>
-                        {/* Toggle button */}
                         <button
                           onClick={() => handleToggleProvider(provider.id, provider.isActive)}
-                          className={`p-1 rounded-lg transition ${
-                            isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
-                          }`}
+                          className={`p-1 rounded-lg transition ${isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
                           title={provider.isActive ? 'Deactivate' : 'Activate'}
+                          aria-label={provider.isActive ? 'Deactivate provider' : 'Activate provider'}
                         >
                           {provider.isActive ? (
                             <ToggleRight className="w-5 h-5 text-green-500" />
@@ -1087,8 +1293,8 @@ export default function AdminPaymentsPage() {
                       </p>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           provider.type === 'ONLINE'
                             ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
@@ -1110,37 +1316,35 @@ export default function AdminPaymentsPage() {
                           </span>
                         )}
                       </div>
-                      {canManagePayments && (
+                      {canManagePayments && isProviderConfigurable(provider) && (
                         <button
-                          onClick={() => setShowProviderSettings(provider.id)}
-                          className={`p-1 rounded-lg transition ${
-                            isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
-                          }`}
+                          onClick={() => setShowProviderSettings(provider.id === showProviderSettings ? null : provider.id ?? null)}
+                          className={`p-1 rounded-lg transition ${isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
                           title="Configure provider"
+                          aria-label="Configure provider"
                         >
                           <Settings className="w-4 h-4 text-gray-500" />
                         </button>
                       )}
                     </div>
 
-                    {/* Stats */}
                     <div className="mt-2 grid grid-cols-3 gap-1">
                       <div className="text-center">
                         <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>24h</p>
                         <p className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {provider.transactions24h}
+                          {provider.transactions24h || 0}
                         </p>
                       </div>
                       <div className="text-center">
                         <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>7d</p>
                         <p className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {provider.transactions7d}
+                          {provider.transactions7d || 0}
                         </p>
                       </div>
                       <div className="text-center">
                         <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>30d</p>
                         <p className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {provider.transactions30d}
+                          {provider.transactions30d || 0}
                         </p>
                       </div>
                     </div>
@@ -1184,16 +1388,22 @@ export default function AdminPaymentsPage() {
             change: summary?.netAmount && summary?.netAmount > 0 ? '+2.1%' : '-0.5%'
           }
         ].map((stat, index) => (
-          <div key={index} className={`p-6 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+          <div key={index} className={`p-4 sm:p-6 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
             <div className="flex items-start justify-between">
               <div>
                 <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                   {stat.label}
                 </p>
-                <p className={`text-2xl font-bold mt-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {stat.value}
-                </p>
-                {stat.change && (
+                {loadingSummary ? (
+                  <div className="mt-2">
+                    <div className={`h-8 w-24 rounded animate-pulse ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`} />
+                  </div>
+                ) : (
+                  <p className={`text-xl sm:text-2xl font-bold mt-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {stat.value}
+                  </p>
+                )}
+                {stat.change && !loadingSummary && (
                   <div className="flex items-center gap-1 mt-2">
                     {stat.change.startsWith('+') ? (
                       <TrendingUp className="w-4 h-4 text-green-500" />
@@ -1205,14 +1415,14 @@ export default function AdminPaymentsPage() {
                     }`}>
                       {stat.change}
                     </span>
-                    <span className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                      vs previous period
+                    <span className={`text-xs sm:text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                      vs previous
                     </span>
                   </div>
                 )}
               </div>
               <div className={`p-3 rounded-lg ${stat.color}`}>
-                <stat.icon className="w-6 h-6" />
+                <stat.icon className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
             </div>
           </div>
@@ -1224,38 +1434,15 @@ export default function AdminPaymentsPage() {
         <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Payment Methods Breakdown
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {summary?.byMethod && Object.entries(summary.byMethod).map(([method, amount]) => {
-            const total = summary.totalAmount || 1;
-            const percentage = (amount / total) * 100;
-            return (
-              <div key={method} className={`p-3 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-                <div className="flex items-center gap-2">
-                  {getPaymentIcon(method)}
-                  <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {formatMethod(method)}
-                  </span>
-                </div>
-                <div className="mt-2">
-                  <div className="flex justify-between text-sm">
-                    <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                      {formatCurrency(amount)}
-                    </span>
-                    <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                      {percentage.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-1">
-                    <div
-                      className="bg-blue-600 h-1.5 rounded-full"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {loadingSummary ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            {renderMethodBreakdown()}
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -1280,7 +1467,7 @@ export default function AdminPaymentsPage() {
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value as any)}
-            className={`px-4 py-2 rounded-lg border text-sm ${
+            className={`px-3 py-2 rounded-lg border text-sm ${
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white'
                 : 'bg-white border-gray-300 text-gray-900'
@@ -1296,7 +1483,7 @@ export default function AdminPaymentsPage() {
 
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition whitespace-nowrap ${
               showFilters || (filters.status !== 'all' || filters.paymentMethod !== 'all' || filters.provider !== 'all' || filters.startDate || filters.endDate)
                 ? 'bg-blue-600 text-white'
                 : isDark
@@ -1315,7 +1502,7 @@ export default function AdminPaymentsPage() {
 
           <button
             onClick={loadPayments}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
           >
             Apply
           </button>
@@ -1323,7 +1510,7 @@ export default function AdminPaymentsPage() {
 
         {showFilters && (
           <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
               <div>
                 <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                   Status
@@ -1410,7 +1597,7 @@ export default function AdminPaymentsPage() {
                 </label>
                 <input
                   type="date"
-                  value={filters.startDate}
+                  value={filters.startDate || ''}
                   onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
                   className={`w-full px-3 py-2 rounded-lg text-sm ${
                     isDark
@@ -1425,7 +1612,7 @@ export default function AdminPaymentsPage() {
                 </label>
                 <input
                   type="date"
-                  value={filters.endDate}
+                  value={filters.endDate || ''}
                   onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
                   className={`w-full px-3 py-2 rounded-lg text-sm ${
                     isDark
@@ -1437,19 +1624,7 @@ export default function AdminPaymentsPage() {
             </div>
             <div className="mt-4 flex justify-end">
               <button
-                onClick={() => {
-                  setFilters({
-                    status: 'all',
-                    paymentMethod: 'all',
-                    provider: 'all',
-                    startDate: '',
-                    endDate: '',
-                  });
-                  setSearch('');
-                  setDateRange('month');
-                  setSelectedProvider('all');
-                  setPagination(prev => ({ ...prev, page: 1 }));
-                }}
+                onClick={clearFilters}
                 className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
               >
                 Clear All Filters
@@ -1478,60 +1653,40 @@ export default function AdminPaymentsPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[800px]">
                 <thead className={`border-b ${isDark ? 'border-gray-700 bg-gray-700/30' : 'border-gray-200 bg-gray-50'}`}>
                   <tr>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Reference
                     </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Date
                     </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Customer
                     </th>
-                    <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Amount
                     </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Method
                     </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Provider
                     </th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Status
                     </th>
-                    <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wider ${
-                      isDark ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
+                    <th className={`px-3 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-200'}`}>
                   {payments.map((payment) => (
-                    <tr key={payment.id} className={`transition-colors ${
-                      isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
-                    }`}>
-                      <td className="px-4 py-3">
-                        <p className={`font-mono text-sm font-medium ${
-                          isDark ? 'text-white' : 'text-gray-900'
-                        }`}>
+                    <tr key={payment.id} className={`transition-colors ${isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'}`}>
+                      <td className="px-3 py-3">
+                        <p className={`font-mono text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
                         </p>
                         {payment.sale?.receiptNumber && (
@@ -1540,7 +1695,7 @@ export default function AdminPaymentsPage() {
                           </p>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                           {formatDate(payment.processedAt)}
                         </p>
@@ -1548,22 +1703,22 @@ export default function AdminPaymentsPage() {
                           {formatDateTime(payment.processedAt)}
                         </p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {payment.user?.firstName} {payment.user?.lastName}
+                          {payment.user?.firstName || ''} {payment.user?.lastName || ''}
                         </p>
                         {payment.user?.email && (
-                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'} truncate max-w-[120px]`}>
                             {payment.user.email}
                           </p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-3 py-3 text-right">
                         <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {formatCurrency(payment.amount)}
                         </p>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           {getPaymentIcon(payment.paymentMethod)}
                           <span className={`text-sm capitalize ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -1571,28 +1726,27 @@ export default function AdminPaymentsPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <span className={`text-xs ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
                           {getProviderName(payment.provider || payment.gatewayId || '')}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full flex items-center gap-1 w-fit ${getStatusColor(payment.status)}`}>
                           {getStatusIcon(payment.status)}
                           {payment.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-3 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => {
                               setSelectedPayment(payment);
                               setShowDetailModal(true);
                             }}
-                            className={`p-1.5 rounded-lg transition ${
-                              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                            }`}
+                            className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                             title="View details"
+                            aria-label="View payment details"
                           >
                             <Eye className="w-4 h-4 text-blue-500" />
                           </button>
@@ -1601,10 +1755,9 @@ export default function AdminPaymentsPage() {
                               setSelectedPayment(payment);
                               setShowReceiptModal(true);
                             }}
-                            className={`p-1.5 rounded-lg transition ${
-                              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                            }`}
+                            className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                             title="View receipt"
+                            aria-label="View receipt"
                           >
                             <Receipt className="w-4 h-4 text-green-500" />
                           </button>
@@ -1616,23 +1769,18 @@ export default function AdminPaymentsPage() {
                                 setRefundReason('');
                                 setShowRefundModal(true);
                               }}
-                              className={`p-1.5 rounded-lg transition ${
-                                isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                              }`}
+                              className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                               title="Refund payment"
+                              aria-label="Refund payment"
                             >
                               <ArrowDownRight className="w-4 h-4 text-orange-500" />
                             </button>
                           )}
                           <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(payment.reference || payment.id);
-                              toast.success('Reference copied');
-                            }}
-                            className={`p-1.5 rounded-lg transition ${
-                              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                            }`}
+                            onClick={() => copyReference(payment.reference || payment.id)}
+                            className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                             title="Copy reference"
+                            aria-label="Copy reference"
                           >
                             <Copy className="w-4 h-4 text-gray-500" />
                           </button>
@@ -1644,66 +1792,13 @@ export default function AdminPaymentsPage() {
               </table>
             </div>
 
-            {/* Pagination */}
             {pagination.totalPages > 1 && (
               <div className={`px-4 py-3 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'} flex flex-wrap items-center justify-between gap-3`}>
                 <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                   Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
                   {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
                 </p>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                    disabled={pagination.page === 1}
-                    className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 ${
-                      isDark
-                        ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                        : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-                    } border`}
-                  >
-                    <ChevronLeft className="w-4 h-4 inline" />
-                    Previous
-                  </button>
-                  {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, i) => {
-                    let pageNum: number;
-                    if (pagination.totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (pagination.page <= 3) {
-                      pageNum = i + 1;
-                    } else if (pagination.page >= pagination.totalPages - 2) {
-                      pageNum = pagination.totalPages - 4 + i;
-                    } else {
-                      pageNum = pagination.page - 2 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => setPagination(prev => ({ ...prev, page: pageNum }))}
-                        className={`px-3 py-1 rounded-lg text-sm transition ${
-                          pagination.page === pageNum
-                            ? 'bg-blue-600 text-white'
-                            : isDark
-                              ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                              : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-                        } border`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                  <button
-                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                    disabled={pagination.page === pagination.totalPages}
-                    className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 ${
-                      isDark
-                        ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                        : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-                    } border`}
-                  >
-                    Next
-                    <ChevronRight className="w-4 h-4 inline" />
-                  </button>
-                </div>
+                {renderPagination()}
               </div>
             )}
           </>
@@ -1713,12 +1808,8 @@ export default function AdminPaymentsPage() {
       {/* Detail Modal */}
       {showDetailModal && selectedPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-xl shadow-xl ${
-            isDark ? 'bg-gray-800' : 'bg-white'
-          }`}>
-            <div className={`sticky top-0 z-10 p-4 border-b ${
-              isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'
-            } flex items-center justify-between`}>
+          <div className={`max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-xl shadow-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className={`sticky top-0 z-10 p-4 border-b ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} flex items-center justify-between`}>
               <div>
                 <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   Payment Details
@@ -1729,16 +1820,14 @@ export default function AdminPaymentsPage() {
               </div>
               <button
                 onClick={() => setShowDetailModal(false)}
-                className={`p-2 rounded-lg transition ${
-                  isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                }`}
+                className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                aria-label="Close details"
               >
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 space-y-6">
-              {/* Status & Amount */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Amount</p>
                   <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
@@ -1754,8 +1843,7 @@ export default function AdminPaymentsPage() {
                 </div>
               </div>
 
-              {/* Payment Method & Provider */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Payment Method</p>
                   <div className="flex items-center gap-2 mt-1">
@@ -1778,20 +1866,18 @@ export default function AdminPaymentsPage() {
                 </div>
               </div>
 
-              {/* Customer Info */}
               {selectedPayment.user && (
                 <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Customer</p>
                   <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {selectedPayment.user.firstName} {selectedPayment.user.lastName}
+                    {selectedPayment.user.firstName || ''} {selectedPayment.user.lastName || ''}
                   </p>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {selectedPayment.user.email}
+                    {selectedPayment.user.email || ''}
                   </p>
                 </div>
               )}
 
-              {/* Sale Info */}
               {selectedPayment.sale && (
                 <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Sale</p>
@@ -1804,7 +1890,6 @@ export default function AdminPaymentsPage() {
                 </div>
               )}
 
-              {/* Refund Info */}
               {selectedPayment.refundedAt && (
                 <div className={`p-4 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800`}>
                   <p className={`text-sm font-medium text-orange-700 dark:text-orange-300`}>
@@ -1821,7 +1906,6 @@ export default function AdminPaymentsPage() {
                 </div>
               )}
 
-              {/* Notes */}
               {selectedPayment.notes && (
                 <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Notes</p>
@@ -1831,7 +1915,6 @@ export default function AdminPaymentsPage() {
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
                 {canManagePayments && selectedPayment.status === 'PAID' && (
                   <button
@@ -1867,18 +1950,15 @@ export default function AdminPaymentsPage() {
       {/* Refund Modal */}
       {showRefundModal && selectedPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`max-w-md w-full rounded-xl shadow-xl ${
-            isDark ? 'bg-gray-800' : 'bg-white'
-          }`}>
+          <div className={`max-w-md w-full rounded-xl shadow-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
             <div className={`p-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
               <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 Refund Payment
               </h3>
               <button
                 onClick={() => setShowRefundModal(false)}
-                className={`p-2 rounded-lg transition ${
-                  isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                }`}
+                className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                aria-label="Close refund"
               >
                 <XCircle className="w-5 h-5" />
               </button>
@@ -1889,9 +1969,7 @@ export default function AdminPaymentsPage() {
                   Refund Amount
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
-                    $
-                  </span>
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
                   <input
                     type="number"
                     value={refundAmount}
@@ -1899,11 +1977,7 @@ export default function AdminPaymentsPage() {
                     min={0}
                     max={selectedPayment.amount}
                     step={0.01}
-                    className={`w-full pl-8 pr-4 py-2 border rounded-lg ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    className={`w-full pl-8 pr-4 py-2 border rounded-lg ${isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   />
                 </div>
                 <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -1919,11 +1993,7 @@ export default function AdminPaymentsPage() {
                   value={refundReason}
                   onChange={(e) => setRefundReason(e.target.value)}
                   rows={3}
-                  className={`w-full px-4 py-2 border rounded-lg ${
-                    isDark
-                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  className={`w-full px-4 py-2 border rounded-lg ${isDark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'} focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   placeholder="Enter refund reason..."
                 />
               </div>
@@ -1931,18 +2001,14 @@ export default function AdminPaymentsPage() {
               <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowRefundModal(false)}
-                  className={`flex-1 px-4 py-2 border rounded-lg transition ${
-                    isDark
-                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`flex-1 px-4 py-2 border rounded-lg transition ${isDark ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleRefund}
                   disabled={refundLoading || refundAmount <= 0}
-                  className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {refundLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

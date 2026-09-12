@@ -16,7 +16,9 @@ import {
   Barcode, QrCode, Scan, RefreshCw, Copy, Check,
   Download, Printer, HelpCircle, AlertTriangle,
   ShoppingBag, Layers, Weight, Ruler, Truck, Eye,
-  ChevronDown, ChevronUp, Building2, Database, Wand2
+  ChevronDown, ChevronUp, Building2, Database, Wand2,
+  Edit3, Percent, Archive, Star, Hash, FileText,
+  Globe, Link2, Image as ImageIcon
 } from 'lucide-react';
 import { api } from '../../../../../services/api';
 
@@ -1082,6 +1084,7 @@ export default function AddInventoryItemPage() {
         barcode: formData.barcode.trim() || undefined,
         businessUnitId: selectedBusinessUnitId,
         userId: user?.id || (user as any)?.userId || (user as any)?.uid || undefined,
+        // ✅ UPDATED: Include all new fields
         weight: formData.weight || undefined,
         isActive: formData.isActive,
         isDigital: formData.isDigital,
@@ -1095,17 +1098,16 @@ export default function AddInventoryItemPage() {
       const result = await inventoryService.createItem(itemData);
       console.log('✅ Inventory item created:', result);
 
-      setCreatedItemId(result.id || result.inventory?.id);
+      // ✅ UPDATED: Get the actual item ID from the response
+      const itemId = result?.id || result?.inventory?.id || result?.data?.id;
+      setCreatedItemId(itemId);
 
-      if (formData.barcode && barcodeInfo) {
+      if (formData.barcode && barcodeInfo && itemId) {
         try {
-          const itemId = result.id || result.inventory?.id;
-          if (itemId) {
-            await inventoryService.updateItem(itemId, { 
-              barcode: formData.barcode, 
-              businessUnitId: selectedBusinessUnitId 
-            });
-          }
+          await inventoryService.updateItem(itemId, { 
+            barcode: formData.barcode, 
+            businessUnitId: selectedBusinessUnitId 
+          });
         } catch (barcodeError) {
           console.warn('Failed to associate barcode with inventory:', barcodeError);
         }
@@ -1114,6 +1116,7 @@ export default function AddInventoryItemPage() {
       setSuccess(true);
       toast.success('Inventory item created successfully');
       
+      // Reset form but keep business unit
       setFormData({
         name: '', sku: '', category: '', categoryId: '', quantity: 0, unit: 'each',
         unitPrice: 0, costPrice: 0, minStock: 5, maxStock: 100, location: 'Warehouse',
@@ -1521,6 +1524,11 @@ export default function AddInventoryItemPage() {
                 {getFieldError('tags') && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('tags')}</p>}
                 <p className="mt-1 text-xs text-gray-400">Tags help organize and search for items</p>
               </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                <textarea name="description" value={formData.description} onChange={handleChange} onBlur={handleBlur} rows={2} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50" placeholder="Enter item description" disabled={loading || success} />
+              </div>
             </div>
           </div>
 
@@ -1704,8 +1712,8 @@ export default function AddInventoryItemPage() {
             </div>
 
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description / Notes</label>
-              <textarea name="description" value={formData.description} onChange={handleChange} rows={3} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50" placeholder="Enter description or additional notes" disabled={loading || success} />
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+              <textarea name="notes" value={formData.notes} onChange={handleChange} onBlur={handleBlur} rows={2} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50" placeholder="Additional notes" disabled={loading || success} />
             </div>
           </div>
 

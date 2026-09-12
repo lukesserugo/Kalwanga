@@ -1,8 +1,9 @@
-// D:\Projects\Kalwanga\packages\backend\src\services\providers\paystackProviderService.ts
+// D:\Projects\Kalwanga\packages\backend\src\services\paystackService.ts
 
-import { BaseService } from '../BaseService.js';
-import { AppError } from '../../middleware/errorHandler.js';
-import { logger } from '../../lib/logger.js';
+import { BaseService } from './BaseService.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../lib/logger.js';
+import { PaymentMethod, PaymentStatus } from '../generated/prisma/index.js';
 import * as crypto from 'crypto';
 
 interface PaystackConfig {
@@ -131,12 +132,15 @@ export class PaystackService extends BaseService {
 
       const result = await response.json();
 
+      // Map payment method to enum
+      const paymentMethodEnum = this.mapPaymentMethodToEnum(data.paymentMethod);
+
       // Create payment record
       const payment = await this.prisma.payment.create({
         data: {
           amount: data.amount,
-          paymentMethod: this.mapPaymentMethod(data.paymentMethod),
-          status: 'PENDING',
+          paymentMethod: paymentMethodEnum,
+          status: PaymentStatus.PENDING,
           transactionId: reference,
           reference: result.data.reference,
           userId: data.userId || 'system',
@@ -163,7 +167,7 @@ export class PaystackService extends BaseService {
         transactionData: result.data,
       };
     } catch (error) {
-      this.handleError(error, 'PaystackProviderService.processPayment');
+      this.handleError(error, 'PaystackService.processPayment');
       throw error;
     }
   }
@@ -177,6 +181,17 @@ export class PaystackService extends BaseService {
       'bank': ['bank'],
     };
     return channels[method || 'card'] || ['card'];
+  }
+
+  private mapPaymentMethodToEnum(method?: string): PaymentMethod {
+    const map: Record<string, PaymentMethod> = {
+      'card': PaymentMethod.CREDIT_CARD,
+      'mobile_money': PaymentMethod.MOBILE_MONEY,
+      'bank_transfer': PaymentMethod.BANK_TRANSFER,
+      'ussd': PaymentMethod.MOBILE_MONEY,
+      'bank': PaymentMethod.BANK_TRANSFER,
+    };
+    return map[method || 'card'] || PaymentMethod.CREDIT_CARD;
   }
 
   private mapPaymentMethod(method?: string): string {
@@ -213,13 +228,13 @@ export class PaystackService extends BaseService {
       const data = result.data;
 
       // Update payment status
-      const status = data.status === 'success' ? 'PAID' : 
-                     data.status === 'failed' ? 'FAILED' : 'PENDING';
+      const status = data.status === 'success' ? PaymentStatus.PAID : 
+                     data.status === 'failed' ? PaymentStatus.FAILED : PaymentStatus.PENDING;
 
       await this.prisma.payment.updateMany({
         where: { transactionId: reference },
         data: {
-          status: status as any,
+          status: status,
           gatewayId: data.id,
           processedAt: new Date(),
           notes: `Paystack verified: ${data.id} - ${data.gateway_response}`,
@@ -228,7 +243,7 @@ export class PaystackService extends BaseService {
       });
 
       // Update sale if exists
-      if (status === 'PAID') {
+      if (status === PaymentStatus.PAID) {
         await this.updateSaleAfterPayment(reference);
       }
 
@@ -242,7 +257,7 @@ export class PaystackService extends BaseService {
         transactionData: data,
       };
     } catch (error) {
-      this.handleError(error, 'PaystackProviderService.verifyPayment');
+      this.handleError(error, 'PaystackService.verifyPayment');
       throw error;
     }
   }
@@ -294,7 +309,7 @@ export class PaystackService extends BaseService {
       await this.prisma.payment.updateMany({
         where: { transactionId },
         data: {
-          status: 'REFUNDED',
+          status: PaymentStatus.REFUNDED,
           refundedAt: new Date(),
           notes: `Paystack refunded: ${refund.data.id} - ${data.reason || 'No reason provided'}`,
           metadata: { refundData: refund.data },
@@ -310,7 +325,7 @@ export class PaystackService extends BaseService {
         refundData: refund.data,
       };
     } catch (error) {
-      this.handleError(error, 'PaystackProviderService.refundPayment');
+      this.handleError(error, 'PaystackService.refundPayment');
       throw error;
     }
   }
@@ -359,7 +374,7 @@ export class PaystackService extends BaseService {
         fees: data.fees / 100,
       };
     } catch (error) {
-      this.handleError(error, 'PaystackProviderService.getTransactionStatus');
+      this.handleError(error, 'PaystackService.getTransactionStatus');
       throw error;
     }
   }
@@ -401,7 +416,7 @@ export class PaystackService extends BaseService {
           return { unhandled: true, event };
       }
     } catch (error) {
-      this.handleError(error, 'PaystackProviderService.handleWebhook');
+      this.handleError(error, 'PaystackService.handleWebhook');
       throw error;
     }
   }
@@ -423,7 +438,7 @@ export class PaystackService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: reference },
       data: {
-        status: 'PAID',
+        status: PaymentStatus.PAID,
         gatewayId: data.id,
         processedAt: new Date(),
         notes: `Paystack charge successful: ${data.id}`,
@@ -442,7 +457,7 @@ export class PaystackService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: reference },
       data: {
-        status: 'FAILED',
+        status: PaymentStatus.FAILED,
         notes: `Paystack charge failed: ${data.gateway_response}`,
         metadata: { paystackData: data },
       },
@@ -457,7 +472,7 @@ export class PaystackService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: reference },
       data: {
-        status: 'FAILED',
+        status: PaymentStatus.FAILED,
         notes: `Paystack dispute created: ${data.dispute_id}`,
         metadata: { paystackData: data },
       },
@@ -472,7 +487,7 @@ export class PaystackService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: reference },
       data: {
-        status: data.resolution === 'resolved' ? 'PAID' : 'REFUNDED',
+        status: data.resolution === 'resolved' ? PaymentStatus.PAID : PaymentStatus.REFUNDED,
         notes: `Paystack dispute resolved: ${data.dispute_id}`,
         metadata: { paystackData: data },
       },
@@ -487,7 +502,7 @@ export class PaystackService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: reference },
       data: {
-        status: 'REFUNDED',
+        status: PaymentStatus.REFUNDED,
         refundedAt: new Date(),
         notes: `Paystack refund processed: ${data.id}`,
         metadata: { paystackData: data },
@@ -550,7 +565,7 @@ export class PaystackService extends BaseService {
       const result = await response.json();
       return result.data;
     } catch (error) {
-      this.handleError(error, 'PaystackProviderService.createPlan');
+      this.handleError(error, 'PaystackService.createPlan');
       throw error;
     }
   }

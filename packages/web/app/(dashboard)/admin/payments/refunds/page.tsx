@@ -42,6 +42,7 @@ interface Refund {
     paymentMethod: string;
     provider?: string;
     gatewayId?: string;
+    status?: string;
     user?: {
       firstName: string;
       lastName: string;
@@ -106,6 +107,21 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   FLUTTERWAVE: Globe,
   PAYSTACK: CreditCard,
   SQUARE: CreditCard,
+};
+
+const PAYMENT_METHOD_EMOJI: Record<string, string> = {
+  CASH: '💰',
+  CREDIT_CARD: '💳',
+  DEBIT_CARD: '💳',
+  MOBILE_MONEY: '📱',
+  BANK_TRANSFER: '🏦',
+  GIFT_CARD: '🎁',
+  LOYALTY_POINTS: '⭐',
+  CHECK: '📝',
+  PAYPAL: '💸',
+  FLUTTERWAVE: '🌊',
+  PAYSTACK: '🔷',
+  SQUARE: '⬜',
 };
 
 const REFUND_STATUS_COLORS: Record<string, string> = {
@@ -208,6 +224,7 @@ export default function AdminPaymentRefundsPage() {
           provider: payment.provider || payment.gatewayId,
           gatewayId: payment.gatewayId,
           user: payment.user,
+          status: payment.status,
         },
         sale: payment.sale,
       }));
@@ -264,6 +281,10 @@ export default function AdminPaymentRefundsPage() {
   const getPaymentIcon = (method: string) => {
     const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
     return <Icon className="w-4 h-4" />;
+  };
+
+  const getPaymentEmoji = (method: string): string => {
+    return PAYMENT_METHOD_EMOJI[method] || '💳';
   };
 
   const getProviderImageUrl = (provider?: string): string => {
@@ -331,9 +352,7 @@ export default function AdminPaymentRefundsPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/admin/payments')}
-            className={`p-2 rounded-lg transition ${
-              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
-            }`}
+            className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -635,7 +654,7 @@ export default function AdminPaymentRefundsPage() {
                                     if (parent) {
                                       const fallback = document.createElement('span');
                                       fallback.className = `text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
-                                      fallback.textContent = getPaymentIcon(refund.payment?.paymentMethod || 'CREDIT_CARD');
+                                      fallback.textContent = getPaymentEmoji(refund.payment?.paymentMethod || 'CREDIT_CARD');
                                       parent.appendChild(fallback);
                                     }
                                   }}
@@ -895,7 +914,7 @@ export default function AdminPaymentRefundsPage() {
                 reference: selectedRefund.payment.reference || selectedRefund.payment.id,
                 amount: selectedRefund.payment.amount,
                 paymentMethod: selectedRefund.payment.paymentMethod,
-                status: selectedRefund.payment.status,
+                status: selectedRefund.payment.status || selectedRefund.status,
                 processedAt: selectedRefund.refundedAt,
                 sale: selectedRefund.sale ? {
                   receiptNumber: selectedRefund.sale.receiptNumber,

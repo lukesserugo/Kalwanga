@@ -11,57 +11,30 @@ const router = Router();
 // PUBLIC ROUTES (Webhooks - No Auth Required)
 // ============================================
 
-/**
- * Stripe webhook endpoint - public access
- * POST /payments/webhook
- */
 router.post('/webhook', paymentController.handleWebhook);
-
-/**
- * M-Pesa callback endpoint - public access
- * POST /payments/mpesa-callback
- */
 router.post('/mpesa-callback', paymentController.handleMpesaCallback);
-
-/**
- * PayPal webhook endpoint - public access
- * POST /payments/webhook/paypal
- */
 router.post('/webhook/paypal', paymentController.handlePayPalWebhook);
-
-/**
- * Flutterwave webhook endpoint - public access
- * POST /payments/webhook/flutterwave
- */
 router.post('/webhook/flutterwave', paymentController.handleFlutterwaveWebhook);
-
-/**
- * Paystack webhook endpoint - public access
- * POST /payments/webhook/paystack
- */
 router.post('/webhook/paystack', paymentController.handlePaystackWebhook);
-
-/**
- * Square webhook endpoint - public access
- * POST /payments/webhook/square
- */
 router.post('/webhook/square', paymentController.handleSquareWebhook);
 
 // ============================================
 // PROTECTED ROUTES - Payments
 // ============================================
 
+// ✅ FIXED: Order matters - more specific routes before generic ones
+
+/**
+ * Get payment summary - MUST BE BEFORE /:id
+ * GET /payments/summary
+ */
+router.get('/summary', requireAuth, paymentController.getPaymentSummary);
+
 /**
  * Get payment status
  * GET /payments/:id
  */
 router.get('/:id', requireAuth, paymentController.getPaymentStatus);
-
-/**
- * Get payment summary
- * GET /payments/summary
- */
-router.get('/summary', requireAuth, paymentController.getPaymentSummary);
 
 /**
  * Get all payments with filters
@@ -145,10 +118,6 @@ router.delete(
 // PROTECTED ROUTES - M-Pesa
 // ============================================
 
-/**
- * Initiate M-Pesa STK Push payment
- * POST /payments/mpesa-stk-push
- */
 router.post(
   '/mpesa-stk-push',
   requireAuth,
@@ -156,20 +125,12 @@ router.post(
   paymentController.initiateMpesaSTKPush
 );
 
-/**
- * Query M-Pesa transaction status
- * GET /payments/mpesa-status/:transactionId
- */
 router.get(
   '/mpesa-status/:transactionId',
   requireAuth,
   paymentController.queryMpesaStatus
 );
 
-/**
- * Process M-Pesa B2C payment (Business to Customer)
- * POST /payments/mpesa-b2c
- */
 router.post(
   '/mpesa-b2c',
   requireAuth,
@@ -181,20 +142,12 @@ router.post(
 // PROTECTED ROUTES - PayPal
 // ============================================
 
-/**
- * Create Stripe payment intent
- * POST /payments/create-payment-intent
- */
 router.post(
   '/create-payment-intent',
   requireAuth,
   paymentController.createPaymentIntent
 );
 
-/**
- * Capture PayPal order (after user approval)
- * POST /payments/paypal/capture
- */
 router.post(
   '/paypal/capture',
   requireAuth,
@@ -206,10 +159,6 @@ router.post(
 // PROTECTED ROUTES - Flutterwave
 // ============================================
 
-/**
- * Create Flutterwave virtual account (for bank transfer payments)
- * POST /payments/flutterwave/virtual-account
- */
 router.post(
   '/flutterwave/virtual-account',
   requireAuth,
@@ -221,10 +170,6 @@ router.post(
 // PROTECTED ROUTES - Paystack
 // ============================================
 
-/**
- * Verify Paystack payment
- * POST /payments/paystack/verify
- */
 router.post(
   '/paystack/verify',
   requireAuth,
@@ -232,10 +177,6 @@ router.post(
   paymentController.verifyPaystackPayment
 );
 
-/**
- * Alternative: Verify Paystack payment with reference in params
- * GET /payments/paystack/verify/:reference
- */
 router.get(
   '/paystack/verify/:reference',
   requireAuth,
@@ -246,10 +187,6 @@ router.get(
 // PROTECTED ROUTES - Square
 // ============================================
 
-/**
- * Process Square payment using card nonce
- * POST /payments/square/payment
- */
 router.post(
   '/square/payment',
   requireAuth,
@@ -257,15 +194,112 @@ router.post(
   paymentController.processSquarePayment
 );
 
-/**
- * Create Square customer
- * POST /payments/square/customer
- */
 router.post(
   '/square/customer',
   requireAuth,
   requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
   paymentController.createSquareCustomer
+);
+
+// ============================================
+// PAYMENT PROVIDER MANAGEMENT ROUTES
+// ============================================
+
+/**
+ * Get all payment providers
+ * GET /payment-providers
+ */
+router.get(
+  '/payment-providers',
+  requireAuth,
+  paymentController.getPaymentProviders
+);
+
+/**
+ * Get provider health status
+ * GET /payment-providers/:provider/status
+ */
+router.get(
+  '/payment-providers/:provider/status',
+  requireAuth,
+  paymentController.getProviderStatus
+);
+
+/**
+ * Create new provider
+ * POST /payment-providers
+ */
+router.post(
+  '/payment-providers',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
+  paymentController.createProvider
+);
+
+/**
+ * Update provider
+ * PATCH /payment-providers/:id
+ */
+router.patch(
+  '/payment-providers/:id',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.updateProvider
+);
+
+/**
+ * Delete provider
+ * DELETE /payment-providers/:id
+ */
+router.delete(
+  '/payment-providers/:id',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
+  paymentController.deleteProvider
+);
+
+/**
+ * Update provider health
+ * PATCH /payment-providers/:id/health
+ */
+router.patch(
+  '/payment-providers/:id/health',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
+  paymentController.updateProviderHealth
+);
+
+/**
+ * Configure provider
+ * POST /payment-providers/:id/configure
+ */
+router.post(
+  '/payment-providers/:id/configure',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.configureProvider
+);
+
+/**
+ * Add currency to provider
+ * POST /payment-providers/:id/currencies
+ */
+router.post(
+  '/payment-providers/:id/currencies',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.addProviderCurrency
+);
+
+/**
+ * Remove currency from provider
+ * DELETE /payment-providers/:id/currencies/:currency
+ */
+router.delete(
+  '/payment-providers/:id/currencies/:currency',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.removeProviderCurrency
 );
 
 export default router;

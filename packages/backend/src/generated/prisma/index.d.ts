@@ -44813,6 +44813,8 @@ export namespace Prisma {
     available: number | null
     reorderPoint: number | null
     reorderQuantity: number | null
+    weight: number | null
+    taxRate: number | null
   }
 
   export type InventorySumAggregateOutputType = {
@@ -44821,6 +44823,8 @@ export namespace Prisma {
     available: number | null
     reorderPoint: number | null
     reorderQuantity: number | null
+    weight: number | null
+    taxRate: number | null
   }
 
   export type InventoryMinAggregateOutputType = {
@@ -44838,6 +44842,9 @@ export namespace Prisma {
     status: string | null
     createdAt: Date | null
     updatedAt: Date | null
+    description: string | null
+    weight: number | null
+    taxRate: number | null
   }
 
   export type InventoryMaxAggregateOutputType = {
@@ -44855,6 +44862,9 @@ export namespace Prisma {
     status: string | null
     createdAt: Date | null
     updatedAt: Date | null
+    description: string | null
+    weight: number | null
+    taxRate: number | null
   }
 
   export type InventoryCountAggregateOutputType = {
@@ -44872,6 +44882,11 @@ export namespace Prisma {
     status: number
     createdAt: number
     updatedAt: number
+    images: number
+    description: number
+    weight: number
+    taxRate: number
+    tags: number
     _all: number
   }
 
@@ -44882,6 +44897,8 @@ export namespace Prisma {
     available?: true
     reorderPoint?: true
     reorderQuantity?: true
+    weight?: true
+    taxRate?: true
   }
 
   export type InventorySumAggregateInputType = {
@@ -44890,6 +44907,8 @@ export namespace Prisma {
     available?: true
     reorderPoint?: true
     reorderQuantity?: true
+    weight?: true
+    taxRate?: true
   }
 
   export type InventoryMinAggregateInputType = {
@@ -44907,6 +44926,9 @@ export namespace Prisma {
     status?: true
     createdAt?: true
     updatedAt?: true
+    description?: true
+    weight?: true
+    taxRate?: true
   }
 
   export type InventoryMaxAggregateInputType = {
@@ -44924,6 +44946,9 @@ export namespace Prisma {
     status?: true
     createdAt?: true
     updatedAt?: true
+    description?: true
+    weight?: true
+    taxRate?: true
   }
 
   export type InventoryCountAggregateInputType = {
@@ -44941,6 +44966,11 @@ export namespace Prisma {
     status?: true
     createdAt?: true
     updatedAt?: true
+    images?: true
+    description?: true
+    weight?: true
+    taxRate?: true
+    tags?: true
     _all?: true
   }
 
@@ -45045,6 +45075,11 @@ export namespace Prisma {
     status: string
     createdAt: Date
     updatedAt: Date
+    images: string[]
+    description: string | null
+    weight: number | null
+    taxRate: number | null
+    tags: string[]
     _count: InventoryCountAggregateOutputType | null
     _avg: InventoryAvgAggregateOutputType | null
     _sum: InventorySumAggregateOutputType | null
@@ -45081,6 +45116,11 @@ export namespace Prisma {
     status?: boolean
     createdAt?: boolean
     updatedAt?: boolean
+    images?: boolean
+    description?: boolean
+    weight?: boolean
+    taxRate?: boolean
+    tags?: boolean
     product?: boolean | Inventory$productArgs<ExtArgs>
     variant?: boolean | Inventory$variantArgs<ExtArgs>
     businessUnit?: boolean | BusinessUnitDefaultArgs<ExtArgs>
@@ -45104,6 +45144,11 @@ export namespace Prisma {
     status?: boolean
     createdAt?: boolean
     updatedAt?: boolean
+    images?: boolean
+    description?: boolean
+    weight?: boolean
+    taxRate?: boolean
+    tags?: boolean
     businessUnit?: boolean | BusinessUnitDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["inventory"]>
 
@@ -45122,6 +45167,11 @@ export namespace Prisma {
     status?: boolean
     createdAt?: boolean
     updatedAt?: boolean
+    images?: boolean
+    description?: boolean
+    weight?: boolean
+    taxRate?: boolean
+    tags?: boolean
     businessUnit?: boolean | BusinessUnitDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["inventory"]>
 
@@ -45140,9 +45190,14 @@ export namespace Prisma {
     status?: boolean
     createdAt?: boolean
     updatedAt?: boolean
+    images?: boolean
+    description?: boolean
+    weight?: boolean
+    taxRate?: boolean
+    tags?: boolean
   }
 
-  export type InventoryOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "businessUnitId" | "quantity" | "reserved" | "available" | "reorderPoint" | "reorderQuantity" | "location" | "shelfNumber" | "supplier" | "notes" | "status" | "createdAt" | "updatedAt", ExtArgs["result"]["inventory"]>
+  export type InventoryOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "businessUnitId" | "quantity" | "reserved" | "available" | "reorderPoint" | "reorderQuantity" | "location" | "shelfNumber" | "supplier" | "notes" | "status" | "createdAt" | "updatedAt" | "images" | "description" | "weight" | "taxRate" | "tags", ExtArgs["result"]["inventory"]>
   export type InventoryInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     product?: boolean | Inventory$productArgs<ExtArgs>
     variant?: boolean | Inventory$variantArgs<ExtArgs>
@@ -45182,6 +45237,11 @@ export namespace Prisma {
       status: string
       createdAt: Date
       updatedAt: Date
+      images: string[]
+      description: string | null
+      weight: number | null
+      taxRate: number | null
+      tags: string[]
     }, ExtArgs["result"]["inventory"]>
     composites: {}
   }
@@ -45624,6 +45684,11 @@ export namespace Prisma {
     readonly status: FieldRef<"Inventory", 'String'>
     readonly createdAt: FieldRef<"Inventory", 'DateTime'>
     readonly updatedAt: FieldRef<"Inventory", 'DateTime'>
+    readonly images: FieldRef<"Inventory", 'String[]'>
+    readonly description: FieldRef<"Inventory", 'String'>
+    readonly weight: FieldRef<"Inventory", 'Float'>
+    readonly taxRate: FieldRef<"Inventory", 'Float'>
+    readonly tags: FieldRef<"Inventory", 'String[]'>
   }
     
 
@@ -102246,7 +102311,12 @@ export namespace Prisma {
     notes: 'notes',
     status: 'status',
     createdAt: 'createdAt',
-    updatedAt: 'updatedAt'
+    updatedAt: 'updatedAt',
+    images: 'images',
+    description: 'description',
+    weight: 'weight',
+    taxRate: 'taxRate',
+    tags: 'tags'
   };
 
   export type InventoryScalarFieldEnum = (typeof InventoryScalarFieldEnum)[keyof typeof InventoryScalarFieldEnum]
@@ -106947,6 +107017,11 @@ export namespace Prisma {
     status?: StringFilter<"Inventory"> | string
     createdAt?: DateTimeFilter<"Inventory"> | Date | string
     updatedAt?: DateTimeFilter<"Inventory"> | Date | string
+    images?: StringNullableListFilter<"Inventory">
+    description?: StringNullableFilter<"Inventory"> | string | null
+    weight?: FloatNullableFilter<"Inventory"> | number | null
+    taxRate?: FloatNullableFilter<"Inventory"> | number | null
+    tags?: StringNullableListFilter<"Inventory">
     product?: XOR<ProductNullableScalarRelationFilter, ProductWhereInput> | null
     variant?: XOR<ProductVariantNullableScalarRelationFilter, ProductVariantWhereInput> | null
     businessUnit?: XOR<BusinessUnitScalarRelationFilter, BusinessUnitWhereInput>
@@ -106969,6 +107044,11 @@ export namespace Prisma {
     status?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+    images?: SortOrder
+    description?: SortOrderInput | SortOrder
+    weight?: SortOrderInput | SortOrder
+    taxRate?: SortOrderInput | SortOrder
+    tags?: SortOrder
     product?: ProductOrderByWithRelationInput
     variant?: ProductVariantOrderByWithRelationInput
     businessUnit?: BusinessUnitOrderByWithRelationInput
@@ -106994,6 +107074,11 @@ export namespace Prisma {
     status?: StringFilter<"Inventory"> | string
     createdAt?: DateTimeFilter<"Inventory"> | Date | string
     updatedAt?: DateTimeFilter<"Inventory"> | Date | string
+    images?: StringNullableListFilter<"Inventory">
+    description?: StringNullableFilter<"Inventory"> | string | null
+    weight?: FloatNullableFilter<"Inventory"> | number | null
+    taxRate?: FloatNullableFilter<"Inventory"> | number | null
+    tags?: StringNullableListFilter<"Inventory">
     product?: XOR<ProductNullableScalarRelationFilter, ProductWhereInput> | null
     variant?: XOR<ProductVariantNullableScalarRelationFilter, ProductVariantWhereInput> | null
     businessUnit?: XOR<BusinessUnitScalarRelationFilter, BusinessUnitWhereInput>
@@ -107016,6 +107101,11 @@ export namespace Prisma {
     status?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+    images?: SortOrder
+    description?: SortOrderInput | SortOrder
+    weight?: SortOrderInput | SortOrder
+    taxRate?: SortOrderInput | SortOrder
+    tags?: SortOrder
     _count?: InventoryCountOrderByAggregateInput
     _avg?: InventoryAvgOrderByAggregateInput
     _max?: InventoryMaxOrderByAggregateInput
@@ -107041,6 +107131,11 @@ export namespace Prisma {
     status?: StringWithAggregatesFilter<"Inventory"> | string
     createdAt?: DateTimeWithAggregatesFilter<"Inventory"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"Inventory"> | Date | string
+    images?: StringNullableListFilter<"Inventory">
+    description?: StringNullableWithAggregatesFilter<"Inventory"> | string | null
+    weight?: FloatNullableWithAggregatesFilter<"Inventory"> | number | null
+    taxRate?: FloatNullableWithAggregatesFilter<"Inventory"> | number | null
+    tags?: StringNullableListFilter<"Inventory">
   }
 
   export type InventoryTransactionWhereInput = {
@@ -115150,6 +115245,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantCreateNestedOneWithoutInventoryInput
     businessUnit: BusinessUnitCreateNestedOneWithoutInventoryInput
@@ -115172,6 +115272,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductUncheckedCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantUncheckedCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionUncheckedCreateNestedManyWithoutInventoryInput
@@ -115192,6 +115297,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUpdateOneWithoutInventoryNestedInput
     businessUnit?: BusinessUnitUpdateOneRequiredWithoutInventoryNestedInput
@@ -115214,6 +115324,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUncheckedUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUncheckedUpdateOneWithoutInventoryNestedInput
     transactions?: InventoryTransactionUncheckedUpdateManyWithoutInventoryNestedInput
@@ -115235,6 +115350,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
   }
 
   export type InventoryUpdateManyMutationInput = {
@@ -115251,6 +115371,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
   }
 
   export type InventoryUncheckedUpdateManyInput = {
@@ -115268,6 +115393,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
   }
 
   export type InventoryTransactionCreateInput = {
@@ -123083,6 +123213,11 @@ export namespace Prisma {
     status?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+    images?: SortOrder
+    description?: SortOrder
+    weight?: SortOrder
+    taxRate?: SortOrder
+    tags?: SortOrder
   }
 
   export type InventoryAvgOrderByAggregateInput = {
@@ -123091,6 +123226,8 @@ export namespace Prisma {
     available?: SortOrder
     reorderPoint?: SortOrder
     reorderQuantity?: SortOrder
+    weight?: SortOrder
+    taxRate?: SortOrder
   }
 
   export type InventoryMaxOrderByAggregateInput = {
@@ -123108,6 +123245,9 @@ export namespace Prisma {
     status?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+    description?: SortOrder
+    weight?: SortOrder
+    taxRate?: SortOrder
   }
 
   export type InventoryMinOrderByAggregateInput = {
@@ -123125,6 +123265,9 @@ export namespace Prisma {
     status?: SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
+    description?: SortOrder
+    weight?: SortOrder
+    taxRate?: SortOrder
   }
 
   export type InventorySumOrderByAggregateInput = {
@@ -123133,6 +123276,8 @@ export namespace Prisma {
     available?: SortOrder
     reorderPoint?: SortOrder
     reorderQuantity?: SortOrder
+    weight?: SortOrder
+    taxRate?: SortOrder
   }
 
   export type EnumInventoryTransactionTypeFilter<$PrismaModel = never> = {
@@ -132899,6 +133044,14 @@ export namespace Prisma {
     update?: XOR<XOR<BusinessUnitUpdateToOneWithWhereWithoutRecentlyViewedInput, BusinessUnitUpdateWithoutRecentlyViewedInput>, BusinessUnitUncheckedUpdateWithoutRecentlyViewedInput>
   }
 
+  export type InventoryCreateimagesInput = {
+    set: string[]
+  }
+
+  export type InventoryCreatetagsInput = {
+    set: string[]
+  }
+
   export type ProductCreateNestedOneWithoutInventoryInput = {
     create?: XOR<ProductCreateWithoutInventoryInput, ProductUncheckedCreateWithoutInventoryInput>
     connectOrCreate?: ProductCreateOrConnectWithoutInventoryInput
@@ -132955,6 +133108,16 @@ export namespace Prisma {
     connectOrCreate?: InventoryIssueCreateOrConnectWithoutInventoryInput | InventoryIssueCreateOrConnectWithoutInventoryInput[]
     createMany?: InventoryIssueCreateManyInventoryInputEnvelope
     connect?: InventoryIssueWhereUniqueInput | InventoryIssueWhereUniqueInput[]
+  }
+
+  export type InventoryUpdateimagesInput = {
+    set?: string[]
+    push?: string | string[]
+  }
+
+  export type InventoryUpdatetagsInput = {
+    set?: string[]
+    push?: string | string[]
   }
 
   export type ProductUpdateOneWithoutInventoryNestedInput = {
@@ -145413,6 +145576,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionCreateNestedManyWithoutInventoryInput
@@ -145433,6 +145601,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductUncheckedCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantUncheckedCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionUncheckedCreateNestedManyWithoutInventoryInput
@@ -147441,6 +147614,11 @@ export namespace Prisma {
     status?: StringFilter<"Inventory"> | string
     createdAt?: DateTimeFilter<"Inventory"> | Date | string
     updatedAt?: DateTimeFilter<"Inventory"> | Date | string
+    images?: StringNullableListFilter<"Inventory">
+    description?: StringNullableFilter<"Inventory"> | string | null
+    weight?: FloatNullableFilter<"Inventory"> | number | null
+    taxRate?: FloatNullableFilter<"Inventory"> | number | null
+    tags?: StringNullableListFilter<"Inventory">
   }
 
   export type ProductUpsertWithWhereUniqueWithoutBusinessUnitInput = {
@@ -153249,6 +153427,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     variant?: ProductVariantCreateNestedOneWithoutInventoryInput
     businessUnit: BusinessUnitCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionCreateNestedManyWithoutInventoryInput
@@ -153270,6 +153453,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     variant?: ProductVariantUncheckedCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionUncheckedCreateNestedManyWithoutInventoryInput
     issues?: InventoryIssueUncheckedCreateNestedManyWithoutInventoryInput
@@ -154326,6 +154514,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     variant?: ProductVariantUpdateOneWithoutInventoryNestedInput
     businessUnit?: BusinessUnitUpdateOneRequiredWithoutInventoryNestedInput
     transactions?: InventoryTransactionUpdateManyWithoutInventoryNestedInput
@@ -154347,6 +154540,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     variant?: ProductVariantUncheckedUpdateOneWithoutInventoryNestedInput
     transactions?: InventoryTransactionUncheckedUpdateManyWithoutInventoryNestedInput
     issues?: InventoryIssueUncheckedUpdateManyWithoutInventoryNestedInput
@@ -155046,6 +155244,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductCreateNestedOneWithoutInventoryInput
     businessUnit: BusinessUnitCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionCreateNestedManyWithoutInventoryInput
@@ -155067,6 +155270,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductUncheckedCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionUncheckedCreateNestedManyWithoutInventoryInput
     issues?: InventoryIssueUncheckedCreateNestedManyWithoutInventoryInput
@@ -155589,6 +155797,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUpdateOneWithoutInventoryNestedInput
     businessUnit?: BusinessUnitUpdateOneRequiredWithoutInventoryNestedInput
     transactions?: InventoryTransactionUpdateManyWithoutInventoryNestedInput
@@ -155610,6 +155823,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUncheckedUpdateOneWithoutInventoryNestedInput
     transactions?: InventoryTransactionUncheckedUpdateManyWithoutInventoryNestedInput
     issues?: InventoryIssueUncheckedUpdateManyWithoutInventoryNestedInput
@@ -160859,6 +161077,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantCreateNestedOneWithoutInventoryInput
     businessUnit: BusinessUnitCreateNestedOneWithoutInventoryInput
@@ -160880,6 +161103,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductUncheckedCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantUncheckedCreateNestedOneWithoutInventoryInput
     issues?: InventoryIssueUncheckedCreateNestedManyWithoutInventoryInput
@@ -161451,6 +161679,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUpdateOneWithoutInventoryNestedInput
     businessUnit?: BusinessUnitUpdateOneRequiredWithoutInventoryNestedInput
@@ -161472,6 +161705,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUncheckedUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUncheckedUpdateOneWithoutInventoryNestedInput
     issues?: InventoryIssueUncheckedUpdateManyWithoutInventoryNestedInput
@@ -161869,6 +162107,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantCreateNestedOneWithoutInventoryInput
     businessUnit: BusinessUnitCreateNestedOneWithoutInventoryInput
@@ -161890,6 +162133,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
     product?: ProductUncheckedCreateNestedOneWithoutInventoryInput
     variant?: ProductVariantUncheckedCreateNestedOneWithoutInventoryInput
     transactions?: InventoryTransactionUncheckedCreateNestedManyWithoutInventoryInput
@@ -162345,6 +162593,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUpdateOneWithoutInventoryNestedInput
     businessUnit?: BusinessUnitUpdateOneRequiredWithoutInventoryNestedInput
@@ -162366,6 +162619,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUncheckedUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUncheckedUpdateOneWithoutInventoryNestedInput
     transactions?: InventoryTransactionUncheckedUpdateManyWithoutInventoryNestedInput
@@ -188886,6 +189144,11 @@ export namespace Prisma {
     status?: string
     createdAt?: Date | string
     updatedAt?: Date | string
+    images?: InventoryCreateimagesInput | string[]
+    description?: string | null
+    weight?: number | null
+    taxRate?: number | null
+    tags?: InventoryCreatetagsInput | string[]
   }
 
   export type ProductCreateManyBusinessUnitInput = {
@@ -189631,6 +189894,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUpdateOneWithoutInventoryNestedInput
     transactions?: InventoryTransactionUpdateManyWithoutInventoryNestedInput
@@ -189651,6 +189919,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
     product?: ProductUncheckedUpdateOneWithoutInventoryNestedInput
     variant?: ProductVariantUncheckedUpdateOneWithoutInventoryNestedInput
     transactions?: InventoryTransactionUncheckedUpdateManyWithoutInventoryNestedInput
@@ -189671,6 +189944,11 @@ export namespace Prisma {
     status?: StringFieldUpdateOperationsInput | string
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    images?: InventoryUpdateimagesInput | string[]
+    description?: NullableStringFieldUpdateOperationsInput | string | null
+    weight?: NullableFloatFieldUpdateOperationsInput | number | null
+    taxRate?: NullableFloatFieldUpdateOperationsInput | number | null
+    tags?: InventoryUpdatetagsInput | string[]
   }
 
   export type ProductUpdateWithoutBusinessUnitInput = {

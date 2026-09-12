@@ -566,7 +566,12 @@ exports.Prisma.InventoryScalarFieldEnum = {
   notes: 'notes',
   status: 'status',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  images: 'images',
+  description: 'description',
+  weight: 'weight',
+  taxRate: 'taxRate',
+  tags: 'tags'
 };
 
 exports.Prisma.InventoryTransactionScalarFieldEnum = {

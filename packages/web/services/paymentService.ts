@@ -621,8 +621,28 @@ export const paymentService = {
    * PATCH /payment-providers/:id
    */
   async togglePaymentProvider(id: string, isActive: boolean): Promise<ApiResponse<PaymentProviderStatus>> {
-    const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}`, { isActive });
-    return response;
+    try {
+      // ✅ FIXED: Validate ID is not a default ID
+      if (!id || id.startsWith('default_')) {
+        console.warn('⚠️ Cannot toggle default provider - provider must be created in database first');
+        return {
+          success: false,
+          message: 'Cannot toggle default provider. Please create a provider first.',
+          data: undefined as any,
+        };
+      }
+
+      const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}`, { isActive });
+      return response;
+    } catch (error: any) {
+      console.error('Toggle provider error:', error);
+      // Return a graceful error response
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to toggle provider',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -648,8 +668,27 @@ export const paymentService = {
    * POST /payment-providers/:id/configure
    */
   async configurePaymentProvider(id: string, data: ConfigureProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
-    const response = await api.post<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}/configure`, data);
-    return response;
+    try {
+      // ✅ FIXED: Validate ID is not a default ID
+      if (!id || id.startsWith('default_')) {
+        console.warn('⚠️ Cannot configure default provider - provider must be created in database first');
+        return {
+          success: false,
+          message: 'Cannot configure default provider. Please create a provider first.',
+          data: undefined as any,
+        };
+      }
+
+      const response = await api.post<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}/configure`, data);
+      return response;
+    } catch (error: any) {
+      console.error('Configure provider error:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to configure provider',
+        data: undefined as any,
+      };
+    }
   },
 
   // ============================================
@@ -1268,6 +1307,45 @@ export const paymentService = {
     };
     return categories[method] || 'other';
   },
+
+  /**
+ * Add item to cart with proper validation
+ */
+  async addItem(productId: string, quantity: number = 1, variantId?: string): Promise<any> {
+    try {
+      // ✅ FIXED: Validate productId
+      if (!productId || productId.trim() === '') {
+        throw new Error('Product ID is required');
+      }
+
+      // ✅ FIXED: Ensure productId is a valid string
+      const sanitizedProductId = productId.trim();
+      
+      const payload = {
+        productId: sanitizedProductId,
+        quantity: Math.max(1, quantity),
+        ...(variantId && { variantId: variantId.trim() }),
+      };
+
+      console.log('🛒 CartService.addItem - Sending payload:', payload);
+
+      const response = await api.post('/cart/items', payload);
+      return response;
+    } catch (error: any) {
+      console.error('❌ CartService.addItem - Error:', error);
+      if (error?.response?.status === 400) {
+        const errorData = error.response?.data;
+        if (errorData?.errors) {
+          const errorMessages = errorData.errors.map((e: any) => `${e.field}: ${e.message}`).join(', ');
+          throw new Error(`Validation error: ${errorMessages}`);
+        }
+        if (errorData?.message) {
+          throw new Error(errorData.message);
+        }
+      }
+      throw error;
+    }
+  }
 };
 
 export default paymentService;

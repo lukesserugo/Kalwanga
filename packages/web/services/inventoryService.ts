@@ -28,10 +28,25 @@ export interface Inventory {
   location: string;
   notes: string | null;
   hasProduct: boolean;
+  // ✅ UPDATED: Added new fields
+  images: string[];
+  description: string | null;
+  weight: number;
+  taxRate: number;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
   status?: string;
   businessUnitId?: string;
+  // ✅ FIX: Added missing fields for stock calculations and compatibility
+  maxStock?: number;
+  minStock?: number;
+  stock?: number;
+  price?: number;
+  isActive?: boolean;
+  isDigital?: boolean;
+  featured?: boolean;
+  reorderQuantity?: number;
 }
 
 export interface InventoryItemResponse {
@@ -56,8 +71,23 @@ export interface InventoryItemResponse {
   location: string;
   notes: string | null;
   hasProduct: boolean;
+  // ✅ UPDATED: Added new fields
+  images: string[];
+  description: string | null;
+  weight: number;
+  taxRate: number;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
+  // ✅ FIX: Added missing fields
+  maxStock?: number;
+  minStock?: number;
+  stock?: number;
+  price?: number;
+  isActive?: boolean;
+  isDigital?: boolean;
+  featured?: boolean;
+  reorderQuantity?: number;
 }
 
 // ✅ FIX: This matches what getInventoryItems actually returns from backend
@@ -306,6 +336,9 @@ export interface CategoryOption {
   id: string;
   name: string;
   productCount?: number;
+  childrenCount?: number;
+  hasChildren?: boolean;
+  parentId?: string | null;
 }
 
 export interface SupplierOption {
@@ -327,6 +360,11 @@ export interface GetInventoryParams {
   lowStock?: boolean;
   businessUnitId?: string;
   sortByProductName?: string;
+}
+
+export interface GetAllInventoryResponse {
+  items: any[];
+  stats: InventoryStats;
 }
 
 // ============================================
@@ -357,8 +395,8 @@ function cleanObject<T extends Record<string, any>>(obj: T): T {
 
 /**
  * ✅ FIX: Normalize inventory item to ensure product ID is available at top level
- * This ensures that when inventory items are passed to ProductCard,
- * the product ID is accessible at the top level.
+ * ✅ UPDATED: Now properly handles images, description, weight, taxRate, tags
+ * ✅ UNIFIED: Matches backend normalization exactly
  */
 function normalizeInventoryItem(item: any): any {
   if (!item) return item;
@@ -370,13 +408,21 @@ function normalizeInventoryItem(item: any): any {
       return {
         ...item,
         id: item.product.id,
-        // Also ensure other product fields are available at top level
+        // Copy product fields to top level with fallback
         name: item.name || item.product.name,
         unitPrice: item.unitPrice || item.product.unitPrice,
-        images: item.images || item.product.images || [],
+        // Use inventory images first, then product images
+        images: (item.images && item.images.length > 0) ? item.images : (item.product.images || []),
+        // Use inventory description first, then product description
+        description: item.description || item.product.description,
+        // Use inventory weight first, then product weight
+        weight: item.weight !== undefined ? item.weight : item.product.weight,
+        // Use inventory taxRate first, then product taxRate
+        taxRate: item.taxRate !== undefined ? item.taxRate : item.product.taxRate,
+        // Use inventory tags first, then product tags
+        tags: (item.tags && item.tags.length > 0) ? item.tags : (item.product.tags || []),
         isActive: item.isActive !== undefined ? item.isActive : item.product?.isActive,
         sku: item.sku || item.product.sku,
-        description: item.description || item.product.description,
         category: item.category || item.product.category,
         categoryId: item.categoryId || item.product.categoryId,
         supplier: item.supplier || item.product.supplier,
@@ -385,16 +431,34 @@ function normalizeInventoryItem(item: any): any {
         maxStock: item.maxStock || item.product.maxStock,
         featured: item.featured || item.product.featured,
         isDigital: item.isDigital || item.product.isDigital,
-        tags: item.tags || item.product.tags || [],
         attributes: item.attributes || item.product.attributes || {},
         notes: item.notes || item.product.notes,
-        taxRate: item.taxRate || item.product.taxRate,
-        weight: item.weight || item.product.weight,
         costPrice: item.costPrice || item.product.costPrice,
         // Keep the original product reference for backward compatibility
         _product: item.product,
         // Ensure productId is set
         productId: item.product.id,
+        // Ensure inventory array exists for stock status
+        inventory: item.inventory || [{
+          quantity: item.quantity || item.product?.stock || 0,
+          reserved: item.reserved || 0,
+        }],
+        // Ensure stock field exists for compatibility
+        stock: item.quantity || item.stock || 0,
+        // Ensure price field exists
+        price: item.price || item.unitPrice || item.product?.unitPrice || 0,
+        // Ensure available field exists
+        available: item.available !== undefined ? item.available : 
+          (item.quantity || 0) - (item.reserved || 0),
+        // Ensure status field exists
+        status: item.status || item.product?.status || 'ACTIVE',
+        // Ensure businessUnitId is set
+        businessUnitId: item.businessUnitId || item.product?.businessUnitId,
+        // Ensure createdAt and updatedAt
+        createdAt: item.createdAt || item.product?.createdAt,
+        updatedAt: item.updatedAt || item.product?.updatedAt,
+        // Ensure reorderQuantity exists
+        reorderQuantity: item.reorderQuantity || item.product?.maxStock || 10,
       };
     }
   }
@@ -415,7 +479,84 @@ function normalizeInventoryItem(item: any): any {
     };
   }
   
+  // Ensure inventory array exists
+  if (item && !item.inventory) {
+    item.inventory = [{
+      quantity: item.quantity || item.stock || 0,
+      reserved: item.reserved || 0,
+    }];
+  }
+  
+  // Ensure stock field exists
+  if (item && item.quantity !== undefined && item.stock === undefined) {
+    item.stock = item.quantity;
+  }
+  
+  // Ensure available field exists
+  if (item && item.available === undefined) {
+    item.available = (item.quantity || 0) - (item.reserved || 0);
+  }
+  
+  // Ensure images is always an array
+  if (item && !item.images) {
+    item.images = [];
+  }
+  
+  // Ensure tags is always an array
+  if (item && !item.tags) {
+    item.tags = [];
+  }
+  
+  // Ensure price field exists
+  if (item && item.price === undefined) {
+    item.price = item.unitPrice || 0;
+  }
+  
+  // Ensure reorderQuantity exists
+  if (item && item.reorderQuantity === undefined) {
+    item.reorderQuantity = item.maxStock || 10;
+  }
+  
+  // Ensure maxStock exists
+  if (item && item.maxStock === undefined) {
+    item.maxStock = 100;
+  }
+  
+  // Ensure minStock exists
+  if (item && item.minStock === undefined) {
+    item.minStock = item.reorderPoint || 5;
+  }
+  
+  // Ensure isActive exists
+  if (item && item.isActive === undefined) {
+    item.isActive = true;
+  }
+  
+  // Ensure isDigital exists
+  if (item && item.isDigital === undefined) {
+    item.isDigital = false;
+  }
+  
+  // Ensure featured exists
+  if (item && item.featured === undefined) {
+    item.featured = false;
+  }
+  
+  // Ensure status exists
+  if (item && item.status === undefined) {
+    item.status = item.quantity === 0 ? 'out_of_stock' : 
+                  item.quantity <= (item.reorderPoint || 5) ? 'low_stock' : 'ACTIVE';
+  }
+  
   return item;
+}
+
+/**
+ * Normalize an array of inventory items
+ */
+function normalizeInventoryItems(items: any[]): any[] {
+  if (!items || !Array.isArray(items)) return [];
+  return items.map(normalizeInventoryItem);
 }
 
 // ============================================
@@ -427,6 +568,9 @@ export const inventoryService = {
   // REFERENCE DATA ENDPOINTS
   // ============================================
 
+  /**
+   * Get categories for dropdown
+   */
   async getCategories(businessUnitId?: string): Promise<CategoryOption[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -475,6 +619,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get category summary with counts and values
+   */
   async getCategorySummary(businessUnitId: string): Promise<Array<{ id: string; name: string; categoryId?: string; count: number; value: number }>> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -483,12 +630,11 @@ export const inventoryService = {
       
       console.log('📤 Fetching category summary with params:', params);
       
-      const response = await api.get<any>('/categories', { 
+      const response = await api.get<any>('/inventory/category-summary', { 
         params: { 
           ...params,
           limit: 100,
           isActive: true,
-          includeProducts: true
         } 
       });
       
@@ -505,30 +651,13 @@ export const inventoryService = {
         }
       }
       
-      const summaryData = categories.map((cat: any) => {
-        let productCount = 0;
-        let totalValue = 0;
-        
-        if (cat.productCount !== undefined) {
-          productCount = cat.productCount;
-        } else if (cat._count?.products !== undefined) {
-          productCount = cat._count.products;
-        } else if (cat.products && Array.isArray(cat.products)) {
-          productCount = cat.products.length;
-          cat.products.forEach((product: any) => {
-            const price = product.unitPrice || product.price || 0;
-            totalValue += price;
-          });
-        }
-        
-        return {
-          id: cat.id || cat.categoryId || cat.category,
-          name: cat.name || cat.category || 'Uncategorized',
-          categoryId: cat.id || cat.categoryId || null,
-          count: productCount || 0,
-          value: totalValue || 0,
-        };
-      });
+      const summaryData = categories.map((cat: any) => ({
+        id: cat.id || cat.categoryId || cat.category,
+        name: cat.name || cat.category || 'Uncategorized',
+        categoryId: cat.id || cat.categoryId || null,
+        count: cat.count || 0,
+        value: cat.value || 0,
+      }));
       
       console.log(`📥 Category summary: ${summaryData.length} categories`);
       return summaryData;
@@ -539,6 +668,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get suppliers for dropdown
+   */
   async getSuppliers(businessUnitId?: string): Promise<SupplierOption[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -578,22 +710,19 @@ export const inventoryService = {
   // ============================================
 
   /**
-   * ✅ FIX: Get inventory list with stats
-   * Backend returns: { inventory, total, page, limit, totalPages, stats, appliedFilters }
-   * Normalizes product IDs to ensure they're accessible at top level
+   * Get inventory list with stats
+   * ✅ FIXED: Uses /inventory/items endpoint and returns proper structure
    */
   async getInventory(params?: GetInventoryParams): Promise<InventoryListResponse> {
     try {
       const cleanParams = { ...params };
       
-      // Map frontend sort fields to backend-valid fields
       if (cleanParams.sortBy) {
         if (cleanParams.sortBy === 'name' || cleanParams.sortBy === 'productName') {
           cleanParams.sortByProductName = 'true';
         }
       }
       
-      // Sanitize business unit ID
       const sanitizedBusinessUnitId = sanitizeBusinessUnitId(cleanParams.businessUnitId);
       if (sanitizedBusinessUnitId) {
         cleanParams.businessUnitId = sanitizedBusinessUnitId;
@@ -601,21 +730,48 @@ export const inventoryService = {
         delete cleanParams.businessUnitId;
       }
       
-      // Remove undefined values
       const cleanedParams = cleanObject(cleanParams);
       
       console.log('📤 Fetching inventory with params:', cleanedParams);
       
-      const response = await api.get<any>('/inventory', { params: cleanedParams });
+      const response = await api.get<any>('/inventory/items', { params: cleanedParams });
       
-      // ✅ FIX: Normalize inventory items to ensure product IDs are accessible
+      // Handle different response structures
+      if (Array.isArray(response)) {
+        return {
+          inventory: response.map(normalizeInventoryItem),
+          total: response.length,
+          page: 1,
+          limit: response.length,
+          totalPages: 1,
+          stats: {} as InventoryStats,
+          appliedFilters: { search: null, category: null, location: null, status: null, lowStock: false },
+        };
+      }
+      
+      // If response has items but not inventory, map it
+      if (response && response.items && Array.isArray(response.items) && !response.inventory) {
+        response.inventory = response.items.map(normalizeInventoryItem);
+      }
+      
+      // If response has inventory, normalize it
       if (response && response.inventory && Array.isArray(response.inventory)) {
         response.inventory = response.inventory.map(normalizeInventoryItem);
       }
       
-      // Also normalize items if they exist in a different format
-      if (response && response.items && Array.isArray(response.items)) {
-        response.items = response.items.map(normalizeInventoryItem);
+      // If response has data but not inventory, map it
+      if (response && response.data && Array.isArray(response.data) && !response.inventory) {
+        response.inventory = response.data.map(normalizeInventoryItem);
+      }
+      
+      // Ensure stats exists
+      if (response && !response.stats) {
+        response.stats = {} as InventoryStats;
+      }
+      
+      // Ensure appliedFilters exists
+      if (response && !response.appliedFilters) {
+        response.appliedFilters = { search: null, category: null, location: null, status: null, lowStock: false };
       }
       
       return response;
@@ -626,7 +782,7 @@ export const inventoryService = {
   },
 
   /**
-   * ✅ FIX: Get inventory items with pagination
+   * Get inventory items with pagination
    * Backend returns: { items, total, page, limit, totalPages }
    * Normalizes product IDs to ensure they're accessible at top level
    */
@@ -652,7 +808,7 @@ export const inventoryService = {
       
       const response = await api.get<any>('/inventory/items', { params: cleanedParams });
       
-      // ✅ FIX: Normalize items to ensure product IDs are accessible
+      // Normalize items to ensure product IDs are accessible
       if (response && response.items && Array.isArray(response.items)) {
         response.items = response.items.map(normalizeInventoryItem);
       }
@@ -664,7 +820,10 @@ export const inventoryService = {
     }
   },
 
-  async getAllInventory(businessUnitId: string): Promise<{ items: any[]; stats: InventoryStats }> {
+  /**
+   * Get all inventory items with stats
+   */
+  async getAllInventory(businessUnitId: string): Promise<GetAllInventoryResponse> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
       const params: any = {};
@@ -694,7 +853,7 @@ export const inventoryService = {
         }
       }
       
-      // ✅ FIX: Normalize items to ensure product IDs are accessible
+      // Normalize items to ensure product IDs are accessible
       const normalizedItems = items.map((item: any) => {
         const normalized = normalizeInventoryItem(item);
         return {
@@ -705,7 +864,11 @@ export const inventoryService = {
           price: normalized.price || normalized.unitPrice || normalized.product?.unitPrice || 0,
           stock: normalized.stock || normalized.quantity || 0,
           productId: normalized.productId || normalized.product?.id || normalized.id,
-          // Ensure inventory array exists for stock status
+          images: normalized.images || [],
+          description: normalized.description || null,
+          weight: normalized.weight || 0,
+          taxRate: normalized.taxRate || 0,
+          tags: normalized.tags || [],
           inventory: normalized.inventory || [{
             quantity: normalized.quantity || 0,
             reserved: normalized.reserved || 0,
@@ -721,6 +884,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory by product ID
+   */
   async getInventoryByProduct(productId: string, businessUnitId: string, variantId?: string): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -736,6 +902,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory by barcode
+   */
   async getInventoryByBarcode(barcode: string, businessUnitId?: string): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -751,6 +920,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory by SKU
+   */
   async getInventoryBySku(sku: string, businessUnitId?: string): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -766,13 +938,20 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory item by ID
+   */
   async getInventoryItemById(id: string, businessUnitId?: string): Promise<any> {
     try {
+      if (!id) {
+        throw new Error('Inventory ID is required');
+      }
+      
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
       const params: any = {};
       if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
       
-      const response = await api.get<any>(`/inventory/${id}`, { params });
+      const response = await api.get<any>(`/inventory/items/${id}`, { params });
       
       let result = null;
       if (response) {
@@ -786,22 +965,40 @@ export const inventoryService = {
       }
       
       return result ? normalizeInventoryItem(result) : null;
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        console.warn(`⚠️ Inventory item ${id} not found`);
+        return null;
+      }
       console.error('❌ Failed to get inventory item by ID:', error);
       throw error;
     }
   },
 
+  /**
+   * Get inventory item (legacy)
+   */
   async getInventoryItem(id: string): Promise<any> {
     try {
-      const response = await api.get(`/inventory/${id}`);
+      if (!id) {
+        throw new Error('Inventory ID is required');
+      }
+      
+      const response = await api.get(`/inventory/items/${id}`);
       return response ? normalizeInventoryItem(response) : response;
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        console.warn(`⚠️ Inventory item ${id} not found`);
+        return null;
+      }
       console.error(`❌ Failed to get inventory item ${id}:`, error);
       throw error;
     }
   },
 
+  /**
+   * Get low stock items
+   */
   async getLowStockItems(businessUnitId: string): Promise<any[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -814,6 +1011,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get out of stock items
+   */
   async getOutOfStockItems(businessUnitId: string): Promise<any[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -826,6 +1026,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory value
+   */
   async getInventoryValue(businessUnitId: string): Promise<InventoryValue> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -837,6 +1040,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory transactions
+   */
   async getInventoryTransactions(params?: InventoryTransactionParams): Promise<PaginatedResponse<InventoryTransaction>> {
     try {
       const cleanParams = { ...params };
@@ -857,6 +1063,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory by location
+   */
   async getInventoryByLocation(location: string, businessUnitId: string): Promise<any[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -869,6 +1078,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory by category
+   */
   async getInventoryByCategory(category: string, businessUnitId: string): Promise<any[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -881,6 +1093,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Search inventory
+   */
   async searchInventory(query: string, businessUnitId: string, filters?: InventorySearchFilters): Promise<any[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -897,6 +1112,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Search products
+   */
   async searchProducts(params: {
     query: string;
     category?: string;
@@ -918,6 +1136,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory summary
+   */
   async getInventorySummary(businessUnitId: string): Promise<InventorySummary> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -932,6 +1153,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get total items count
+   */
   async getTotalItems(businessUnitId: string): Promise<number> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -943,6 +1167,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get stock movements
+   */
   async getStockMovements(params: InventoryMovementParams): Promise<InventoryTransaction[]> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(params.businessUnitId);
@@ -957,6 +1184,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory stats
+   */
   async getInventoryStats(businessUnitId: string): Promise<InventoryStats> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -968,6 +1198,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Get inventory report
+   */
   async getInventoryReport(businessUnitId: string, params?: {
     includeInactive?: boolean;
     categoryId?: string;
@@ -990,6 +1223,9 @@ export const inventoryService = {
   // CREATE ENDPOINTS
   // ============================================
 
+  /**
+   * Create inventory item
+   */
   async createItem(data: CreateItemData): Promise<any> {
     try {
       console.log('📤 Creating inventory item with data:', data);
@@ -1035,6 +1271,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Create inventory (legacy)
+   */
   async createInventory(data: any): Promise<any> {
     try {
       const cleanData = { ...data };
@@ -1055,6 +1294,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Create product with inventory
+   */
   async createProductWithInventory(data: CreateItemData): Promise<any> {
     try {
       console.log('📤 Creating product with inventory:', data);
@@ -1076,6 +1318,9 @@ export const inventoryService = {
         description: data.description?.trim() || undefined,
         barcode: data.barcode?.trim() || undefined,
         images: data.images || [],
+        weight: typeof data.weight === 'number' ? data.weight : undefined,
+        taxRate: typeof data.taxRate === 'number' ? data.taxRate : undefined,
+        tags: data.tags || [],
         businessUnitId: cleanBusinessUnitId || undefined,
         userId: data.userId,
       };
@@ -1094,6 +1339,9 @@ export const inventoryService = {
   // UPDATE ENDPOINTS
   // ============================================
 
+  /**
+   * Update inventory item
+   */
   async updateItem(id: string, data: UpdateItemData): Promise<any> {
     try {
       console.log(`📤 Updating inventory item ${id}:`, data);
@@ -1137,6 +1385,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Update inventory (legacy)
+   */
   async updateInventory(id: string, data: any): Promise<any> {
     try {
       const cleanData = { ...data };
@@ -1157,10 +1408,16 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Update product (alias for updateInventory)
+   */
   async updateProduct(id: string, data: any): Promise<any> {
     return this.updateInventory(id, data);
   },
 
+  /**
+   * Update stock for an item
+   */
   async updateStock(id: string, data: UpdateStockData): Promise<any> {
     try {
       const payload = {
@@ -1183,6 +1440,9 @@ export const inventoryService = {
   // DELETE ENDPOINTS
   // ============================================
 
+  /**
+   * Bulk update stock
+   */
   async bulkUpdateStock(updates: Array<{ id: string; quantity: number; transactionType?: string; notes?: string }>): Promise<BulkUpdateResult> {
     try {
       console.log(`📤 Bulk updating stock for ${updates.length} items`);
@@ -1196,6 +1456,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Bulk delete items
+   */
   async bulkDeleteItems(ids: string[]): Promise<BulkUpdateResult> {
     try {
       console.log(`📤 Bulk deleting ${ids.length} inventory items`);
@@ -1208,6 +1471,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Delete inventory item
+   */
   async deleteInventoryItem(id: string, businessUnitId?: string): Promise<{ message: string }> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1222,10 +1488,16 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Delete product (alias for deleteInventoryItem)
+   */
   async deleteProduct(id: string, businessUnitId?: string, userId?: string): Promise<{ message: string }> {
     return this.deleteInventoryItem(id, businessUnitId);
   },
 
+  /**
+   * Delete inventory (legacy)
+   */
   async deleteInventory(id: string): Promise<any> {
     try {
       const response = await api.delete(`/inventory/${id}`);
@@ -1240,6 +1512,9 @@ export const inventoryService = {
   // STOCK OPERATIONS - ISSUE, RETURN, RESTOCK
   // ============================================
 
+  /**
+   * Issue item
+   */
   async issueItem(id: string, data: IssueItemData): Promise<any> {
     try {
       const cleanedData = cleanObject(data);
@@ -1251,6 +1526,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Return item
+   */
   async returnItem(id: string, data: ReturnItemData): Promise<any> {
     try {
       const cleanedData = cleanObject(data);
@@ -1262,6 +1540,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Restock item
+   */
   async restockItem(id: string, data: RestockItemData): Promise<any> {
     try {
       const cleanedData = cleanObject(data);
@@ -1277,6 +1558,9 @@ export const inventoryService = {
   // BARCODE / QR CODE OPERATIONS
   // ============================================
 
+  /**
+   * Generate barcode for inventory item
+   */
   async generateInventoryBarcode(inventoryId: string, businessUnitId: string): Promise<{
     barcode: string;
     barcodeUrl: string;
@@ -1294,6 +1578,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Generate QR code for inventory item
+   */
   async generateInventoryQRCode(inventoryId: string, businessUnitId: string): Promise<{
     qrCodeUrl: string;
     qrData: any;
@@ -1310,6 +1597,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Bulk generate barcodes
+   */
   async bulkGenerateInventoryBarcodes(ids: string[], businessUnitId: string): Promise<{ results: any[]; errors: any[] }> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1324,10 +1614,31 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Scan inventory item
+   */
+  async scanInventory(barcode: string, businessUnitId: string): Promise<any> {
+    try {
+      const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
+      const response = await api.post<any>('/inventory/scan', { 
+        barcode, 
+        businessUnitId: cleanBusinessUnitId 
+      });
+      return response?.data || response;
+    } catch (error: any) {
+      if (error?.response?.status === 404) return null;
+      console.error(`❌ Failed to scan inventory item:`, error);
+      throw error;
+    }
+  },
+
   // ============================================
   // RESERVE / RELEASE STOCK OPERATIONS
   // ============================================
 
+  /**
+   * Reserve stock
+   */
   async reserveStock(productId: string, quantity: number, businessUnitId: string, variantId?: string): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1341,6 +1652,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Release reserved stock
+   */
   async releaseReservedStock(productId: string, quantity: number, businessUnitId: string, variantId?: string): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1354,6 +1668,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Transfer stock
+   */
   async transferStock(data: TransferStockData): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(data.businessUnitId);
@@ -1371,6 +1688,9 @@ export const inventoryService = {
   // BULK OPERATIONS
   // ============================================
 
+  /**
+   * Bulk create items
+   */
   async bulkCreateItems(items: CreateItemData[]): Promise<BulkUpdateResult> {
     try {
       const cleanedItems = items.map(item => {
@@ -1391,6 +1711,9 @@ export const inventoryService = {
   // EXPORT OPERATIONS
   // ============================================
 
+  /**
+   * Export inventory as blob
+   */
   async exportInventory(businessUnitId: string, format: ExportFormat = 'csv', filters?: InventorySearchFilters): Promise<Blob> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1407,6 +1730,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Export inventory to file
+   */
   async exportInventoryToFile(businessUnitId: string, format: ExportFormat = 'json'): Promise<{ filePath: string; fileName: string; format: string; totalRecords: number }> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1424,6 +1750,9 @@ export const inventoryService = {
   // SYNC OPERATIONS
   // ============================================
 
+  /**
+   * Sync inventory from product
+   */
   async syncInventoryFromProduct(productId: string, businessUnitId: string): Promise<any> {
     try {
       const cleanBusinessUnitId = sanitizeBusinessUnitId(businessUnitId);
@@ -1438,6 +1767,9 @@ export const inventoryService = {
     }
   },
 
+  /**
+   * Sync product from inventory
+   */
   async syncProductFromInventory(inventoryId: string): Promise<any> {
     try {
       const response = await api.post<any>(`/inventory/${inventoryId}/sync/product`);
@@ -1452,20 +1784,92 @@ export const inventoryService = {
   // LEGACY / BACKWARD COMPATIBILITY
   // ============================================
 
+  /**
+   * Get summary (legacy)
+   */
   async getSummary(businessUnitId: string): Promise<InventorySummary> {
     return this.getInventorySummary(businessUnitId);
   },
 
+  /**
+   * Get value (legacy)
+   */
   async getValue(businessUnitId: string): Promise<InventoryValue> {
     return this.getInventoryValue(businessUnitId);
   },
 
+  /**
+   * Get low stock (legacy)
+   */
   async getLowStock(businessUnitId: string): Promise<any[]> {
     return this.getLowStockItems(businessUnitId);
   },
 
+  /**
+   * Get out of stock (legacy)
+   */
   async getOutOfStock(businessUnitId: string): Promise<any[]> {
     return this.getOutOfStockItems(businessUnitId);
+  },
+
+  // ============================================
+  // UTILITY METHODS
+  // ============================================
+
+  /**
+   * Get stock level status for an item
+   */
+  getStockStatus(item: Inventory): string {
+    if (!item) return 'unknown';
+    const available = item.available || 0;
+    const reorderPoint = item.reorderPoint || 5;
+    
+    if (available <= 0) return 'out_of_stock';
+    if (available <= reorderPoint) return 'low_stock';
+    return 'in_stock';
+  },
+
+  /**
+   * Get stock level badge color
+   */
+  getStockBadgeColor(status: string): string {
+    switch (status) {
+      case 'out_of_stock': return 'danger';
+      case 'low_stock': return 'warning';
+      case 'in_stock': return 'success';
+      default: return 'secondary';
+    }
+  },
+
+  /**
+   * Check if item is low stock
+   */
+  isLowStock(item: Inventory): boolean {
+    if (!item) return false;
+    const available = item.available || 0;
+    const reorderPoint = item.reorderPoint || 5;
+    return available > 0 && available <= reorderPoint;
+  },
+
+  /**
+   * Check if item is out of stock
+   */
+  isOutOfStock(item: Inventory): boolean {
+    if (!item) return false;
+    return (item.available || 0) <= 0;
+  },
+
+  /**
+   * Calculate stock percentage
+   * ✅ FIXED: Uses maxStock with fallback
+   */
+  getStockPercentage(item: Inventory): number {
+    if (!item) return 0;
+    // ✅ FIXED: Use maxStock or fallback to 100
+    const maxStock = typeof item.maxStock === 'number' ? item.maxStock : 100;
+    const available = typeof item.available === 'number' ? item.available : 0;
+    // Ensure we don't exceed 100%
+    return Math.min(100, (available / maxStock) * 100);
   },
 };
 

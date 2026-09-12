@@ -2,17 +2,67 @@
 
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   XCircle, ShoppingBag, Home, Mail, Phone,
-  ArrowRight, HelpCircle, RefreshCw, AlertCircle
+  ArrowRight, HelpCircle, RefreshCw, AlertCircle,
+  CreditCard, Shield, Lock, Clock, MessageCircle
 } from 'lucide-react';
 import { useThemeStore } from '../../../app/stores/themeStore';
 import PublicNavigation from '../../../components/PublicNavigation';
 
 export default function PaymentCancelPage() {
   const { isDark } = useThemeStore();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  const [provider, setProvider] = useState<string | null>(null);
+  const [reference, setReference] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(5);
+
+  // Get query params
+  useEffect(() => {
+    const providerParam = searchParams.get('provider');
+    const referenceParam = searchParams.get('reference');
+    const sessionId = searchParams.get('session_id');
+    
+    if (providerParam) setProvider(providerParam);
+    if (referenceParam) setReference(referenceParam);
+    if (sessionId) setReference(sessionId);
+  }, [searchParams]);
+
+  // Auto-redirect to cart after countdown
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (countdown === 0) {
+      router.push('/cart');
+    }
+  }, [countdown, router]);
+
+  const getProviderName = (providerCode: string | null): string => {
+    const names: Record<string, string> = {
+      STRIPE: 'Stripe',
+      PAYPAL: 'PayPal',
+      FLUTTERWAVE: 'Flutterwave',
+      PAYSTACK: 'Paystack',
+      SQUARE: 'Square',
+      MTN: 'MTN Mobile Money',
+      AIRTEL: 'Airtel Money',
+      TIGO: 'Tigo Pesa',
+      VODAFONE: 'Vodafone Cash',
+      CASH: 'Cash',
+      MOBILE_MONEY: 'Mobile Money',
+      BANK_TRANSFER: 'Bank Transfer',
+      GIFT_CARD: 'Gift Card',
+      LOYALTY_POINTS: 'Loyalty Points',
+    };
+    return providerCode ? names[providerCode] || providerCode : 'payment provider';
+  };
 
   return (
     <div className={`min-h-screen ${isDark ? 'dark bg-gray-950' : 'bg-gray-50'} transition-colors`}>
@@ -38,6 +88,21 @@ export default function PaymentCancelPage() {
             Your payment was cancelled. No charges have been made to your account.
           </p>
 
+          {/* Provider info if available */}
+          {provider && (
+            <div className={`mt-4 p-3 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+              <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                <CreditCard className="w-4 h-4 inline mr-2 text-gray-400" />
+                Payment via <span className="font-medium">{getProviderName(provider)}</span>
+                {reference && (
+                  <span className="text-xs block mt-1 font-mono text-gray-500 dark:text-gray-400">
+                    Reference: {reference.slice(0, 20)}...
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+
           <div className={`mt-6 p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
             <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
               <AlertCircle className="w-4 h-4 inline mr-2 text-yellow-500" />
@@ -62,6 +127,7 @@ export default function PaymentCancelPage() {
             </Link>
           </div>
 
+          {/* Support options */}
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
             <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               Need help?
@@ -85,7 +151,45 @@ export default function PaymentCancelPage() {
                 <HelpCircle className="w-4 h-4" />
                 FAQ
               </Link>
+              <a
+                href="tel:+1-800-555-0199"
+                className={`inline-flex items-center gap-1 text-sm ${
+                  isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
+                }`}
+              >
+                <Phone className="w-4 h-4" />
+                Call Support
+              </a>
             </div>
+          </div>
+
+          {/* Auto-redirect notice */}
+          <div className={`mt-4 pt-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+            <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+              Redirecting to cart in {countdown} seconds...
+              <button
+                onClick={() => router.push('/cart')}
+                className="ml-2 text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Go now
+              </button>
+            </p>
+          </div>
+
+          {/* Trust Badges */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+            <span className="flex items-center gap-1">
+              <Shield className="w-3 h-3 text-green-500" />
+              Secure
+            </span>
+            <span className="flex items-center gap-1">
+              <Lock className="w-3 h-3 text-blue-500" />
+              Encrypted
+            </span>
+            <span className="flex items-center gap-1">
+              <MessageCircle className="w-3 h-3 text-orange-500" />
+              Support Available
+            </span>
           </div>
         </motion.div>
       </div>

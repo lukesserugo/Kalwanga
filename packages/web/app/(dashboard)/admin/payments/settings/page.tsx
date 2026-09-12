@@ -67,27 +67,6 @@ interface PaymentSettings {
   currencySymbol: string;
 }
 
-interface ProviderConfig {
-  provider: string;
-  name: string;
-  imageUrl: string;
-  darkImageUrl?: string;
-  isActive: boolean;
-  isHealthy: boolean;
-  configured: boolean;
-  config: Record<string, any>;
-  settings: Record<string, any>;
-  apiKey?: string;
-  secretKey?: string;
-  publicKey?: string;
-  clientId?: string;
-  clientSecret?: string;
-  accessToken?: string;
-  locationId?: string;
-  environment: 'sandbox' | 'production';
-  webhookUrl?: string;
-}
-
 // ============================================
 // CONSTANTS - EXACT PROVIDER IMAGE URLs
 // ============================================
@@ -95,7 +74,7 @@ interface ProviderConfig {
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
   PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.svg',
   PAYSTACK: 'https://paystack.com/assets/images/logo.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
@@ -112,7 +91,7 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
   PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.svg',
   PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
@@ -545,9 +524,15 @@ export default function AdminPaymentSettingsPage() {
   };
 
   const handleConfigureProvider = async (providerId: string) => {
+    if (!providerId) return;
+    
     setSavingProvider(true);
     try {
-      const response = await paymentService.configurePaymentProvider(providerId, providerConfigData);
+      // Wrap config data in the expected format
+      const response = await paymentService.configurePaymentProvider(providerId, {
+        config: providerConfigData,
+        settings: {},
+      });
       if (response.success) {
         toast.success('Provider configured successfully');
         await loadProviders();
@@ -642,6 +627,7 @@ export default function AdminPaymentSettingsPage() {
   const renderProviderConfigForm = (provider: PaymentProviderStatus) => {
     const config = PROVIDER_CONFIGS[provider.provider] || PROVIDER_CONFIGS.STRIPE;
     const imageUrl = getProviderImageUrl(provider.provider);
+    const configValues = provider.config || {};
 
     return (
       <div className={`p-4 rounded-lg border ${isDark ? 'border-gray-700 bg-gray-700/30' : 'border-gray-200 bg-gray-50'}`}>
@@ -650,13 +636,15 @@ export default function AdminPaymentSettingsPage() {
             <div className="relative w-10 h-10 flex-shrink-0">
               <Image
                 src={imageUrl}
-                alt={provider.name}
+                alt={provider.name || 'Payment provider'}
                 width={40}
                 height={40}
-                className="rounded-lg object-contain"
+                style={{ width: 'auto', height: 'auto' }}
+                className="rounded-lg object-contain max-w-[40px] max-h-[40px]"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                  const parent = (e.target as HTMLImageElement).parentElement;
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
                   if (parent) {
                     const fallback = document.createElement('span');
                     fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
@@ -670,9 +658,9 @@ export default function AdminPaymentSettingsPage() {
             <span className="text-2xl">{config.icon}</span>
           )}
           <div>
-            <h4 className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{provider.name}</h4>
+            <h4 className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{provider.name || 'Unknown Provider'}</h4>
             <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              {provider.provider} • {provider.type}
+              {provider.provider || ''} • {provider.type || 'N/A'}
             </p>
           </div>
           <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${
@@ -693,7 +681,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.apiKey || provider.config?.apiKey || ''}
+                value={providerConfigData.apiKey || (configValues as any)?.apiKey || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, apiKey: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -709,7 +697,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.webhookSecret || provider.config?.webhookSecret || ''}
+                value={providerConfigData.webhookSecret || (configValues as any)?.webhookSecret || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, webhookSecret: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -730,7 +718,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="text"
-                value={providerConfigData.clientId || provider.config?.clientId || ''}
+                value={providerConfigData.clientId || (configValues as any)?.clientId || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, clientId: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -746,7 +734,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.clientSecret || provider.config?.clientSecret || ''}
+                value={providerConfigData.clientSecret || (configValues as any)?.clientSecret || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, clientSecret: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -767,7 +755,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.apiKey || provider.config?.apiKey || ''}
+                value={providerConfigData.apiKey || (configValues as any)?.apiKey || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, apiKey: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -783,7 +771,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="text"
-                value={providerConfigData.publicKey || provider.config?.publicKey || ''}
+                value={providerConfigData.publicKey || (configValues as any)?.publicKey || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, publicKey: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -799,7 +787,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.encryptionKey || provider.config?.encryptionKey || ''}
+                value={providerConfigData.encryptionKey || (configValues as any)?.encryptionKey || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, encryptionKey: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -820,7 +808,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.secretKey || provider.config?.secretKey || ''}
+                value={providerConfigData.secretKey || (configValues as any)?.secretKey || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, secretKey: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -836,7 +824,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="text"
-                value={providerConfigData.publicKey || provider.config?.publicKey || ''}
+                value={providerConfigData.publicKey || (configValues as any)?.publicKey || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, publicKey: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -857,7 +845,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="password"
-                value={providerConfigData.accessToken || provider.config?.accessToken || ''}
+                value={providerConfigData.accessToken || (configValues as any)?.accessToken || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, accessToken: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -873,7 +861,7 @@ export default function AdminPaymentSettingsPage() {
               </label>
               <input
                 type="text"
-                value={providerConfigData.locationId || provider.config?.locationId || ''}
+                value={providerConfigData.locationId || (configValues as any)?.locationId || ''}
                 onChange={(e) => setProviderConfigData({ ...providerConfigData, locationId: e.target.value })}
                 className={`w-full px-3 py-2 rounded-lg text-sm ${
                   isDark
@@ -892,7 +880,7 @@ export default function AdminPaymentSettingsPage() {
             Environment
           </label>
           <select
-            value={providerConfigData.environment || provider.config?.environment || 'sandbox'}
+            value={providerConfigData.environment || (configValues as any)?.environment || 'sandbox'}
             onChange={(e) => setProviderConfigData({ ...providerConfigData, environment: e.target.value })}
             className={`w-full px-3 py-2 rounded-lg text-sm ${
               isDark
@@ -907,7 +895,7 @@ export default function AdminPaymentSettingsPage() {
 
         <div className="flex gap-2 mt-4">
           <button
-            onClick={() => handleConfigureProvider(provider.id)}
+            onClick={() => provider.id && handleConfigureProvider(provider.id)}
             disabled={savingProvider}
             className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
           >
@@ -1113,13 +1101,15 @@ export default function AdminPaymentSettingsPage() {
                             <div className="relative w-10 h-10 flex-shrink-0">
                               <Image
                                 src={imageUrl}
-                                alt={provider.name}
+                                alt={provider.name || 'Payment provider'}
                                 width={40}
                                 height={40}
-                                className="rounded-lg object-contain"
+                                style={{ width: 'auto', height: 'auto' }}
+                                className="rounded-lg object-contain max-w-[40px] max-h-[40px]"
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                  const parent = (e.target as HTMLImageElement).parentElement;
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
                                   if (parent) {
                                     const fallback = document.createElement('span');
                                     fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
@@ -1134,10 +1124,10 @@ export default function AdminPaymentSettingsPage() {
                           )}
                           <div>
                             <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                              {provider.name}
+                              {provider.name || 'Unknown Provider'}
                             </p>
                             <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {provider.provider} • {provider.type}
+                              {provider.provider || ''} • {provider.type || 'N/A'}
                             </p>
                           </div>
                         </div>
@@ -1169,12 +1159,18 @@ export default function AdminPaymentSettingsPage() {
                             )}
                           </div>
 
+                          {/* ✅ FIXED: Toggle button with nullish coalescing */}
                           <button
-                            onClick={() => handleToggleProvider(provider.id, provider.isActive)}
+                            onClick={() => {
+                              if (provider.id) {
+                                handleToggleProvider(provider.id, provider.isActive);
+                              }
+                            }}
                             className={`p-1.5 rounded-lg transition ${
                               isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
                             }`}
                             title={provider.isActive ? 'Deactivate' : 'Activate'}
+                            disabled={!provider.id}
                           >
                             {provider.isActive ? (
                               <ToggleRight className="w-5 h-5 text-green-500" />
@@ -1183,16 +1179,17 @@ export default function AdminPaymentSettingsPage() {
                             )}
                           </button>
 
+                          {/* ✅ FIXED: Configure button with nullish coalescing */}
                           <button
                             onClick={() => {
                               if (isEditing) {
                                 setShowProviderConfig(null);
                                 setProviderConfigData({});
                               } else {
-                                setShowProviderConfig(provider.id);
+                                setShowProviderConfig(provider.id ?? null);
                                 setProviderConfigData({
-                                  ...provider.config,
-                                  environment: provider.config?.environment || 'sandbox',
+                                  ...(provider.config || {}),
+                                  environment: (provider.config as any)?.environment || 'sandbox',
                                 });
                               }
                             }}
@@ -1200,6 +1197,7 @@ export default function AdminPaymentSettingsPage() {
                               isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
                             }`}
                             title={isEditing ? 'Close configuration' : 'Configure provider'}
+                            disabled={!provider.id}
                           >
                             {isEditing ? (
                               <XCircle className="w-5 h-5 text-red-500" />
@@ -1215,25 +1213,25 @@ export default function AdminPaymentSettingsPage() {
                         <div className="text-center">
                           <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>24h</p>
                           <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.transactions24h}
+                            {provider.transactions24h || 0}
                           </p>
                         </div>
                         <div className="text-center">
                           <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>7d</p>
                           <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.transactions7d}
+                            {provider.transactions7d || 0}
                           </p>
                         </div>
                         <div className="text-center">
                           <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>30d</p>
                           <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.transactions30d}
+                            {provider.transactions30d || 0}
                           </p>
                         </div>
                       </div>
 
                       {/* Configuration Form */}
-                      {isEditing && renderProviderConfigForm(provider)}
+                      {isEditing && provider.id && renderProviderConfigForm(provider)}
                     </div>
                   );
                 })}

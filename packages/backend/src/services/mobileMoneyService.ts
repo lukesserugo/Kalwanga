@@ -211,7 +211,7 @@ export class MTNMobileMoneyService {
       this.tokenExpiry = Date.now() + (response.data.expires_in || 3600) * 1000;
 
       logger.info('✅ MTN access token obtained');
-      return this.accessToken;
+      return this.accessToken as string;
     } catch (error: any) {
       logger.error('Failed to get MTN access token:', error.response?.data || error.message);
       throw new AppError('Failed to authenticate with MTN Mobile Money', 500);
@@ -644,7 +644,7 @@ export class AirtelMobileMoneyService {
       this.tokenExpiry = Date.now() + (response.data.expires_in || 3600) * 1000;
 
       logger.info('✅ Airtel access token obtained');
-      return this.accessToken;
+      return this.accessToken as string;
     } catch (error: any) {
       logger.error('Failed to get Airtel access token:', error.response?.data || error.message);
       throw new AppError('Failed to authenticate with Airtel Mobile Money', 500);

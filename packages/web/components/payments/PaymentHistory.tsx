@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import {
   CreditCard, DollarSign, Calendar, Clock, Eye,
   Download, Printer, Copy, CheckCircle, XCircle,
   AlertCircle, Loader2, ChevronDown, ChevronUp,
   Search, Filter, RefreshCw, FileText, ArrowUpRight,
   ArrowDownRight, Receipt, Shield, Lock, Star,
-  Banknote, Wallet, Building, QrCode, Gift, Smartphone, Landmark
+  Banknote, Wallet, Building, QrCode, Gift, Smartphone, Landmark,
+  Globe
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { paymentService } from '../../services/paymentService';
@@ -27,7 +29,6 @@ interface PaymentHistoryProps {
   onPaymentSelect?: (payment: any) => void;
 }
 
-// ✅ FIXED: Match the imported type exactly
 interface Payment {
   id: string;
   amount: number;
@@ -36,6 +37,7 @@ interface Payment {
   reference?: string;
   processedAt: string;
   provider?: string;
+  gatewayId?: string;
   sale?: {
     receiptNumber: string;
     total: number;
@@ -50,18 +52,106 @@ interface Payment {
     email: string;
     phone: string;
   };
-  // ✅ FIXED: Make address optional to match imported type
   businessUnit?: {
     name: string;
-    address?: string; // Made optional
+    address?: string;
     phone?: string;
     email?: string;
   };
 }
 
 // ============================================
-// CONSTANTS
+// CONSTANTS - EXACT PROVIDER IMAGE URLs
 // ============================================
+
+const PROVIDER_IMAGE_URLS: Record<string, string> = {
+  STRIPE: 'https://stripe.com/img/v3/home/social.png',
+  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
+  SQUARE: 'https://squareup.com/icons/square_logo.svg',
+  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
+  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
+  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
+  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
+  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
+  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+};
+
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
+  STRIPE: 'https://stripe.com/img/v3/home/social.png',
+  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
+  SQUARE: 'https://squareup.com/icons/square_logo.svg',
+  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
+  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
+  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
+  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
+  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
+  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+};
+
+const PAYMENT_METHOD_ICONS: Record<string, any> = {
+  CASH: Banknote,
+  CREDIT_CARD: CreditCard,
+  DEBIT_CARD: Wallet,
+  MOBILE_MONEY: Smartphone,
+  BANK_TRANSFER: Landmark,
+  GIFT_CARD: Gift,
+  LOYALTY_POINTS: Star,
+  CHECK: FileText,
+  PAYPAL: Globe,
+  FLUTTERWAVE: Globe,
+  PAYSTACK: CreditCard,
+  SQUARE: CreditCard,
+  MTN: Smartphone,
+  AIRTEL: Smartphone,
+  TIGO: Smartphone,
+  VODAFONE: Smartphone,
+};
+
+const PAYMENT_METHOD_EMOJIS: Record<string, string> = {
+  CASH: '💰',
+  CREDIT_CARD: '💳',
+  DEBIT_CARD: '💳',
+  MOBILE_MONEY: '📱',
+  BANK_TRANSFER: '🏦',
+  GIFT_CARD: '🎁',
+  LOYALTY_POINTS: '⭐',
+  CHECK: '📝',
+  PAYPAL: '💸',
+  FLUTTERWAVE: '🌊',
+  PAYSTACK: '🔷',
+  SQUARE: '⬜',
+  MTN: '📱',
+  AIRTEL: '📱',
+  TIGO: '📱',
+  VODAFONE: '📱',
+};
+
+const PROVIDER_NAMES: Record<string, string> = {
+  STRIPE: 'Stripe',
+  CASH: 'Cash',
+  MOBILE_MONEY: 'Mobile Money',
+  BANK_TRANSFER: 'Bank Transfer',
+  GIFT_CARD: 'Gift Card',
+  LOYALTY_POINTS: 'Loyalty Points',
+  PAYPAL: 'PayPal',
+  FLUTTERWAVE: 'Flutterwave',
+  PAYSTACK: 'Paystack',
+  SQUARE: 'Square',
+  MTN: 'MTN Mobile Money',
+  AIRTEL: 'Airtel Money',
+  TIGO: 'Tigo Pesa',
+  VODAFONE: 'Vodafone Cash',
+};
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
@@ -74,17 +164,6 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
   DECLINED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   DISPUTED: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   CANCELLED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-};
-
-const PAYMENT_METHOD_ICONS: Record<string, any> = {
-  CASH: Banknote,
-  CREDIT_CARD: CreditCard,
-  DEBIT_CARD: Wallet,
-  MOBILE_MONEY: Smartphone,
-  BANK_TRANSFER: Landmark,
-  GIFT_CARD: Gift,
-  LOYALTY_POINTS: Star,
-  CHECK: FileText,
 };
 
 // ============================================
@@ -122,6 +201,22 @@ export function PaymentHistory({
   useEffect(() => {
     loadPayments();
   }, [userId, pagination.page, filters]);
+
+  const getProviderImageUrl = (provider?: string): string => {
+    if (!provider) return '';
+    return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
+      : PROVIDER_IMAGE_URLS[provider] || '';
+  };
+
+  const getProviderName = (provider?: string): string => {
+    if (!provider) return 'N/A';
+    return PROVIDER_NAMES[provider] || provider;
+  };
+
+  const getPaymentMethodEmoji = (method: string): string => {
+    return PAYMENT_METHOD_EMOJIS[method] || '💳';
+  };
 
   const loadPayments = async () => {
     try {
@@ -206,6 +301,11 @@ export function PaymentHistory({
     setShowReceiptModal(true);
     onPaymentSelect?.(payment);
   };
+
+  // Get unique providers for filter
+  const providerOptions = Array.from(
+    new Set(payments.map(p => p.provider).filter(Boolean))
+  );
 
   return (
     <div className={className}>
@@ -318,6 +418,10 @@ export function PaymentHistory({
                 <option value="GIFT_CARD">Gift Card</option>
                 <option value="LOYALTY_POINTS">Loyalty Points</option>
                 <option value="CHECK">Check</option>
+                <option value="PAYPAL">PayPal</option>
+                <option value="FLUTTERWAVE">Flutterwave</option>
+                <option value="PAYSTACK">Paystack</option>
+                <option value="SQUARE">Square</option>
               </select>
             </div>
             <div>
@@ -340,6 +444,10 @@ export function PaymentHistory({
                 <option value="BANK_TRANSFER">Bank Transfer</option>
                 <option value="GIFT_CARD">Gift Card</option>
                 <option value="LOYALTY_POINTS">Loyalty Points</option>
+                <option value="PAYPAL">PayPal</option>
+                <option value="FLUTTERWAVE">Flutterwave</option>
+                <option value="PAYSTACK">Paystack</option>
+                <option value="SQUARE">Square</option>
               </select>
             </div>
             <div>
@@ -357,10 +465,20 @@ export function PaymentHistory({
                       : 'bg-white text-gray-900 border-gray-300'
                   } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm ${
+                    isDark
+                      ? 'bg-gray-600 text-white border-gray-500'
+                      : 'bg-white text-gray-900 border-gray-300'
+                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                />
               </div>
             </div>
           </div>
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={() => {
                 setFilters({
@@ -394,81 +512,123 @@ export function PaymentHistory({
         </div>
       ) : (
         <div className="space-y-3">
-          {payments.map((payment) => (
-            <div
-              key={payment.id}
-              className={`p-4 rounded-lg border transition ${
-                isDark
-                  ? 'border-gray-700 hover:bg-gray-700/30'
-                  : 'border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg ${getStatusColor(payment.status)}`}>
-                    {getPaymentIcon(payment.paymentMethod)}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {formatCurrency(payment.amount)}
-                      </p>
-                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1 ${getStatusColor(payment.status)}`}>
-                        {getStatusIcon(payment.status)}
-                        {payment.status}
-                      </span>
-                      {payment.provider && (
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                          isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {payment.provider}
+          {payments.map((payment) => {
+            const providerImageUrl = getProviderImageUrl(payment.provider || payment.gatewayId);
+            const providerName = getProviderName(payment.provider || payment.gatewayId);
+
+            return (
+              <div
+                key={payment.id}
+                className={`p-4 rounded-lg border transition ${
+                  isDark
+                    ? 'border-gray-700 hover:bg-gray-700/30'
+                    : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    {/* Provider Logo or Icon */}
+                    <div className={`p-2 rounded-lg ${getStatusColor(payment.status)} flex items-center justify-center min-w-[40px]`}>
+                      {providerImageUrl ? (
+                        <div className="relative w-6 h-6">
+                          <Image
+                            src={providerImageUrl}
+                            alt={providerName}
+                            width={24}
+                            height={24}
+                            className="rounded object-contain"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              const parent = (e.target as HTMLImageElement).parentElement;
+                              if (parent) {
+                                const fallback = document.createElement('span');
+                                fallback.className = 'text-lg';
+                                fallback.textContent = getPaymentMethodEmoji(payment.paymentMethod);
+                                parent.appendChild(fallback);
+                              }
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        getPaymentIcon(payment.paymentMethod)
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {formatCurrency(payment.amount)}
+                        </p>
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1 ${getStatusColor(payment.status)}`}>
+                          {getStatusIcon(payment.status)}
+                          {payment.status}
                         </span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 mt-1 text-sm">
-                      <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                        {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
-                      </span>
-                      <button
-                        onClick={() => handleCopyReference(payment.reference || payment.id)}
-                        className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition`}
-                        title="Copy reference"
-                      >
-                        <Copy className="w-3 h-3 text-gray-400" />
-                      </button>
-                      <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-                      <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                        {formatMethod(payment.paymentMethod)}
-                      </span>
-                      <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-                      <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                        {formatDateTime(payment.processedAt)}
-                      </span>
-                      {payment.sale?.receiptNumber && (
-                        <>
-                          <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                            Sale: {payment.sale.receiptNumber}
+                        {(payment.provider || payment.gatewayId) && (
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1 ${
+                            isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {providerImageUrl ? (
+                              <div className="relative w-3 h-3">
+                                <Image
+                                  src={providerImageUrl}
+                                  alt={providerName}
+                                  width={12}
+                                  height={12}
+                                  className="rounded object-contain"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            ) : null}
+                            {providerName}
                           </span>
-                        </>
-                      )}
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 mt-1 text-sm">
+                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                          {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
+                        </span>
+                        <button
+                          onClick={() => handleCopyReference(payment.reference || payment.id)}
+                          className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition`}
+                          title="Copy reference"
+                        >
+                          <Copy className="w-3 h-3 text-gray-400" />
+                        </button>
+                        <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                          {formatMethod(payment.paymentMethod)}
+                        </span>
+                        <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                          {formatDateTime(payment.processedAt)}
+                        </span>
+                        {payment.sale?.receiptNumber && (
+                          <>
+                            <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                            <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                              Sale: {payment.sale.receiptNumber}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleViewReceipt(payment)}
-                    className={`p-1.5 rounded-lg transition ${
-                      isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                    }`}
-                    title="View receipt"
-                  >
-                    <Receipt className="w-4 h-4 text-blue-500" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleViewReceipt(payment)}
+                      className={`p-1.5 rounded-lg transition ${
+                        isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                      }`}
+                      title="View receipt"
+                    >
+                      <Receipt className="w-4 h-4 text-blue-500" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -518,6 +678,7 @@ export function PaymentHistory({
                 paymentMethod: selectedPayment.paymentMethod,
                 status: selectedPayment.status,
                 processedAt: selectedPayment.processedAt,
+                provider: selectedPayment.provider || selectedPayment.gatewayId,
                 sale: selectedPayment.sale ? {
                   receiptNumber: selectedPayment.sale.receiptNumber,
                   items: selectedPayment.sale.items || [],

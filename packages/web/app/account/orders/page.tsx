@@ -4,13 +4,16 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShoppingBag, Package, Clock, CheckCircle, XCircle,
   AlertCircle, Loader2, ChevronRight, Eye,
   Search, Calendar, Download, Printer, ArrowLeft,
-  DollarSign, Receipt, RefreshCw, X
+  DollarSign, Receipt, RefreshCw, X,
+  CreditCard, Banknote, Wallet, Building, Gift, Star,
+  Smartphone, Landmark, Globe, FileText
 } from 'lucide-react';
 import { useThemeStore } from '../../stores/themeStore';
 import { api } from '../../../services/api';
@@ -42,6 +45,8 @@ interface Order {
     paymentMethod: string;
     status: string;
     processedAt: string;
+    provider?: string;
+    gatewayId?: string;
   };
 }
 
@@ -73,8 +78,78 @@ interface ApiResponse<T = any> {
 }
 
 // ============================================
-// CONSTANTS
+// CONSTANTS - EXACT PROVIDER IMAGE URLs
 // ============================================
+
+const PROVIDER_IMAGE_URLS: Record<string, string> = {
+  STRIPE: 'https://stripe.com/img/v3/home/social.png',
+  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
+  SQUARE: 'https://squareup.com/icons/square_logo.svg',
+  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
+  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
+  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
+  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
+  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
+  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+};
+
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
+  STRIPE: 'https://stripe.com/img/v3/home/social.png',
+  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
+  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
+  SQUARE: 'https://squareup.com/icons/square_logo.svg',
+  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
+  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
+  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
+  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
+  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
+  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+};
+
+const PAYMENT_METHOD_ICONS: Record<string, any> = {
+  CASH: Banknote,
+  CREDIT_CARD: CreditCard,
+  DEBIT_CARD: Wallet,
+  MOBILE_MONEY: Smartphone,
+  BANK_TRANSFER: Landmark,
+  GIFT_CARD: Gift,
+  LOYALTY_POINTS: Star,
+  CHECK: FileText,
+  PAYPAL: Globe,
+  FLUTTERWAVE: Globe,
+  PAYSTACK: CreditCard,
+  SQUARE: CreditCard,
+  MTN: Smartphone,
+  AIRTEL: Smartphone,
+  TIGO: Smartphone,
+  VODAFONE: Smartphone,
+};
+
+const PROVIDER_CONFIGS: Record<string, { icon: string; name: string; color: string }> = {
+  STRIPE: { icon: '💳', name: 'Stripe', color: 'blue' },
+  PAYPAL: { icon: '💸', name: 'PayPal', color: 'blue' },
+  FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan' },
+  PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky' },
+  SQUARE: { icon: '⬜', name: 'Square', color: 'gray' },
+  CASH: { icon: '💰', name: 'Cash', color: 'green' },
+  MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'orange' },
+  BANK_TRANSFER: { icon: '🏦', name: 'Bank Transfer', color: 'indigo' },
+  GIFT_CARD: { icon: '🎁', name: 'Gift Card', color: 'pink' },
+  LOYALTY_POINTS: { icon: '⭐', name: 'Loyalty Points', color: 'yellow' },
+  MTN: { icon: '📱', name: 'MTN Mobile Money', color: 'yellow' },
+  AIRTEL: { icon: '📱', name: 'Airtel Money', color: 'red' },
+  TIGO: { icon: '📱', name: 'Tigo Pesa', color: 'blue' },
+  VODAFONE: { icon: '📱', name: 'Vodafone Cash', color: 'red' },
+};
 
 const ORDER_STATUS_COLORS: Record<string, string> = {
   PENDING: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
@@ -213,6 +288,22 @@ export default function AccountOrdersPage() {
     setTimeout(() => loadOrders(), 100);
   };
 
+  const getProviderImageUrl = (providerCode: string): string => {
+    if (!providerCode) return '';
+    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode] 
+      ? PROVIDER_DARK_IMAGE_URLS[providerCode] 
+      : PROVIDER_IMAGE_URLS[providerCode] || '';
+  };
+
+  const getProviderConfig = (providerCode: string) => {
+    return PROVIDER_CONFIGS[providerCode] || { icon: '💳', name: providerCode, color: 'gray' };
+  };
+
+  const getPaymentMethodIcon = (method: string) => {
+    const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
+    return Icon;
+  };
+
   const getStatusColor = (status: string) => {
     return ORDER_STATUS_COLORS[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
   };
@@ -228,6 +319,28 @@ export default function AccountOrdersPage() {
 
   const getStatusLabel = (status: string) => {
     return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  };
+
+  const getPaymentMethodLabel = (method: string) => {
+    const labels: Record<string, string> = {
+      CASH: 'Cash',
+      CREDIT_CARD: 'Credit Card',
+      DEBIT_CARD: 'Debit Card',
+      MOBILE_MONEY: 'Mobile Money',
+      BANK_TRANSFER: 'Bank Transfer',
+      GIFT_CARD: 'Gift Card',
+      LOYALTY_POINTS: 'Loyalty Points',
+      CHECK: 'Check',
+      PAYPAL: 'PayPal',
+      FLUTTERWAVE: 'Flutterwave',
+      PAYSTACK: 'Paystack',
+      SQUARE: 'Square',
+      MTN: 'MTN Mobile Money',
+      AIRTEL: 'Airtel Money',
+      TIGO: 'Tigo Pesa',
+      VODAFONE: 'Vodafone Cash',
+    };
+    return labels[method] || method;
   };
 
   if (loading) {
@@ -417,95 +530,123 @@ export default function AccountOrdersPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {orders.map((order, index) => (
-              <motion.div
-                key={order.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className={`rounded-xl overflow-hidden border ${
-                  isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-                } hover:shadow-md transition-shadow`}
-              >
-                <div className="p-4">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    {/* Order Info */}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <p className={`font-mono text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          #{order.orderNumber || order.id.slice(0, 8)}
-                        </p>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status)}`}>
-                          {getStatusIcon(order.status)}
-                          {getStatusLabel(order.status)}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(order.paymentStatus)}`}>
-                          {order.paymentStatus}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          <Calendar className="w-3 h-3 inline mr-1" />
-                          {formatDate(order.createdAt)}
-                        </span>
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          <Package className="w-3 h-3 inline mr-1" />
-                          {order.items?.length || 0} items
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Amount & Actions */}
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {formatCurrency(order.total)}
-                        </p>
-                        <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {order.paymentStatus === 'PAID' ? 'Paid' : 'Due'}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleViewOrder(order)}
-                        className={`p-2 rounded-lg transition ${
-                          isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                        }`}
-                        title="View order details"
-                      >
-                        <Eye className="w-5 h-5 text-blue-500" />
-                      </button>
-                      <ChevronRight className={`w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-                    </div>
-                  </div>
-
-                  {/* Items Preview */}
-                  {order.items && order.items.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                      <div className="flex flex-wrap gap-3">
-                        {order.items.slice(0, 3).map((item) => (
-                          <div key={item.id} className="flex items-center gap-2 text-sm">
-                            <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                              {item.productName || `Item ${item.productId}`}
-                            </span>
-                            <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
-                              × {item.quantity}
-                            </span>
-                            <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                              {formatCurrency(item.total)}
-                            </span>
-                          </div>
-                        ))}
-                        {order.items.length > 3 && (
-                          <span className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                            +{order.items.length - 3} more
+            {orders.map((order, index) => {
+              const paymentIcon = getPaymentMethodIcon(order.payment?.paymentMethod || '');
+              const providerConfig = getProviderConfig(order.payment?.provider || order.payment?.gatewayId || '');
+              const providerImageUrl = getProviderImageUrl(order.payment?.provider || order.payment?.gatewayId || '');
+              
+              return (
+                <motion.div
+                  key={order.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className={`rounded-xl overflow-hidden border ${
+                    isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                  } hover:shadow-md transition-shadow`}
+                >
+                  <div className="p-4">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      {/* Order Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <p className={`font-mono text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            #{order.orderNumber || order.id.slice(0, 8)}
+                          </p>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status)}`}>
+                            {getStatusIcon(order.status)}
+                            {getStatusLabel(order.status)}
                           </span>
-                        )}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getPaymentStatusColor(order.paymentStatus)}`}>
+                            {order.paymentStatus}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
+                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                            <Calendar className="w-3 h-3 inline mr-1" />
+                            {formatDate(order.createdAt)}
+                          </span>
+                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                            <Package className="w-3 h-3 inline mr-1" />
+                            {order.items?.length || 0} items
+                          </span>
+                          {order.payment && (
+                            <span className={`flex items-center gap-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {providerImageUrl ? (
+                                <Image
+                                  src={providerImageUrl}
+                                  alt={providerConfig.name}
+                                  width={16}
+                                  height={16}
+                                  className="rounded object-contain"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-sm">{providerConfig.icon}</span>
+                              )}
+                              <span className="text-xs">
+                                {getPaymentMethodLabel(order.payment.paymentMethod)}
+                                {order.payment.provider && ` via ${providerConfig.name}`}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Amount & Actions */}
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            {formatCurrency(order.total)}
+                          </p>
+                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {order.paymentStatus === 'PAID' ? 'Paid' : 'Due'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleViewOrder(order)}
+                          className={`p-2 rounded-lg transition ${
+                            isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                          }`}
+                          title="View order details"
+                        >
+                          <Eye className="w-5 h-5 text-blue-500" />
+                        </button>
+                        <ChevronRight className={`w-5 h-5 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
                       </div>
                     </div>
-                  )}
-                </div>
-              </motion.div>
-            ))}
+
+                    {/* Items Preview */}
+                    {order.items && order.items.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex flex-wrap gap-3">
+                          {order.items.slice(0, 3).map((item) => (
+                            <div key={item.id} className="flex items-center gap-2 text-sm">
+                              <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
+                                {item.productName || `Item ${item.productId}`}
+                              </span>
+                              <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
+                                × {item.quantity}
+                              </span>
+                              <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                                {formatCurrency(item.total)}
+                              </span>
+                            </div>
+                          ))}
+                          {order.items.length > 3 && (
+                            <span className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                              +{order.items.length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
 
@@ -620,9 +761,26 @@ export default function AccountOrdersPage() {
                     {selectedOrder.paymentStatus}
                   </span>
                   {selectedOrder.payment && (
-                    <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Paid: {formatCurrency(selectedOrder.payment.amount)} via {selectedOrder.payment.paymentMethod}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {getProviderImageUrl(selectedOrder.payment.provider || selectedOrder.payment.gatewayId || '') ? (
+                        <Image
+                          src={getProviderImageUrl(selectedOrder.payment.provider || selectedOrder.payment.gatewayId || '')}
+                          alt={getProviderConfig(selectedOrder.payment.provider || selectedOrder.payment.gatewayId || '').name}
+                          width={20}
+                          height={20}
+                          className="rounded object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <span className="text-sm">{getProviderConfig(selectedOrder.payment.provider || selectedOrder.payment.gatewayId || '').icon}</span>
+                      )}
+                      <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Paid: {formatCurrency(selectedOrder.payment.amount)} via {getPaymentMethodLabel(selectedOrder.payment.paymentMethod)}
+                        {selectedOrder.payment.provider && ` (${getProviderConfig(selectedOrder.payment.provider).name})`}
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>

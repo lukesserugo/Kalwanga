@@ -1,9 +1,10 @@
-// D:\Projects\Kalwanga\packages\backend\src\services\providers\flutterwaveProviderService.ts
+// D:\Projects\Kalwanga\packages\backend\src\services\providers\flutterwaveService.ts
 
-import { BaseService } from '../BaseService.js';
-import { AppError } from '../../middleware/errorHandler.js';
-import { logger } from '../../lib/logger.js';
+import { BaseService } from './BaseService.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../lib/logger.js';
 import * as crypto from 'crypto';
+import { PaymentMethod, PaymentStatus } from '../generated/prisma/index.js';
 
 interface FlutterwaveConfig {
   apiKey: string;
@@ -128,12 +129,15 @@ export class FlutterwaveService extends BaseService {
 
       const result = await response.json();
 
+      // Map payment method to enum
+      const paymentMethodEnum = this.mapPaymentMethodToEnum(data.paymentMethod);
+
       // Create payment record
       const payment = await this.prisma.payment.create({
         data: {
           amount: data.amount,
-          paymentMethod: this.mapPaymentMethod(data.paymentMethod),
-          status: 'PENDING',
+          paymentMethod: paymentMethodEnum,
+          status: PaymentStatus.PENDING,
           transactionId: txRef,
           reference: result.data.tx_ref,
           userId: data.userId || 'system',
@@ -163,9 +167,20 @@ export class FlutterwaveService extends BaseService {
         paymentData: result.data,
       };
     } catch (error) {
-      this.handleError(error, 'FlutterwaveProviderService.processPayment');
+      this.handleError(error, 'FlutterwaveService.processPayment');
       throw error;
     }
+  }
+
+  private mapPaymentMethodToEnum(method?: string): PaymentMethod {
+    const map: Record<string, PaymentMethod> = {
+      'card': PaymentMethod.CREDIT_CARD,
+      'mobile_money': PaymentMethod.MOBILE_MONEY,
+      'bank_transfer': PaymentMethod.BANK_TRANSFER,
+      'ussd': PaymentMethod.MOBILE_MONEY,
+      'mpesa': PaymentMethod.MOBILE_MONEY,
+    };
+    return map[method || 'card'] || PaymentMethod.CREDIT_CARD;
   }
 
   private getPaymentOptions(paymentMethod?: string): string {
@@ -215,17 +230,6 @@ export class FlutterwaveService extends BaseService {
     return paymentData;
   }
 
-  private mapPaymentMethod(method?: string): string {
-    const map: Record<string, string> = {
-      'card': 'CREDIT_CARD',
-      'mobile_money': 'MOBILE_MONEY',
-      'bank_transfer': 'BANK_TRANSFER',
-      'ussd': 'MOBILE_MONEY',
-      'mpesa': 'MOBILE_MONEY',
-    };
-    return map[method || 'card'] || 'CREDIT_CARD';
-  }
-
   // ============================================
   // REFUND METHODS
   // ============================================
@@ -272,7 +276,7 @@ export class FlutterwaveService extends BaseService {
       await this.prisma.payment.updateMany({
         where: { transactionId },
         data: {
-          status: 'REFUNDED',
+          status: PaymentStatus.REFUNDED,
           refundedAt: new Date(),
           notes: `Flutterwave refunded: ${refund.data.id} - ${data.reason || 'No reason provided'}`,
           metadata: { refundData: refund.data },
@@ -288,7 +292,7 @@ export class FlutterwaveService extends BaseService {
         refundData: refund.data,
       };
     } catch (error) {
-      this.handleError(error, 'FlutterwaveProviderService.refundPayment');
+      this.handleError(error, 'FlutterwaveService.refundPayment');
       throw error;
     }
   }
@@ -334,7 +338,7 @@ export class FlutterwaveService extends BaseService {
         paymentType: result.data.payment_type,
       };
     } catch (error) {
-      this.handleError(error, 'FlutterwaveProviderService.getTransactionStatus');
+      this.handleError(error, 'FlutterwaveService.getTransactionStatus');
       throw error;
     }
   }
@@ -374,7 +378,7 @@ export class FlutterwaveService extends BaseService {
           return { unhandled: true, event };
       }
     } catch (error) {
-      this.handleError(error, 'FlutterwaveProviderService.handleWebhook');
+      this.handleError(error, 'FlutterwaveService.handleWebhook');
       throw error;
     }
   }
@@ -396,7 +400,7 @@ export class FlutterwaveService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: txRef },
       data: {
-        status: 'PAID',
+        status: PaymentStatus.PAID,
         gatewayId: data.id,
         processedAt: new Date(),
         notes: `Flutterwave charge completed: ${data.id}`,
@@ -416,7 +420,7 @@ export class FlutterwaveService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: txRef },
       data: {
-        status: 'FAILED',
+        status: PaymentStatus.FAILED,
         notes: `Flutterwave charge failed: ${data.status}`,
         metadata: { flwResponse: data },
       },
@@ -431,7 +435,7 @@ export class FlutterwaveService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: txRef },
       data: {
-        status: 'REFUNDED',
+        status: PaymentStatus.REFUNDED,
         refundedAt: new Date(),
         notes: `Flutterwave charge refunded: ${data.id}`,
         metadata: { flwResponse: data },
@@ -447,7 +451,7 @@ export class FlutterwaveService extends BaseService {
     await this.prisma.payment.updateMany({
       where: { transactionId: txRef },
       data: {
-        status: 'REFUNDED',
+        status: PaymentStatus.REFUNDED,
         refundedAt: new Date(),
         notes: `Flutterwave charge reversed: ${data.id}`,
         metadata: { flwResponse: data },
@@ -518,7 +522,7 @@ export class FlutterwaveService extends BaseService {
         provider: 'FLUTTERWAVE',
       };
     } catch (error) {
-      this.handleError(error, 'FlutterwaveProviderService.createVirtualAccount');
+      this.handleError(error, 'FlutterwaveService.createVirtualAccount');
       throw error;
     }
   }

@@ -114,7 +114,7 @@ export class MpesaService {
       this.tokenExpiry = Date.now() + response.data.expires_in * 1000;
 
       logger.info('✅ M-Pesa access token obtained successfully');
-      return this.accessToken;
+      return this.accessToken as string;
     } catch (error: any) {
       logger.error('Failed to get M-Pesa access token:', error.response?.data || error.message);
       throw new AppError('Failed to authenticate with M-Pesa', 500);

@@ -20,7 +20,8 @@ import {
   ShoppingBag, Layers, Weight, Ruler, Truck, Eye,
   ChevronDown, ChevronUp, Building2, Database, Wand2,
   Edit3, Percent, Archive, Star, Hash, FileText,
-  Globe, Link2, Image as ImageIcon
+  Globe, Link2, Image as ImageIcon, Trash2,
+  ShoppingCart, TruckIcon, CalendarDays, Clock
 } from 'lucide-react';
 
 // ============================================
@@ -52,6 +53,8 @@ interface InventoryFormData {
   taxRate: number;
   images: string[];
   businessUnitId: string;
+  expiryDate?: string;
+  batchNumber?: string;
 }
 
 interface FormErrors {
@@ -71,6 +74,8 @@ interface FormErrors {
   taxRate?: string;
   tags?: string;
   businessUnit?: string;
+  expiryDate?: string;
+  batchNumber?: string;
 }
 
 interface BarcodeInfo {
@@ -98,6 +103,42 @@ interface BusinessUnitOption {
   isActive?: boolean;
   companyId?: string;
   companyName?: string;
+}
+
+interface InventoryItem {
+  id: string;
+  name: string;
+  sku: string;
+  category: string;
+  categoryId?: string;
+  quantity: number;
+  stock?: number;
+  unit: string;
+  unitPrice: number;
+  price?: number;
+  costPrice: number;
+  minStock: number;
+  reorderPoint?: number;
+  maxStock: number;
+  reorderQuantity?: number;
+  location: string;
+  supplier: string;
+  supplierId?: string;
+  notes: string;
+  description: string;
+  barcode: string;
+  weight: number;
+  isActive: boolean;
+  isDigital: boolean;
+  featured: boolean;
+  tags: string[] | string;
+  taxRate: number;
+  images: string[];
+  businessUnitId: string;
+  expiryDate?: string;
+  batchNumber?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // ============================================
@@ -215,6 +256,10 @@ export default function EditInventoryItemPage() {
   // Auto SKU State
   const [autoGenerateSKU, setAutoGenerateSKU] = useState(false);
   
+  // Image handling
+  const [imageInput, setImageInput] = useState('');
+  const [showImageInput, setShowImageInput] = useState(false);
+
   const [formData, setFormData] = useState<InventoryFormData>({
     name: '',
     sku: '',
@@ -240,6 +285,8 @@ export default function EditInventoryItemPage() {
     taxRate: 0,
     images: [],
     businessUnitId: '',
+    expiryDate: '',
+    batchNumber: '',
   });
 
   // ============================================
@@ -470,9 +517,10 @@ export default function EditInventoryItemPage() {
     setLoadingOptions(true);
     
     try {
-      // Load Categories
+      // Load Categories - Multiple attempts
       let categoriesLoaded = false;
       
+      // Attempt 1: getCategories
       try {
         console.log('📤 Attempt 1: Fetching categories with getCategories...');
         const categoriesData = await inventoryService.getCategories(buId);
@@ -492,7 +540,7 @@ export default function EditInventoryItemPage() {
         console.warn('❌ getCategories failed:', e);
       }
 
-      // Try 2: getCategorySummary (fallback)
+      // Attempt 2: getCategorySummary
       if (!categoriesLoaded) {
         try {
           console.log('📤 Attempt 2: Fetching categories with getCategorySummary...');
@@ -514,7 +562,7 @@ export default function EditInventoryItemPage() {
         }
       }
 
-      // Try 3: Extract from inventory data
+      // Attempt 3: Extract from inventory data
       if (!categoriesLoaded) {
         try {
           console.log('📤 Attempt 3: Extracting categories from inventory data...');
@@ -551,7 +599,7 @@ export default function EditInventoryItemPage() {
         }
       }
 
-      // If still no categories, try fetching ALL categories without business unit filter
+      // Attempt 4: Fetch ALL categories without business unit filter
       if (!categoriesLoaded) {
         try {
           console.log('📤 Attempt 4: Fetching ALL categories (no filter)...');
@@ -596,7 +644,7 @@ export default function EditInventoryItemPage() {
         console.warn('❌ getSuppliers failed:', e);
       }
 
-      // Try 2: Extract from inventory data
+      // Attempt 2: Extract from inventory data
       if (!suppliersLoaded) {
         try {
           console.log('📤 Attempt 2: Extracting suppliers from inventory data...');
@@ -705,6 +753,19 @@ export default function EditInventoryItemPage() {
         return;
       }
       
+      // Normalize tags to string
+      let tagsString = '';
+      if (data.tags) {
+        if (Array.isArray(data.tags)) {
+          tagsString = data.tags.join(', ');
+        } else if (typeof data.tags === 'string') {
+          tagsString = data.tags;
+        }
+      }
+      
+      // Get business unit ID with fallback
+      const businessUnitId = data.businessUnitId || localStorage.getItem('businessUnitId') || '';
+      
       setFormData({
         name: data.name || data.product?.name || '',
         sku: data.sku || data.product?.sku || '',
@@ -726,13 +787,15 @@ export default function EditInventoryItemPage() {
         isActive: data.isActive !== undefined ? data.isActive : true,
         isDigital: data.isDigital || false,
         featured: data.featured || false,
-        tags: data.tags ? (Array.isArray(data.tags) ? data.tags.join(', ') : String(data.tags)) : '',
+        tags: tagsString,
         taxRate: data.taxRate || 0,
         images: data.images || [],
-        businessUnitId: data.businessUnitId || localStorage.getItem('businessUnitId') || '',
+        businessUnitId: businessUnitId,
+        expiryDate: data.expiryDate || '',
+        batchNumber: data.batchNumber || '',
       });
       
-      setSelectedBusinessUnitId(data.businessUnitId || localStorage.getItem('businessUnitId') || '');
+      setSelectedBusinessUnitId(businessUnitId);
       
       if (data.barcode) {
         await loadBarcodeInfo(data.barcode);
@@ -960,6 +1023,32 @@ export default function EditInventoryItemPage() {
   };
 
   // ============================================
+  // IMAGE HANDLERS
+  // ============================================
+
+  const handleAddImage = () => {
+    if (!imageInput.trim()) {
+      toast.warning('Please enter a valid image URL');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      images: [...prev.images, imageInput.trim()],
+    }));
+    setImageInput('');
+    setShowImageInput(false);
+    toast.success('Image added');
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index),
+    }));
+    toast.success('Image removed');
+  };
+
+  // ============================================
   // SKU HANDLERS
   // ============================================
 
@@ -1054,6 +1143,12 @@ export default function EditInventoryItemPage() {
         if (isNaN(tax)) return 'Tax rate must be a number';
         if (tax < 0 || tax > 100) return 'Tax rate must be between 0 and 100';
         return undefined;
+      case 'expiryDate':
+        if (value && new Date(value) < new Date()) return 'Expiry date cannot be in the past';
+        return undefined;
+      case 'batchNumber':
+        if (value && value.trim().length > 50) return 'Batch number must be less than 50 characters';
+        return undefined;
       default:
         return undefined;
     }
@@ -1124,6 +1219,11 @@ export default function EditInventoryItemPage() {
 
     if (formData.maxStock && formData.maxStock < formData.minStock) {
       newErrors.maxStock = 'Max stock must be greater than min stock';
+      isValid = false;
+    }
+
+    if (formData.expiryDate && new Date(formData.expiryDate) < new Date()) {
+      newErrors.expiryDate = 'Expiry date cannot be in the past';
       isValid = false;
     }
 
@@ -1245,6 +1345,8 @@ export default function EditInventoryItemPage() {
         payload.tags = formData.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
       }
       if (formData.images && formData.images.length > 0) payload.images = formData.images;
+      if (formData.expiryDate) payload.expiryDate = new Date(formData.expiryDate).toISOString();
+      if (formData.batchNumber?.trim()) payload.batchNumber = formData.batchNumber.trim();
       
       payload.isActive = formData.isActive;
       payload.isDigital = formData.isDigital;
@@ -1346,7 +1448,12 @@ export default function EditInventoryItemPage() {
         {/* HEADER */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
-            <button onClick={handleCancel} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" aria-label="Go back" disabled={submitting}>
+            <button 
+              onClick={handleCancel} 
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" 
+              aria-label="Go back" 
+              disabled={submitting}
+            >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div>
@@ -1354,7 +1461,9 @@ export default function EditInventoryItemPage() {
                 <Edit3 className="w-6 h-6 text-blue-500" />
                 Edit Inventory Item
               </h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Update item details and stock information</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Update item details and stock information
+              </p>
             </div>
           </div>
           {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' && (
@@ -1992,6 +2101,52 @@ export default function EditInventoryItemPage() {
               </div>
             </div>
 
+            {/* Expiry Date & Batch Number */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Expiry Date
+                </label>
+                <div className="relative">
+                  <CalendarDays className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="date"
+                    name="expiryDate"
+                    value={formData.expiryDate}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    className={`${getInputClassName('expiryDate')} pl-10`}
+                    disabled={submitting || success}
+                  />
+                </div>
+                {getFieldError('expiryDate') && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('expiryDate')}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Batch Number
+                </label>
+                <div className="relative">
+                  <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    name="batchNumber"
+                    value={formData.batchNumber}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    className={`${getInputClassName('batchNumber')} pl-10`}
+                    placeholder="Enter batch number"
+                    disabled={submitting || success}
+                  />
+                </div>
+                {getFieldError('batchNumber') && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('batchNumber')}</p>
+                )}
+              </div>
+            </div>
+
             {/* Tags */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -2029,6 +2184,75 @@ export default function EditInventoryItemPage() {
                 disabled={submitting || success}
               />
             </div>
+          </div>
+
+          {/* Images */}
+          <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-indigo-500" />
+              Images
+            </h3>
+            
+            {formData.images.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {formData.images.map((url, index) => (
+                  <div key={index} className="relative group">
+                    <img
+                      src={url}
+                      alt={`Item image ${index + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg border border-gray-200 dark:border-gray-600"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/placeholder-image.png';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(index)}
+                      className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showImageInput ? (
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={imageInput}
+                  onChange={(e) => setImageInput(e.target.value)}
+                  placeholder="Enter image URL"
+                  className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600"
+                  disabled={submitting || success}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddImage}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1"
+                >
+                  <Plus className="w-4 h-4" /> Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowImageInput(false); setImageInput(''); }}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowImageInput(true)}
+                className="px-4 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-2"
+                disabled={submitting || success}
+              >
+                <Plus className="w-4 h-4" /> Add Image URL
+              </button>
+            )}
+            <p className="text-xs text-gray-500 dark:text-gray-400">Add image URLs to display product images</p>
           </div>
 
           {/* Status Toggles */}
@@ -2110,7 +2334,7 @@ export default function EditInventoryItemPage() {
                       <p className="text-xs text-gray-500 dark:text-gray-400">Generated on {new Date().toLocaleDateString()}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={handleCopyBarcode}
