@@ -15,7 +15,12 @@ export interface Product {
   category?: { id: string; name: string } | null;
   supplierId?: string | null;
   supplier?: { id: string; name: string } | null;
-  inventory?: { id: string; quantity: number; reserved: number; available?: number } | null;
+  inventory?: {
+    id: string;
+    quantity: number;
+    reserved: number;
+    available?: number;
+  } | null;
   variants?: ProductVariant[];
   isActive: boolean;
   isDigital?: boolean;
@@ -60,7 +65,12 @@ export interface ProductVariant {
   images?: string[];
   barcode?: string | null;
   inventoryId?: string | null;
-  inventory?: { id: string; quantity: number; reserved: number; available?: number } | null;
+  inventory?: {
+    id: string;
+    quantity: number;
+    reserved: number;
+    available?: number;
+  } | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -70,9 +80,11 @@ export interface ProductVariant {
 // ============================================
 
 const isClient = typeof window !== 'undefined';
-const PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-const MAX_IMAGE_SIZE_BYTES = 500 * 1024; // 500KB - Increased for better quality
-const MAX_IMAGE_SIZE_WARNING = 2 * 1024 * 1024; // 2MB warning threshold
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+// ✅ FIXED: raised to 5 MB to match backend cleanImages limit
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_SIZE_WARNING = 2 * 1024 * 1024;
 
 // ============================================
 // HELPERS
@@ -85,18 +97,37 @@ function getBusinessUnitId(): string {
     if (stored && stored !== 'undefined' && stored !== 'null') {
       return stored;
     }
-  } catch (_e) { /* ignore */ }
+  } catch (_e) {
+    /* ignore */
+  }
 
   try {
     const userStr = localStorage.getItem('user');
     if (userStr) {
       const user = JSON.parse(userStr);
       if (user?.businessUnitId) return user.businessUnitId;
-      if (user?.businessUnits?.[0]?.businessUnitId) return user.businessUnits[0].businessUnitId;
+      if (user?.businessUnits?.[0]?.businessUnitId) {
+        return user.businessUnits[0].businessUnitId;
+      }
     }
-  } catch (_e) { /* ignore */ }
+  } catch (_e) {
+    /* ignore */
+  }
 
   return 'default';
+}
+
+/**
+ * ✅ NEW: Extract a human-readable error message from any thrown error.
+ */
+function extractErrorMessage(error: any): string {
+  if (!error) return 'Unknown error';
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    String(error)
+  );
 }
 
 function cleanProductData(data: Partial<Product>): any {
@@ -109,119 +140,141 @@ function cleanProductData(data: Partial<Product>): any {
   return cleaned;
 }
 
-function isValidBase64(str: string): boolean {
-  try {
-    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-    return base64Regex.test(str);
-  } catch {
-    return false;
-  }
-}
-
-function sanitizeImages(images: string[] | undefined, maxSizeBytes: number = MAX_IMAGE_SIZE_BYTES): string[] {
+/**
+ * ✅ FIXED: Accepts http(s):// URLs as well as data URLs.
+ */
+function sanitizeImages(
+  images: string[] | undefined,
+  maxSizeBytes: number = MAX_IMAGE_SIZE_BYTES
+): string[] {
   if (!images || !Array.isArray(images)) return [];
-  
+
   return images
     .filter((img): img is string => typeof img === 'string' && img.length > 0)
-    .map(img => {
+    .map((img) => {
       if (img === PLACEHOLDER_IMAGE || img.length < 100) {
         return img;
       }
-      
+
+      // ✅ Accept CDN / HTTP URLs
+      if (img.startsWith('http://') || img.startsWith('https://')) {
+        return img;
+      }
+
       if (!img.startsWith('data:image/')) {
-        console.warn(`⚠️ Image is not a data URL, skipping`);
+        console.warn(`⚠️ Image is not a data URL or HTTP URL, skipping`);
         return PLACEHOLDER_IMAGE;
       }
-      
+
       if (img.length > maxSizeBytes) {
-        console.warn(`⚠️ Image too large (${Math.round(img.length / 1024)}KB), using placeholder`);
+        console.warn(
+          `⚠️ Image too large (${Math.round(
+            img.length / 1024
+          )}KB), using placeholder`
+        );
         return PLACEHOLDER_IMAGE;
       }
-      
+
       try {
         const parts = img.split(',');
         if (parts.length !== 2 || !parts[1] || parts[1].length < 10) {
           console.warn(`⚠️ Invalid image format, using placeholder`);
           return PLACEHOLDER_IMAGE;
         }
-        
+
         const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
         if (!base64Regex.test(parts[1])) {
           console.warn(`⚠️ Invalid base64 encoding, using placeholder`);
           return PLACEHOLDER_IMAGE;
         }
-        
+
         return img;
       } catch (error) {
         console.warn(`⚠️ Error validating image:`, error);
         return PLACEHOLDER_IMAGE;
       }
     })
-    .filter(img => img && img.length > 0);
+    .filter((img) => img && img.length > 0);
 }
 
 function generateUniqueSKU(productName?: string, variantName?: string): string {
   const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
   const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-  
+
   if (variantName) {
-    const basePrefix = (productName || 'PRD')
+    const basePrefix =
+      (productName || 'PRD')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'PRD';
+    const variantPrefix =
+      variantName
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'VAR';
+    return `${basePrefix}-${variantPrefix}-${timestamp}-${random}`;
+  }
+
+  const prefix =
+    (productName || 'PRD')
       .replace(/[^a-zA-Z0-9]/g, '')
       .slice(0, 3)
       .toUpperCase() || 'PRD';
-    const variantPrefix = variantName
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 3)
-      .toUpperCase() || 'VAR';
-    return `${basePrefix}-${variantPrefix}-${timestamp}-${random}`;
-  }
-  
-  const prefix = (productName || 'PRD')
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .slice(0, 3)
-    .toUpperCase() || 'PRD';
   return `${prefix}-${timestamp}-${random}`;
 }
 
-async function checkSKUExists(sku: string, businessUnitId?: string, excludeProductId?: string): Promise<boolean> {
+/**
+ * ✅ FIXED: Uses path-param endpoint (/check-sku/:sku) matching the backend route.
+ */
+async function checkSKUExists(
+  sku: string,
+  businessUnitId?: string,
+  excludeProductId?: string
+): Promise<boolean> {
   if (!isClient) return false;
   try {
     const bid = businessUnitId || getBusinessUnitId();
-    const response = await api.get<any>('/products/check-sku', {
-      params: { sku, businessUnitId: bid, excludeProductId }
-    });
-    
+    const response = await api.get<any>(
+      `/products/check-sku/${encodeURIComponent(sku)}`,
+      {
+        params: { businessUnitId: bid, excludeProductId },
+      }
+    );
+
     if (response?.data && typeof response.data === 'object') {
-      if ('exists' in response.data) return response.data.exists;
+      if ('exists' in response.data) return Boolean(response.data.exists);
     }
-    
+
     return Boolean(response?.exists);
   } catch (error: any) {
     if (error?.response?.status === 404) {
       return false;
     }
-    console.error('Error checking SKU:', error);
+    console.error('Error checking SKU:', extractErrorMessage(error));
     return false;
   }
 }
 
 async function ensureUniqueSKU(
-  baseSKU: string, 
+  baseSKU: string,
   businessUnitId?: string,
   excludeProductId?: string
 ): Promise<string> {
   if (!isClient) return baseSKU;
-  
+
   let sku = baseSKU;
   let attempts = 0;
   const maxAttempts = 10;
-  
-  while (await checkSKUExists(sku, businessUnitId, excludeProductId) && attempts < maxAttempts) {
+
+  while (
+    (await checkSKUExists(sku, businessUnitId, excludeProductId)) &&
+    attempts < maxAttempts
+  ) {
     const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
     sku = `${baseSKU}-${suffix}`;
     attempts++;
   }
-  
+
   return sku;
 }
 
@@ -229,20 +282,13 @@ async function ensureUniqueSKU(
 // CART INTEGRATION HELPERS
 // ============================================
 
-/**
- * Validate product ID format
- */
 export function isValidProductId(id: string): boolean {
   if (!id || typeof id !== 'string') return false;
   const trimmed = id.trim();
   if (trimmed.length === 0) return false;
-  // Accept CUID, UUID, or any alphanumeric with hyphens/underscores
   return /^[a-zA-Z0-9_-]+$/.test(trimmed);
 }
 
-/**
- * Get product stock availability
- */
 export function getProductStock(product: Product): {
   available: number;
   total: number;
@@ -251,10 +297,15 @@ export function getProductStock(product: Product): {
   variantStock: number;
 } {
   const inventory = product.inventory;
-  const mainStock = inventory ? (inventory.quantity || 0) - (inventory.reserved || 0) : 0;
-  const variantStock = (product.variants || []).reduce((sum: number, v: any) => sum + (v.stock || 0), 0);
+  const mainStock = inventory
+    ? (inventory.quantity || 0) - (inventory.reserved || 0)
+    : 0;
+  const variantStock = (product.variants || []).reduce(
+    (sum: number, v: any) => sum + (v.stock || 0),
+    0
+  );
   const totalStock = mainStock + variantStock;
-  
+
   return {
     available: Math.max(0, totalStock),
     total: totalStock,
@@ -264,9 +315,6 @@ export function getProductStock(product: Product): {
   };
 }
 
-/**
- * Get product with inventory info for cart
- */
 async function getProductForCart(productId: string): Promise<Product> {
   if (!isClient) {
     throw new Error('Cannot fetch product on server');
@@ -276,7 +324,7 @@ async function getProductForCart(productId: string): Promise<Product> {
     if (!product || !product.id) {
       throw new Error('Product not found');
     }
-    
+
     return {
       ...product,
       id: String(product.id).trim(),
@@ -306,11 +354,19 @@ export const productService = {
     return generateUniqueSKU(productName, variantName);
   },
 
-  async checkSKUExists(sku: string, businessUnitId?: string, excludeProductId?: string): Promise<boolean> {
+  async checkSKUExists(
+    sku: string,
+    businessUnitId?: string,
+    excludeProductId?: string
+  ): Promise<boolean> {
     return checkSKUExists(sku, businessUnitId, excludeProductId);
   },
 
-  async ensureUniqueSKU(sku: string, businessUnitId?: string, excludeProductId?: string): Promise<string> {
+  async ensureUniqueSKU(
+    sku: string,
+    businessUnitId?: string,
+    excludeProductId?: string
+  ): Promise<string> {
     return ensureUniqueSKU(sku, businessUnitId, excludeProductId);
   },
 
@@ -334,26 +390,38 @@ export const productService = {
     featured?: boolean;
     hasVariants?: boolean;
     hasBarcode?: boolean;
-  }): Promise<{ data: Product[]; total: number; page: number; totalPages: number; limit: number }> {
+  }): Promise<{
+    data: Product[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
     if (!isClient) {
-      return { data: [], total: 0, page: 1, totalPages: 1, limit: params?.limit || 12 };
+      return {
+        data: [],
+        total: 0,
+        page: 1,
+        totalPages: 1,
+        limit: params?.limit || 12,
+      };
     }
-    
+
     try {
       const businessUnitId = params?.businessUnitId || getBusinessUnitId();
-      
-      const queryParams: any = { 
+
+      const queryParams: any = {
         ...params,
         businessUnitId: businessUnitId,
       };
-      
+
       if (params?.sortBy) queryParams.sortBy = params.sortBy;
       if (params?.sortOrder) queryParams.sortOrder = params.sortOrder;
-      
+
       console.log('📤 Fetching products with params:', queryParams);
-      
+
       const response = await api.get<any>('/products', { params: queryParams });
-      
+
       if (response?.data && Array.isArray(response.data)) {
         return {
           data: response.data,
@@ -363,7 +431,7 @@ export const productService = {
           limit: response.pagination?.limit || params?.limit || 12,
         };
       }
-      
+
       if (response?.data?.data && Array.isArray(response.data.data)) {
         return {
           data: response.data.data,
@@ -373,7 +441,7 @@ export const productService = {
           limit: response.data.limit || params?.limit || 12,
         };
       }
-      
+
       if (response?.products && Array.isArray(response.products)) {
         return {
           data: response.products,
@@ -383,7 +451,7 @@ export const productService = {
           limit: response.limit || params?.limit || 12,
         };
       }
-      
+
       if (Array.isArray(response)) {
         return {
           data: response,
@@ -393,7 +461,7 @@ export const productService = {
           limit: params?.limit || 12,
         };
       }
-      
+
       return {
         data: [],
         total: 0,
@@ -401,15 +469,13 @@ export const productService = {
         totalPages: 1,
         limit: params?.limit || 12,
       };
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      return {
-        data: [],
-        total: 0,
-        page: 1,
-        totalPages: 1,
-        limit: params?.limit || 12,
-      };
+    } catch (error: any) {
+      // ✅ FIXED: Surface the real error instead of swallowing it
+      console.error('❌ Error fetching products:', extractErrorMessage(error));
+      console.error('   Status:', error?.response?.status);
+      console.error('   URL:', error?.config?.url);
+      console.error('   Params:', error?.config?.params);
+      throw error;
     }
   },
 
@@ -426,16 +492,28 @@ export const productService = {
     }
   },
 
-  async getProductWithStock(id: string, businessUnitId?: string): Promise<Product & { 
-    stock: { available: number; total: number; isInStock: boolean; isLowStock: boolean }
-  }> {
+  async getProductWithStock(
+    id: string,
+    businessUnitId?: string
+  ): Promise<
+    Product & {
+      stock: {
+        available: number;
+        total: number;
+        isInStock: boolean;
+        isLowStock: boolean;
+      };
+    }
+  > {
     if (!isClient) {
       throw new Error('Cannot fetch product on server');
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>(`/products/${id}/stock`, { params: { businessUnitId: bid } });
-      const product = response?.data || response || {} as Product;
+      const response = await api.get<any>(`/products/${id}/stock`, {
+        params: { businessUnitId: bid },
+      });
+      const product = response?.data || response || ({} as Product);
       const stock = getProductStock(product);
       return { ...product, stock };
     } catch (error) {
@@ -444,34 +522,39 @@ export const productService = {
     }
   },
 
-  async validateProductForCart(productId: string, variantId?: string): Promise<{ 
-    valid: boolean; 
-    product?: Product; 
+  async validateProductForCart(
+    productId: string,
+    variantId?: string
+  ): Promise<{
+    valid: boolean;
+    product?: Product;
     error?: string;
     variant?: ProductVariant;
   }> {
     if (!isClient) {
       return { valid: false, error: 'Not on client' };
     }
-    
+
     try {
       const cleanId = String(productId).trim();
       if (!isValidProductId(cleanId)) {
         return { valid: false, error: 'Invalid product ID format' };
       }
-      
+
       const product = await this.getProductById(cleanId);
       if (!product || !product.id) {
         return { valid: false, error: 'Product not found' };
       }
-      
+
       if (!product.isActive) {
         return { valid: false, error: 'Product is not active' };
       }
-      
+
       if (variantId) {
         const cleanVariantId = String(variantId).trim();
-        const variant = (product.variants || []).find((v: any) => v.id === cleanVariantId);
+        const variant = (product.variants || []).find(
+          (v: any) => v.id === cleanVariantId
+        );
         if (!variant) {
           return { valid: false, error: 'Variant not found' };
         }
@@ -483,18 +566,18 @@ export const productService = {
         }
         return { valid: true, product, variant };
       }
-      
+
       const stock = getProductStock(product);
       if (!stock.isInStock) {
         return { valid: false, error: 'Product is out of stock' };
       }
-      
+
       return { valid: true, product };
     } catch (error: any) {
       console.error('Error validating product for cart:', error);
-      return { 
-        valid: false, 
-        error: error?.message || 'Failed to validate product' 
+      return {
+        valid: false,
+        error: error?.message || 'Failed to validate product',
       };
     }
   },
@@ -505,7 +588,9 @@ export const productService = {
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>(`/products/sku/${sku}`, { params: { businessUnitId: bid } });
+      const response = await api.get<any>(`/products/sku/${sku}`, {
+        params: { businessUnitId: bid },
+      });
       return response?.data || response || ({} as Product);
     } catch (error) {
       console.error(`Error fetching product by SKU ${sku}:`, error);
@@ -513,14 +598,19 @@ export const productService = {
     }
   },
 
-  async getProductByBarcode(barcode: string, businessUnitId?: string): Promise<Product> {
+  async getProductByBarcode(
+    barcode: string,
+    businessUnitId?: string
+  ): Promise<Product> {
     if (!isClient) {
       return {} as Product;
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
       console.log(`🔍 Looking up product by barcode: ${barcode}`);
-      const response = await api.get<any>(`/products/barcode/${barcode}`, { params: { businessUnitId: bid } });
+      const response = await api.get<any>(`/products/barcode/${barcode}`, {
+        params: { businessUnitId: bid },
+      });
       return response?.data || response || ({} as Product);
     } catch (error) {
       console.error(`Error fetching product by barcode ${barcode}:`, error);
@@ -528,7 +618,12 @@ export const productService = {
     }
   },
 
-  async createProduct(data: Partial<Product> & { inventoryId?: string; autoGenerateSKU?: boolean }): Promise<Product> {
+  async createProduct(
+    data: Partial<Product> & {
+      inventoryId?: string;
+      autoGenerateSKU?: boolean;
+    }
+  ): Promise<Product> {
     if (!isClient) {
       throw new Error('Cannot create product on server');
     }
@@ -536,61 +631,80 @@ export const productService = {
       if (!data.businessUnitId) {
         data.businessUnitId = getBusinessUnitId();
       }
-      
+
       if (!data.sku || data.sku === 'SKU' || data.sku.trim() === '') {
         data.sku = generateUniqueSKU(data.name);
       } else if (data.autoGenerateSKU) {
         data.sku = generateUniqueSKU(data.name);
       }
-      
+
       data.sku = data.sku.toUpperCase();
-      
+
       if (data.images && Array.isArray(data.images)) {
-        data.images = data.images.map(img => {
-          if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
-          if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
-          if (img.startsWith('data:image/')) {
-            if (img.length > MAX_IMAGE_SIZE_BYTES) {
-              console.warn(`⚠️ Image size ${Math.round(img.length / 1024)}KB, using placeholder`);
-              return PLACEHOLDER_IMAGE;
+        data.images = data.images
+          .map((img) => {
+            if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
+            if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
+            if (img.startsWith('http://') || img.startsWith('https://')) {
+              return img;
             }
-            return img;
-          }
-          return PLACEHOLDER_IMAGE;
-        }).filter(Boolean);
+            if (img.startsWith('data:image/')) {
+              if (img.length > MAX_IMAGE_SIZE_BYTES) {
+                console.warn(
+                  `⚠️ Image size ${Math.round(
+                    img.length / 1024
+                  )}KB, using placeholder`
+                );
+                return PLACEHOLDER_IMAGE;
+              }
+              return img;
+            }
+            return PLACEHOLDER_IMAGE;
+          })
+          .filter(Boolean);
       }
-      
+
       if (data.variants && Array.isArray(data.variants)) {
         data.variants = data.variants.map((variant, index) => {
           let variantImages = variant.images || [];
           if (Array.isArray(variantImages)) {
-            variantImages = variantImages.map(img => {
-              if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
-              if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
-              if (img.startsWith('data:image/')) {
-                if (img.length > MAX_IMAGE_SIZE_BYTES) {
-                  console.warn(`⚠️ Variant image size ${Math.round(img.length / 1024)}KB, using placeholder`);
-                  return PLACEHOLDER_IMAGE;
+            variantImages = variantImages
+              .map((img) => {
+                if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
+                if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
+                if (img.startsWith('http://') || img.startsWith('https://')) {
+                  return img;
                 }
-                return img;
-              }
-              return PLACEHOLDER_IMAGE;
-            }).filter(Boolean);
+                if (img.startsWith('data:image/')) {
+                  if (img.length > MAX_IMAGE_SIZE_BYTES) {
+                    console.warn(
+                      `⚠️ Variant image size ${Math.round(
+                        img.length / 1024
+                      )}KB, using placeholder`
+                    );
+                    return PLACEHOLDER_IMAGE;
+                  }
+                  return img;
+                }
+                return PLACEHOLDER_IMAGE;
+              })
+              .filter(Boolean);
           }
-          
+
           return {
             ...variant,
-            sku: variant.sku && variant.sku !== 'SKU' 
-              ? variant.sku.toUpperCase() 
-              : generateUniqueSKU(data.name, variant.name || `VAR${index + 1}`),
+            sku:
+              variant.sku && variant.sku !== 'SKU'
+                ? variant.sku.toUpperCase()
+                : generateUniqueSKU(data.name, variant.name || `VAR${index + 1}`),
             images: variantImages,
           };
         });
       }
-      
+
       const cleanedData = cleanProductData(data);
       delete cleanedData.autoGenerateSKU;
-      
+
       console.log('📤 Creating product with data:', {
         ...cleanedData,
         images: cleanedData.images?.map((img: string, i: number) => {
@@ -602,38 +716,45 @@ export const productService = {
           images: v.images?.map((img: string, i: number) => {
             const size = Math.round(img.length / 1024);
             return `[Variant Image ${i + 1}: ${size}KB]`;
-          })
-        }))
+          }),
+        })),
       });
-      
+
       const response = await api.post<any>('/products', cleanedData);
-      
+
       let product: Product;
-      
+
       if (response?.data) {
         product = response.data;
-      } else if (response && typeof response === 'object' && 'id' in response) {
+      } else if (
+        response &&
+        typeof response === 'object' &&
+        'id' in response
+      ) {
         product = response as Product;
       } else if (response?.product) {
         product = response.product;
       } else {
-        product = response || {} as Product;
+        product = response || ({} as Product);
       }
-      
+
       if (!product || !product.id) {
         console.error('Product creation response missing id:', response);
         throw new Error('Product created but ID not returned');
       }
-      
+
       console.log('✅ Product created successfully:', product.id);
       return product;
-    } catch (error) {
-      console.error('Error creating product:', error);
+    } catch (error: any) {
+      console.error('Error creating product:', extractErrorMessage(error));
       throw error;
     }
   },
 
-  async createProductFromInventory(inventoryId: string, data: Partial<Product>): Promise<Product> {
+  async createProductFromInventory(
+    inventoryId: string,
+    data: Partial<Product>
+  ): Promise<Product> {
     if (!isClient) {
       throw new Error('Cannot create product from inventory on server');
     }
@@ -641,58 +762,77 @@ export const productService = {
       if (!data.sku || data.sku === 'SKU' || data.sku.trim() === '') {
         data.sku = generateUniqueSKU(data.name);
       }
-      
+
       data.sku = data.sku.toUpperCase();
-      
+
       if (data.images && Array.isArray(data.images)) {
-        data.images = data.images.map(img => {
-          if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
-          if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
-          if (img.startsWith('data:image/')) {
-            if (img.length > MAX_IMAGE_SIZE_BYTES) {
-              console.warn(`⚠️ Image size ${Math.round(img.length / 1024)}KB, using placeholder`);
-              return PLACEHOLDER_IMAGE;
+        data.images = data.images
+          .map((img) => {
+            if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
+            if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
+            if (img.startsWith('http://') || img.startsWith('https://')) {
+              return img;
             }
-            return img;
-          }
-          return PLACEHOLDER_IMAGE;
-        }).filter(Boolean);
+            if (img.startsWith('data:image/')) {
+              if (img.length > MAX_IMAGE_SIZE_BYTES) {
+                console.warn(
+                  `⚠️ Image size ${Math.round(
+                    img.length / 1024
+                  )}KB, using placeholder`
+                );
+                return PLACEHOLDER_IMAGE;
+              }
+              return img;
+            }
+            return PLACEHOLDER_IMAGE;
+          })
+          .filter(Boolean);
       }
-      
+
       if (data.variants && Array.isArray(data.variants)) {
         data.variants = data.variants.map((variant, index) => {
           let variantImages = variant.images || [];
           if (Array.isArray(variantImages)) {
-            variantImages = variantImages.map(img => {
-              if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
-              if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
-              if (img.startsWith('data:image/')) {
-                if (img.length > MAX_IMAGE_SIZE_BYTES) {
-                  console.warn(`⚠️ Variant image size ${Math.round(img.length / 1024)}KB, using placeholder`);
-                  return PLACEHOLDER_IMAGE;
+            variantImages = variantImages
+              .map((img) => {
+                if (typeof img !== 'string') return PLACEHOLDER_IMAGE;
+                if (img === PLACEHOLDER_IMAGE || img.length < 100) return img;
+                if (img.startsWith('http://') || img.startsWith('https://')) {
+                  return img;
                 }
-                return img;
-              }
-              return PLACEHOLDER_IMAGE;
-            }).filter(Boolean);
+                if (img.startsWith('data:image/')) {
+                  if (img.length > MAX_IMAGE_SIZE_BYTES) {
+                    console.warn(
+                      `⚠️ Variant image size ${Math.round(
+                        img.length / 1024
+                      )}KB, using placeholder`
+                    );
+                    return PLACEHOLDER_IMAGE;
+                  }
+                  return img;
+                }
+                return PLACEHOLDER_IMAGE;
+              })
+              .filter(Boolean);
           }
-          
+
           return {
             ...variant,
-            sku: variant.sku && variant.sku !== 'SKU' 
-              ? variant.sku.toUpperCase() 
-              : generateUniqueSKU(data.name, variant.name || `VAR${index + 1}`),
+            sku:
+              variant.sku && variant.sku !== 'SKU'
+                ? variant.sku.toUpperCase()
+                : generateUniqueSKU(data.name, variant.name || `VAR${index + 1}`),
             images: variantImages,
           };
         });
       }
-      
+
       const cleanedData = cleanProductData({
         ...data,
         inventoryId: inventoryId,
         businessUnitId: data.businessUnitId || getBusinessUnitId(),
       });
-      
+
       console.log(`📤 Creating product from inventory ${inventoryId}:`, {
         ...cleanedData,
         images: cleanedData.images?.map((img: string, i: number) => {
@@ -704,33 +844,43 @@ export const productService = {
           images: v.images?.map((img: string, i: number) => {
             const size = Math.round(img.length / 1024);
             return `[Variant Image ${i + 1}: ${size}KB]`;
-          })
-        }))
+          }),
+        })),
       });
-      
+
       const response = await api.post<any>('/products', cleanedData);
-      
+
       let product: Product;
-      
+
       if (response?.data) {
         product = response.data;
-      } else if (response && typeof response === 'object' && 'id' in response) {
+      } else if (
+        response &&
+        typeof response === 'object' &&
+        'id' in response
+      ) {
         product = response as Product;
       } else if (response?.product) {
         product = response.product;
       } else {
-        product = response || {} as Product;
+        product = response || ({} as Product);
       }
-      
+
       if (!product || !product.id) {
-        console.error('Product creation from inventory response missing id:', response);
+        console.error(
+          'Product creation from inventory response missing id:',
+          response
+        );
         throw new Error('Product created but ID not returned');
       }
-      
+
       console.log(`✅ Product created from inventory successfully: ${product.id}`);
       return product;
-    } catch (error) {
-      console.error(`Error creating product from inventory ${inventoryId}:`, error);
+    } catch (error: any) {
+      console.error(
+        `Error creating product from inventory ${inventoryId}:`,
+        extractErrorMessage(error)
+      );
       throw error;
     }
   },
@@ -747,7 +897,7 @@ export const productService = {
           images: variant.images || [],
         }));
       }
-      
+
       const cleanedData = cleanProductData(data);
       const response = await api.put<any>(`/products/${id}`, cleanedData);
       return response?.data || response;
@@ -757,41 +907,64 @@ export const productService = {
     }
   },
 
-  async deleteProduct(id: string, force: boolean = false): Promise<{ message: string; softDeleted?: boolean }> {
+  async deleteProduct(
+    id: string,
+    force: boolean = false
+  ): Promise<{ message: string; softDeleted?: boolean }> {
     if (!isClient) {
       throw new Error('Cannot delete product on server');
     }
     try {
       const response = await api.delete<any>(`/products/${id}`, {
-        params: { force: force ? 'true' : 'false' }
+        params: { force: force ? 'true' : 'false' },
       });
-      return response?.data || response || { message: 'Product deleted successfully' };
+      return (
+        response?.data ||
+        response || { message: 'Product deleted successfully' }
+      );
     } catch (error) {
       console.error(`Error deleting product ${id}:`, error);
       throw error;
     }
   },
 
-  async unlinkProductFromInventory(id: string, keepInventory: boolean = true): Promise<{ message: string; softDeleted: boolean }> {
+  async unlinkProductFromInventory(
+    id: string,
+    keepInventory: boolean = true
+  ): Promise<{ message: string; softDeleted: boolean }> {
     if (!isClient) {
       throw new Error('Cannot unlink product on server');
     }
     try {
-      const response = await api.post<any>(`/products/${id}/unlink-inventory`, { keepInventory });
-      return response?.data || response || { message: 'Product unlinked from inventory', softDeleted: true };
+      const response = await api.post<any>(`/products/${id}/unlink-inventory`, {
+        keepInventory,
+      });
+      return (
+        response?.data ||
+        response || {
+          message: 'Product unlinked from inventory',
+          softDeleted: true,
+        }
+      );
     } catch (error) {
       console.error(`Error unlinking product ${id} from inventory:`, error);
       throw error;
     }
   },
 
-  async searchProducts(params: { query: string; category?: string; businessUnitId?: string }): Promise<Product[]> {
+  async searchProducts(params: {
+    query: string;
+    category?: string;
+    businessUnitId?: string;
+  }): Promise<Product[]> {
     if (!isClient) {
       return [];
     }
     try {
       const bid = params.businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/search', { params: { ...params, businessUnitId: bid } });
+      const response = await api.get<any>('/products/search', {
+        params: { ...params, businessUnitId: bid },
+      });
       return response?.data || response || [];
     } catch (error) {
       console.error('Error searching products:', error);
@@ -799,13 +972,17 @@ export const productService = {
     }
   },
 
-  async getProductTags(businessUnitId?: string): Promise<Array<{ name: string; count: number }>> {
+  async getProductTags(
+    businessUnitId?: string
+  ): Promise<Array<{ name: string; count: number }>> {
     if (!isClient) {
       return [];
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/tags', { params: { businessUnitId: bid } });
+      const response = await api.get<any>('/products/tags', {
+        params: { businessUnitId: bid },
+      });
       return response?.data || response || [];
     } catch (error) {
       console.error('Error fetching tags:', error);
@@ -817,12 +994,23 @@ export const productService = {
   // BARCODE METHODS
   // ============================================
 
-  async generateBarcode(productId: string, options?: { prefix?: string; length?: number; format?: string; includeQR?: boolean }): Promise<any> {
+  async generateBarcode(
+    productId: string,
+    options?: {
+      prefix?: string;
+      length?: number;
+      format?: string;
+      includeQR?: boolean;
+    }
+  ): Promise<any> {
     if (!isClient) {
       throw new Error('Cannot generate barcode on server');
     }
     try {
-      const response = await api.post<any>(`/products/${productId}/barcode`, options || {});
+      const response = await api.post<any>(
+        `/products/${productId}/barcode`,
+        options || {}
+      );
       return response?.data || response;
     } catch (error) {
       console.error(`Error generating barcode for product ${productId}:`, error);
@@ -830,12 +1018,20 @@ export const productService = {
     }
   },
 
-  async generateUniqueBarcode(options?: { prefix?: string; length?: number; format?: string; includeQR?: boolean }): Promise<{ barcode: string }> {
+  async generateUniqueBarcode(options?: {
+    prefix?: string;
+    length?: number;
+    format?: string;
+    includeQR?: boolean;
+  }): Promise<{ barcode: string }> {
     if (!isClient) {
       throw new Error('Cannot generate barcode on server');
     }
     try {
-      const response = await api.post<any>('/products/barcode/generate', options || {});
+      const response = await api.post<any>(
+        '/products/barcode/generate',
+        options || {}
+      );
       return response?.data || response;
     } catch (error) {
       console.error('Error generating unique barcode:', error);
@@ -861,10 +1057,15 @@ export const productService = {
       return { barcodeUrl: '' };
     }
     try {
-      const response = await api.get<any>(`/products/${productId}/barcode/image`);
+      const response = await api.get<any>(
+        `/products/${productId}/barcode/image`
+      );
       return response?.data || response || { barcodeUrl: '' };
     } catch (error) {
-      console.error(`Error fetching barcode image for product ${productId}:`, error);
+      console.error(
+        `Error fetching barcode image for product ${productId}:`,
+        error
+      );
       throw error;
     }
   },
@@ -877,17 +1078,26 @@ export const productService = {
       const response = await api.get<any>(`/products/${productId}/qrcode`);
       return response?.data || response || { qrCodeUrl: '' };
     } catch (error) {
-      console.error(`Error fetching QR code for product ${productId}:`, error);
+      console.error(
+        `Error fetching QR code for product ${productId}:`,
+        error
+      );
       throw error;
     }
   },
 
-  async generateBarcodeImage(barcode: string, format?: string): Promise<{ barcodeUrl: string }> {
+  async generateBarcodeImage(
+    barcode: string,
+    format?: string
+  ): Promise<{ barcodeUrl: string }> {
     if (!isClient) {
       return { barcodeUrl: '' };
     }
     try {
-      const response = await api.post<any>('/products/barcode/image', { barcode, format });
+      const response = await api.post<any>('/products/barcode/image', {
+        barcode,
+        format,
+      });
       return response?.data || response || { barcodeUrl: '' };
     } catch (error) {
       console.error('Error generating barcode image:', error);
@@ -908,25 +1118,43 @@ export const productService = {
     }
   },
 
-  async associateBarcode(productId: string, barcode: string): Promise<{ success: boolean; message: string }> {
+  async associateBarcode(
+    productId: string,
+    barcode: string
+  ): Promise<{ success: boolean; message: string }> {
     if (!isClient) {
       throw new Error('Cannot associate barcode on server');
     }
     try {
-      const response = await api.post<any>(`/products/${productId}/barcode/associate`, { barcode });
-      return response?.data || response || { success: true, message: 'Barcode associated successfully' };
+      const response = await api.post<any>(
+        `/products/${productId}/barcode/associate`,
+        { barcode }
+      );
+      return (
+        response?.data ||
+        response || { success: true, message: 'Barcode associated successfully' }
+      );
     } catch (error) {
-      console.error(`Error associating barcode with product ${productId}:`, error);
+      console.error(
+        `Error associating barcode with product ${productId}:`,
+        error
+      );
       throw error;
     }
   },
 
-  async validateBarcode(barcode: string, excludeProductId?: string): Promise<{ valid: boolean; message?: string }> {
+  async validateBarcode(
+    barcode: string,
+    excludeProductId?: string
+  ): Promise<{ valid: boolean; message?: string }> {
     if (!isClient) {
       return { valid: true };
     }
     try {
-      const response = await api.post<any>('/products/barcode/validate', { barcode, excludeProductId });
+      const response = await api.post<any>('/products/barcode/validate', {
+        barcode,
+        excludeProductId,
+      });
       return response?.data || response || { valid: true };
     } catch (error: any) {
       if (error?.response?.status === 409) {
@@ -937,13 +1165,21 @@ export const productService = {
     }
   },
 
-  async getProductsWithoutBarcode(params?: any): Promise<{ data: Product[]; total: number; page: number; totalPages: number; limit: number }> {
+  async getProductsWithoutBarcode(params?: any): Promise<{
+    data: Product[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
     if (!isClient) {
-      return { data: [], total: 0, page: 1, totalPages: 1, limit: params?.limit || 10 };
+      return { data: [], total: 0, page: 1, totalPages: 1, limit: 10 };
     }
     try {
       const bid = params?.businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/no-barcode', { params: { ...params, businessUnitId: bid } });
+      const response = await api.get<any>('/products/no-barcode', {
+        params: { ...params, businessUnitId: bid },
+      });
       const data = response?.data || response || [];
       return {
         data: Array.isArray(data) ? data : [],
@@ -954,16 +1190,22 @@ export const productService = {
       };
     } catch (error) {
       console.error('Error fetching products without barcode:', error);
-      return { data: [], total: 0, page: 1, totalPages: 1, limit: params?.limit || 10 };
+      return { data: [], total: 0, page: 1, totalPages: 1, limit: 10 };
     }
   },
 
-  async bulkGenerateBarcodes(productIds: string[], options?: any): Promise<{ results: any[]; errors: any[] }> {
+  async bulkGenerateBarcodes(
+    productIds: string[],
+    options?: any
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk generate barcodes on server');
     }
     try {
-      const response = await api.post<any>('/products/barcode/bulk-generate', { productIds, options });
+      const response = await api.post<any>('/products/barcode/bulk-generate', {
+        productIds,
+        options,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk generating barcodes:', error);
@@ -977,7 +1219,10 @@ export const productService = {
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.post<any>('/products/barcode/scan', { barcode, businessUnitId: bid });
+      const response = await api.post<any>('/products/barcode/scan', {
+        barcode,
+        businessUnitId: bid,
+      });
       return response?.data || response;
     } catch (error) {
       console.error('Error scanning barcode:', error);
@@ -989,13 +1234,18 @@ export const productService = {
   // FEATURED & RELATED PRODUCTS
   // ============================================
 
-  async getFeaturedProducts(limit: number = 10, businessUnitId?: string): Promise<Product[]> {
+  async getFeaturedProducts(
+    limit: number = 10,
+    businessUnitId?: string
+  ): Promise<Product[]> {
     if (!isClient) {
       return [];
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/featured', { params: { limit, businessUnitId: bid } });
+      const response = await api.get<any>('/products/featured', {
+        params: { limit, businessUnitId: bid },
+      });
       return response?.data || response || [];
     } catch (error) {
       console.error('Error fetching featured products:', error);
@@ -1003,26 +1253,39 @@ export const productService = {
     }
   },
 
-  async getRelatedProducts(productId: string, limit: number = 4): Promise<Product[]> {
+  async getRelatedProducts(
+    productId: string,
+    limit: number = 4
+  ): Promise<Product[]> {
     if (!isClient) {
       return [];
     }
     try {
-      const response = await api.get<any>(`/products/${productId}/related`, { params: { limit } });
+      const response = await api.get<any>(`/products/${productId}/related`, {
+        params: { limit },
+      });
       return response?.data || response || [];
     } catch (error) {
-      console.error(`Error fetching related products for ${productId}:`, error);
+      console.error(
+        `Error fetching related products for ${productId}:`,
+        error
+      );
       return [];
     }
   },
 
-  async getPopularProducts(limit: number = 10, businessUnitId?: string): Promise<Product[]> {
+  async getPopularProducts(
+    limit: number = 10,
+    businessUnitId?: string
+  ): Promise<Product[]> {
     if (!isClient) {
       return [];
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/popular', { params: { limit, businessUnitId: bid } });
+      const response = await api.get<any>('/products/popular', {
+        params: { limit, businessUnitId: bid },
+      });
       return response?.data || response || [];
     } catch (error) {
       console.error('Error fetching popular products:', error);
@@ -1030,13 +1293,18 @@ export const productService = {
     }
   },
 
-  async getNewArrivals(limit: number = 10, businessUnitId?: string): Promise<Product[]> {
+  async getNewArrivals(
+    limit: number = 10,
+    businessUnitId?: string
+  ): Promise<Product[]> {
     if (!isClient) {
       return [];
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/new-arrivals', { params: { limit, businessUnitId: bid } });
+      const response = await api.get<any>('/products/new-arrivals', {
+        params: { limit, businessUnitId: bid },
+      });
       return response?.data || response || [];
     } catch (error) {
       console.error('Error fetching new arrivals:', error);
@@ -1044,23 +1312,41 @@ export const productService = {
     }
   },
 
-  async getSalesByProduct(productId: string, params?: { page?: number; limit?: number }): Promise<any> {
+  async getSalesByProduct(
+    productId: string,
+    params?: { page?: number; limit?: number }
+  ): Promise<any> {
     if (!isClient) {
       return { totalRevenue: 0, totalQuantity: 0, averagePrice: 0, items: [] };
     }
     try {
-      const response = await api.get<any>(`/products/${productId}/sales`, { params });
-      return response?.data || response || { totalRevenue: 0, totalQuantity: 0, averagePrice: 0, items: [] };
+      const response = await api.get<any>(`/products/${productId}/sales`, {
+        params,
+      });
+      return (
+        response?.data ||
+        response || {
+          totalRevenue: 0,
+          totalQuantity: 0,
+          averagePrice: 0,
+          items: [],
+        }
+      );
     } catch (error: any) {
       if (error?.response?.status === 404) {
         console.log('Sales endpoint not available');
-        return { totalRevenue: 0, totalQuantity: 0, averagePrice: 0, items: [] };
+        return {
+          totalRevenue: 0,
+          totalQuantity: 0,
+          averagePrice: 0,
+          items: [],
+        };
       }
       console.error(`Error fetching sales for product ${productId}:`, error);
       return { totalRevenue: 0, totalQuantity: 0, averagePrice: 0, items: [] };
     }
   },
-  
+
   // ============================================
   // PRODUCT STATISTICS
   // ============================================
@@ -1085,22 +1371,27 @@ export const productService = {
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/products/statistics', { params: { businessUnitId: bid } });
-      return response?.data || response || {
-        total: 0,
-        active: 0,
-        inactive: 0,
-        lowStock: 0,
-        outOfStock: 0,
-        totalRevenue: 0,
-        averagePrice: 0,
-        featured: 0,
-        withVariants: 0,
-        totalCategories: 0,
-        totalSuppliers: 0,
-        withBarcode: 0,
-        withoutBarcode: 0,
-      };
+      const response = await api.get<any>('/products/statistics', {
+        params: { businessUnitId: bid },
+      });
+      return (
+        response?.data ||
+        response || {
+          total: 0,
+          active: 0,
+          inactive: 0,
+          lowStock: 0,
+          outOfStock: 0,
+          totalRevenue: 0,
+          averagePrice: 0,
+          featured: 0,
+          withVariants: 0,
+          totalCategories: 0,
+          totalSuppliers: 0,
+          withBarcode: 0,
+          withoutBarcode: 0,
+        }
+      );
     } catch (error) {
       console.error('Error fetching product statistics:', error);
       return {
@@ -1125,22 +1416,28 @@ export const productService = {
   // BULK OPERATIONS
   // ============================================
 
-  async bulkCreateProducts(products: Partial<Product>[], businessUnitId: string): Promise<{ results: any[]; errors: any[] }> {
+  async bulkCreateProducts(
+    products: Partial<Product>[],
+    businessUnitId: string
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk create on server');
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      
-      const processedProducts = products.map(p => {
+
+      const processedProducts = products.map((p) => {
         let sku = p.sku;
         if (!sku || sku === 'SKU' || sku.trim() === '') {
           sku = generateUniqueSKU(p.name);
         }
         return cleanProductData({ ...p, sku: sku.toUpperCase() });
       });
-      
-      const response = await api.post<any>('/products/bulk', { products: processedProducts, businessUnitId: bid });
+
+      const response = await api.post<any>('/products/bulk', {
+        products: processedProducts,
+        businessUnitId: bid,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk creating products:', error);
@@ -1148,13 +1445,19 @@ export const productService = {
     }
   },
 
-  async bulkDeleteProducts(productIds: string[], businessUnitId: string): Promise<{ results: any[]; errors: any[] }> {
+  async bulkDeleteProducts(
+    productIds: string[],
+    businessUnitId: string
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk delete on server');
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.post<any>('/products/bulk/delete', { productIds, businessUnitId: bid });
+      const response = await api.post<any>('/products/bulk/delete', {
+        productIds,
+        businessUnitId: bid,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk deleting products:', error);
@@ -1162,12 +1465,16 @@ export const productService = {
     }
   },
 
-  async bulkActivateProducts(productIds: string[]): Promise<{ results: any[]; errors: any[] }> {
+  async bulkActivateProducts(
+    productIds: string[]
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk activate on server');
     }
     try {
-      const response = await api.post<any>('/products/bulk/activate', { productIds });
+      const response = await api.post<any>('/products/bulk/activate', {
+        productIds,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk activating products:', error);
@@ -1175,12 +1482,16 @@ export const productService = {
     }
   },
 
-  async bulkDeactivateProducts(productIds: string[]): Promise<{ results: any[]; errors: any[] }> {
+  async bulkDeactivateProducts(
+    productIds: string[]
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk deactivate on server');
     }
     try {
-      const response = await api.post<any>('/products/bulk/deactivate', { productIds });
+      const response = await api.post<any>('/products/bulk/deactivate', {
+        productIds,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk deactivating products:', error);
@@ -1188,12 +1499,16 @@ export const productService = {
     }
   },
 
-  async bulkUpdatePrices(updates: Array<{ id: string; price: number }>): Promise<{ results: any[]; errors: any[] }> {
+  async bulkUpdatePrices(
+    updates: Array<{ id: string; price: number }>
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk update prices on server');
     }
     try {
-      const response = await api.post<any>('/products/bulk/update-prices', { updates });
+      const response = await api.post<any>('/products/bulk/update-prices', {
+        updates,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk updating prices:', error);
@@ -1201,12 +1516,16 @@ export const productService = {
     }
   },
 
-  async bulkUpdateStock(updates: Array<{ id: string; stock: number }>): Promise<{ results: any[]; errors: any[] }> {
+  async bulkUpdateStock(
+    updates: Array<{ id: string; stock: number }>
+  ): Promise<{ results: any[]; errors: any[] }> {
     if (!isClient) {
       throw new Error('Cannot bulk update stock on server');
     }
     try {
-      const response = await api.post<any>('/products/bulk/update-stock', { updates });
+      const response = await api.post<any>('/products/bulk/update-stock', {
+        updates,
+      });
       return response?.data || response || { results: [], errors: [] };
     } catch (error) {
       console.error('Error bulk updating stock:', error);
@@ -1218,7 +1537,10 @@ export const productService = {
   // VARIANT METHODS
   // ============================================
 
-  async addVariant(productId: string, data: Partial<ProductVariant>): Promise<ProductVariant> {
+  async addVariant(
+    productId: string,
+    data: Partial<ProductVariant>
+  ): Promise<ProductVariant> {
     if (!isClient) {
       throw new Error('Cannot add variant on server');
     }
@@ -1226,10 +1548,13 @@ export const productService = {
       if (!data.sku || data.sku === 'SKU') {
         data.sku = generateUniqueSKU(data.name || 'PRD', 'VAR');
       }
-      
+
       data.images = data.images || [];
-      
-      const response = await api.post<any>(`/products/${productId}/variants`, data);
+
+      const response = await api.post<any>(
+        `/products/${productId}/variants`,
+        data
+      );
       return response?.data || response;
     } catch (error) {
       console.error(`Error adding variant to product ${productId}:`, error);
@@ -1237,7 +1562,10 @@ export const productService = {
     }
   },
 
-  async updateVariant(variantId: string, data: Partial<ProductVariant>): Promise<ProductVariant> {
+  async updateVariant(
+    variantId: string,
+    data: Partial<ProductVariant>
+  ): Promise<ProductVariant> {
     if (!isClient) {
       throw new Error('Cannot update variant on server');
     }
@@ -1245,8 +1573,11 @@ export const productService = {
       if (data.images !== undefined) {
         data.images = data.images || [];
       }
-      
-      const response = await api.put<any>(`/products/variants/${variantId}`, data);
+
+      const response = await api.put<any>(
+        `/products/variants/${variantId}`,
+        data
+      );
       return response?.data || response;
     } catch (error) {
       console.error(`Error updating variant ${variantId}:`, error);
@@ -1254,12 +1585,19 @@ export const productService = {
     }
   },
 
-  async updateVariantStock(variantId: string, quantity: number, note?: string): Promise<ProductVariant> {
+  async updateVariantStock(
+    variantId: string,
+    quantity: number,
+    note?: string
+  ): Promise<ProductVariant> {
     if (!isClient) {
       throw new Error('Cannot update variant stock on server');
     }
     try {
-      const response = await api.patch<any>(`/products/variants/${variantId}/stock`, { quantity, note });
+      const response = await api.patch<any>(
+        `/products/variants/${variantId}/stock`,
+        { quantity, note }
+      );
       return response?.data || response;
     } catch (error) {
       console.error(`Error updating variant stock ${variantId}:`, error);
@@ -1272,8 +1610,13 @@ export const productService = {
       throw new Error('Cannot delete variant on server');
     }
     try {
-      const response = await api.delete<any>(`/products/variants/${variantId}`);
-      return response?.data || response || { message: 'Variant deleted successfully' };
+      const response = await api.delete<any>(
+        `/products/variants/${variantId}`
+      );
+      return (
+        response?.data ||
+        response || { message: 'Variant deleted successfully' }
+      );
     } catch (error) {
       console.error(`Error deleting variant ${variantId}:`, error);
       throw error;
@@ -1288,7 +1631,10 @@ export const productService = {
       const response = await api.get<any>(`/products/${productId}/variants`);
       return response?.data || response || [];
     } catch (error) {
-      console.error(`Error fetching variants for product ${productId}:`, error);
+      console.error(
+        `Error fetching variants for product ${productId}:`,
+        error
+      );
       return [];
     }
   },
@@ -1311,7 +1657,9 @@ export const productService = {
       return {} as ProductVariant;
     }
     try {
-      const response = await api.get<any>(`/products/variants/barcode/${barcode}`);
+      const response = await api.get<any>(
+        `/products/variants/barcode/${barcode}`
+      );
       return response?.data || response || ({} as ProductVariant);
     } catch (error) {
       console.error(`Error fetching variant by barcode ${barcode}:`, error);
@@ -1336,14 +1684,20 @@ export const productService = {
   // CATEGORY METHODS
   // ============================================
 
-  async getCategories(params?: { businessUnitId?: string; isActive?: boolean; limit?: number }): Promise<any[]> {
+  async getCategories(params?: {
+    businessUnitId?: string;
+    isActive?: boolean;
+    limit?: number;
+  }): Promise<any[]> {
     if (!isClient) {
       return [];
     }
     try {
       const bid = params?.businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>('/categories', { params: { ...params, businessUnitId: bid } });
-      
+      const response = await api.get<any>('/categories', {
+        params: { ...params, businessUnitId: bid },
+      });
+
       if (response?.data && Array.isArray(response.data)) {
         return response.data;
       }
@@ -1366,7 +1720,9 @@ export const productService = {
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>(`/categories/${id}`, { params: { businessUnitId: bid } });
+      const response = await api.get<any>(`/categories/${id}`, {
+        params: { businessUnitId: bid },
+      });
       return response?.data || response || {};
     } catch (error) {
       console.error(`Error fetching category ${id}:`, error);
@@ -1400,14 +1756,22 @@ export const productService = {
     }
   },
 
-  async deleteCategory(id: string, businessUnitId?: string): Promise<{ message: string }> {
+  async deleteCategory(
+    id: string,
+    businessUnitId?: string
+  ): Promise<{ message: string }> {
     if (!isClient) {
       throw new Error('Cannot delete category on server');
     }
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.delete<any>(`/categories/${id}`, { params: { businessUnitId: bid } });
-      return response?.data || response || { message: 'Category deleted successfully' };
+      const response = await api.delete<any>(`/categories/${id}`, {
+        params: { businessUnitId: bid },
+      });
+      return (
+        response?.data ||
+        response || { message: 'Category deleted successfully' }
+      );
     } catch (error) {
       console.error(`Error deleting category ${id}:`, error);
       throw error;
@@ -1419,7 +1783,9 @@ export const productService = {
       throw new Error('Cannot toggle category status on server');
     }
     try {
-      const response = await api.patch<any>(`/categories/${id}/status`, { isActive });
+      const response = await api.patch<any>(`/categories/${id}/status`, {
+        isActive,
+      });
       return response?.data || response;
     } catch (error) {
       console.error(`Error toggling category status ${id}:`, error);
@@ -1427,13 +1793,25 @@ export const productService = {
     }
   },
 
-  async getCategoryProducts(categoryId: string, params?: { page?: number; limit?: number }): Promise<{ data: any[]; total: number; page: number; totalPages: number; limit: number }> {
+  async getCategoryProducts(
+    categoryId: string,
+    params?: { page?: number; limit?: number }
+  ): Promise<{
+    data: any[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
     if (!isClient) {
-      return { data: [], total: 0, page: 1, totalPages: 1, limit: params?.limit || 10 };
+      return { data: [], total: 0, page: 1, totalPages: 1, limit: 10 };
     }
     try {
-      const response = await api.get<any>(`/categories/${categoryId}/products`, { params });
-      
+      const response = await api.get<any>(
+        `/categories/${categoryId}/products`,
+        { params }
+      );
+
       if (response?.data?.products && Array.isArray(response.data.products)) {
         return {
           data: response.data.products,
@@ -1443,7 +1821,7 @@ export const productService = {
           limit: response.data.limit || params?.limit || 10,
         };
       }
-      
+
       const data = response?.data || response || [];
       return {
         data: Array.isArray(data) ? data : [],
@@ -1453,8 +1831,11 @@ export const productService = {
         limit: params?.limit || 10,
       };
     } catch (error) {
-      console.error(`Error fetching products for category ${categoryId}:`, error);
-      return { data: [], total: 0, page: 1, totalPages: 1, limit: params?.limit || 10 };
+      console.error(
+        `Error fetching products for category ${categoryId}:`,
+        error
+      );
+      return { data: [], total: 0, page: 1, totalPages: 1, limit: 10 };
     }
   },
 
@@ -1478,7 +1859,10 @@ export const productService = {
     }
     try {
       const response = await api.post<any>('/categories/bulk-delete', { ids });
-      return response?.data || response || { message: 'Categories deleted successfully' };
+      return (
+        response?.data ||
+        response || { message: 'Categories deleted successfully' }
+      );
     } catch (error) {
       console.error('Error bulk deleting categories:', error);
       throw error;
@@ -1489,13 +1873,17 @@ export const productService = {
   // SUPPLIER METHODS
   // ============================================
 
-  async getSuppliers(params?: { companyId?: string; isActive?: boolean; limit?: number }): Promise<any[]> {
+  async getSuppliers(params?: {
+    companyId?: string;
+    isActive?: boolean;
+    limit?: number;
+  }): Promise<any[]> {
     if (!isClient) {
       return [];
     }
     try {
       const response = await api.get<any>('/suppliers', { params });
-      
+
       if (response?.data && Array.isArray(response.data)) {
         return response.data;
       }
@@ -1517,7 +1905,9 @@ export const productService = {
       return {} as any;
     }
     try {
-      const response = await api.get<any>(`/suppliers/${id}`, { params: { companyId } });
+      const response = await api.get<any>(`/suppliers/${id}`, {
+        params: { companyId },
+      });
       return response?.data || response || {};
     } catch (error) {
       console.error(`Error fetching supplier ${id}:`, error);
@@ -1551,13 +1941,21 @@ export const productService = {
     }
   },
 
-  async deleteSupplier(id: string, companyId?: string): Promise<{ message: string }> {
+  async deleteSupplier(
+    id: string,
+    companyId?: string
+  ): Promise<{ message: string }> {
     if (!isClient) {
       throw new Error('Cannot delete supplier on server');
     }
     try {
-      const response = await api.delete<any>(`/suppliers/${id}`, { params: { companyId } });
-      return response?.data || response || { message: 'Supplier deleted successfully' };
+      const response = await api.delete<any>(`/suppliers/${id}`, {
+        params: { companyId },
+      });
+      return (
+        response?.data ||
+        response || { message: 'Supplier deleted successfully' }
+      );
     } catch (error) {
       console.error(`Error deleting supplier ${id}:`, error);
       throw error;
@@ -1568,13 +1966,18 @@ export const productService = {
   // REVIEW METHODS
   // ============================================
 
-  async getProductReviews(productId: string, params?: { page?: number; limit?: number }): Promise<any> {
+  async getProductReviews(
+    productId: string,
+    params?: { page?: number; limit?: number }
+  ): Promise<any> {
     if (!isClient) {
       return { reviews: [], stats: { average: 0, total: 0 } };
     }
     try {
-      const response = await api.get<any>(`/products/${productId}/reviews`, { params });
-      
+      const response = await api.get<any>(`/products/${productId}/reviews`, {
+        params,
+      });
+
       if (response?.data && Array.isArray(response.data)) {
         return {
           reviews: response.data,
@@ -1582,10 +1985,12 @@ export const productService = {
           pagination: response.pagination,
         };
       }
-      
+
       return {
         reviews: response?.data?.reviews || response?.reviews || [],
-        stats: response?.data?.stats || response?.stats || { average: 0, total: 0 },
+        stats:
+          response?.data?.stats ||
+          response?.stats || { average: 0, total: 0 },
         pagination: response?.data?.pagination || response?.pagination,
       };
     } catch (error) {
@@ -1596,14 +2001,34 @@ export const productService = {
 
   async getReviewStats(productId: string): Promise<any> {
     if (!isClient) {
-      return { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+      return {
+        average: 0,
+        total: 0,
+        distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      };
     }
     try {
-      const response = await api.get<any>(`/products/${productId}/reviews/stats`);
-      return response?.data || response || { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+      const response = await api.get<any>(
+        `/products/${productId}/reviews/stats`
+      );
+      return (
+        response?.data ||
+        response || {
+          average: 0,
+          total: 0,
+          distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        }
+      );
     } catch (error) {
-      console.error(`Error fetching review stats for product ${productId}:`, error);
-      return { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+      console.error(
+        `Error fetching review stats for product ${productId}:`,
+        error
+      );
+      return {
+        average: 0,
+        total: 0,
+        distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      };
     }
   },
 
@@ -1612,7 +2037,10 @@ export const productService = {
       throw new Error('Cannot create review on server');
     }
     try {
-      const response = await api.post<any>(`/products/${data.productId}/reviews`, data);
+      const response = await api.post<any>(
+        `/products/${data.productId}/reviews`,
+        data
+      );
       return response?.data || response;
     } catch (error) {
       console.error('Error creating product review:', error);
@@ -1625,7 +2053,10 @@ export const productService = {
       throw new Error('Cannot update review on server');
     }
     try {
-      const response = await api.put<any>(`/products/reviews/${reviewId}`, data);
+      const response = await api.put<any>(
+        `/products/reviews/${reviewId}`,
+        data
+      );
       return response?.data || response;
     } catch (error) {
       console.error(`Error updating review ${reviewId}:`, error);
@@ -1639,7 +2070,10 @@ export const productService = {
     }
     try {
       const response = await api.delete<any>(`/products/reviews/${reviewId}`);
-      return response?.data || response || { message: 'Review deleted successfully' };
+      return (
+        response?.data ||
+        response || { message: 'Review deleted successfully' }
+      );
     } catch (error) {
       console.error(`Error deleting review ${reviewId}:`, error);
       throw error;
@@ -1651,7 +2085,9 @@ export const productService = {
       throw new Error('Cannot verify review on server');
     }
     try {
-      const response = await api.patch<any>(`/products/reviews/${reviewId}/verify`);
+      const response = await api.patch<any>(
+        `/products/reviews/${reviewId}/verify`
+      );
       return response?.data || response;
     } catch (error) {
       console.error(`Error verifying review ${reviewId}:`, error);
@@ -1659,12 +2095,16 @@ export const productService = {
     }
   },
 
-  async markReviewHelpful(reviewId: string): Promise<{ helpful: boolean; helpfulCount: number }> {
+  async markReviewHelpful(
+    reviewId: string
+  ): Promise<{ helpful: boolean; helpfulCount: number }> {
     if (!isClient) {
       throw new Error('Cannot mark review helpful on server');
     }
     try {
-      const response = await api.post<any>(`/products/reviews/${reviewId}/helpful`);
+      const response = await api.post<any>(
+        `/products/reviews/${reviewId}/helpful`
+      );
       return response?.data || response || { helpful: true, helpfulCount: 0 };
     } catch (error) {
       console.error(`Error marking review ${reviewId} as helpful:`, error);
@@ -1672,13 +2112,22 @@ export const productService = {
     }
   },
 
-  async reportReview(reviewId: string, reason: string): Promise<{ message: string }> {
+  async reportReview(
+    reviewId: string,
+    reason: string
+  ): Promise<{ message: string }> {
     if (!isClient) {
       throw new Error('Cannot report review on server');
     }
     try {
-      const response = await api.post<any>(`/products/reviews/${reviewId}/report`, { reason });
-      return response?.data || response || { message: 'Review reported successfully' };
+      const response = await api.post<any>(
+        `/products/reviews/${reviewId}/report`,
+        { reason }
+      );
+      return (
+        response?.data ||
+        response || { message: 'Review reported successfully' }
+      );
     } catch (error) {
       console.error(`Error reporting review ${reviewId}:`, error);
       throw error;
@@ -1720,14 +2169,19 @@ export const productService = {
       return false;
     }
     try {
-      const response = await api.get<any>(`/products/wishlist/${productId}/check`);
+      const response = await api.get<any>(
+        `/products/wishlist/${productId}/check`
+      );
       if (response && typeof response === 'object') {
         if ('data' in response) return response.data === true;
         if ('success' in response) return response.success === true;
       }
       return Boolean(response);
     } catch (error) {
-      console.error(`Error checking wishlist for product ${productId}:`, error);
+      console.error(
+        `Error checking wishlist for product ${productId}:`,
+        error
+      );
       return false;
     }
   },
@@ -1739,8 +2193,10 @@ export const productService = {
     try {
       const response = await api.get<any>('/products/wishlist/count');
       if (response && typeof response === 'object') {
-        if ('data' in response && typeof response.data === 'number') return response.data;
-        if ('count' in response && typeof response.count === 'number') return response.count;
+        if ('data' in response && typeof response.data === 'number')
+          return response.data;
+        if ('count' in response && typeof response.count === 'number')
+          return response.count;
       }
       return typeof response === 'number' ? response : 0;
     } catch (error) {
@@ -1784,7 +2240,9 @@ export const productService = {
       return [];
     }
     try {
-      const response = await api.post<any>('/products/compare', { productIds });
+      const response = await api.post<any>('/products/compare', {
+        productIds,
+      });
       return response?.data || response || [];
     } catch (error) {
       console.error('Error comparing products:', error);
@@ -1793,23 +2251,22 @@ export const productService = {
   },
 
   // ============================================
-  // ✅ FIXED: RECENTLY VIEWED - Using correct paths
+  // RECENTLY VIEWED
   // ============================================
 
-  /**
-   * Add product to recently viewed
-   * ✅ FIXED: Use correct path /products/recently-viewed/:productId
-   */
   async addRecentlyViewed(productId: string): Promise<{ message: string }> {
     if (!isClient) {
       throw new Error('Cannot add recently viewed on server');
     }
     try {
-      // ✅ FIXED: Use /products/recently-viewed/ instead of /recently-viewed/
-      const response = await api.post<any>(`/products/recently-viewed/${productId}`);
-      return response?.data || response || { message: 'Added to recently viewed' };
+      const response = await api.post<any>(
+        `/products/recently-viewed/${productId}`
+      );
+      return (
+        response?.data ||
+        response || { message: 'Added to recently viewed' }
+      );
     } catch (error: any) {
-      // ✅ FIXED: Silently ignore 404 errors
       if (error?.response?.status === 404) {
         return { message: 'Recently viewed tracking not available' };
       }
@@ -1818,17 +2275,14 @@ export const productService = {
     }
   },
 
-  /**
-   * Get recently viewed products
-   * ✅ FIXED: Use correct path /products/recently-viewed
-   */
   async getRecentlyViewed(limit: number = 10): Promise<Product[]> {
     if (!isClient) {
       return [];
     }
     try {
-      // ✅ FIXED: Use /products/recently-viewed instead of /recently-viewed
-      const response = await api.get<any>('/products/recently-viewed', { params: { limit } });
+      const response = await api.get<any>('/products/recently-viewed', {
+        params: { limit },
+      });
       return response?.data || response || [];
     } catch (error: any) {
       if (error?.response?.status === 404) {
@@ -1839,18 +2293,16 @@ export const productService = {
     }
   },
 
-  /**
-   * Clear recently viewed
-   * ✅ FIXED: Use correct path /products/recently-viewed
-   */
   async clearRecentlyViewed(): Promise<{ message: string }> {
     if (!isClient) {
       throw new Error('Cannot clear recently viewed on server');
     }
     try {
-      // ✅ FIXED: Use /products/recently-viewed instead of /recently-viewed
       const response = await api.delete<any>('/products/recently-viewed');
-      return response?.data || response || { message: 'Recently viewed cleared' };
+      return (
+        response?.data ||
+        response || { message: 'Recently viewed cleared' }
+      );
     } catch (error: any) {
       if (error?.response?.status === 404) {
         return { message: 'Recently viewed clearing not available' };
@@ -1875,21 +2327,35 @@ export const productService = {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     businessUnitId?: string;
-  }): Promise<{ data: Product[]; total: number; page: number; totalPages: number; limit: number }> {
+  }): Promise<{
+    data: Product[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
     if (!isClient) {
-      return { data: [], total: 0, page: 1, totalPages: 1, limit: params?.limit || 12 };
+      return {
+        data: [],
+        total: 0,
+        page: 1,
+        totalPages: 1,
+        limit: params?.limit || 12,
+      };
     }
-    
+
     try {
       const businessUnitId = params?.businessUnitId || getBusinessUnitId();
-      
-      const queryParams: any = { 
+
+      const queryParams: any = {
         ...params,
         businessUnitId: businessUnitId,
       };
-      
-      const response = await api.get<any>('/products/public', { params: queryParams });
-      
+
+      const response = await api.get<any>('/products/public', {
+        params: queryParams,
+      });
+
       if (response?.data && Array.isArray(response.data)) {
         return {
           data: response.data,
@@ -1899,7 +2365,7 @@ export const productService = {
           limit: response.pagination?.limit || params?.limit || 12,
         };
       }
-      
+
       return {
         data: response?.data?.data || [],
         total: response?.data?.pagination?.total || 0,
@@ -1907,15 +2373,13 @@ export const productService = {
         totalPages: response?.data?.pagination?.totalPages || 1,
         limit: response?.data?.pagination?.limit || params?.limit || 12,
       };
-    } catch (error) {
-      console.error('Error fetching public products:', error);
-      return {
-        data: [],
-        total: 0,
-        page: 1,
-        totalPages: 1,
-        limit: params?.limit || 12,
-      };
+    } catch (error: any) {
+      // ✅ FIXED: surface error instead of returning empty
+      console.error(
+        '❌ Error fetching public products:',
+        extractErrorMessage(error)
+      );
+      throw error;
     }
   },
 
@@ -1923,13 +2387,16 @@ export const productService = {
   // EXPORT / IMPORT
   // ============================================
 
-  async exportProducts(format: 'csv' | 'excel' = 'csv', filters?: any): Promise<Blob> {
+  async exportProducts(
+    format: 'csv' | 'excel' = 'csv',
+    filters?: any
+  ): Promise<Blob> {
     if (!isClient) {
       throw new Error('Cannot export on server');
     }
     try {
-      const response = await api.download(`/products/export`, { 
-        params: { format, ...filters } 
+      const response = await api.download(`/products/export`, {
+        params: { format, ...filters },
       });
       return response;
     } catch (error) {
@@ -1948,9 +2415,15 @@ export const productService = {
       if (businessUnitId) {
         formData.append('businessUnitId', businessUnitId);
       }
-      
-      const response = await api.upload<any>('/products/import', formData as any);
-      return response?.data || response || { success: false, imported: 0, failed: 0, total: 0 };
+
+      const response = await api.upload<any>(
+        '/products/import',
+        formData as any
+      );
+      return (
+        response?.data ||
+        response || { success: false, imported: 0, failed: 0, total: 0 }
+      );
     } catch (error) {
       console.error('Error importing products:', error);
       throw error;
@@ -1970,15 +2443,24 @@ export const productService = {
     }
   },
 
-  async exportProductReviews(productId: string, format: 'csv' | 'excel' = 'csv'): Promise<Blob> {
+  async exportProductReviews(
+    productId: string,
+    format: 'csv' | 'excel' = 'csv'
+  ): Promise<Blob> {
     if (!isClient) {
       throw new Error('Cannot export reviews on server');
     }
     try {
-      const response = await api.download(`/products/${productId}/reviews/export`, { params: { format } });
+      const response = await api.download(
+        `/products/${productId}/reviews/export`,
+        { params: { format } }
+      );
       return response;
     } catch (error) {
-      console.error(`Error exporting reviews for product ${productId}:`, error);
+      console.error(
+        `Error exporting reviews for product ${productId}:`,
+        error
+      );
       throw error;
     }
   },

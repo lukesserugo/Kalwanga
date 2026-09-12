@@ -43,23 +43,37 @@ function hasCompaniesProperty(response: unknown): response is { companies: unkno
   return isObject(response) && 'companies' in response;
 }
 
+/**
+ * Standardized error logging so the real HTTP status and URL are visible
+ * instead of a generic message.
+ */
+function logError(context: string, error: unknown): void {
+  const err = error as any;
+  console.error(context, {
+    message: err?.response?.data?.message || err?.message,
+    status: err?.response?.status,
+    url: err?.config?.url,
+    params: err?.config?.params,
+  });
+}
+
 function extractData<T>(response: unknown): T | null {
   if (!isObject(response)) {
     return null;
   }
-  
+
   if (hasSuccessProperty(response) && hasDataProperty(response)) {
     return response.data as T;
   }
-  
+
   if (hasDataProperty(response)) {
     return response.data as T;
   }
-  
+
   if (hasCompaniesProperty(response)) {
     return response.companies as T;
   }
-  
+
   return response as T;
 }
 
@@ -67,8 +81,7 @@ function extractArray<T>(response: unknown): T[] {
   if (!isObject(response)) {
     return [];
   }
-  
-  // Check for success wrapper with data
+
   if (hasSuccessProperty(response) && hasDataProperty(response)) {
     const data = response.data;
     if (Array.isArray(data)) {
@@ -82,8 +95,7 @@ function extractArray<T>(response: unknown): T[] {
     }
     return [];
   }
-  
-  // Check for data property
+
   if (hasDataProperty(response)) {
     const data = response.data;
     if (Array.isArray(data)) {
@@ -97,8 +109,7 @@ function extractArray<T>(response: unknown): T[] {
     }
     return [];
   }
-  
-  // Check for companies property directly
+
   if (hasCompaniesProperty(response)) {
     const companies = response.companies;
     if (Array.isArray(companies)) {
@@ -106,21 +117,24 @@ function extractArray<T>(response: unknown): T[] {
     }
     return [];
   }
-  
-  // Check if response itself is an array
+
   if (Array.isArray(response)) {
     return response as T[];
   }
-  
+
   return [];
 }
 
-function extractPagination(response: unknown): { total: number; page: number; totalPages: number; limit: number } {
+function extractPagination(response: unknown): {
+  total: number;
+  page: number;
+  totalPages: number;
+  limit: number;
+} {
   if (!isObject(response)) {
     return { total: 0, page: 1, totalPages: 0, limit: 10 };
   }
-  
-  // Check for pagination property
+
   if (hasPaginationProperty(response) && isObject(response.pagination)) {
     const pagination = response.pagination;
     return {
@@ -130,8 +144,7 @@ function extractPagination(response: unknown): { total: number; page: number; to
       limit: ('limit' in pagination ? Number(pagination.limit) : 10) || 10,
     };
   }
-  
-  // Check for direct pagination properties
+
   if ('total' in response) {
     const total = Number(response.total) || 0;
     const limit = ('limit' in response ? Number(response.limit) : 10) || 10;
@@ -142,8 +155,7 @@ function extractPagination(response: unknown): { total: number; page: number; to
       limit,
     };
   }
-  
-  // Check for data wrapper with pagination
+
   if (hasDataProperty(response) && isObject(response.data)) {
     const data = response.data;
     if ('total' in data) {
@@ -157,7 +169,7 @@ function extractPagination(response: unknown): { total: number; page: number; to
       };
     }
   }
-  
+
   return { total: 0, page: 1, totalPages: 0, limit: 10 };
 }
 
@@ -178,10 +190,10 @@ export const companyService = {
   }): Promise<PaginatedResponse<Company>> {
     try {
       const response = await api.get('/companies', { params });
-      
+
       const data = extractArray<Company>(response);
       const pagination = extractPagination(response);
-      
+
       return {
         data,
         total: pagination.total,
@@ -190,7 +202,8 @@ export const companyService = {
         limit: pagination.limit,
       };
     } catch (error) {
-      console.error('Failed to fetch companies:', error);
+      logError('Failed to fetch companies:', error);
+      // Graceful empty response so getCompanyIdWithFallback keeps working
       return {
         data: [],
         total: 0,
@@ -210,7 +223,7 @@ export const companyService = {
       const response = await api.get('/companies');
       return response;
     } catch (error) {
-      console.error('Failed to fetch companies:', error);
+      logError('Failed to fetch companies:', error);
       throw error;
     }
   },
@@ -224,23 +237,22 @@ export const companyService = {
       if (!id) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.get(`/companies/${id}`);
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Company not found');
       }
-      
-      // Store the company ID for future use
+
       if (result.id) {
         this.setCompanyId(result.id);
         localStorage.setItem('companyId', result.id);
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to fetch company ${id}:`, error);
+      logError(`Failed to fetch company ${id}:`, error);
       throw error;
     }
   },
@@ -254,17 +266,17 @@ export const companyService = {
       if (!email) {
         throw new Error('Email is required');
       }
-      
+
       const response = await api.get(`/companies/email/${email}`);
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Company not found');
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to fetch company by email ${email}:`, error);
+      logError(`Failed to fetch company by email ${email}:`, error);
       throw error;
     }
   },
@@ -277,20 +289,19 @@ export const companyService = {
     try {
       const response = await api.get('/companies/default');
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Failed to get default company');
       }
-      
-      // Store the company ID
+
       if (result.id) {
         this.setCompanyId(result.id);
         localStorage.setItem('companyId', result.id);
       }
-      
+
       return result;
     } catch (error) {
-      console.error('Failed to get or create default company:', error);
+      logError('Failed to get or create default company:', error);
       throw error;
     }
   },
@@ -304,10 +315,10 @@ export const companyService = {
       if (!id) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.get(`/companies/${id}/stats`);
       const result = extractData<CompanyStats>(response);
-      
+
       if (!result || typeof result !== 'object') {
         return {
           totalUsers: 0,
@@ -319,7 +330,7 @@ export const companyService = {
           totalSuppliers: 0,
         };
       }
-      
+
       return {
         totalUsers: result.totalUsers || 0,
         totalBusinessUnits: result.totalBusinessUnits || 0,
@@ -330,7 +341,7 @@ export const companyService = {
         totalSuppliers: result.totalSuppliers || 0,
       };
     } catch (error) {
-      console.error(`Failed to fetch stats for company ${id}:`, error);
+      logError(`Failed to fetch stats for company ${id}:`, error);
       return {
         totalUsers: 0,
         totalBusinessUnits: 0,
@@ -352,17 +363,17 @@ export const companyService = {
       if (!id) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.get(`/companies/${id}/settings`);
       const result = extractData<{ settings: any; salesSettings: any }>(response);
-      
+
       if (!result) {
         return { settings: null, salesSettings: null };
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to fetch settings for company ${id}:`, error);
+      logError(`Failed to fetch settings for company ${id}:`, error);
       return { settings: null, salesSettings: null };
     }
   },
@@ -376,17 +387,17 @@ export const companyService = {
       if (!id) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.put(`/companies/${id}/settings`, data);
       const result = extractData<any>(response);
-      
+
       if (!result) {
         throw new Error('Failed to update company settings');
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to update settings for company ${id}:`, error);
+      logError(`Failed to update settings for company ${id}:`, error);
       throw error;
     }
   },
@@ -400,7 +411,7 @@ export const companyService = {
       if (!data.name || !data.email || !data.phone) {
         throw new Error('Name, email, and phone are required');
       }
-      
+
       const payload: any = {
         name: data.name,
         email: data.email,
@@ -412,29 +423,27 @@ export const companyService = {
         logo: data.logo,
         isActive: data.isActive !== undefined ? data.isActive : true,
       };
-      
+
       const response = await api.post('/companies', payload);
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Failed to create company');
       }
-      
-      // Store the company ID
+
       if (result.id) {
         this.setCompanyId(result.id);
         localStorage.setItem('companyId', result.id);
       }
-      
-      // Store business unit ID if returned
+
       if (result.businessUnits && result.businessUnits.length > 0) {
         const businessUnitId = result.businessUnits[0].id;
         localStorage.setItem('businessUnitId', businessUnitId);
       }
-      
+
       return result;
     } catch (error) {
-      console.error('Failed to create company:', error);
+      logError('Failed to create company:', error);
       throw error;
     }
   },
@@ -448,17 +457,17 @@ export const companyService = {
       if (!id) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.put(`/companies/${id}`, data);
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Failed to update company');
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to update company ${id}:`, error);
+      logError(`Failed to update company ${id}:`, error);
       throw error;
     }
   },
@@ -472,21 +481,21 @@ export const companyService = {
       if (!id) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.delete(`/companies/${id}`);
       const result = extractData<{ message: string }>(response);
-      
+
       if (result && hasMessageProperty(result)) {
         return { message: String(result.message) };
       }
-      
+
       if (hasMessageProperty(response)) {
         return { message: String(response.message) };
       }
-      
+
       return { message: 'Company deleted successfully' };
     } catch (error) {
-      console.error(`Failed to delete company ${id}:`, error);
+      logError(`Failed to delete company ${id}:`, error);
       throw error;
     }
   },
@@ -500,23 +509,22 @@ export const companyService = {
       if (!userId) {
         throw new Error('User ID is required');
       }
-      
+
       const response = await api.post('/companies/ensure-user', { userId });
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Failed to ensure user company');
       }
-      
-      // Store the company ID
+
       if (result.id) {
         this.setCompanyId(result.id);
         localStorage.setItem('companyId', result.id);
       }
-      
+
       return result;
     } catch (error) {
-      console.error('Failed to ensure user company:', error);
+      logError('Failed to ensure user company:', error);
       throw error;
     }
   },
@@ -525,14 +533,17 @@ export const companyService = {
    * POST /companies/:id/business-units
    * Add a business unit to a company
    */
-  async addBusinessUnit(companyId: string, data: {
-    name: string;
-    code: string;
-    address?: string;
-    phone?: string;
-    email?: string;
-    type?: string;
-  }): Promise<any> {
+  async addBusinessUnit(
+    companyId: string,
+    data: {
+      name: string;
+      code: string;
+      address?: string;
+      phone?: string;
+      email?: string;
+      type?: string;
+    }
+  ): Promise<any> {
     try {
       if (!companyId) {
         throw new Error('Company ID is required');
@@ -540,17 +551,17 @@ export const companyService = {
       if (!data.name || !data.code) {
         throw new Error('Business unit name and code are required');
       }
-      
+
       const response = await api.post(`/companies/${companyId}/business-units`, data);
       const result = extractData<any>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Failed to add business unit');
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to add business unit to company ${companyId}:`, error);
+      logError(`Failed to add business unit to company ${companyId}:`, error);
       throw error;
     }
   },
@@ -564,13 +575,13 @@ export const companyService = {
       if (!companyId) {
         throw new Error('Company ID is required');
       }
-      
+
       const response = await api.get(`/companies/${companyId}/default-business-unit`);
       const result = extractData<any>(response);
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to get default business unit for company ${companyId}:`, error);
+      logError(`Failed to get default business unit for company ${companyId}:`, error);
       return null;
     }
   },
@@ -584,17 +595,17 @@ export const companyService = {
       if (!businessUnitId) {
         throw new Error('Business unit ID is required');
       }
-      
+
       const response = await api.get(`/companies/by-business-unit/${businessUnitId}`);
       const result = extractData<Company>(response);
-      
+
       if (!result || !hasIdProperty(result)) {
         throw new Error('Company not found for this business unit');
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Failed to get company by business unit ${businessUnitId}:`, error);
+      logError(`Failed to get company by business unit ${businessUnitId}:`, error);
       throw error;
     }
   },
@@ -603,21 +614,16 @@ export const companyService = {
   // Helper Functions
   // ============================================
 
-  /**
-   * Get company ID from storage
-   */
   getCompanyId(): string {
-    // Try from localStorage first
     try {
       const stored = localStorage.getItem('companyId');
       if (stored && stored !== 'undefined' && stored !== 'null' && stored.length > 10) {
         return stored;
       }
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
 
-    // Try from user object
     try {
       const userStr = localStorage.getItem('user');
       if (userStr) {
@@ -627,10 +633,9 @@ export const companyService = {
         }
       }
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
 
-    // Try from Clerk user metadata
     try {
       const clerkUserStr = localStorage.getItem('clerk-user');
       if (clerkUserStr) {
@@ -640,22 +645,18 @@ export const companyService = {
         }
       }
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
 
     return '';
   },
 
-  /**
-   * Get company ID from storage with fallback to fetch
-   */
   async getCompanyIdWithFallback(): Promise<string> {
     const stored = this.getCompanyId();
     if (stored) {
       return stored;
     }
-    
-    // Try to get from API
+
     try {
       const companies = await this.getAll({ limit: 1 });
       if (companies.data && companies.data.length > 0) {
@@ -665,25 +666,21 @@ export const companyService = {
         return companyId;
       }
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
-    
-    // Try to get or create default
+
     try {
       const defaultCompany = await this.getOrCreateDefault();
       if (defaultCompany && defaultCompany.id) {
         return defaultCompany.id;
       }
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
-    
+
     return '';
   },
 
-  /**
-   * Get business unit ID from storage
-   */
   getBusinessUnitId(): string {
     try {
       const stored = localStorage.getItem('businessUnitId');
@@ -691,108 +688,82 @@ export const companyService = {
         return stored;
       }
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
     return '';
   },
 
-  /**
-   * Set company ID in storage
-   */
   setCompanyId(companyId: string): void {
     if (!companyId) return;
     try {
       localStorage.setItem('companyId', companyId);
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
   },
 
-  /**
-   * Set business unit ID in storage
-   */
   setBusinessUnitId(businessUnitId: string): void {
     if (!businessUnitId) return;
     try {
       localStorage.setItem('businessUnitId', businessUnitId);
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
   },
 
-  /**
-   * Clear company ID from storage
-   */
   clearCompanyId(): void {
     try {
       localStorage.removeItem('companyId');
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
   },
 
-  /**
-   * Clear all company-related data from storage
-   */
   clearAll(): void {
     try {
       localStorage.removeItem('companyId');
       localStorage.removeItem('businessUnitId');
     } catch (_e) {
-      // Ignore
+      /* ignore */
     }
   },
 
-  /**
-   * Check if a company ID is valid
-   */
   isValidCompanyId(id: string): boolean {
     if (!id) return false;
-    // CUID format: starts with 'c' and is 25 characters
     const cuidRegex = /^c[a-z0-9]{24}$/i;
-    // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     return cuidRegex.test(id) || uuidRegex.test(id);
   },
 
-  /**
-   * Get company name from ID (useful for display)
-   */
   async getCompanyName(id: string): Promise<string> {
     try {
       const company = await this.getById(id);
       return company.name;
     } catch (error) {
-      console.error(`Failed to get company name for ${id}:`, error);
+      logError(`Failed to get company name for ${id}:`, error);
       return 'Unknown Company';
     }
   },
 
-  /**
-   * Get multiple companies by IDs
-   */
   async getCompaniesByIds(ids: string[]): Promise<Company[]> {
     try {
       if (!ids || ids.length === 0) return [];
-      
-      // Since we don't have a bulk endpoint, fetch individually
-      const promises = ids.map(id => this.getById(id));
+
+      const promises = ids.map((id) => this.getById(id));
       const results = await Promise.allSettled(promises);
-      
+
       return results
-        .filter((result): result is PromiseFulfilledResult<Company> => 
-          result.status === 'fulfilled'
+        .filter(
+          (result): result is PromiseFulfilledResult<Company> =>
+            result.status === 'fulfilled'
         )
-        .map(result => result.value);
+        .map((result) => result.value);
     } catch (error) {
-      console.error('Failed to get companies by IDs:', error);
+      logError('Failed to get companies by IDs:', error);
       return [];
     }
   },
 
-  /**
-   * Search companies with advanced filters
-   */
   async search(params: {
     query: string;
     limit?: number;
@@ -801,10 +772,10 @@ export const companyService = {
   }): Promise<PaginatedResponse<Company>> {
     try {
       const response = await api.get('/companies/search', { params });
-      
+
       const data = extractArray<Company>(response);
       const pagination = extractPagination(response);
-      
+
       return {
         data,
         total: pagination.total,
@@ -813,7 +784,7 @@ export const companyService = {
         limit: pagination.limit,
       };
     } catch (error) {
-      console.error('Failed to search companies:', error);
+      logError('Failed to search companies:', error);
       return {
         data: [],
         total: 0,
@@ -824,9 +795,6 @@ export const companyService = {
     }
   },
 
-  /**
-   * Export companies data
-   */
   async exportCompanies(params?: {
     format?: 'csv' | 'excel' | 'json';
     search?: string;
@@ -839,40 +807,34 @@ export const companyService = {
       });
       return response as Blob;
     } catch (error) {
-      console.error('Failed to export companies:', error);
+      logError('Failed to export companies:', error);
       throw error;
     }
   },
 
-  /**
-   * Get active companies only
-   */
   async getActiveCompanies(): Promise<Company[]> {
     try {
       const response = await this.getAll({ isActive: true });
       return response.data;
     } catch (error) {
-      console.error('Failed to get active companies:', error);
+      logError('Failed to get active companies:', error);
       return [];
     }
   },
 
-  /**
-   * Get company by name
-   */
   async getCompanyByName(name: string): Promise<Company | null> {
     try {
       if (!name) {
         throw new Error('Company name is required');
       }
-      
+
       const response = await this.getAll({ search: name, limit: 1 });
       if (response.data && response.data.length > 0) {
         return response.data[0];
       }
       return null;
     } catch (error) {
-      console.error(`Failed to get company by name ${name}:`, error);
+      logError(`Failed to get company by name ${name}:`, error);
       return null;
     }
   },

@@ -1,4 +1,5 @@
 // src/services/productService.ts
+// PART 1 of 7
 
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -145,7 +146,8 @@ export class ProductService extends BaseService {
   private static readonly MAX_IMAGE_SIZE = 50 * 1024;
   private static readonly MAX_IMAGES = 3;
   private static readonly MAX_VARIANTS = 5;
-  private static readonly PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  private static readonly PLACEHOLDER_IMAGE =
+    'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
   // ============================================
   // PRIVATE HELPERS
@@ -153,7 +155,9 @@ export class ProductService extends BaseService {
 
   private safeEmitProductUpdate(product: any, businessUnitId: string): void {
     try {
-      console.log(`📦 Product updated: ${product?.name || product?.id} - ${businessUnitId}`);
+      console.log(
+        `📦 Product updated: ${product?.name || product?.id} - ${businessUnitId}`
+      );
     } catch (error) {
       console.warn('Failed to emit product update:', error);
     }
@@ -170,29 +174,31 @@ export class ProductService extends BaseService {
   private validateImage(img: any): string | null {
     if (typeof img !== 'string') return null;
     if (!img || img.length === 0) return null;
-    
-    // ✅ FIXED: Accept HTTP/HTTPS URLs
+
     if (img.startsWith('http://') || img.startsWith('https://')) {
       return img;
     }
-    
+
     if (!img.startsWith('data:image/')) return null;
-    
+
     try {
       const parts = img.split(',');
       if (parts.length !== 2) return null;
       if (!parts[1] || parts[1].length < 10) return null;
-      
+
       const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
       if (!base64Regex.test(parts[1])) return null;
-      
-      // ✅ FIXED: Increase max image size to 5MB
-      const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+
+      const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
       if (img.length > MAX_IMAGE_SIZE) {
-        console.warn(`⚠️ Image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`);
+        console.warn(
+          `⚠️ Image too large (${Math.round(
+            img.length / 1024 / 1024
+          )}MB), skipping`
+        );
         return null;
       }
-      
+
       return img;
     } catch {
       return null;
@@ -205,95 +211,122 @@ export class ProductService extends BaseService {
     }
 
     const cleaned: string[] = [];
-    // ✅ FIXED: Increase max image size to 5MB
-    const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-    // ✅ FIXED: Increase max images to 10
+    const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
     const MAX_IMAGES = 10;
     let validCount = 0;
-    
+
     for (const img of images) {
       if (validCount >= MAX_IMAGES) break;
       if (typeof img !== 'string') continue;
-      
-      // ✅ FIXED: Allow larger images
+
       if (img.length > MAX_IMAGE_SIZE) {
-        console.warn(`⚠️ Image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`);
+        console.warn(
+          `⚠️ Image too large (${Math.round(
+            img.length / 1024 / 1024
+          )}MB), skipping`
+        );
         continue;
       }
-      
-      // ✅ FIXED: Accept both data URLs and regular URLs
-      // Don't require data:image/ prefix - accept any valid image URL
-      if (!img.startsWith('data:image/') && !img.startsWith('http://') && !img.startsWith('https://')) {
-        // If it's not a data URL or HTTP URL, check if it's a valid base64 image
+
+      if (
+        !img.startsWith('data:image/') &&
+        !img.startsWith('http://') &&
+        !img.startsWith('https://')
+      ) {
         try {
-          // Check if it's base64 encoded image data
           const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
           if (base64Regex.test(img.substring(0, 100))) {
-            // It might be base64, add the data URL prefix if missing
             cleaned.push(`data:image/jpeg;base64,${img}`);
             validCount++;
             continue;
           }
         } catch {
-          // Not a valid image format
+          /* not base64 */
         }
-        console.warn(`⚠️ Skipping invalid image format: ${img.substring(0, 50)}...`);
+        console.warn(
+          `⚠️ Skipping invalid image format: ${img.substring(0, 50)}...`
+        );
         continue;
       }
-      
+
       cleaned.push(img);
       validCount++;
     }
 
-    console.log(`📸 cleanImages: ${validCount} valid images out of ${images.length}`);
+    console.log(
+      `📸 cleanImages: ${validCount} valid images out of ${images.length}`
+    );
     return cleaned;
   }
 
-  private extractCategoryId(categoryInput: string | { id: string } | undefined | null): string | null {
+  private extractCategoryId(
+    categoryInput: string | { id: string } | undefined | null
+  ): string | null {
     if (!categoryInput) return null;
-    
+
     if (typeof categoryInput === 'string') {
       const trimmed = categoryInput.trim();
-      if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '') {
+      if (
+        !trimmed ||
+        trimmed === 'null' ||
+        trimmed === 'undefined' ||
+        trimmed === ''
+      ) {
         return null;
       }
       return trimmed;
     }
-    
-    if (typeof categoryInput === 'object' && categoryInput !== null && 'id' in categoryInput) {
+
+    if (
+      typeof categoryInput === 'object' &&
+      categoryInput !== null &&
+      'id' in categoryInput
+    ) {
       const id = categoryInput.id;
       if (id && typeof id === 'string') {
         const trimmed = id.trim();
-        if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === '') {
+        if (
+          !trimmed ||
+          trimmed === 'null' ||
+          trimmed === 'undefined' ||
+          trimmed === ''
+        ) {
           return null;
         }
         return trimmed;
       }
     }
-    
+
     return null;
   }
 
   private prepareCreateData(data: ProductCreateData, userId: string): any {
     const categoryId = this.extractCategoryId(data.categoryId || data.category);
-    
+
     const unitPrice = data.unitPrice ?? 0;
     const costPrice = data.costPrice ?? unitPrice;
     const stock = data.stock ?? data.initialStock ?? 0;
 
-    // ✅ FIXED: Only clean images, don't filter them aggressively
     const images = this.cleanImages(data.images || []);
 
     let tags: string[] = [];
     if (Array.isArray(data.tags)) {
-      tags = data.tags.filter((t: any) => typeof t === 'string' && t.trim().length > 0);
+      tags = data.tags.filter(
+        (t: any) => typeof t === 'string' && t.trim().length > 0
+      );
     } else if (typeof data.tags === 'string') {
-      tags = (data.tags as string).split(',').map((t: string) => t.trim()).filter(Boolean);
+      tags = (data.tags as string)
+        .split(',')
+        .map((t: string) => t.trim())
+        .filter(Boolean);
     } else if (data.tags) {
       try {
         const tagsString = String(data.tags);
         if (tagsString) {
-          tags = tagsString.split(',').map((t: string) => t.trim()).filter(Boolean);
+          tags = tagsString
+            .split(',')
+            .map((t: string) => t.trim())
+            .filter(Boolean);
         }
       } catch {
         tags = [];
@@ -315,7 +348,7 @@ export class ProductService extends BaseService {
       featured: data.featured || false,
       weight: data.weight ? Number(data.weight) : null,
       dimensions: data.dimensions || null,
-      images: images, // ✅ FIXED: Keep the cleaned images
+      images: images,
       attributes: data.attributes || null,
       notes: data.notes?.trim() || null,
       tags: tags,
@@ -335,7 +368,10 @@ export class ProductService extends BaseService {
     };
   }
 
-  private async validateCategory(categoryId: string | null | undefined, businessUnitId: string): Promise<string | null> {
+  private async validateCategory(
+    categoryId: string | null | undefined,
+    businessUnitId: string
+  ): Promise<string | null> {
     if (!categoryId) return null;
 
     try {
@@ -349,7 +385,9 @@ export class ProductService extends BaseService {
       }
 
       if (category.businessUnitId !== businessUnitId) {
-        console.warn(`⚠️ Category "${categoryId}" belongs to different business unit`);
+        console.warn(
+          `⚠️ Category "${categoryId}" belongs to different business unit`
+        );
         return null;
       }
 
@@ -360,7 +398,9 @@ export class ProductService extends BaseService {
     }
   }
 
-  private async validateSupplier(supplierId: string | null | undefined): Promise<string | null> {
+  private async validateSupplier(
+    supplierId: string | null | undefined
+  ): Promise<string | null> {
     if (!supplierId) return null;
 
     try {
@@ -380,7 +420,10 @@ export class ProductService extends BaseService {
     }
   }
 
-  private async generateUniqueBarcodeInternal(prefix: string = 'PRD', length: number = 12): Promise<string> {
+  private async generateUniqueBarcodeInternal(
+    prefix: string = 'PRD',
+    length: number = 12
+  ): Promise<string> {
     let barcode: string;
     let counter = 0;
 
@@ -391,7 +434,10 @@ export class ProductService extends BaseService {
       counter++;
 
       if (counter > 100) {
-        throw new AppError('Failed to generate unique barcode after 100 attempts', 500);
+        throw new AppError(
+          'Failed to generate unique barcode after 100 attempts',
+          500
+        );
       }
     } while (await this.prisma.product.findFirst({ where: { barcode } }));
 
@@ -400,16 +446,24 @@ export class ProductService extends BaseService {
 
   private generateBarcodeImageUrl(barcode: string, format?: string): string {
     const formatParam = format || 'EAN-13';
-    return `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${formatParam}&dpi=96`;
+    return `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+      barcode
+    )}&code=${formatParam}&dpi=96`;
   }
 
-  private generateQRCodeUrl(name: string, sku: string, barcode: string): string {
+  private generateQRCodeUrl(
+    name: string,
+    sku: string,
+    barcode: string
+  ): string {
     const data = {
       product: name,
       sku: sku,
       barcode: barcode,
     };
-    return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify(data))}&size=150x150`;
+    return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+      JSON.stringify(data)
+    )}&size=150x150`;
   }
 
   private handleServiceError(error: any, methodName: string): never {
@@ -419,7 +473,10 @@ export class ProductService extends BaseService {
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
-        throw new AppError(`Duplicate entry: ${error.meta?.target || 'field'} already exists`, 400);
+        throw new AppError(
+          `Duplicate entry: ${error.meta?.target || 'field'} already exists`,
+          400
+        );
       }
       if (error.code === 'P2003') {
         throw new AppError('Foreign key constraint failed', 400);
@@ -428,27 +485,36 @@ export class ProductService extends BaseService {
         throw new AppError('Record not found', 404);
       }
     }
-    throw new AppError(`Failed to ${methodName.replace('ProductService.', '')}: ${error.message || 'Unknown error'}`, 500);
+    throw new AppError(
+      `Failed to ${methodName.replace('ProductService.', '')}: ${
+        error.message || 'Unknown error'
+      }`,
+      500
+    );
   }
 
   // ============================================
   // SKU METHODS
   // ============================================
 
-  async checkSKUExists(sku: string, businessUnitId?: string, excludeProductId?: string): Promise<boolean> {
+  async checkSKUExists(
+    sku: string,
+    businessUnitId?: string,
+    excludeProductId?: string
+  ): Promise<boolean> {
     try {
       const where: any = {
         sku: { equals: sku.toUpperCase(), mode: 'insensitive' },
       };
-      
+
       if (businessUnitId) {
         where.businessUnitId = businessUnitId;
       }
-      
+
       if (excludeProductId) {
         where.id = { not: excludeProductId };
       }
-      
+
       const existing = await this.prisma.product.findFirst({ where });
       return !!existing;
     } catch (error) {
@@ -457,41 +523,51 @@ export class ProductService extends BaseService {
     }
   }
 
-  async ensureUniqueSKU(baseSKU: string, businessUnitId?: string, excludeProductId?: string): Promise<string> {
+  async ensureUniqueSKU(
+    baseSKU: string,
+    businessUnitId?: string,
+    excludeProductId?: string
+  ): Promise<string> {
     let sku = baseSKU.toUpperCase();
     let attempts = 0;
     const maxAttempts = 10;
-    
-    while (await this.checkSKUExists(sku, businessUnitId, excludeProductId) && attempts < maxAttempts) {
+
+    while (
+      (await this.checkSKUExists(sku, businessUnitId, excludeProductId)) &&
+      attempts < maxAttempts
+    ) {
       const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
       sku = `${baseSKU.toUpperCase()}-${suffix}`;
       attempts++;
     }
-    
+
     return sku;
   }
 
   generateProductSKU(productName?: string): string {
     const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
     const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-    const prefix = (productName || 'PRD')
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 3)
-      .toUpperCase() || 'PRD';
+    const prefix =
+      (productName || 'PRD')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'PRD';
     return `${prefix}-${timestamp}-${random}`;
   }
 
   generateVariantSKU(productName?: string, variantName?: string): string {
     const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
     const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-    const basePrefix = (productName || 'PRD')
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 3)
-      .toUpperCase() || 'PRD';
-    const variantPrefix = (variantName || 'VAR')
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 3)
-      .toUpperCase() || 'VAR';
+    const basePrefix =
+      (productName || 'PRD')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'PRD';
+    const variantPrefix =
+      (variantName || 'VAR')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'VAR';
     return `${basePrefix}-${variantPrefix}-${timestamp}-${random}`;
   }
 
@@ -502,8 +578,13 @@ export class ProductService extends BaseService {
     return this.generateProductSKU(data.name);
   }
 
+  // ===== END PART 1 of 7 =====
+
+  // src/services/productService.ts
+// PART 2 of 7
+
   // ============================================
-  // GET PRODUCTS
+  // GET PRODUCTS — ✅ accepts string | string[]
   // ============================================
 
   async getAllProducts(params: {
@@ -511,7 +592,7 @@ export class ProductService extends BaseService {
     limit?: number;
     search?: string;
     categoryId?: string;
-    businessUnitId?: string;
+    businessUnitId?: string | string[];
     isActive?: boolean | string;
     minPrice?: number;
     maxPrice?: number;
@@ -550,15 +631,23 @@ export class ProductService extends BaseService {
 
       const where: any = {};
 
+      // ✅ FIX: support a single business unit ID OR an array of IDs
       if (businessUnitId) {
-        where.businessUnitId = businessUnitId;
+        if (Array.isArray(businessUnitId)) {
+          if (businessUnitId.length > 0) {
+            where.businessUnitId = { in: businessUnitId };
+          }
+        } else {
+          where.businessUnitId = businessUnitId;
+        }
       }
 
       if (isPublic) {
         where.isActive = true;
         where.deletedAt = null;
       } else if (isActive !== undefined) {
-        where.isActive = typeof isActive === 'string' ? isActive === 'true' : isActive;
+        where.isActive =
+          typeof isActive === 'string' ? isActive === 'true' : isActive;
       }
 
       if (search) {
@@ -573,11 +662,13 @@ export class ProductService extends BaseService {
       if (categoryId) where.categoryId = categoryId;
 
       if (featured !== undefined) {
-        where.featured = typeof featured === 'string' ? featured === 'true' : featured;
+        where.featured =
+          typeof featured === 'string' ? featured === 'true' : featured;
       }
 
       if (hasBarcode !== undefined) {
-        const hasBarcodeBool = typeof hasBarcode === 'string' ? hasBarcode === 'true' : hasBarcode;
+        const hasBarcodeBool =
+          typeof hasBarcode === 'string' ? hasBarcode === 'true' : hasBarcode;
         if (hasBarcodeBool) {
           where.barcode = { not: null };
         } else {
@@ -600,7 +691,10 @@ export class ProductService extends BaseService {
       }
 
       if (hasVariants !== undefined) {
-        const hasVariantsBool = typeof hasVariants === 'string' ? hasVariants === 'true' : hasVariants;
+        const hasVariantsBool =
+          typeof hasVariants === 'string'
+            ? hasVariants === 'true'
+            : hasVariants;
         if (hasVariantsBool) {
           where.variants = { some: { isActive: true } };
         } else {
@@ -609,7 +703,14 @@ export class ProductService extends BaseService {
       }
 
       const orderBy: any = {};
-      const validSortFields = ['name', 'sku', 'unitPrice', 'createdAt', 'updatedAt', 'rating'];
+      const validSortFields = [
+        'name',
+        'sku',
+        'unitPrice',
+        'createdAt',
+        'updatedAt',
+        'rating',
+      ];
       if (validSortFields.includes(sortBy)) {
         orderBy[sortBy] = sortOrder;
       } else {
@@ -645,15 +746,18 @@ export class ProductService extends BaseService {
       if (isPublic) {
         products = products.filter((product: any) => {
           const productInventory = product.inventory;
-          const productAvailable = productInventory ? 
-            productInventory.quantity - (productInventory.reserved || 0) : 0;
+          const productAvailable = productInventory
+            ? productInventory.quantity - (productInventory.reserved || 0)
+            : 0;
 
           let hasVariantStock = false;
           if (product.variants && product.variants.length > 0) {
             hasVariantStock = product.variants.some((v: any) => {
               const variantInventory = v.inventory;
               if (!variantInventory) return false;
-              return variantInventory.quantity - (variantInventory.reserved || 0) > 0;
+              return (
+                variantInventory.quantity - (variantInventory.reserved || 0) > 0
+              );
             });
           }
 
@@ -664,21 +768,25 @@ export class ProductService extends BaseService {
       }
 
       if (inStock !== undefined) {
-        const inStockBool = typeof inStock === 'string' ? inStock === 'true' : inStock;
+        const inStockBool =
+          typeof inStock === 'string' ? inStock === 'true' : inStock;
         products = products.filter((product: any) => {
           const productInventory = product.inventory;
-          const productAvailable = productInventory ? 
-            productInventory.quantity - (productInventory.reserved || 0) : 0;
-          
+          const productAvailable = productInventory
+            ? productInventory.quantity - (productInventory.reserved || 0)
+            : 0;
+
           let hasVariantStock = false;
           if (product.variants && product.variants.length > 0) {
             hasVariantStock = product.variants.some((v: any) => {
               const variantInventory = v.inventory;
               if (!variantInventory) return false;
-              return variantInventory.quantity - (variantInventory.reserved || 0) > 0;
+              return (
+                variantInventory.quantity - (variantInventory.reserved || 0) > 0
+              );
             });
           }
-          
+
           const totalAvailable = productAvailable + (hasVariantStock ? 1 : 0);
           return inStockBool ? totalAvailable > 0 : totalAvailable === 0;
         });
@@ -700,7 +808,7 @@ export class ProductService extends BaseService {
   }
 
   // ============================================
-  // GET PRODUCT BY ID
+  // GET PRODUCT BY ID — ✅ guards undefined variants
   // ============================================
 
   async getProductById(id: string) {
@@ -756,21 +864,24 @@ export class ProductService extends BaseService {
       let variantTotalStock = 0;
       let variantAvailable = 0;
       let variantReserved = 0;
-      
-      if (product.variants && product.variants.length > 0) {
-        for (const variant of product.variants) {
-          const variantInventory = variant.inventory;
-          if (variantInventory) {
-            const vQuantity = variantInventory.quantity || 0;
-            const vReserved = variantInventory.reserved || 0;
-            variantTotalStock += vQuantity;
-            variantReserved += vReserved;
-            variantAvailable += (vQuantity - vReserved);
-          } else {
-            const vStock = variant.stock || 0;
-            variantTotalStock += vStock;
-            variantAvailable += vStock;
-          }
+
+      // ✅ FIX: guard against undefined variants
+      const variantsArray = Array.isArray(product.variants)
+        ? product.variants
+        : [];
+
+      for (const variant of variantsArray) {
+        const variantInventory = variant.inventory;
+        if (variantInventory) {
+          const vQuantity = variantInventory.quantity || 0;
+          const vReserved = variantInventory.reserved || 0;
+          variantTotalStock += vQuantity;
+          variantReserved += vReserved;
+          variantAvailable += vQuantity - vReserved;
+        } else {
+          const vStock = variant.stock || 0;
+          variantTotalStock += vStock;
+          variantAvailable += vStock;
         }
       }
 
@@ -871,8 +982,13 @@ export class ProductService extends BaseService {
     }
   }
 
+  // ===== END PART 2 of 7 =====
+
+  // src/services/productService.ts
+// PART 3 of 7
+
   // ============================================
-  // CREATE PRODUCT - ✅ FIXED
+  // CREATE PRODUCT — ✅ global SKU uniqueness
   // ============================================
 
   async createProduct(data: ProductCreateData, userId: string) {
@@ -895,7 +1011,7 @@ export class ProductService extends BaseService {
         throw new AppError('Business unit ID is required', 400);
       }
 
-      // Validate and get valid user ID
+      // Resolve valid user ID
       let validUserId: string;
       try {
         let user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -905,7 +1021,9 @@ export class ProductService extends BaseService {
         if (user) {
           validUserId = user.id;
         } else {
-          const uniqueId = `system_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+          const uniqueId = `system_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 8)}`;
           const newSystemUser = await this.prisma.user.create({
             data: {
               clerkId: uniqueId,
@@ -923,7 +1041,9 @@ export class ProductService extends BaseService {
         if (anyUser) {
           validUserId = anyUser.id;
         } else {
-          const uniqueId = `fallback_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const uniqueId = `fallback_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 6)}`;
           const newUser = await this.prisma.user.create({
             data: {
               clerkId: uniqueId,
@@ -941,20 +1061,20 @@ export class ProductService extends BaseService {
       // Prepare and validate data
       const preparedData = this.prepareCreateData(data, validUserId);
 
-      // Ensure SKU is unique
+      // Ensure SKU
       if (!preparedData.sku || preparedData.sku === 'SKU') {
         preparedData.sku = this.generateProductSKU(data.name);
       }
-      
+
+      // ✅ FIX: Product.sku is @unique globally in Prisma — check globally
       const existingSku = await this.prisma.product.findFirst({
         where: {
           sku: { equals: preparedData.sku, mode: 'insensitive' },
-          businessUnitId: data.businessUnitId,
         },
       });
 
       if (existingSku) {
-        preparedData.sku = await this.ensureUniqueSKU(preparedData.sku, data.businessUnitId);
+        preparedData.sku = await this.ensureUniqueSKU(preparedData.sku);
       }
 
       // Generate barcode if needed
@@ -967,7 +1087,10 @@ export class ProductService extends BaseService {
           where: { barcode: preparedData.barcode },
         });
         if (existingBarcode) {
-          throw new AppError(`Product with barcode "${preparedData.barcode}" already exists`, 400);
+          throw new AppError(
+            `Product with barcode "${preparedData.barcode}" already exists`,
+            400
+          );
         }
       }
 
@@ -978,39 +1101,50 @@ export class ProductService extends BaseService {
       );
       preparedData.categoryId = validatedCategoryId;
 
-      const validatedSupplierId = await this.validateSupplier(preparedData.supplierId);
+      const validatedSupplierId = await this.validateSupplier(
+        preparedData.supplierId
+      );
       preparedData.supplierId = validatedSupplierId;
 
-      // ✅ FIXED: Process variants with proper image handling
+      // Process variants
       let variantsToCreate: any[] = [];
-      if (data.variants && Array.isArray(data.variants) && data.variants.length > 0) {
+      if (
+        data.variants &&
+        Array.isArray(data.variants) &&
+        data.variants.length > 0
+      ) {
         let variantData = data.variants;
         const MAX_VARIANTS = 10;
         if (variantData.length > MAX_VARIANTS) {
           variantData = variantData.slice(0, MAX_VARIANTS);
         }
-        
+
         variantsToCreate = variantData.map((variant, index) => {
-          // ✅ FIXED: Keep variant images without aggressive filtering
           let variantImages = variant.images || [];
           if (Array.isArray(variantImages)) {
-            // Only filter out invalid images, don't replace with placeholders
             variantImages = variantImages.filter((img: string) => {
               if (typeof img !== 'string') return false;
-              const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+              const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
               if (img.length > MAX_IMAGE_SIZE) {
-                console.warn(`⚠️ Variant image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`);
+                console.warn(
+                  `⚠️ Variant image too large (${Math.round(
+                    img.length / 1024 / 1024
+                  )}MB), skipping`
+                );
                 return false;
               }
               return true;
             });
           }
-          
+
           let variantSku = variant.sku;
           if (!variantSku || variantSku === 'SKU' || variantSku.trim() === '') {
-            variantSku = this.generateVariantSKU(data.name, variant.name || `VAR${index + 1}`);
+            variantSku = this.generateVariantSKU(
+              data.name,
+              variant.name || `VAR${index + 1}`
+            );
           }
-          
+
           return {
             ...variant,
             sku: variantSku.toUpperCase().trim(),
@@ -1025,221 +1159,226 @@ export class ProductService extends BaseService {
       }
 
       // Create product in transaction
-      const product = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // Create inventory
-        const inventory = await tx.inventory.create({
-          data: {
-            businessUnitId: preparedData.businessUnitId,
-            quantity: preparedData.stock,
-            reserved: 0,
-            available: preparedData.stock,
-            reorderPoint: preparedData.minStock,
-            reorderQuantity: 10,
-            location: preparedData.location || 'Warehouse',
-            supplier: preparedData.supplier || null,
-            notes: preparedData.notes || null,
-            status: 'ACTIVE',
-          },
-        });
-
-        // Create product with images
-        const createdProduct = await tx.product.create({
-          data: {
-            name: preparedData.name,
-            description: preparedData.description,
-            sku: preparedData.sku,
-            barcode: preparedData.barcode,
-            unitPrice: preparedData.unitPrice,
-            costPrice: preparedData.costPrice,
-            taxRate: preparedData.taxRate,
-            minStock: preparedData.minStock,
-            maxStock: preparedData.maxStock,
-            isActive: preparedData.isActive,
-            isDigital: preparedData.isDigital,
-            featured: preparedData.featured,
-            weight: preparedData.weight,
-            dimensions: preparedData.dimensions,
-            images: preparedData.images,
-            attributes: preparedData.attributes,
-            notes: preparedData.notes,
-            tags: preparedData.tags,
-            seo: preparedData.seo,
-            rating: 0,
-            reviewCount: 0,
-            status: preparedData.status,
-            type: preparedData.type,
-            taxType: preparedData.taxType,
-            categoryId: preparedData.categoryId,
-            supplierId: preparedData.supplierId,
-            businessUnitId: preparedData.businessUnitId,
-            createdBy: validUserId,
-            updatedBy: validUserId,
-            inventoryId: inventory.id,
-          },
-        });
-
-        console.log(`📸 Product created with ${createdProduct.images?.length || 0} images`);
-
-        // Create inventory transaction for initial stock
-        if (preparedData.stock > 0) {
-          await tx.inventoryTransaction.create({
+      const product = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const inventory = await tx.inventory.create({
             data: {
-              transactionType: 'INITIAL',
-              quantity: preparedData.stock,
-              notes: `Initial stock for product ${createdProduct.name}`,
-              productId: createdProduct.id,
-              inventoryId: inventory.id,
               businessUnitId: preparedData.businessUnitId,
-              userId: validUserId,
+              quantity: preparedData.stock,
+              reserved: 0,
+              available: preparedData.stock,
+              reorderPoint: preparedData.minStock,
+              reorderQuantity: 10,
+              location: preparedData.location || 'Warehouse',
+              supplier: preparedData.supplier || null,
+              notes: preparedData.notes || null,
+              status: 'ACTIVE',
             },
           });
-        }
 
-        // Create variants with images
-        if (variantsToCreate.length > 0) {
-          for (const variantData of variantsToCreate) {
-            try {
-              const existingVariantSku = await tx.productVariant.findFirst({
-                where: { sku: variantData.sku },
-              });
-              
-              let finalSku = variantData.sku;
-              if (existingVariantSku) {
-                finalSku = this.generateVariantSKU(data.name, variantData.name);
-              }
+          const createdProduct = await tx.product.create({
+            data: {
+              name: preparedData.name,
+              description: preparedData.description,
+              sku: preparedData.sku,
+              barcode: preparedData.barcode,
+              unitPrice: preparedData.unitPrice,
+              costPrice: preparedData.costPrice,
+              taxRate: preparedData.taxRate,
+              minStock: preparedData.minStock,
+              maxStock: preparedData.maxStock,
+              isActive: preparedData.isActive,
+              isDigital: preparedData.isDigital,
+              featured: preparedData.featured,
+              weight: preparedData.weight,
+              dimensions: preparedData.dimensions,
+              images: preparedData.images,
+              attributes: preparedData.attributes,
+              notes: preparedData.notes,
+              tags: preparedData.tags,
+              seo: preparedData.seo,
+              rating: 0,
+              reviewCount: 0,
+              status: preparedData.status,
+              type: preparedData.type,
+              taxType: preparedData.taxType,
+              categoryId: preparedData.categoryId,
+              supplierId: preparedData.supplierId,
+              businessUnitId: preparedData.businessUnitId,
+              createdBy: validUserId,
+              updatedBy: validUserId,
+              inventoryId: inventory.id,
+            },
+          });
 
-              const variant = await tx.productVariant.create({
-                data: {
-                  productId: createdProduct.id,
-                  name: variantData.name,
-                  sku: finalSku,
-                  price: variantData.price,
-                  costPrice: variantData.costPrice || 0,
-                  stock: variantData.stock || 0,
-                  images: variantData.images || [],
-                  attributes: variantData.attributes || {},
-                  isActive: variantData.isActive !== undefined ? variantData.isActive : true,
-                  barcode: variantData.barcode || null,
-                },
-              });
+          console.log(
+            `📸 Product created with ${createdProduct.images?.length || 0} images`
+          );
 
-              const variantInventory = await tx.inventory.create({
-                data: {
-                  businessUnitId: preparedData.businessUnitId,
-                  quantity: variantData.stock || 0,
-                  reserved: 0,
-                  available: variantData.stock || 0,
-                  reorderPoint: 5,
-                  reorderQuantity: 10,
-                  location: variantData.location || 'Warehouse',
-                  status: 'ACTIVE',
-                },
-              });
+          if (preparedData.stock > 0) {
+            await tx.inventoryTransaction.create({
+              data: {
+                transactionType: 'INITIAL',
+                quantity: preparedData.stock,
+                notes: `Initial stock for product ${createdProduct.name}`,
+                productId: createdProduct.id,
+                inventoryId: inventory.id,
+                businessUnitId: preparedData.businessUnitId,
+                userId: validUserId,
+              },
+            });
+          }
 
-              await tx.productVariant.update({
-                where: { id: variant.id },
-                data: { inventoryId: variantInventory.id },
-              });
+          if (variantsToCreate.length > 0) {
+            for (const variantData of variantsToCreate) {
+              try {
+                const existingVariantSku = await tx.productVariant.findFirst({
+                  where: { sku: variantData.sku },
+                });
 
-              if ((variantData.stock || 0) > 0) {
-                await tx.inventoryTransaction.create({
+                let finalSku = variantData.sku;
+                if (existingVariantSku) {
+                  finalSku = this.generateVariantSKU(
+                    data.name,
+                    variantData.name
+                  );
+                }
+
+                const variant = await tx.productVariant.create({
                   data: {
-                    transactionType: 'INITIAL',
-                    quantity: variantData.stock,
-                    notes: `Initial stock for variant ${variantData.name}`,
                     productId: createdProduct.id,
-                    variantId: variant.id,
-                    inventoryId: variantInventory.id,
-                    businessUnitId: preparedData.businessUnitId,
-                    userId: validUserId,
+                    name: variantData.name,
+                    sku: finalSku,
+                    price: variantData.price,
+                    costPrice: variantData.costPrice || 0,
+                    stock: variantData.stock || 0,
+                    images: variantData.images || [],
+                    attributes: variantData.attributes || {},
+                    isActive:
+                      variantData.isActive !== undefined
+                        ? variantData.isActive
+                        : true,
+                    barcode: variantData.barcode || null,
                   },
                 });
+
+                const variantInventory = await tx.inventory.create({
+                  data: {
+                    businessUnitId: preparedData.businessUnitId,
+                    quantity: variantData.stock || 0,
+                    reserved: 0,
+                    available: variantData.stock || 0,
+                    reorderPoint: 5,
+                    reorderQuantity: 10,
+                    location: variantData.location || 'Warehouse',
+                    status: 'ACTIVE',
+                  },
+                });
+
+                await tx.productVariant.update({
+                  where: { id: variant.id },
+                  data: { inventoryId: variantInventory.id },
+                });
+
+                if ((variantData.stock || 0) > 0) {
+                  await tx.inventoryTransaction.create({
+                    data: {
+                      transactionType: 'INITIAL',
+                      quantity: variantData.stock,
+                      notes: `Initial stock for variant ${variantData.name}`,
+                      productId: createdProduct.id,
+                      variantId: variant.id,
+                      inventoryId: variantInventory.id,
+                      businessUnitId: preparedData.businessUnitId,
+                      userId: validUserId,
+                    },
+                  });
+                }
+              } catch (variantError) {
+                console.error(
+                  `❌ Failed to create variant ${variantData.name}:`,
+                  variantError
+                );
               }
-            } catch (variantError) {
-              console.error(`❌ Failed to create variant ${variantData.name}:`, variantError);
+            }
+
+            const createdVariants = await tx.productVariant.count({
+              where: { productId: createdProduct.id },
+            });
+
+            if (createdVariants > 0) {
+              await tx.product.update({
+                where: { id: createdProduct.id },
+                data: { type: 'VARIABLE' },
+              });
             }
           }
 
-          const createdVariants = await tx.productVariant.count({
-            where: { productId: createdProduct.id }
-          });
-          
-          if (createdVariants > 0) {
-            await tx.product.update({
-              where: { id: createdProduct.id },
-              data: { type: 'VARIABLE' },
-            });
-          }
-        }
-
-        // Create audit log
-        try {
-          await tx.auditLog.create({
-            data: {
-              action: 'CREATE',
-              entityType: 'PRODUCT',
-              entityId: createdProduct.id,
-              userId: validUserId,
-              entityName: createdProduct.name,
-              changes: {
-                name: createdProduct.name,
-                sku: createdProduct.sku,
-                price: createdProduct.unitPrice,
-                barcode: createdProduct.barcode,
-                inventoryId: inventory.id,
-                variantCount: variantsToCreate.length,
-                categoryId: createdProduct.categoryId,
-                imagesCount: createdProduct.images?.length || 0,
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'CREATE',
+                entityType: 'PRODUCT',
+                entityId: createdProduct.id,
+                userId: validUserId,
+                entityName: createdProduct.name,
+                changes: {
+                  name: createdProduct.name,
+                  sku: createdProduct.sku,
+                  price: createdProduct.unitPrice,
+                  barcode: createdProduct.barcode,
+                  inventoryId: inventory.id,
+                  variantCount: variantsToCreate.length,
+                  categoryId: createdProduct.categoryId,
+                  imagesCount: createdProduct.images?.length || 0,
+                },
+                severity: 'INFO',
+                businessUnitId: preparedData.businessUnitId,
               },
-              severity: 'INFO',
-              businessUnitId: preparedData.businessUnitId,
-            },
-          });
-        } catch (auditError) {
-          console.warn('Audit log creation failed:', auditError);
-        }
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation failed:', auditError);
+          }
 
-        // Emit real-time updates
-        this.safeEmitProductUpdate(createdProduct, preparedData.businessUnitId);
-        this.safeEmitInventoryUpdate(inventory, preparedData.businessUnitId);
+          this.safeEmitProductUpdate(createdProduct, preparedData.businessUnitId);
+          this.safeEmitInventoryUpdate(inventory, preparedData.businessUnitId);
 
-        // Return the complete product with all relations
-        return await tx.product.findUnique({
-          where: { id: createdProduct.id },
-          include: {
-            category: true,
-            inventory: true,
-            variants: {
-              include: { inventory: true },
-            },
-            supplier: true,
-            creator: {
-              select: { id: true, firstName: true, lastName: true },
-            },
-            updater: {
-              select: { id: true, firstName: true, lastName: true },
-            },
-            reviews: {
-              take: 5,
-              orderBy: { createdAt: 'desc' },
-              include: {
-                user: {
-                  select: { id: true, firstName: true, lastName: true },
+          return await tx.product.findUnique({
+            where: { id: createdProduct.id },
+            include: {
+              category: true,
+              inventory: true,
+              variants: {
+                include: { inventory: true },
+              },
+              supplier: true,
+              creator: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+              updater: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+              reviews: {
+                take: 5,
+                orderBy: { createdAt: 'desc' },
+                include: {
+                  user: {
+                    select: { id: true, firstName: true, lastName: true },
+                  },
+                },
+              },
+              _count: {
+                select: {
+                  saleItems: true,
+                  orderItems: true,
+                  reviews: true,
                 },
               },
             },
-            _count: {
-              select: {
-                saleItems: true,
-                orderItems: true,
-                reviews: true,
-              },
-            },
-          },
-        });
-      });
+          });
+        }
+      );
 
-      // Validate product was created successfully
       if (!product) {
         throw new AppError('Failed to create product', 500);
       }
@@ -1259,36 +1398,46 @@ export class ProductService extends BaseService {
         variantsCount: product.variants?.length || 0,
         imagesCount: product.images?.length || 0,
       });
-      
-      return product;
 
+      return product;
     } catch (error: any) {
       console.error('❌ Error in createProduct:', error);
-      
+
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         console.error('🔴 Prisma error code:', error.code);
         console.error('🔴 Prisma error meta:', error.meta);
         console.error('🔴 Prisma error message:', error.message);
-        
+
         if (error.code === 'P2002') {
           const target = error.meta?.target || 'field';
           throw new AppError(`Duplicate entry: ${target} already exists`, 400);
         }
         if (error.code === 'P2003') {
-          throw new AppError('Foreign key constraint failed. Please check category, supplier, or business unit IDs.', 400);
+          throw new AppError(
+            'Foreign key constraint failed. Please check category, supplier, or business unit IDs.',
+            400
+          );
         }
         if (error.code === 'P2025') {
           throw new AppError('Related record not found', 404);
         }
       }
-      
+
       if (error instanceof AppError) {
         throw error;
       }
-      
-      throw new AppError(`Failed to create product: ${error.message || 'Unknown error'}`, 500);
+
+      throw new AppError(
+        `Failed to create product: ${error.message || 'Unknown error'}`,
+        500
+      );
     }
   }
+
+  // ===== END PART 3 of 7 =====
+
+  // src/services/productService.ts
+// PART 4 of 7
 
   // ============================================
   // UPDATE PRODUCT
@@ -1326,7 +1475,8 @@ export class ProductService extends BaseService {
       };
 
       if (data.name !== undefined) updateData.name = data.name.trim();
-      if (data.description !== undefined) updateData.description = data.description?.trim() || null;
+      if (data.description !== undefined)
+        updateData.description = data.description?.trim() || null;
       if (data.sku !== undefined) {
         const sku = data.sku.toUpperCase().trim();
         const existing = await this.prisma.product.findFirst({
@@ -1355,28 +1505,37 @@ export class ProductService extends BaseService {
         }
         updateData.barcode = barcode;
       }
-      if (data.unitPrice !== undefined) updateData.unitPrice = Number(data.unitPrice);
-      if (data.costPrice !== undefined) updateData.costPrice = Number(data.costPrice);
+      if (data.unitPrice !== undefined)
+        updateData.unitPrice = Number(data.unitPrice);
+      if (data.costPrice !== undefined)
+        updateData.costPrice = Number(data.costPrice);
       if (data.taxRate !== undefined) updateData.taxRate = Number(data.taxRate);
-      if (data.minStock !== undefined) updateData.minStock = Number(data.minStock);
-      if (data.maxStock !== undefined) updateData.maxStock = data.maxStock ? Number(data.maxStock) : null;
+      if (data.minStock !== undefined)
+        updateData.minStock = Number(data.minStock);
+      if (data.maxStock !== undefined)
+        updateData.maxStock = data.maxStock ? Number(data.maxStock) : null;
       if (data.isActive !== undefined) updateData.isActive = data.isActive;
       if (data.isDigital !== undefined) updateData.isDigital = data.isDigital;
       if (data.featured !== undefined) updateData.featured = data.featured;
-      if (data.weight !== undefined) updateData.weight = data.weight ? Number(data.weight) : null;
-      if (data.dimensions !== undefined) updateData.dimensions = data.dimensions || null;
+      if (data.weight !== undefined)
+        updateData.weight = data.weight ? Number(data.weight) : null;
+      if (data.dimensions !== undefined)
+        updateData.dimensions = data.dimensions || null;
       if (data.images !== undefined) {
         updateData.images = this.cleanImages(data.images);
       }
-      if (data.attributes !== undefined) updateData.attributes = data.attributes || null;
+      if (data.attributes !== undefined)
+        updateData.attributes = data.attributes || null;
       if (data.notes !== undefined) updateData.notes = data.notes?.trim() || null;
       if (data.tags !== undefined) {
-        updateData.tags = Array.isArray(data.tags) 
-          ? data.tags.filter((t: any) => typeof t === 'string' && t.trim().length > 0)
+        updateData.tags = Array.isArray(data.tags)
+          ? data.tags.filter(
+              (t: any) => typeof t === 'string' && t.trim().length > 0
+            )
           : [];
       }
       if (data.seo !== undefined) updateData.seo = data.seo || null;
-      
+
       if (data.categoryId !== undefined) {
         updateData.categoryId = data.categoryId || null;
       } else if (data.category !== undefined) {
@@ -1390,119 +1549,135 @@ export class ProductService extends BaseService {
               name: { equals: data.category, mode: 'insensitive' },
             },
           });
-          updateData.categoryId = categories.length > 0 ? categories[0].id : null;
+          updateData.categoryId =
+            categories.length > 0 ? categories[0].id : null;
         } else {
           updateData.categoryId = null;
         }
       }
-      
+
       if (data.supplierId !== undefined) {
         updateData.supplierId = data.supplierId || null;
       }
 
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updatedProduct = await tx.product.update({
-          where: { id },
-          data: updateData,
-          include: {
-            category: true,
-            inventory: true,
-            variants: {
-              include: { inventory: true },
-            },
-            supplier: true,
-          },
-        });
-
-        if (product.inventory && data.minStock !== undefined) {
-          await tx.inventory.update({
-            where: { id: product.inventory.id },
-            data: {
-              reorderPoint: updatedProduct.minStock || 5,
-              reorderQuantity: updatedProduct.maxStock || 10,
-              notes: data.notes || product.inventory.notes,
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updatedProduct = await tx.product.update({
+            where: { id },
+            data: updateData,
+            include: {
+              category: true,
+              inventory: true,
+              variants: {
+                include: { inventory: true },
+              },
+              supplier: true,
             },
           });
-        }
 
-        // ✅ FIXED: Handle variant updates - properly check for id property
-        if (data.variants && Array.isArray(data.variants)) {
-          for (const variantData of data.variants) {
-            // Check if variant has an id (existing variant)
-            if (variantData && typeof variantData === 'object' && 'id' in variantData && variantData.id) {
-              const existingVariant = await tx.productVariant.findUnique({
-                where: { id: variantData.id as string },
-                include: { inventory: true },
-              });
-              
-              if (existingVariant) {
-                await tx.productVariant.update({
+          if (product.inventory && data.minStock !== undefined) {
+            await tx.inventory.update({
+              where: { id: product.inventory.id },
+              data: {
+                reorderPoint: updatedProduct.minStock || 5,
+                reorderQuantity: updatedProduct.maxStock || 10,
+                notes: data.notes || product.inventory.notes,
+              },
+            });
+          }
+
+          if (data.variants && Array.isArray(data.variants)) {
+            for (const variantData of data.variants) {
+              if (
+                variantData &&
+                typeof variantData === 'object' &&
+                'id' in variantData &&
+                variantData.id
+              ) {
+                const existingVariant = await tx.productVariant.findUnique({
                   where: { id: variantData.id as string },
-                  data: {
+                  include: { inventory: true },
+                });
+
+                if (existingVariant) {
+                  await tx.productVariant.update({
+                    where: { id: variantData.id as string },
+                    data: {
+                      name: variantData.name,
+                      sku: variantData.sku?.toUpperCase(),
+                      price: variantData.price,
+                      costPrice: variantData.costPrice,
+                      stock: variantData.stock,
+                      images: this.cleanImages(variantData.images || []),
+                      attributes: variantData.attributes || {},
+                      isActive: variantData.isActive,
+                      barcode: variantData.barcode || null,
+                    },
+                  });
+                }
+              } else if (
+                variantData &&
+                typeof variantData === 'object' &&
+                'name' in variantData &&
+                variantData.name
+              ) {
+                try {
+                  await this.addVariant(id, {
                     name: variantData.name,
-                    sku: variantData.sku?.toUpperCase(),
-                    price: variantData.price,
-                    costPrice: variantData.costPrice,
-                    stock: variantData.stock,
-                    images: this.cleanImages(variantData.images || []),
+                    sku: variantData.sku,
+                    price: variantData.price || 0,
+                    costPrice: variantData.costPrice || 0,
+                    stock: variantData.stock || 0,
+                    images: variantData.images || [],
                     attributes: variantData.attributes || {},
-                    isActive: variantData.isActive,
-                    barcode: variantData.barcode || null,
-                  },
-                });
-              }
-            } else if (variantData && typeof variantData === 'object' && 'name' in variantData && variantData.name) {
-              // This is a new variant - create it
-              try {
-                await this.addVariant(id, {
-                  name: variantData.name,
-                  sku: variantData.sku,
-                  price: variantData.price || 0,
-                  costPrice: variantData.costPrice || 0,
-                  stock: variantData.stock || 0,
-                  images: variantData.images || [],
-                  attributes: variantData.attributes || {},
-                  isActive: variantData.isActive !== undefined ? variantData.isActive : true,
-                  barcode: variantData.barcode || undefined,
-                  location: data.location || 'Warehouse',
-                });
-              } catch (addError) {
-                console.warn('Failed to add variant:', addError);
+                    isActive:
+                      variantData.isActive !== undefined
+                        ? variantData.isActive
+                        : true,
+                    barcode: variantData.barcode || undefined,
+                    location: data.location || 'Warehouse',
+                  });
+                } catch (addError) {
+                  console.warn('Failed to add variant:', addError);
+                }
               }
             }
           }
-        }
 
-        try {
-          await tx.auditLog.create({
-            data: {
-              action: 'UPDATE',
-              entityType: 'PRODUCT',
-              entityId: updatedProduct.id,
-              userId: validUserId,
-              entityName: updatedProduct.name,
-              changes: { updatedFields: Object.keys(data) },
-              severity: 'INFO',
-            },
-          });
-        } catch (auditError) {
-          console.warn('Audit log creation skipped:', auditError);
-        }
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'UPDATE',
+                entityType: 'PRODUCT',
+                entityId: updatedProduct.id,
+                userId: validUserId,
+                entityName: updatedProduct.name,
+                changes: { updatedFields: Object.keys(data) },
+                severity: 'INFO',
+              },
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation skipped:', auditError);
+          }
 
-        this.safeEmitProductUpdate(updatedProduct, product.businessUnitId);
-        if (updatedProduct.inventory) {
-          this.safeEmitInventoryUpdate(updatedProduct.inventory, product.businessUnitId);
-        }
+          this.safeEmitProductUpdate(updatedProduct, product.businessUnitId);
+          if (updatedProduct.inventory) {
+            this.safeEmitInventoryUpdate(
+              updatedProduct.inventory,
+              product.businessUnitId
+            );
+          }
 
-        return updatedProduct;
-      });
+          return updatedProduct;
+        }
+      );
     } catch (error) {
       return this.handleServiceError(error, 'ProductService.updateProduct');
     }
   }
 
   // ============================================
-  // DELETE PRODUCT - ✅ FIXED
+  // DELETE PRODUCT
   // ============================================
 
   async deleteProduct(id: string, force: boolean = false) {
@@ -1525,130 +1700,126 @@ export class ProductService extends BaseService {
           supplier: true,
         },
       });
-  
+
       if (!product) {
         throw new AppError('Product not found', 404);
       }
-  
-      // Check for associated sales/orders
-      const hasSalesOrOrders = product.orderItems.length > 0 || 
-                              product.saleItems.length > 0 ||
-                              product.variants.some(v => v.saleItems.length > 0 || v.orderItems.length > 0);
-  
-      // If force delete is true, delete everything including sales/orders
+
+      const hasSalesOrOrders =
+        product.orderItems.length > 0 ||
+        product.saleItems.length > 0 ||
+        product.variants.some(
+          (v) => v.saleItems.length > 0 || v.orderItems.length > 0
+        );
+
       if (force) {
-        console.log(`⚠️ FORCE DELETE: Removing product ${id} with all associated records`);
-  
-        // Check if product has inventory
-        const hasInventory = !!product.inventoryId || product.variants.some(v => v.inventoryId);
-  
+        console.log(
+          `⚠️ FORCE DELETE: Removing product ${id} with all associated records`
+        );
+
+        const hasInventory =
+          !!product.inventoryId || product.variants.some((v) => v.inventoryId);
+
         if (hasInventory) {
-          console.log(`⚠️ Product has inventory, will be deleted with force option`);
+          console.log(
+            `⚠️ Product has inventory, will be deleted with force option`
+          );
         }
-  
-        return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-          // Delete variant sale items
-          for (const variant of product.variants) {
-            if (variant.saleItems.length > 0) {
+
+        return await this.prisma.$transaction(
+          async (tx: Prisma.TransactionClient) => {
+            for (const variant of product.variants) {
+              if (variant.saleItems.length > 0) {
+                await tx.saleItem.deleteMany({
+                  where: { variantId: variant.id },
+                });
+              }
+              if (variant.orderItems.length > 0) {
+                await tx.orderItem.deleteMany({
+                  where: { variantId: variant.id },
+                });
+              }
+            }
+
+            if (product.saleItems.length > 0) {
               await tx.saleItem.deleteMany({
-                where: { variantId: variant.id },
+                where: { productId: id },
               });
             }
-            if (variant.orderItems.length > 0) {
+
+            if (product.orderItems.length > 0) {
               await tx.orderItem.deleteMany({
-                where: { variantId: variant.id },
+                where: { productId: id },
               });
             }
-          }
-  
-          // Delete product sale items
-          if (product.saleItems.length > 0) {
-            await tx.saleItem.deleteMany({
+
+            if (product.reviews.length > 0) {
+              await tx.productReview.deleteMany({
+                where: { productId: id },
+              });
+            }
+
+            for (const variant of product.variants) {
+              if (variant.inventoryId) {
+                await tx.inventory.delete({
+                  where: { id: variant.inventoryId },
+                });
+              }
+            }
+
+            await tx.productVariant.deleteMany({
               where: { productId: id },
             });
-          }
-  
-          // Delete product order items
-          if (product.orderItems.length > 0) {
-            await tx.orderItem.deleteMany({
-              where: { productId: id },
-            });
-          }
-  
-          // Delete reviews
-          if (product.reviews.length > 0) {
-            await tx.productReview.deleteMany({
-              where: { productId: id },
-            });
-          }
-  
-          // Delete variant inventories
-          for (const variant of product.variants) {
-            if (variant.inventoryId) {
+
+            if (product.inventoryId) {
               await tx.inventory.delete({
-                where: { id: variant.inventoryId },
+                where: { id: product.inventoryId },
               });
             }
-          }
-  
-          // Delete variants
-          await tx.productVariant.deleteMany({
-            where: { productId: id },
-          });
-  
-          // Delete product inventory
-          if (product.inventoryId) {
-            await tx.inventory.delete({
-              where: { id: product.inventoryId },
+
+            await tx.product.delete({
+              where: { id },
             });
-          }
-  
-          // Delete product
-          await tx.product.delete({
-            where: { id },
-          });
-  
-          // Create audit log for force deletion
-          try {
-            await tx.auditLog.create({
-              data: {
-                action: 'DELETE',
-                entityType: 'PRODUCT',
-                entityId: product.id,
-                userId: 'system',
-                entityName: product.name,
-                changes: {
-                  forceDelete: true,
-                  deletedAt: new Date().toISOString(),
-                  hadSales: hasSalesOrOrders,
-                  deletedFields: [
-                    ...(product.saleItems.length > 0 ? ['saleItems'] : []),
-                    ...(product.orderItems.length > 0 ? ['orderItems'] : []),
-                    ...(product.variants.length > 0 ? ['variants'] : []),
-                    ...(product.inventoryId ? ['inventory'] : []),
-                  ],
+
+            try {
+              await tx.auditLog.create({
+                data: {
+                  action: 'DELETE',
+                  entityType: 'PRODUCT',
+                  entityId: product.id,
+                  userId: 'system',
+                  entityName: product.name,
+                  changes: {
+                    forceDelete: true,
+                    deletedAt: new Date().toISOString(),
+                    hadSales: hasSalesOrOrders,
+                    deletedFields: [
+                      ...(product.saleItems.length > 0 ? ['saleItems'] : []),
+                      ...(product.orderItems.length > 0 ? ['orderItems'] : []),
+                      ...(product.variants.length > 0 ? ['variants'] : []),
+                      ...(product.inventoryId ? ['inventory'] : []),
+                    ],
+                  },
+                  severity: 'HIGH',
+                  businessUnitId: product.businessUnitId,
                 },
-                severity: 'HIGH',
-                businessUnitId: product.businessUnitId,
-              },
-            });
-          } catch (auditError) {
-            console.warn('Audit log creation skipped:', auditError);
+              });
+            } catch (auditError) {
+              console.warn('Audit log creation skipped:', auditError);
+            }
+
+            return {
+              message: 'Product permanently deleted with all associated records',
+              softDeleted: false,
+              forceDeleted: true,
+            };
           }
-  
-          return {
-            message: 'Product permanently deleted with all associated records',
-            softDeleted: false,
-            forceDeleted: true,
-          };
-        });
+        );
       }
-  
-      // If has sales/orders and not forcing, perform soft delete
+
       if (hasSalesOrOrders) {
         console.log(`📌 Soft deleting product ${id} (has sales/orders)`);
-  
-        // Soft delete - mark as inactive
+
         const deletedProduct = await this.prisma.product.update({
           where: { id },
           data: {
@@ -1661,8 +1832,7 @@ export class ProductService extends BaseService {
             supplier: true,
           },
         });
-  
-        // Soft delete variants
+
         for (const variant of product.variants) {
           await this.prisma.productVariant.update({
             where: { id: variant.id },
@@ -1672,8 +1842,7 @@ export class ProductService extends BaseService {
             },
           });
         }
-  
-        // Create audit log for soft delete
+
         try {
           await this.prisma.auditLog.create({
             data: {
@@ -1688,8 +1857,14 @@ export class ProductService extends BaseService {
                 reason: 'Has associated sales or orders',
                 saleItemsCount: product.saleItems.length,
                 orderItemsCount: product.orderItems.length,
-                variantSaleItemsCount: product.variants.reduce((acc, v) => acc + v.saleItems.length, 0),
-                variantOrderItemsCount: product.variants.reduce((acc, v) => acc + v.orderItems.length, 0),
+                variantSaleItemsCount: product.variants.reduce(
+                  (acc, v) => acc + v.saleItems.length,
+                  0
+                ),
+                variantOrderItemsCount: product.variants.reduce(
+                  (acc, v) => acc + v.orderItems.length,
+                  0
+                ),
               },
               severity: 'MEDIUM',
               businessUnitId: product.businessUnitId,
@@ -1698,91 +1873,92 @@ export class ProductService extends BaseService {
         } catch (auditError) {
           console.warn('Audit log creation skipped:', auditError);
         }
-  
+
         return {
-          message: 'Product marked as inactive (has associated sales/orders). Use force=true to permanently delete.',
+          message:
+            'Product marked as inactive (has associated sales/orders). Use force=true to permanently delete.',
           softDeleted: true,
           data: deletedProduct,
           stats: {
             saleItems: product.saleItems.length,
             orderItems: product.orderItems.length,
             variants: product.variants.length,
-            variantSaleItems: product.variants.reduce((acc, v) => acc + v.saleItems.length, 0),
-            variantOrderItems: product.variants.reduce((acc, v) => acc + v.orderItems.length, 0),
+            variantSaleItems: product.variants.reduce(
+              (acc, v) => acc + v.saleItems.length,
+              0
+            ),
+            variantOrderItems: product.variants.reduce(
+              (acc, v) => acc + v.orderItems.length,
+              0
+            ),
           },
         };
       }
-  
-      // No sales/orders - hard delete
+
       console.log(`🗑️ Hard deleting product ${id} (no associated sales/orders)`);
-  
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // Delete variant inventories
-        for (const variant of product.variants) {
-          if (variant.inventoryId) {
+
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          for (const variant of product.variants) {
+            if (variant.inventoryId) {
+              await tx.inventory.delete({
+                where: { id: variant.inventoryId },
+              });
+            }
+          }
+
+          if (product.inventoryId) {
             await tx.inventory.delete({
-              where: { id: variant.inventoryId },
+              where: { id: product.inventoryId },
             });
           }
-        }
-  
-        // Delete product inventory
-        if (product.inventoryId) {
-          await tx.inventory.delete({
-            where: { id: product.inventoryId },
+
+          await tx.productVariant.deleteMany({
+            where: { productId: id },
           });
-        }
-  
-        // Delete variants
-        await tx.productVariant.deleteMany({
-          where: { productId: id },
-        });
-  
-        // Delete reviews
-        await tx.productReview.deleteMany({
-          where: { productId: id },
-        });
-  
-        // Delete product
-        await tx.product.delete({
-          where: { id },
-        });
-  
-        // Create audit log
-        try {
-          await tx.auditLog.create({
-            data: {
-              action: 'DELETE',
-              entityType: 'PRODUCT',
-              entityId: product.id,
-              userId: 'system',
-              entityName: product.name,
-              changes: {
-                hardDelete: true,
-                deletedAt: new Date().toISOString(),
+
+          await tx.productReview.deleteMany({
+            where: { productId: id },
+          });
+
+          await tx.product.delete({
+            where: { id },
+          });
+
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'DELETE',
+                entityType: 'PRODUCT',
+                entityId: product.id,
+                userId: 'system',
+                entityName: product.name,
+                changes: {
+                  hardDelete: true,
+                  deletedAt: new Date().toISOString(),
+                },
+                severity: 'INFO',
+                businessUnitId: product.businessUnitId,
               },
-              severity: 'INFO',
-              businessUnitId: product.businessUnitId,
-            },
-          });
-        } catch (auditError) {
-          console.warn('Audit log creation skipped:', auditError);
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation skipped:', auditError);
+          }
+
+          return {
+            message: 'Product permanently deleted successfully',
+            softDeleted: false,
+            forceDeleted: false,
+          };
         }
-  
-        return {
-          message: 'Product permanently deleted successfully',
-          softDeleted: false,
-          forceDeleted: false,
-        };
-      });
+      );
     } catch (error: any) {
       console.error('❌ Error in deleteProduct:', error);
-      
+
       if (error instanceof AppError) {
         throw error;
       }
-  
-      // Handle Prisma errors with proper type checking
+
       if (error && typeof error === 'object' && 'code' in error) {
         const prismaError = error as { code: string; message?: string };
         if (prismaError.code === 'P2003') {
@@ -1795,18 +1971,23 @@ export class ProductService extends BaseService {
           throw new AppError('Product not found', 404);
         }
       }
-  
-      // Get error message safely
-      const errorMessage = error && typeof error === 'object' && 'message' in error
-        ? (error as { message: string }).message
-        : 'Unknown error';
-  
+
+      const errorMessage =
+        error && typeof error === 'object' && 'message' in error
+          ? (error as { message: string }).message
+          : 'Unknown error';
+
       throw new AppError(`Failed to delete product: ${errorMessage}`, 500);
     }
   }
 
+  // ===== END PART 4 of 7 =====
+
+  // src/services/productService.ts
+// PART 5 of 7
+
   // ============================================
-  // UPDATE INVENTORY STOCK - ✅ FIXED
+  // UPDATE INVENTORY STOCK
   // ============================================
 
   async updateInventoryStock(
@@ -1836,40 +2017,42 @@ export class ProductService extends BaseService {
       const previousQuantity = inventory.quantity;
       const difference = quantity - previousQuantity;
 
-      const updatedInventory = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updated = await tx.inventory.update({
-          where: { id: inventoryId },
-          data: {
-            quantity: quantity,
-            available: quantity - (inventory.reserved || 0),
-          },
-        });
+      const updatedInventory = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updated = await tx.inventory.update({
+            where: { id: inventoryId },
+            data: {
+              quantity: quantity,
+              available: quantity - (inventory.reserved || 0),
+            },
+          });
 
-        // ✅ FIXED: productId is required - use the product ID from the inventory's product relation
-        // If no product is linked, this shouldn't happen for stock updates
-        const productId = inventory.product?.id;
-        const variantId = inventory.variant?.id;
+          const productId = inventory.product?.id;
+          const variantId = inventory.variant?.id;
 
-        if (!productId) {
-          throw new AppError('Inventory is not linked to a product', 400);
+          if (!productId) {
+            throw new AppError('Inventory is not linked to a product', 400);
+          }
+
+          await tx.inventoryTransaction.create({
+            data: {
+              transactionType: transactionType as any,
+              quantity: Math.abs(difference),
+              notes:
+                note ||
+                `Stock ${transactionType.toLowerCase()} from ${previousQuantity} to ${quantity}`,
+              reference: `Inventory update`,
+              productId: productId,
+              variantId: variantId || null,
+              inventoryId: inventory.id,
+              businessUnitId: inventory.businessUnitId,
+              userId: userId,
+            },
+          });
+
+          return updated;
         }
-
-        await tx.inventoryTransaction.create({
-          data: {
-            transactionType: transactionType as any,
-            quantity: Math.abs(difference),
-            notes: note || `Stock ${transactionType.toLowerCase()} from ${previousQuantity} to ${quantity}`,
-            reference: `Inventory update`,
-            productId: productId,
-            variantId: variantId || null,
-            inventoryId: inventory.id,
-            businessUnitId: inventory.businessUnitId,
-            userId: userId,
-          },
-        });
-
-        return updated;
-      });
+      );
 
       this.safeEmitInventoryUpdate(updatedInventory, inventory.businessUnitId);
 
@@ -1884,7 +2067,10 @@ export class ProductService extends BaseService {
 
       return updatedInventory;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.updateInventoryStock');
+      return this.handleServiceError(
+        error,
+        'ProductService.updateInventoryStock'
+      );
     }
   }
 
@@ -1948,15 +2134,22 @@ export class ProductService extends BaseService {
         syncedAt: new Date().toISOString(),
       };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.syncProductInventory');
+      return this.handleServiceError(
+        error,
+        'ProductService.syncProductInventory'
+      );
     }
   }
 
   // ============================================
-  // CREATE PRODUCT FROM INVENTORY - ✅ FIXED
+  // CREATE PRODUCT FROM INVENTORY
   // ============================================
 
-  async createProductFromInventory(inventoryId: string, productData: any, userId: string) {
+  async createProductFromInventory(
+    inventoryId: string,
+    productData: any,
+    userId: string
+  ) {
     try {
       const inventory = await this.prisma.inventory.findUnique({
         where: { id: inventoryId },
@@ -1971,7 +2164,10 @@ export class ProductService extends BaseService {
       });
 
       if (existingProduct) {
-        throw new AppError('This inventory item is already linked to a product', 400);
+        throw new AppError(
+          'This inventory item is already linked to a product',
+          400
+        );
       }
 
       let sku = productData.sku;
@@ -1983,125 +2179,133 @@ export class ProductService extends BaseService {
 
       sku = await this.ensureUniqueSKU(sku, inventory.businessUnitId);
 
-      const categoryId = this.extractCategoryId(productData.categoryId || productData.category);
+      const categoryId = this.extractCategoryId(
+        productData.categoryId || productData.category
+      );
 
-      const product = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const newProduct = await tx.product.create({
-          data: {
-            name: productData.name || 'Unnamed Product',
-            sku: sku,
-            description: productData.description || null,
-            unitPrice: productData.unitPrice || 0,
-            costPrice: productData.costPrice || 0,
-            barcode: productData.barcode || null,
-            categoryId: categoryId,
-            supplierId: productData.supplierId || null,
-            businessUnitId: inventory.businessUnitId,
-            isActive: productData.isActive !== undefined ? productData.isActive : true,
-            featured: productData.featured || false,
-            isDigital: productData.isDigital || false,
-            taxRate: productData.taxRate || 0,
-            weight: productData.weight || null,
-            minStock: inventory.reorderPoint || 5,
-            maxStock: inventory.reorderQuantity || null,
-            tags: productData.tags || [],
-            images: this.cleanImages(productData.images || []),
-            notes: productData.notes || inventory.notes || null,
-            attributes: productData.attributes || {},
-            seo: productData.seo || {},
-            createdBy: userId,
-            updatedBy: userId,
-            inventoryId: inventory.id,
-          },
-          include: {
-            inventory: true,
-            category: true,
-            supplier: true,
-          },
-        });
+      const product = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const newProduct = await tx.product.create({
+            data: {
+              name: productData.name || 'Unnamed Product',
+              sku: sku,
+              description: productData.description || null,
+              unitPrice: productData.unitPrice || 0,
+              costPrice: productData.costPrice || 0,
+              barcode: productData.barcode || null,
+              categoryId: categoryId,
+              supplierId: productData.supplierId || null,
+              businessUnitId: inventory.businessUnitId,
+              isActive:
+                productData.isActive !== undefined ? productData.isActive : true,
+              featured: productData.featured || false,
+              isDigital: productData.isDigital || false,
+              taxRate: productData.taxRate || 0,
+              weight: productData.weight || null,
+              minStock: inventory.reorderPoint || 5,
+              maxStock: inventory.reorderQuantity || null,
+              tags: productData.tags || [],
+              images: this.cleanImages(productData.images || []),
+              notes: productData.notes || inventory.notes || null,
+              attributes: productData.attributes || {},
+              seo: productData.seo || {},
+              createdBy: userId,
+              updatedBy: userId,
+              inventoryId: inventory.id,
+            },
+            include: {
+              inventory: true,
+              category: true,
+              supplier: true,
+            },
+          });
 
-        // ✅ FIXED: Ensure product has an id before returning
-        if (!newProduct.id) {
-          throw new AppError('Product created but ID not returned', 500);
-        }
+          if (!newProduct.id) {
+            throw new AppError('Product created but ID not returned', 500);
+          }
 
-        if (productData.variants && Array.isArray(productData.variants)) {
-          for (const variantData of productData.variants) {
-            const variantSku = variantData.sku && variantData.sku !== 'SKU'
-              ? variantData.sku.toUpperCase()
-              : this.generateVariantSKU(newProduct.sku, variantData.name);
-            
-            const variant = await tx.productVariant.create({
-              data: {
-                productId: newProduct.id,
-                name: variantData.name,
-                sku: variantSku,
-                price: variantData.price || newProduct.unitPrice,
-                costPrice: variantData.costPrice || newProduct.costPrice || 0,
-                stock: variantData.stock || 0,
-                images: this.cleanImages(variantData.images || []),
-                attributes: variantData.attributes || {},
-                isActive: true,
-                barcode: variantData.barcode || null,
-              },
-            });
+          if (productData.variants && Array.isArray(productData.variants)) {
+            for (const variantData of productData.variants) {
+              const variantSku =
+                variantData.sku && variantData.sku !== 'SKU'
+                  ? variantData.sku.toUpperCase()
+                  : this.generateVariantSKU(newProduct.sku, variantData.name);
 
-            const variantInventory = await tx.inventory.create({
-              data: {
-                businessUnitId: inventory.businessUnitId,
-                quantity: variantData.stock || 0,
-                reserved: 0,
-                available: variantData.stock || 0,
-                reorderPoint: 5,
-                reorderQuantity: 10,
-                location: 'Warehouse',
-                status: 'ACTIVE',
-              },
-            });
+              const variant = await tx.productVariant.create({
+                data: {
+                  productId: newProduct.id,
+                  name: variantData.name,
+                  sku: variantSku,
+                  price: variantData.price || newProduct.unitPrice,
+                  costPrice: variantData.costPrice || newProduct.costPrice || 0,
+                  stock: variantData.stock || 0,
+                  images: this.cleanImages(variantData.images || []),
+                  attributes: variantData.attributes || {},
+                  isActive: true,
+                  barcode: variantData.barcode || null,
+                },
+              });
 
-            await tx.productVariant.update({
-              where: { id: variant.id },
-              data: { inventoryId: variantInventory.id },
+              const variantInventory = await tx.inventory.create({
+                data: {
+                  businessUnitId: inventory.businessUnitId,
+                  quantity: variantData.stock || 0,
+                  reserved: 0,
+                  available: variantData.stock || 0,
+                  reorderPoint: 5,
+                  reorderQuantity: 10,
+                  location: 'Warehouse',
+                  status: 'ACTIVE',
+                },
+              });
+
+              await tx.productVariant.update({
+                where: { id: variant.id },
+                data: { inventoryId: variantInventory.id },
+              });
+            }
+
+            await tx.product.update({
+              where: { id: newProduct.id },
+              data: { type: 'VARIABLE' },
             });
           }
 
-          await tx.product.update({
-            where: { id: newProduct.id },
-            data: { type: 'VARIABLE' },
-          });
-        }
-
-        try {
-          await tx.auditLog.create({
-            data: {
-              action: 'CREATE',
-              entityType: 'PRODUCT',
-              entityId: newProduct.id,
-              userId: userId,
-              entityName: newProduct.name,
-              changes: {
-                fromInventory: inventory.id,
-                name: newProduct.name,
-                sku: newProduct.sku,
-                variantCount: productData.variants?.length || 0,
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'CREATE',
+                entityType: 'PRODUCT',
+                entityId: newProduct.id,
+                userId: userId,
+                entityName: newProduct.name,
+                changes: {
+                  fromInventory: inventory.id,
+                  name: newProduct.name,
+                  sku: newProduct.sku,
+                  variantCount: productData.variants?.length || 0,
+                },
+                severity: 'INFO',
+                businessUnitId: inventory.businessUnitId,
               },
-              severity: 'INFO',
-              businessUnitId: inventory.businessUnitId,
-            },
-          });
-        } catch (auditError) {
-          console.warn('Audit log creation failed:', auditError);
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation failed:', auditError);
+          }
+
+          this.safeEmitProductUpdate(newProduct, inventory.businessUnitId);
+          this.safeEmitInventoryUpdate(inventory, inventory.businessUnitId);
+
+          return newProduct;
         }
-
-        this.safeEmitProductUpdate(newProduct, inventory.businessUnitId);
-        this.safeEmitInventoryUpdate(inventory, inventory.businessUnitId);
-
-        return newProduct;
-      });
+      );
 
       return product;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.createProductFromInventory');
+      return this.handleServiceError(
+        error,
+        'ProductService.createProductFromInventory'
+      );
     }
   }
 
@@ -2109,7 +2313,11 @@ export class ProductService extends BaseService {
   // UPDATE PRODUCT FROM INVENTORY
   // ============================================
 
-  async updateProductFromInventory(inventoryId: string, productData: any, userId: string) {
+  async updateProductFromInventory(
+    inventoryId: string,
+    productData: any,
+    userId: string
+  ) {
     try {
       const inventory = await this.prisma.inventory.findUnique({
         where: { id: inventoryId },
@@ -2124,80 +2332,135 @@ export class ProductService extends BaseService {
       });
 
       if (!product) {
-        return this.createProductFromInventory(inventoryId, productData, userId);
+        return this.createProductFromInventory(
+          inventoryId,
+          productData,
+          userId
+        );
       }
 
-      const categoryId = this.extractCategoryId(productData.categoryId || productData.category);
+      const categoryId = this.extractCategoryId(
+        productData.categoryId || productData.category
+      );
 
-      const updatedProduct = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updated = await tx.product.update({
-          where: { id: product.id },
-          data: {
-            name: productData.name !== undefined ? productData.name : undefined,
-            description: productData.description !== undefined ? productData.description : undefined,
-            sku: productData.sku !== undefined ? productData.sku.toUpperCase() : undefined,
-            barcode: productData.barcode !== undefined ? productData.barcode : undefined,
-            unitPrice: productData.unitPrice !== undefined ? Number(productData.unitPrice) : undefined,
-            costPrice: productData.costPrice !== undefined ? Number(productData.costPrice) : undefined,
-            taxRate: productData.taxRate !== undefined ? Number(productData.taxRate) : undefined,
-            minStock: productData.minStock !== undefined ? Number(productData.minStock) : inventory.reorderPoint,
-            maxStock: productData.maxStock !== undefined ? Number(productData.maxStock) : inventory.reorderQuantity,
-            isActive: productData.isActive !== undefined ? productData.isActive : undefined,
-            isDigital: productData.isDigital !== undefined ? productData.isDigital : undefined,
-            featured: productData.featured !== undefined ? productData.featured : undefined,
-            weight: productData.weight !== undefined ? Number(productData.weight) : undefined,
-            images: productData.images !== undefined ? this.cleanImages(productData.images) : undefined,
-            attributes: productData.attributes !== undefined ? productData.attributes : undefined,
-            notes: productData.notes !== undefined ? productData.notes : undefined,
-            tags: productData.tags !== undefined ? productData.tags : undefined,
-            seo: productData.seo !== undefined ? productData.seo : undefined,
-            categoryId: categoryId !== undefined ? categoryId : undefined,
-            supplierId: productData.supplierId !== undefined ? productData.supplierId : undefined,
-            updatedBy: userId,
-          },
-          include: {
-            inventory: true,
-            category: true,
-            supplier: true,
-          },
-        });
-
-        await tx.inventory.update({
-          where: { id: inventory.id },
-          data: {
-            reorderPoint: updated.minStock || 5,
-            reorderQuantity: updated.maxStock || 10,
-            supplier: productData.supplier || inventory.supplier,
-            notes: productData.notes || inventory.notes,
-          },
-        });
-
-        try {
-          await tx.auditLog.create({
+      const updatedProduct = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updated = await tx.product.update({
+            where: { id: product.id },
             data: {
-              action: 'UPDATE',
-              entityType: 'PRODUCT',
-              entityId: updated.id,
-              userId: userId,
-              entityName: updated.name,
-              changes: { updatedFields: Object.keys(productData) },
-              severity: 'INFO',
-              businessUnitId: inventory.businessUnitId,
+              name: productData.name !== undefined ? productData.name : undefined,
+              description:
+                productData.description !== undefined
+                  ? productData.description
+                  : undefined,
+              sku:
+                productData.sku !== undefined
+                  ? productData.sku.toUpperCase()
+                  : undefined,
+              barcode:
+                productData.barcode !== undefined ? productData.barcode : undefined,
+              unitPrice:
+                productData.unitPrice !== undefined
+                  ? Number(productData.unitPrice)
+                  : undefined,
+              costPrice:
+                productData.costPrice !== undefined
+                  ? Number(productData.costPrice)
+                  : undefined,
+              taxRate:
+                productData.taxRate !== undefined
+                  ? Number(productData.taxRate)
+                  : undefined,
+              minStock:
+                productData.minStock !== undefined
+                  ? Number(productData.minStock)
+                  : inventory.reorderPoint,
+              maxStock:
+                productData.maxStock !== undefined
+                  ? Number(productData.maxStock)
+                  : inventory.reorderQuantity,
+              isActive:
+                productData.isActive !== undefined
+                  ? productData.isActive
+                  : undefined,
+              isDigital:
+                productData.isDigital !== undefined
+                  ? productData.isDigital
+                  : undefined,
+              featured:
+                productData.featured !== undefined
+                  ? productData.featured
+                  : undefined,
+              weight:
+                productData.weight !== undefined
+                  ? Number(productData.weight)
+                  : undefined,
+              images:
+                productData.images !== undefined
+                  ? this.cleanImages(productData.images)
+                  : undefined,
+              attributes:
+                productData.attributes !== undefined
+                  ? productData.attributes
+                  : undefined,
+              notes:
+                productData.notes !== undefined ? productData.notes : undefined,
+              tags: productData.tags !== undefined ? productData.tags : undefined,
+              seo: productData.seo !== undefined ? productData.seo : undefined,
+              categoryId: categoryId !== undefined ? categoryId : undefined,
+              supplierId:
+                productData.supplierId !== undefined
+                  ? productData.supplierId
+                  : undefined,
+              updatedBy: userId,
+            },
+            include: {
+              inventory: true,
+              category: true,
+              supplier: true,
             },
           });
-        } catch (auditError) {
-          console.warn('Audit log creation skipped:', auditError);
+
+          await tx.inventory.update({
+            where: { id: inventory.id },
+            data: {
+              reorderPoint: updated.minStock || 5,
+              reorderQuantity: updated.maxStock || 10,
+              supplier: productData.supplier || inventory.supplier,
+              notes: productData.notes || inventory.notes,
+            },
+          });
+
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'UPDATE',
+                entityType: 'PRODUCT',
+                entityId: updated.id,
+                userId: userId,
+                entityName: updated.name,
+                changes: { updatedFields: Object.keys(productData) },
+                severity: 'INFO',
+                businessUnitId: inventory.businessUnitId,
+              },
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation skipped:', auditError);
+          }
+
+          this.safeEmitProductUpdate(updated, inventory.businessUnitId);
+          this.safeEmitInventoryUpdate(inventory, inventory.businessUnitId);
+
+          return updated;
         }
-
-        this.safeEmitProductUpdate(updated, inventory.businessUnitId);
-        this.safeEmitInventoryUpdate(inventory, inventory.businessUnitId);
-
-        return updated;
-      });
+      );
 
       return updatedProduct;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.updateProductFromInventory');
+      return this.handleServiceError(
+        error,
+        'ProductService.updateProductFromInventory'
+      );
     }
   }
 
@@ -2205,7 +2468,10 @@ export class ProductService extends BaseService {
   // DELETE PRODUCT FROM INVENTORY
   // ============================================
 
-  async deleteProductFromInventory(productId: string, keepInventory: boolean = true) {
+  async deleteProductFromInventory(
+    productId: string,
+    keepInventory: boolean = true
+  ) {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id: productId },
@@ -2221,50 +2487,60 @@ export class ProductService extends BaseService {
         throw new AppError('Product not found', 404);
       }
 
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        for (const variant of product.variants) {
-          if (variant.inventory) {
-            await tx.productVariant.update({
-              where: { id: variant.id },
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          for (const variant of product.variants) {
+            if (variant.inventory) {
+              await tx.productVariant.update({
+                where: { id: variant.id },
+                data: { inventoryId: null },
+              });
+            }
+          }
+
+          if (product.inventory) {
+            await tx.product.update({
+              where: { id: product.id },
               data: { inventoryId: null },
             });
           }
-        }
 
-        if (product.inventory) {
-          await tx.product.update({
-            where: { id: product.id },
-            data: { inventoryId: null },
+          if (!keepInventory && product.inventory) {
+            await tx.inventory.delete({
+              where: { id: product.inventory.id },
+            });
+          }
+
+          const deletedProduct = await tx.product.update({
+            where: { id: productId },
+            data: {
+              isActive: false,
+              deletedAt: new Date(),
+              inventoryId: null,
+            },
           });
+
+          return {
+            message: keepInventory
+              ? 'Product unlinked from inventory'
+              : 'Product and inventory deleted',
+            softDeleted: true,
+            data: deletedProduct,
+          };
         }
-
-        if (!keepInventory && product.inventory) {
-          await tx.inventory.delete({
-            where: { id: product.inventory.id },
-          });
-        }
-
-        const deletedProduct = await tx.product.update({
-          where: { id: productId },
-          data: {
-            isActive: false,
-            deletedAt: new Date(),
-            inventoryId: null,
-          },
-        });
-
-        return {
-          message: keepInventory 
-            ? 'Product unlinked from inventory' 
-            : 'Product and inventory deleted',
-          softDeleted: true,
-          data: deletedProduct,
-        };
-      });
+      );
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.deleteProductFromInventory');
+      return this.handleServiceError(
+        error,
+        'ProductService.deleteProductFromInventory'
+      );
     }
   }
+
+  // ===== END PART 5 of 7 =====
+
+  // src/services/productService.ts
+// PART 6 of 7
 
   // ============================================
   // VARIANT METHODS
@@ -2316,66 +2592,68 @@ export class ProductService extends BaseService {
       const price = data.price ?? product.unitPrice;
       const costPrice = data.costPrice ?? product.costPrice ?? price;
 
-      const variant = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const createdVariant = await tx.productVariant.create({
-          data: {
-            productId,
-            name: data.name,
-            sku: sku,
-            price: Number(price),
-            costPrice: Number(costPrice),
-            stock: data.stock || 0,
-            images: images,
-            attributes: data.attributes || {},
-            isActive: data.isActive !== undefined ? data.isActive : true,
-            barcode: data.barcode || null,
-          },
-        });
-
-        const inventory = await tx.inventory.create({
-          data: {
-            businessUnitId: product.businessUnitId,
-            quantity: data.stock || 0,
-            reserved: 0,
-            available: data.stock || 0,
-            reorderPoint: 5,
-            reorderQuantity: 10,
-            location: data.location || 'Warehouse',
-            status: 'ACTIVE',
-          },
-        });
-
-        await tx.productVariant.update({
-          where: { id: createdVariant.id },
-          data: { inventoryId: inventory.id },
-        });
-
-        if (data.stock && data.stock > 0) {
-          await tx.inventoryTransaction.create({
+      const variant = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const createdVariant = await tx.productVariant.create({
             data: {
-              transactionType: 'INITIAL',
-              quantity: data.stock,
-              notes: `Initial stock for variant ${createdVariant.name}`,
-              productId: productId,
-              variantId: createdVariant.id,
-              inventoryId: inventory.id,
-              businessUnitId: product.businessUnitId,
-              userId: 'system',
+              productId,
+              name: data.name,
+              sku: sku,
+              price: Number(price),
+              costPrice: Number(costPrice),
+              stock: data.stock || 0,
+              images: images,
+              attributes: data.attributes || {},
+              isActive: data.isActive !== undefined ? data.isActive : true,
+              barcode: data.barcode || null,
             },
           });
-        }
 
-        if (product.type === 'SIMPLE') {
-          await tx.product.update({
-            where: { id: productId },
-            data: { type: 'VARIABLE' },
+          const inventory = await tx.inventory.create({
+            data: {
+              businessUnitId: product.businessUnitId,
+              quantity: data.stock || 0,
+              reserved: 0,
+              available: data.stock || 0,
+              reorderPoint: 5,
+              reorderQuantity: 10,
+              location: data.location || 'Warehouse',
+              status: 'ACTIVE',
+            },
           });
+
+          await tx.productVariant.update({
+            where: { id: createdVariant.id },
+            data: { inventoryId: inventory.id },
+          });
+
+          if (data.stock && data.stock > 0) {
+            await tx.inventoryTransaction.create({
+              data: {
+                transactionType: 'INITIAL',
+                quantity: data.stock,
+                notes: `Initial stock for variant ${createdVariant.name}`,
+                productId: productId,
+                variantId: createdVariant.id,
+                inventoryId: inventory.id,
+                businessUnitId: product.businessUnitId,
+                userId: 'system',
+              },
+            });
+          }
+
+          if (product.type === 'SIMPLE') {
+            await tx.product.update({
+              where: { id: productId },
+              data: { type: 'VARIABLE' },
+            });
+          }
+
+          this.safeEmitInventoryUpdate(inventory, product.businessUnitId);
+
+          return createdVariant;
         }
-
-        this.safeEmitInventoryUpdate(inventory, product.businessUnitId);
-
-        return createdVariant;
-      });
+      );
 
       const variantWithInventory = await this.prisma.productVariant.findUnique({
         where: { id: variant.id },
@@ -2418,40 +2696,45 @@ export class ProductService extends BaseService {
         }
       }
 
-      const updatedVariant = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updateData: any = {};
-        if (data.name !== undefined) updateData.name = data.name;
-        if (data.sku !== undefined) updateData.sku = data.sku.toUpperCase().trim();
-        if (data.price !== undefined) updateData.price = Number(data.price);
-        if (data.costPrice !== undefined) updateData.costPrice = Number(data.costPrice);
-        if (data.stock !== undefined) updateData.stock = Number(data.stock);
-        if (data.images !== undefined) {
-          updateData.images = this.cleanImages(data.images);
-        }
-        if (data.attributes !== undefined) updateData.attributes = data.attributes;
-        if (data.isActive !== undefined) updateData.isActive = data.isActive;
-
-        const updated = await tx.productVariant.update({
-          where: { id: variantId },
-          data: updateData,
-          include: { inventory: true },
-        });
-
-        if (data.stock !== undefined) {
-          const inventory = variant.inventory;
-          if (inventory) {
-            await tx.inventory.update({
-              where: { id: inventory.id },
-              data: {
-                quantity: Number(data.stock),
-                available: Number(data.stock) - (inventory.reserved || 0),
-              },
-            });
+      const updatedVariant = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updateData: any = {};
+          if (data.name !== undefined) updateData.name = data.name;
+          if (data.sku !== undefined)
+            updateData.sku = data.sku.toUpperCase().trim();
+          if (data.price !== undefined) updateData.price = Number(data.price);
+          if (data.costPrice !== undefined)
+            updateData.costPrice = Number(data.costPrice);
+          if (data.stock !== undefined) updateData.stock = Number(data.stock);
+          if (data.images !== undefined) {
+            updateData.images = this.cleanImages(data.images);
           }
-        }
+          if (data.attributes !== undefined)
+            updateData.attributes = data.attributes;
+          if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
-        return updated;
-      });
+          const updated = await tx.productVariant.update({
+            where: { id: variantId },
+            data: updateData,
+            include: { inventory: true },
+          });
+
+          if (data.stock !== undefined) {
+            const inventory = variant.inventory;
+            if (inventory) {
+              await tx.inventory.update({
+                where: { id: inventory.id },
+                data: {
+                  quantity: Number(data.stock),
+                  available: Number(data.stock) - (inventory.reserved || 0),
+                },
+              });
+            }
+          }
+
+          return updated;
+        }
+      );
 
       console.log(`✅ Variant updated successfully: ${updatedVariant.id}`);
       return updatedVariant;
@@ -2479,7 +2762,8 @@ export class ProductService extends BaseService {
         throw new AppError('Variant not found', 404);
       }
 
-      const hasSalesOrOrders = variant.saleItems.length > 0 || variant.orderItems.length > 0;
+      const hasSalesOrOrders =
+        variant.saleItems.length > 0 || variant.orderItems.length > 0;
 
       if (hasSalesOrOrders) {
         const updatedVariant = await this.prisma.productVariant.update({
@@ -2494,36 +2778,38 @@ export class ProductService extends BaseService {
         };
       }
 
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        if (variant.inventoryId) {
-          await tx.inventory.delete({
-            where: { id: variant.inventoryId },
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          if (variant.inventoryId) {
+            await tx.inventory.delete({
+              where: { id: variant.inventoryId },
+            });
+          }
+
+          await tx.productVariant.delete({
+            where: { id: variantId },
           });
-        }
 
-        await tx.productVariant.delete({
-          where: { id: variantId },
-        });
-
-        const remainingVariants = await tx.productVariant.findMany({
-          where: {
-            productId: variant.productId,
-            isActive: true,
-          },
-        });
-
-        if (remainingVariants.length === 0) {
-          await tx.product.update({
-            where: { id: variant.productId },
-            data: { type: 'SIMPLE' },
+          const remainingVariants = await tx.productVariant.findMany({
+            where: {
+              productId: variant.productId,
+              isActive: true,
+            },
           });
-        }
 
-        return {
-          message: 'Variant deleted successfully',
-          softDeleted: false,
-        };
-      });
+          if (remainingVariants.length === 0) {
+            await tx.product.update({
+              where: { id: variant.productId },
+              data: { type: 'SIMPLE' },
+            });
+          }
+
+          return {
+            message: 'Variant deleted successfully',
+            softDeleted: false,
+          };
+        }
+      );
     } catch (error) {
       console.error('❌ Error in deleteVariant:', error);
       return this.handleServiceError(error, 'ProductService.deleteVariant');
@@ -2546,7 +2832,10 @@ export class ProductService extends BaseService {
         orderBy: { name: 'asc' },
       });
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getProductVariants');
+      return this.handleServiceError(
+        error,
+        'ProductService.getProductVariants'
+      );
     }
   }
 
@@ -2583,7 +2872,7 @@ export class ProductService extends BaseService {
   async getVariantBySku(sku: string, businessUnitId?: string) {
     try {
       const where: any = { sku: { equals: sku, mode: 'insensitive' } };
-      
+
       const variant = await this.prisma.productVariant.findFirst({
         where,
         include: {
@@ -2621,7 +2910,7 @@ export class ProductService extends BaseService {
       console.log(`🔍 Looking for variant with barcode/SKU: "${barcode}"`);
 
       const product = await this.prisma.product.findFirst({
-        where: { 
+        where: {
           barcode,
           ...(businessUnitId ? { businessUnitId } : {}),
         },
@@ -2657,7 +2946,7 @@ export class ProductService extends BaseService {
       }
 
       const variant = await this.prisma.productVariant.findFirst({
-        where: { 
+        where: {
           sku: { equals: barcode, mode: 'insensitive' },
           ...(businessUnitId ? { product: { businessUnitId } } : {}),
         },
@@ -2678,12 +2967,18 @@ export class ProductService extends BaseService {
       });
 
       if (!variant) {
-        throw new AppError(`No product or variant found for barcode/SKU "${barcode}"`, 404);
+        throw new AppError(
+          `No product or variant found for barcode/SKU "${barcode}"`,
+          404
+        );
       }
 
       return variant;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getVariantByBarcode');
+      return this.handleServiceError(
+        error,
+        'ProductService.getVariantByBarcode'
+      );
     }
   }
 
@@ -2691,9 +2986,14 @@ export class ProductService extends BaseService {
   // BULK VARIANT OPERATIONS
   // ============================================
 
-  async bulkCreateVariants(productId: string, variants: VariantCreateData[]) {
+  async bulkCreateVariants(
+    productId: string,
+    variants: VariantCreateData[]
+  ) {
     try {
-      console.log(`📦 Bulk creating ${variants.length} variants for product ${productId}`);
+      console.log(
+        `📦 Bulk creating ${variants.length} variants for product ${productId}`
+      );
 
       const product = await this.prisma.product.findUnique({
         where: { id: productId },
@@ -2719,10 +3019,15 @@ export class ProductService extends BaseService {
         }
       }
 
-      console.log(`✅ Bulk create complete: ${results.length} created, ${errors.length} failed`);
+      console.log(
+        `✅ Bulk create complete: ${results.length} created, ${errors.length} failed`
+      );
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkCreateVariants');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkCreateVariants'
+      );
     }
   }
 
@@ -2745,14 +3050,24 @@ export class ProductService extends BaseService {
         }
       }
 
-      console.log(`✅ Bulk delete complete: ${results.length} deleted, ${errors.length} failed`);
+      console.log(
+        `✅ Bulk delete complete: ${results.length} deleted, ${errors.length} failed`
+      );
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkDeleteVariants');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkDeleteVariants'
+      );
     }
   }
 
-  async updateVariantStock(variantId: string, quantity: number, userId: string, note?: string) {
+  async updateVariantStock(
+    variantId: string,
+    quantity: number,
+    userId: string,
+    note?: string
+  ) {
     try {
       console.log(`📦 Updating variant ${variantId} stock to ${quantity}`);
 
@@ -2772,47 +3087,53 @@ export class ProductService extends BaseService {
         throw new AppError('Stock quantity cannot be negative', 400);
       }
 
-      const updatedVariant = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updated = await tx.productVariant.update({
-          where: { id: variantId },
-          data: { stock: quantity },
-        });
-
-        const inventory = variant.inventory;
-        if (inventory) {
-          await tx.inventory.update({
-            where: { id: inventory.id },
-            data: {
-              quantity: quantity,
-              available: quantity - (inventory.reserved || 0),
-            },
+      const updatedVariant = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updated = await tx.productVariant.update({
+            where: { id: variantId },
+            data: { stock: quantity },
           });
 
-          const previousStock = variant.stock || 0;
-          const difference = quantity - previousStock;
+          const inventory = variant.inventory;
+          if (inventory) {
+            await tx.inventory.update({
+              where: { id: inventory.id },
+              data: {
+                quantity: quantity,
+                available: quantity - (inventory.reserved || 0),
+              },
+            });
 
-          await tx.inventoryTransaction.create({
-            data: {
-              transactionType: difference >= 0 ? 'RESTOCK' : 'ADJUSTMENT',
-              quantity: Math.abs(difference),
-              notes: note || `Stock updated from ${previousStock} to ${quantity}`,
-              reference: `Variant stock update`,
-              productId: variant.productId,
-              variantId: variantId,
-              inventoryId: inventory.id,
-              businessUnitId: variant.product.businessUnitId,
-              userId: userId,
-            },
-          });
+            const previousStock = variant.stock || 0;
+            const difference = quantity - previousStock;
+
+            await tx.inventoryTransaction.create({
+              data: {
+                transactionType: difference >= 0 ? 'RESTOCK' : 'ADJUSTMENT',
+                quantity: Math.abs(difference),
+                notes:
+                  note || `Stock updated from ${previousStock} to ${quantity}`,
+                reference: `Variant stock update`,
+                productId: variant.productId,
+                variantId: variantId,
+                inventoryId: inventory.id,
+                businessUnitId: variant.product.businessUnitId,
+                userId: userId,
+              },
+            });
+          }
+
+          return updated;
         }
-
-        return updated;
-      });
+      );
 
       console.log(`✅ Variant stock updated: ${variantId} -> ${quantity}`);
       return updatedVariant;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.updateVariantStock');
+      return this.handleServiceError(
+        error,
+        'ProductService.updateVariantStock'
+      );
     }
   }
 
@@ -2820,18 +3141,26 @@ export class ProductService extends BaseService {
   // BARCODE METHODS
   // ============================================
 
-  async generateUniqueBarcode(options?: GenerateBarcodeOptions): Promise<{ barcode: string }> {
+  async generateUniqueBarcode(
+    options?: GenerateBarcodeOptions
+  ): Promise<{ barcode: string }> {
     try {
       const prefix = options?.prefix || 'PRD';
       const length = options?.length || 12;
       const barcode = await this.generateUniqueBarcodeInternal(prefix, length);
       return { barcode };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.generateUniqueBarcode');
+      return this.handleServiceError(
+        error,
+        'ProductService.generateUniqueBarcode'
+      );
     }
   }
 
-  async generateBarcode(productId: string, options?: GenerateBarcodeOptions): Promise<BarcodeInfo> {
+  async generateBarcode(
+    productId: string,
+    options?: GenerateBarcodeOptions
+  ): Promise<BarcodeInfo> {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id: productId },
@@ -2852,7 +3181,11 @@ export class ProductService extends BaseService {
       });
 
       const barcodeUrl = this.generateBarcodeImageUrl(barcode, options?.format);
-      const qrCodeUrl = this.generateQRCodeUrl(product.name, product.sku, barcode);
+      const qrCodeUrl = this.generateQRCodeUrl(
+        product.name,
+        product.sku,
+        barcode
+      );
 
       return {
         barcode,
@@ -2862,7 +3195,9 @@ export class ProductService extends BaseService {
         productName: product.name,
         sku: product.sku,
         price: product.unitPrice,
-        format: (options?.format as 'EAN-13' | 'UPC-A' | 'CODE128' | 'QR') || 'EAN-13',
+        format:
+          (options?.format as 'EAN-13' | 'UPC-A' | 'CODE128' | 'QR') ||
+          'EAN-13',
         generatedAt: new Date().toISOString(),
       };
     } catch (error) {
@@ -2892,7 +3227,11 @@ export class ProductService extends BaseService {
       }
 
       const barcodeUrl = this.generateBarcodeImageUrl(product.barcode);
-      const qrCodeUrl = this.generateQRCodeUrl(product.name, product.sku, product.barcode);
+      const qrCodeUrl = this.generateQRCodeUrl(
+        product.name,
+        product.sku,
+        product.barcode
+      );
 
       return {
         barcode: product.barcode,
@@ -2953,14 +3292,21 @@ export class ProductService extends BaseService {
         throw new AppError('Product does not have a barcode', 404);
       }
 
-      const qrCodeUrl = this.generateQRCodeUrl(product.name, product.sku, product.barcode);
+      const qrCodeUrl = this.generateQRCodeUrl(
+        product.name,
+        product.sku,
+        product.barcode
+      );
       return { qrCodeUrl };
     } catch (error) {
       return this.handleServiceError(error, 'ProductService.getProductQRCode');
     }
   }
 
-  async generateBarcodeImage(barcode: string, format?: string): Promise<{ barcodeUrl: string }> {
+  async generateBarcodeImage(
+    barcode: string,
+    format?: string
+  ): Promise<{ barcodeUrl: string }> {
     try {
       if (!barcode) {
         throw new AppError('Barcode is required', 400);
@@ -2968,7 +3314,10 @@ export class ProductService extends BaseService {
       const barcodeUrl = this.generateBarcodeImageUrl(barcode, format);
       return { barcodeUrl };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.generateBarcodeImage');
+      return this.handleServiceError(
+        error,
+        'ProductService.generateBarcodeImage'
+      );
     }
   }
 
@@ -2977,14 +3326,19 @@ export class ProductService extends BaseService {
       if (!data) {
         throw new AppError('QR code data is required', 400);
       }
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify(data))}&size=200x200`;
+      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+        JSON.stringify(data)
+      )}&size=200x200`;
       return { qrCodeUrl };
     } catch (error) {
       return this.handleServiceError(error, 'ProductService.generateQRCode');
     }
   }
 
-  async associateBarcode(productId: string, barcode: string): Promise<{ success: boolean; message: string }> {
+  async associateBarcode(
+    productId: string,
+    barcode: string
+  ): Promise<{ success: boolean; message: string }> {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id: productId },
@@ -3016,7 +3370,10 @@ export class ProductService extends BaseService {
     }
   }
 
-  async validateBarcode(barcode: string, excludeProductId?: string): Promise<{ valid: boolean; message?: string }> {
+  async validateBarcode(
+    barcode: string,
+    excludeProductId?: string
+  ): Promise<{ valid: boolean; message?: string }> {
     try {
       if (!barcode) {
         return { valid: false, message: 'Barcode is required' };
@@ -3039,7 +3396,11 @@ export class ProductService extends BaseService {
     }
   }
 
-  async getProductsWithoutBarcode(params: { businessUnitId: string; page?: number; limit?: number }) {
+  async getProductsWithoutBarcode(params: {
+    businessUnitId: string;
+    page?: number;
+    limit?: number;
+  }) {
     try {
       const { businessUnitId, page = 1, limit = 20 } = params;
       const skip = (Number(page) - 1) * Number(limit);
@@ -3077,11 +3438,17 @@ export class ProductService extends BaseService {
         limit: Number(limit),
       };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getProductsWithoutBarcode');
+      return this.handleServiceError(
+        error,
+        'ProductService.getProductsWithoutBarcode'
+      );
     }
   }
 
-  async bulkGenerateBarcodes(productIds: string[], options?: GenerateBarcodeOptions): Promise<{ results: any[]; errors: any[] }> {
+  async bulkGenerateBarcodes(
+    productIds: string[],
+    options?: GenerateBarcodeOptions
+  ): Promise<{ results: any[]; errors: any[] }> {
     try {
       const results: any[] = [];
       const errors: Array<{ id: string; message: string }> = [];
@@ -3100,11 +3467,17 @@ export class ProductService extends BaseService {
 
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkGenerateBarcodes');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkGenerateBarcodes'
+      );
     }
   }
 
-  async scanBarcode(barcode: string, businessUnitId: string): Promise<{
+  async scanBarcode(
+    barcode: string,
+    businessUnitId: string
+  ): Promise<{
     product: any;
     inventory?: { quantity: number; reserved: number; available: number };
     barcodeInfo: BarcodeInfo;
@@ -3176,12 +3549,15 @@ export class ProductService extends BaseService {
       }
 
       if (!product) {
-        throw new AppError(`Product not found for barcode/SKU "${barcode}"`, 404);
+        throw new AppError(
+          `Product not found for barcode/SKU "${barcode}"`,
+          404
+        );
       }
 
       const productInventory = product.inventory;
-      const available = productInventory 
-        ? productInventory.quantity - (productInventory.reserved || 0) 
+      const available = productInventory
+        ? productInventory.quantity - (productInventory.reserved || 0)
         : 0;
 
       let barcodeInfo: BarcodeInfo;
@@ -3219,17 +3595,24 @@ export class ProductService extends BaseService {
       return {
         product: product,
         variant: variant,
-        inventory: productInventory ? {
-          quantity: productInventory.quantity,
-          reserved: productInventory.reserved || 0,
-          available: available,
-        } : undefined,
+        inventory: productInventory
+          ? {
+              quantity: productInventory.quantity,
+              reserved: productInventory.reserved || 0,
+              available: available,
+            }
+          : undefined,
         barcodeInfo: barcodeInfo,
       };
     } catch (error) {
       return this.handleServiceError(error, 'ProductService.scanBarcode');
     }
   }
+
+  // ===== END PART 6 of 7 =====
+
+  // src/services/productService.ts
+// PART 7 of 7 (FINAL)
 
   // ============================================
   // FEATURED & POPULAR PRODUCTS
@@ -3261,7 +3644,10 @@ export class ProductService extends BaseService {
         },
       });
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getFeaturedProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.getFeaturedProducts'
+      );
     }
   }
 
@@ -3298,7 +3684,10 @@ export class ProductService extends BaseService {
         },
       });
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getPopularProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.getPopularProducts'
+      );
     }
   }
 
@@ -3506,7 +3895,10 @@ export class ProductService extends BaseService {
         withoutBarcode,
       };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getProductStatistics');
+      return this.handleServiceError(
+        error,
+        'ProductService.getProductStatistics'
+      );
     }
   }
 
@@ -3514,21 +3906,32 @@ export class ProductService extends BaseService {
   // BULK OPERATIONS
   // ============================================
 
-  async bulkCreateProducts(products: any[], businessUnitId: string, userId: string) {
+  async bulkCreateProducts(
+    products: any[],
+    businessUnitId: string,
+    userId: string
+  ) {
     try {
       const results: any[] = [];
       const errors: Array<{ product: any; error: string }> = [];
 
       for (const productData of products) {
         try {
-          if (!productData.sku || productData.sku === 'SKU' || productData.sku.trim() === '') {
+          if (
+            !productData.sku ||
+            productData.sku === 'SKU' ||
+            productData.sku.trim() === ''
+          ) {
             productData.sku = this.generateProductSKU(productData.name);
           }
-          
-          const product = await this.createProduct({
-            ...productData,
-            businessUnitId,
-          }, userId);
+
+          const product = await this.createProduct(
+            {
+              ...productData,
+              businessUnitId,
+            },
+            userId
+          );
           results.push(product);
         } catch (error) {
           errors.push({
@@ -3540,7 +3943,10 @@ export class ProductService extends BaseService {
 
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkCreateProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkCreateProducts'
+      );
     }
   }
 
@@ -3661,7 +4067,10 @@ export class ProductService extends BaseService {
 
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkDeleteProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkDeleteProducts'
+      );
     }
   }
 
@@ -3690,7 +4099,10 @@ export class ProductService extends BaseService {
 
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkActivateProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkActivateProducts'
+      );
     }
   }
 
@@ -3719,7 +4131,10 @@ export class ProductService extends BaseService {
 
       return { results, errors };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.bulkDeactivateProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.bulkDeactivateProducts'
+      );
     }
   }
 
@@ -3789,7 +4204,10 @@ export class ProductService extends BaseService {
         orderBy: { name: 'asc' },
       });
 
-      const buildTree = (items: any[], parentId: string | null = null): any[] => {
+      const buildTree = (
+        items: any[],
+        parentId: string | null = null
+      ): any[] => {
         return items
           .filter((item: any) => item.parentId === parentId)
           .map((item: any) => ({
@@ -3809,7 +4227,10 @@ export class ProductService extends BaseService {
     }
   }
 
-  async getCategoryProducts(categoryId: string, params?: { page?: number; limit?: number }) {
+  async getCategoryProducts(
+    categoryId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       const { page = 1, limit = 10 } = params || {};
       const skip = (Number(page) - 1) * Number(limit);
@@ -3856,7 +4277,10 @@ export class ProductService extends BaseService {
         limit: Number(limit),
       };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getCategoryProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.getCategoryProducts'
+      );
     }
   }
 
@@ -3889,7 +4313,10 @@ export class ProductService extends BaseService {
           throw new AppError('Parent category not found', 404);
         }
         if (parent.businessUnitId !== data.businessUnitId) {
-          throw new AppError('Parent category must be in the same business unit', 400);
+          throw new AppError(
+            'Parent category must be in the same business unit',
+            400
+          );
         }
       }
 
@@ -3910,13 +4337,16 @@ export class ProductService extends BaseService {
     }
   }
 
-  async updateCategory(id: string, data: {
-    name?: string;
-    description?: string;
-    parentId?: string;
-    featured?: boolean;
-    isActive?: boolean;
-  }) {
+  async updateCategory(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      parentId?: string;
+      featured?: boolean;
+      isActive?: boolean;
+    }
+  ) {
     try {
       const category = await this.prisma.category.findUnique({
         where: { id },
@@ -3926,7 +4356,10 @@ export class ProductService extends BaseService {
         throw new AppError('Category not found', 404);
       }
 
-      if (data.name && data.name.toLowerCase() !== category.name.toLowerCase()) {
+      if (
+        data.name &&
+        data.name.toLowerCase() !== category.name.toLowerCase()
+      ) {
         const existing = await this.prisma.category.findFirst({
           where: {
             name: { equals: data.name, mode: 'insensitive' },
@@ -3951,14 +4384,19 @@ export class ProductService extends BaseService {
           throw new AppError('Parent category not found', 404);
         }
         if (parent.businessUnitId !== category.businessUnitId) {
-          throw new AppError('Parent category must be in the same business unit', 400);
+          throw new AppError(
+            'Parent category must be in the same business unit',
+            400
+          );
         }
       }
 
       const updateData: any = {};
       if (data.name !== undefined) updateData.name = data.name;
-      if (data.description !== undefined) updateData.description = data.description;
-      if (data.parentId !== undefined) updateData.parentId = data.parentId || null;
+      if (data.description !== undefined)
+        updateData.description = data.description;
+      if (data.parentId !== undefined)
+        updateData.parentId = data.parentId || null;
       if (data.featured !== undefined) updateData.featured = data.featured;
       if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
@@ -3986,7 +4424,10 @@ export class ProductService extends BaseService {
       }
 
       if (category.products.length > 0) {
-        throw new AppError('Cannot delete category with associated products', 400);
+        throw new AppError(
+          'Cannot delete category with associated products',
+          400
+        );
       }
 
       if (category.children.length > 0) {
@@ -4064,7 +4505,10 @@ export class ProductService extends BaseService {
     }
   }
 
-  async getSupplierProducts(supplierId: string, params?: { page?: number; limit?: number }) {
+  async getSupplierProducts(
+    supplierId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       const { page = 1, limit = 10 } = params || {};
       const skip = (Number(page) - 1) * Number(limit);
@@ -4111,7 +4555,10 @@ export class ProductService extends BaseService {
         limit: Number(limit),
       };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getSupplierProducts');
+      return this.handleServiceError(
+        error,
+        'ProductService.getSupplierProducts'
+      );
     }
   }
 
@@ -4169,7 +4616,10 @@ export class ProductService extends BaseService {
         throw new AppError('Supplier not found', 404);
       }
 
-      if (data.name && data.name.toLowerCase() !== supplier.name.toLowerCase()) {
+      if (
+        data.name &&
+        data.name.toLowerCase() !== supplier.name.toLowerCase()
+      ) {
         const existing = await this.prisma.supplier.findFirst({
           where: {
             name: { equals: data.name, mode: 'insensitive' },
@@ -4184,7 +4634,8 @@ export class ProductService extends BaseService {
 
       const updateData: any = {};
       if (data.name !== undefined) updateData.name = data.name;
-      if (data.contactPerson !== undefined) updateData.contactPerson = data.contactPerson;
+      if (data.contactPerson !== undefined)
+        updateData.contactPerson = data.contactPerson;
       if (data.email !== undefined) updateData.email = data.email;
       if (data.phone !== undefined) updateData.phone = data.phone;
       if (data.address !== undefined) updateData.address = data.address || null;
@@ -4216,11 +4667,17 @@ export class ProductService extends BaseService {
       }
 
       if (supplier.products.length > 0) {
-        throw new AppError('Cannot delete supplier with associated products', 400);
+        throw new AppError(
+          'Cannot delete supplier with associated products',
+          400
+        );
       }
 
       if (supplier.purchaseOrders.length > 0) {
-        throw new AppError('Cannot delete supplier with associated purchase orders', 400);
+        throw new AppError(
+          'Cannot delete supplier with associated purchase orders',
+          400
+        );
       }
 
       return await this.prisma.supplier.delete({
@@ -4235,7 +4692,10 @@ export class ProductService extends BaseService {
   // REVIEW METHODS
   // ============================================
 
-  async getProductReviews(productId: string, params?: { page?: number; limit?: number }) {
+  async getProductReviews(
+    productId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       const { page = 1, limit = 10 } = params || {};
       const skip = (Number(page) - 1) * Number(limit);
@@ -4281,7 +4741,10 @@ export class ProductService extends BaseService {
         },
       };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getProductReviews');
+      return this.handleServiceError(
+        error,
+        'ProductService.getProductReviews'
+      );
     }
   }
 
@@ -4382,7 +4845,10 @@ export class ProductService extends BaseService {
 
       return review;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.createProductReview');
+      return this.handleServiceError(
+        error,
+        'ProductService.createProductReview'
+      );
     }
   }
 
@@ -4398,7 +4864,10 @@ export class ProductService extends BaseService {
       }
 
       if (review.userId !== userId) {
-        throw new AppError('You are not authorized to update this review', 403);
+        throw new AppError(
+          'You are not authorized to update this review',
+          403
+        );
       }
 
       const updateData: any = {};
@@ -4423,7 +4892,10 @@ export class ProductService extends BaseService {
 
       return updatedReview;
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.updateProductReview');
+      return this.handleServiceError(
+        error,
+        'ProductService.updateProductReview'
+      );
     }
   }
 
@@ -4443,7 +4915,10 @@ export class ProductService extends BaseService {
           where: { id: userId },
         });
         if (!user || user.role !== 'SUPER_ADMIN') {
-          throw new AppError('You are not authorized to delete this review', 403);
+          throw new AppError(
+            'You are not authorized to delete this review',
+            403
+          );
         }
       }
 
@@ -4457,7 +4932,10 @@ export class ProductService extends BaseService {
 
       return { message: 'Review deleted successfully' };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.deleteProductReview');
+      return this.handleServiceError(
+        error,
+        'ProductService.deleteProductReview'
+      );
     }
   }
 
@@ -4504,7 +4982,10 @@ export class ProductService extends BaseService {
 
       return { helpful: true, helpfulCount: updatedReview.helpfulCount };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.markReviewHelpful');
+      return this.handleServiceError(
+        error,
+        'ProductService.markReviewHelpful'
+      );
     }
   }
 
@@ -4540,7 +5021,10 @@ export class ProductService extends BaseService {
         },
       });
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.updateProductRating');
+      return this.handleServiceError(
+        error,
+        'ProductService.updateProductRating'
+      );
     }
   }
 
@@ -4644,7 +5128,10 @@ export class ProductService extends BaseService {
     }
   }
 
-  async getWishlist(userId: string, params?: { page?: number; limit?: number }) {
+  async getWishlist(
+    userId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       const { page = 1, limit = 20 } = params || {};
       const skip = (Number(page) - 1) * Number(limit);
@@ -4673,7 +5160,7 @@ export class ProductService extends BaseService {
         }),
       ]);
 
-      const products = wishlistItems.map(item => ({
+      const products = wishlistItems.map((item) => ({
         ...item.product,
         wishlistId: item.id,
         addedAt: item.createdAt,
@@ -4723,9 +5210,12 @@ export class ProductService extends BaseService {
         where: { userId, status: 'ACTIVE' },
         select: { productId: true },
       });
-      return items.map(item => item.productId);
+      return items.map((item) => item.productId);
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getWishlistProductIds');
+      return this.handleServiceError(
+        error,
+        'ProductService.getWishlistProductIds'
+      );
     }
   }
 
@@ -4773,7 +5263,10 @@ export class ProductService extends BaseService {
 
       return { message: 'Added to recently viewed' };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.addRecentlyViewed');
+      return this.handleServiceError(
+        error,
+        'ProductService.addRecentlyViewed'
+      );
     }
   }
 
@@ -4797,9 +5290,12 @@ export class ProductService extends BaseService {
         },
       });
 
-      return items.map(item => item.product);
+      return items.map((item) => item.product);
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.getRecentlyViewed');
+      return this.handleServiceError(
+        error,
+        'ProductService.getRecentlyViewed'
+      );
     }
   }
 
@@ -4810,7 +5306,10 @@ export class ProductService extends BaseService {
       });
       return { message: 'Recently viewed cleared' };
     } catch (error) {
-      return this.handleServiceError(error, 'ProductService.clearRecentlyViewed');
+      return this.handleServiceError(
+        error,
+        'ProductService.clearRecentlyViewed'
+      );
     }
   }
 
@@ -4821,7 +5320,10 @@ export class ProductService extends BaseService {
   async compareProducts(productIds: string[]) {
     try {
       if (!productIds || productIds.length < 2) {
-        throw new AppError('At least 2 products are required for comparison', 400);
+        throw new AppError(
+          'At least 2 products are required for comparison',
+          400
+        );
       }
 
       const products = await this.prisma.product.findMany({
@@ -4861,3 +5363,5 @@ export class ProductService extends BaseService {
 }
 
 export const productService = new ProductService();
+
+// ===== END PART 7 of 7 — FILE COMPLETE =====

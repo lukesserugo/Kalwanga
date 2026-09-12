@@ -11,6 +11,7 @@ const router = Router();
 // PUBLIC ROUTES (Webhooks - No Auth Required)
 // ============================================
 
+// ✅ FIXED: Webhook routes first (no auth)
 router.post('/webhook', paymentController.handleWebhook);
 router.post('/mpesa-callback', paymentController.handleMpesaCallback);
 router.post('/webhook/paypal', paymentController.handlePayPalWebhook);
@@ -22,7 +23,7 @@ router.post('/webhook/square', paymentController.handleSquareWebhook);
 // PROTECTED ROUTES - Payments
 // ============================================
 
-// ✅ FIXED: Order matters - more specific routes before generic ones
+// ✅ FIXED: ORDER MATTERS - More specific routes BEFORE generic ones
 
 /**
  * Get payment summary - MUST BE BEFORE /:id
@@ -31,16 +32,16 @@ router.post('/webhook/square', paymentController.handleSquareWebhook);
 router.get('/summary', requireAuth, paymentController.getPaymentSummary);
 
 /**
- * Get payment status
- * GET /payments/:id
- */
-router.get('/:id', requireAuth, paymentController.getPaymentStatus);
-
-/**
- * Get all payments with filters
+ * Get all payments with filters - MUST BE BEFORE /:id
  * GET /payments
  */
 router.get('/', requireAuth, paymentController.getAllPayments);
+
+/**
+ * Get payment status - Generic /:id route must come LAST
+ * GET /payments/:id
+ */
+router.get('/:id', requireAuth, paymentController.getPaymentStatus);
 
 /**
  * Process payment

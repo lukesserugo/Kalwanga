@@ -89,7 +89,6 @@ export interface ExportAbandonedOptions {
   includeCustomerDetails?: boolean;
 }
 
-
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -98,7 +97,10 @@ async function safeEmitEvent(eventName: string, data: any): Promise<void> {
   try {
     if (realtimeService && typeof (realtimeService as any).emit === 'function') {
       await (realtimeService as any).emit(eventName, data);
-    } else if (realtimeService && typeof (realtimeService as any).emitCartEvent === 'function') {
+    } else if (
+      realtimeService &&
+      typeof (realtimeService as any).emitCartEvent === 'function'
+    ) {
       await (realtimeService as any).emitCartEvent(eventName, data);
     } else {
       console.log(`📡 Cart real-time event: ${eventName}`, data);
@@ -115,26 +117,49 @@ function ensureCartStatus(cart: any): any {
   };
 }
 
+/**
+ * Build a Prisma `where` clause for looking up the single Inventory row
+ * that belongs to a given (productId | variantId, businessUnitId).
+ *
+ * NOTE: In the current schema, `Inventory` has NO scalar `productId` /
+ * `variantId` columns. The FK lives on the *other* side of the relation
+ * (`Product.inventoryId` and `ProductVariant.inventoryId`). Prisma's
+ * generated client therefore only accepts relation filters here —
+ * `where: { productId: ... }` throws
+ *   "Unknown argument `productId`. Did you mean `product`?"
+ */
+function inventoryWhereFor(
+  productId: string,
+  variantId: string | null | undefined,
+  businessUnitId: string
+) {
+  return {
+    ...(variantId
+      ? { variant: { id: variantId } }
+      : { product: { id: productId } }),
+    businessUnitId,
+  };
+}
+
 // ============================================
 // CART SERVICE CLASS
 // ============================================
 
 export class CartService extends BaseService {
-  /**
-   * Get or create cart for a user
-   */
-  async getOrCreateCart(userId: string, businessUnitId: string): Promise<CartResponse> {
+  async getOrCreateCart(
+    userId: string,
+    businessUnitId: string
+  ): Promise<CartResponse> {
     try {
       if (!userId || !businessUnitId) {
-        throw new AppError('User ID and Business Unit ID are required', 400);
+        throw new AppError(
+          'User ID and Business Unit ID are required',
+          400
+        );
       }
 
       let cart: any = await this.prisma.cart.findFirst({
-        where: {
-          userId,
-          businessUnitId,
-          status: 'ACTIVE',
-        },
+        where: { userId, businessUnitId, status: 'ACTIVE' },
         include: {
           items: {
             include: {
@@ -201,22 +226,24 @@ export class CartService extends BaseService {
             customer: true,
           },
         });
-        
-        console.log(`✅ Cart created for user ${userId} in business unit ${businessUnitId}`);
+
+        console.log(
+          `✅ Cart created for user ${userId} in business unit ${businessUnitId}`
+        );
       }
 
       const cartWithStatus = ensureCartStatus(cart);
-      const formattedCart = await this.formatCartResponse(cartWithStatus, businessUnitId);
-      return formattedCart;
+      return await this.formatCartResponse(cartWithStatus, businessUnitId);
     } catch (error) {
       this.handleError(error, 'CartService.getOrCreateCart');
+      throw error;
     }
   }
 
-  /**
-   * Get cart by ID
-   */
-  async getCartById(cartId: string, businessUnitId?: string): Promise<CartResponse> {
+  async getCartById(
+    cartId: string,
+    businessUnitId?: string
+  ): Promise<CartResponse> {
     try {
       if (!cartId) {
         throw new AppError('Cart ID is required', 400);
@@ -258,19 +285,20 @@ export class CartService extends BaseService {
       }
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, businessUnitId || cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        businessUnitId || cart.businessUnitId
+      );
     } catch (error) {
       this.handleError(error, 'CartService.getCartById');
+      throw error;
     }
   }
 
-  /**
-   * Get cart summary
-   */
   async getCartSummary(cartId: string): Promise<any> {
     try {
       const cart = await this.getCartById(cartId);
-      
+
       return {
         id: cart.id,
         itemCount: cart.itemCount,
@@ -278,7 +306,7 @@ export class CartService extends BaseService {
         tax: cart.tax,
         discount: cart.discount,
         total: cart.total,
-        items: cart.items.map(item => ({
+        items: cart.items.map((item) => ({
           id: item.id,
           productName: item.product.name,
           quantity: item.quantity,
@@ -289,20 +317,22 @@ export class CartService extends BaseService {
       };
     } catch (error) {
       this.handleError(error, 'CartService.getCartSummary');
+      throw error;
     }
   }
 
-  /**
-   * Get product inventory
-   */
-  private async getProductInventory(productId: string, variantId: string | undefined, businessUnitId: string): Promise<{ quantity: number; reserved: number; available: number } | null> {
+  private async getProductInventory(
+    productId: string,
+    variantId: string | undefined,
+    businessUnitId: string
+  ): Promise<{
+    quantity: number;
+    reserved: number;
+    available: number;
+  } | null> {
     try {
       const inventory = await this.prisma.inventory.findFirst({
-        where: {
-          productId,
-          variantId: variantId || null,
-          businessUnitId,
-        },
+        where: inventoryWhereFor(productId, variantId, businessUnitId),
         select: {
           quantity: true,
           reserved: true,
@@ -316,7 +346,10 @@ export class CartService extends BaseService {
       return {
         quantity: inventory.quantity || 0,
         reserved: inventory.reserved || 0,
-        available: Math.max(0, (inventory.quantity || 0) - (inventory.reserved || 0)),
+        available: Math.max(
+          0,
+          (inventory.quantity || 0) - (inventory.reserved || 0)
+        ),
       };
     } catch (error) {
       console.warn('Failed to get inventory:', error);
@@ -325,7 +358,10 @@ export class CartService extends BaseService {
   }
 
   /**
-   * Add item to cart
+   * Add item to cart.
+   * ✅ FIXED: Inventory lookup now uses relation filters
+   *    (`product`/`variant`) because the Prisma schema does not expose
+   *    scalar `productId`/`variantId` on the `Inventory` model.
    */
   async addItemToCart(
     cartId: string,
@@ -334,162 +370,187 @@ export class CartService extends BaseService {
     businessUnitId: string
   ): Promise<CartResponse> {
     try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-        });
-
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
-        }
-
-        if (cart.status && cart.status !== 'ACTIVE') {
-          throw new AppError('Cart is not active. Please create a new cart.', 400);
-        }
-
-        // Get product with inventory
-        const product = await tx.product.findUnique({
-          where: { id: data.productId },
-          include: {
-            inventory: true,
-          },
-        });
-
-        if (!product) {
-          throw new AppError('Product not found', 404);
-        }
-
-        if (!product.isActive) {
-          throw new AppError('Product is not active', 400);
-        }
-
-        // Get inventory
-        const inventory = product.inventory;
-        const availableStock = inventory ? Math.max(0, (inventory.quantity || 0) - (inventory.reserved || 0)) : 0;
-        
-        if (availableStock < data.quantity) {
-          throw new AppError(`Insufficient stock. Available: ${availableStock}`, 400);
-        }
-
-        let unitPrice = product.unitPrice;
-        if (data.variantId) {
-          const variant = await tx.productVariant.findUnique({
-            where: { id: data.variantId },
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
           });
-          
-          if (!variant) {
-            throw new AppError('Variant not found', 404);
-          }
-          
-          if (!variant.isActive) {
-            throw new AppError('Variant is not active', 400);
-          }
-          
-          unitPrice = variant.price;
-        }
 
-        // Check if item already exists in cart
-        const existingItem = await tx.cartItem.findFirst({
-          where: {
-            cartId,
-            productId: data.productId,
-            variantId: data.variantId || null,
-          },
-        });
-
-        let item;
-        if (existingItem) {
-          const newQuantity = existingItem.quantity + data.quantity;
-          if (availableStock < newQuantity) {
-            throw new AppError(`Insufficient stock. Available: ${availableStock}`, 400);
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
           }
 
-          item = await tx.cartItem.update({
-            where: { id: existingItem.id },
-            data: {
-              quantity: newQuantity,
-              total: newQuantity * unitPrice,
-              notes: data.notes || existingItem.notes,
-            },
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  unitPrice: true,
-                  images: true,
-                  taxRate: true,
-                },
-              },
-              variant: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  price: true,
-                  attributes: true,
-                },
-              },
+          if (cart.status && cart.status !== 'ACTIVE') {
+            throw new AppError(
+              'Cart is not active. Please create a new cart.',
+              400
+            );
+          }
+
+          const product = await tx.product.findUnique({
+            where: { id: data.productId },
+          });
+
+          if (!product) {
+            throw new AppError('Product not found', 404);
+          }
+
+          if (!product.isActive) {
+            throw new AppError('Product is not active', 400);
+          }
+
+          // ✅ Relation-filtered inventory lookup
+          const inventory = await tx.inventory.findFirst({
+            where: inventoryWhereFor(
+              data.productId,
+              data.variantId,
+              businessUnitId
+            ),
+            select: {
+              id: true,
+              quantity: true,
+              reserved: true,
             },
           });
-        } else {
-          item = await tx.cartItem.create({
-            data: {
+
+          const availableStock = inventory
+            ? Math.max(
+                0,
+                (inventory.quantity || 0) - (inventory.reserved || 0)
+              )
+            : 0;
+
+          if (availableStock < data.quantity) {
+            throw new AppError(
+              `Insufficient stock. Available: ${availableStock}`,
+              400
+            );
+          }
+
+          let unitPrice = product.unitPrice;
+          if (data.variantId) {
+            const variant = await tx.productVariant.findUnique({
+              where: { id: data.variantId },
+            });
+
+            if (!variant) {
+              throw new AppError('Variant not found', 404);
+            }
+
+            if (!variant.isActive) {
+              throw new AppError('Variant is not active', 400);
+            }
+
+            unitPrice = variant.price;
+          }
+
+          const existingItem = await tx.cartItem.findFirst({
+            where: {
               cartId,
               productId: data.productId,
-              variantId: data.variantId,
-              quantity: data.quantity,
-              unitPrice,
-              total: data.quantity * unitPrice,
-              notes: data.notes,
-            },
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  unitPrice: true,
-                  images: true,
-                  taxRate: true,
-                },
-              },
-              variant: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  price: true,
-                  attributes: true,
-                },
-              },
+              variantId: data.variantId || null,
             },
           });
+
+          let item;
+          if (existingItem) {
+            const newQuantity = existingItem.quantity + data.quantity;
+            if (availableStock < newQuantity) {
+              throw new AppError(
+                `Insufficient stock. Available: ${availableStock}`,
+                400
+              );
+            }
+
+            item = await tx.cartItem.update({
+              where: { id: existingItem.id },
+              data: {
+                quantity: newQuantity,
+                total: newQuantity * unitPrice,
+                notes: data.notes || existingItem.notes,
+              },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    unitPrice: true,
+                    images: true,
+                    taxRate: true,
+                  },
+                },
+                variant: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    price: true,
+                    attributes: true,
+                  },
+                },
+              },
+            });
+          } else {
+            item = await tx.cartItem.create({
+              data: {
+                cartId,
+                productId: data.productId,
+                variantId: data.variantId,
+                quantity: data.quantity,
+                unitPrice,
+                total: data.quantity * unitPrice,
+                notes: data.notes,
+              },
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    unitPrice: true,
+                    images: true,
+                    taxRate: true,
+                  },
+                },
+                variant: {
+                  select: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    price: true,
+                    attributes: true,
+                  },
+                },
+              },
+            });
+          }
+
+          const updatedCart = await this.recalculateCart(
+            tx,
+            cartId,
+            businessUnitId
+          );
+
+          await safeEmitEvent(`cart:${cartId}:updated`, {
+            cartId,
+            userId,
+            action: 'item_added',
+            itemId: item.id,
+            productId: data.productId,
+            quantity: data.quantity,
+          });
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(cartWithStatus, businessUnitId);
         }
-
-        const updatedCart = await this.recalculateCart(tx, cartId, businessUnitId);
-
-        await safeEmitEvent(`cart:${cartId}:updated`, {
-          cartId,
-          userId,
-          action: 'item_added',
-          itemId: item.id,
-          productId: data.productId,
-          quantity: data.quantity,
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, businessUnitId);
-      });
+      );
     } catch (error) {
       this.handleError(error, 'CartService.addItemToCart');
+      throw error;
     }
   }
 
-  /**
-   * Add multiple items to cart
-   */
   async addMultipleItemsToCart(
     cartId: string,
     items: CartItemInput[],
@@ -503,7 +564,12 @@ export class CartService extends BaseService {
 
       let lastResult: CartResponse | null = null;
       for (let i = 0; i < items.length; i++) {
-        lastResult = await this.addItemToCart(cartId, items[i], userId, businessUnitId);
+        lastResult = await this.addItemToCart(
+          cartId,
+          items[i],
+          userId,
+          businessUnitId
+        );
       }
 
       if (!lastResult) {
@@ -520,27 +586,28 @@ export class CartService extends BaseService {
       return await this.getCartById(cartId, businessUnitId);
     } catch (error) {
       this.handleError(error, 'CartService.addMultipleItemsToCart');
+      throw error;
     }
   }
 
   /**
-   * Sync cart with inventory
+   * Sync cart with inventory.
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
-  async syncCartWithInventory(cartId: string, businessUnitId: string): Promise<{ valid: boolean; issues: string[] }> {
+  async syncCartWithInventory(
+    cartId: string,
+    businessUnitId: string
+  ): Promise<{ valid: boolean; issues: string[] }> {
     try {
       const cart = await this.prisma.cart.findUnique({
         where: { id: cartId },
-        include: { 
-          items: { 
-            include: { 
-              product: {
-                include: {
-                  inventory: true,
-                },
-              },
+        include: {
+          items: {
+            include: {
+              product: true,
               variant: true,
-            } 
-          } 
+            },
+          },
         },
       });
 
@@ -552,21 +619,39 @@ export class CartService extends BaseService {
       const updates: Promise<any>[] = [];
 
       for (const item of cart.items) {
-        const inventory = item.product.inventory;
-        
-        const available = inventory ? Math.max(0, (inventory.quantity || 0) - (inventory.reserved || 0)) : 0;
-        
+        const inventory = await this.prisma.inventory.findFirst({
+          where: inventoryWhereFor(
+            item.productId,
+            item.variantId,
+            businessUnitId
+          ),
+          select: {
+            id: true,
+            quantity: true,
+            reserved: true,
+          },
+        });
+
+        const available = inventory
+          ? Math.max(
+              0,
+              (inventory.quantity || 0) - (inventory.reserved || 0)
+            )
+          : 0;
+
         if (available === 0 && inventory) {
           issues.push(`Out of stock: ${item.product.name}`);
           updates.push(
             this.prisma.cartItem.delete({ where: { id: item.id } })
           );
         } else if (inventory && available < item.quantity) {
-          issues.push(`Insufficient stock for ${item.product.name}: ${available} available`);
+          issues.push(
+            `Insufficient stock for ${item.product.name}: ${available} available`
+          );
           updates.push(
             this.prisma.cartItem.update({
               where: { id: item.id },
-              data: { 
+              data: {
                 quantity: available,
                 total: available * item.unitPrice,
               },
@@ -585,11 +670,13 @@ export class CartService extends BaseService {
       return { valid: issues.length === 0, issues };
     } catch (error) {
       this.handleError(error, 'CartService.syncCartWithInventory');
+      throw error;
     }
   }
 
   /**
-   * Update cart item quantity
+   * Update cart item quantity.
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
   async updateCartItemQuantity(
     cartId: string,
@@ -598,161 +685,201 @@ export class CartService extends BaseService {
     businessUnitId: string
   ): Promise<CartResponse> {
     try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cartItem = await tx.cartItem.findUnique({
-          where: { id: itemId },
-          include: {
-            product: {
-              include: {
-                inventory: true,
-              },
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cartItem = await tx.cartItem.findUnique({
+            where: { id: itemId },
+            include: {
+              product: true,
+              variant: true,
             },
-          },
-        });
+          });
 
-        if (!cartItem) {
-          throw new AppError('Cart item not found', 404);
+          if (!cartItem) {
+            throw new AppError('Cart item not found', 404);
+          }
+
+          if (cartItem.cartId !== cartId) {
+            throw new AppError(
+              'Cart item does not belong to this cart',
+              400
+            );
+          }
+
+          if (quantity <= 0) {
+            await tx.cartItem.delete({
+              where: { id: itemId },
+            });
+          } else {
+            const inventory = await tx.inventory.findFirst({
+              where: inventoryWhereFor(
+                cartItem.productId,
+                cartItem.variantId,
+                businessUnitId
+              ),
+              select: {
+                id: true,
+                quantity: true,
+                reserved: true,
+              },
+            });
+
+            const availableStock = inventory
+              ? Math.max(
+                  0,
+                  (inventory.quantity || 0) - (inventory.reserved || 0)
+                )
+              : 0;
+
+            if (availableStock < quantity) {
+              throw new AppError(
+                `Insufficient stock. Available: ${availableStock}`,
+                400
+              );
+            }
+
+            await tx.cartItem.update({
+              where: { id: itemId },
+              data: {
+                quantity,
+                total: quantity * cartItem.unitPrice,
+              },
+            });
+          }
+
+          const updatedCart = await this.recalculateCart(
+            tx,
+            cartId,
+            businessUnitId
+          );
+
+          await safeEmitEvent(`cart:${cartId}:updated`, {
+            cartId,
+            action: 'quantity_updated',
+            itemId,
+            quantity,
+          });
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(cartWithStatus, businessUnitId);
         }
+      );
+    } catch (error) {
+      this.handleError(error, 'CartService.updateCartItemQuantity');
+      throw error;
+    }
+  }
 
-        if (cartItem.cartId !== cartId) {
-          throw new AppError('Cart item does not belong to this cart', 400);
-        }
+  async removeItemFromCart(
+    cartId: string,
+    itemId: string
+  ): Promise<CartResponse> {
+    try {
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cartItem = await tx.cartItem.findUnique({
+            where: { id: itemId },
+          });
 
-        if (quantity <= 0) {
+          if (!cartItem) {
+            throw new AppError('Cart item not found', 404);
+          }
+
+          if (cartItem.cartId !== cartId) {
+            throw new AppError(
+              'Cart item does not belong to this cart',
+              400
+            );
+          }
+
           await tx.cartItem.delete({
             where: { id: itemId },
           });
-        } else {
-          const inventory = cartItem.product.inventory;
-          const availableStock = inventory ? Math.max(0, (inventory.quantity || 0) - (inventory.reserved || 0)) : 0;
-          
-          if (availableStock < quantity) {
-            throw new AppError(`Insufficient stock. Available: ${availableStock}`, 400);
+
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+          });
+
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
           }
 
-          await tx.cartItem.update({
-            where: { id: itemId },
-            data: {
-              quantity,
-              total: quantity * cartItem.unitPrice,
-            },
+          const updatedCart = await this.recalculateCart(
+            tx,
+            cartId,
+            cart.businessUnitId
+          );
+
+          await safeEmitEvent(`cart:${cartId}:updated`, {
+            cartId,
+            action: 'item_removed',
+            itemId,
           });
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            cart.businessUnitId
+          );
         }
-
-        const updatedCart = await this.recalculateCart(tx, cartId, businessUnitId);
-
-        await safeEmitEvent(`cart:${cartId}:updated`, {
-          cartId,
-          action: 'quantity_updated',
-          itemId,
-          quantity,
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, businessUnitId);
-      });
-    } catch (error) {
-      this.handleError(error, 'CartService.updateCartItemQuantity');
-    }
-  }
-
-  /**
-   * Remove item from cart
-   */
-  async removeItemFromCart(cartId: string, itemId: string): Promise<CartResponse> {
-    try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cartItem = await tx.cartItem.findUnique({
-          where: { id: itemId },
-        });
-
-        if (!cartItem) {
-          throw new AppError('Cart item not found', 404);
-        }
-
-        if (cartItem.cartId !== cartId) {
-          throw new AppError('Cart item does not belong to this cart', 400);
-        }
-
-        await tx.cartItem.delete({
-          where: { id: itemId },
-        });
-
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-        });
-
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
-        }
-
-        const updatedCart = await this.recalculateCart(tx, cartId, cart.businessUnitId);
-
-        await safeEmitEvent(`cart:${cartId}:updated`, {
-          cartId,
-          action: 'item_removed',
-          itemId,
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
-      });
+      );
     } catch (error) {
       this.handleError(error, 'CartService.removeItemFromCart');
+      throw error;
     }
   }
 
-  /**
-   * Clear cart
-   */
   async clearCart(cartId: string): Promise<CartResponse> {
     try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-        });
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+          });
 
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
+          }
+
+          await tx.cartItem.deleteMany({
+            where: { cartId },
+          });
+
+          const updatedCart = await tx.cart.update({
+            where: { id: cartId },
+            data: {
+              subtotal: 0,
+              tax: 0,
+              discount: 0,
+              total: 0,
+            },
+            include: {
+              items: true,
+              customer: true,
+            },
+          });
+
+          await safeEmitEvent(`cart:${cartId}:updated`, {
+            cartId,
+            action: 'cleared',
+          });
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            cart.businessUnitId
+          );
         }
-
-        await tx.cartItem.deleteMany({
-          where: { cartId },
-        });
-
-        const updatedCart = await tx.cart.update({
-          where: { id: cartId },
-          data: {
-            subtotal: 0,
-            tax: 0,
-            discount: 0,
-            total: 0,
-          },
-          include: {
-            items: true,
-            customer: true,
-          },
-        });
-
-        await safeEmitEvent(`cart:${cartId}:updated`, {
-          cartId,
-          action: 'cleared',
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
-      });
+      );
     } catch (error) {
       this.handleError(error, 'CartService.clearCart');
+      throw error;
     }
   }
 
-  /**
-   * Apply discount to cart
-   */
   async applyDiscount(
-    cartId: string, 
-    discount: number, 
+    cartId: string,
+    discount: number,
     discountType: 'PERCENTAGE' | 'FIXED' = 'FIXED'
   ): Promise<CartResponse> {
     try {
@@ -760,221 +887,248 @@ export class CartService extends BaseService {
         throw new AppError('Discount cannot be negative', 400);
       }
 
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-        });
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+          });
 
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
+          }
+
+          let actualDiscount = discount;
+          if (discountType === 'PERCENTAGE') {
+            actualDiscount = (cart.subtotal * discount) / 100;
+          }
+
+          if (actualDiscount > cart.subtotal) {
+            throw new AppError('Discount cannot exceed subtotal', 400);
+          }
+
+          const updatedCart = await this.recalculateCart(
+            tx,
+            cartId,
+            cart.businessUnitId,
+            actualDiscount
+          );
+
+          await tx.cart.update({
+            where: { id: cartId },
+            data: {
+              discountType,
+            },
+          });
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            cart.businessUnitId
+          );
         }
-
-        let actualDiscount = discount;
-        if (discountType === 'PERCENTAGE') {
-          actualDiscount = (cart.subtotal * discount) / 100;
-        }
-
-        if (actualDiscount > cart.subtotal) {
-          throw new AppError('Discount cannot exceed subtotal', 400);
-        }
-
-        const updatedCart = await this.recalculateCart(tx, cartId, cart.businessUnitId, actualDiscount);
-
-        await tx.cart.update({
-          where: { id: cartId },
-          data: {
-            discountType,
-          },
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
-      });
+      );
     } catch (error) {
       this.handleError(error, 'CartService.applyDiscount');
+      throw error;
     }
   }
 
-  /**
-   * Apply promotion to cart
-   * ✅ NEW METHOD
-   */
-  async applyPromotion(cartId: string, promotionCode: string): Promise<CartResponse> {
+  async applyPromotion(
+    cartId: string,
+    promotionCode: string
+  ): Promise<CartResponse> {
     try {
       if (!promotionCode) {
         throw new AppError('Promotion code is required', 400);
       }
 
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-        });
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+          });
 
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
+          }
+
+          const promotion = await tx.promotion.findFirst({
+            where: {
+              name: promotionCode,
+              isActive: true,
+              startDate: { lte: new Date() },
+              endDate: { gte: new Date() },
+            },
+          });
+
+          if (!promotion) {
+            throw new AppError('Invalid or expired promotion code', 400);
+          }
+
+          let discountAmount = 0;
+          if (promotion.type === 'PERCENTAGE') {
+            discountAmount = (cart.subtotal * promotion.value) / 100;
+          } else if (promotion.type === 'FIXED') {
+            discountAmount = promotion.value;
+          }
+
+          if (promotion.maxDiscount && discountAmount > promotion.maxDiscount) {
+            discountAmount = promotion.maxDiscount;
+          }
+
+          if (discountAmount > cart.subtotal) {
+            discountAmount = cart.subtotal;
+          }
+
+          const updatedCart = await this.recalculateCart(
+            tx,
+            cartId,
+            cart.businessUnitId,
+            discountAmount
+          );
+
+          await tx.cart.update({
+            where: { id: cartId },
+            data: {
+              promotionCode: promotionCode,
+              promotionDiscount: discountAmount,
+            },
+          });
+
+          await safeEmitEvent(`cart:${cartId}:promotion-applied`, {
+            cartId,
+            promotionCode,
+            discountAmount,
+          });
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            cart.businessUnitId
+          );
         }
-
-        // Find active promotion
-        const promotion = await tx.promotion.findFirst({
-          where: {
-            name: promotionCode,
-            isActive: true,
-            startDate: { lte: new Date() },
-            endDate: { gte: new Date() },
-          },
-        });
-
-        if (!promotion) {
-          throw new AppError('Invalid or expired promotion code', 400);
-        }
-
-        let discountAmount = 0;
-        if (promotion.type === 'PERCENTAGE') {
-          discountAmount = (cart.subtotal * promotion.value) / 100;
-        } else if (promotion.type === 'FIXED') {
-          discountAmount = promotion.value;
-        }
-
-        if (promotion.maxDiscount && discountAmount > promotion.maxDiscount) {
-          discountAmount = promotion.maxDiscount;
-        }
-
-        if (discountAmount > cart.subtotal) {
-          discountAmount = cart.subtotal;
-        }
-
-        const updatedCart = await this.recalculateCart(tx, cartId, cart.businessUnitId, discountAmount);
-
-        await tx.cart.update({
-          where: { id: cartId },
-          data: {
-            promotionCode: promotionCode,
-            promotionDiscount: discountAmount,
-          },
-        });
-
-        await safeEmitEvent(`cart:${cartId}:promotion-applied`, {
-          cartId,
-          promotionCode,
-          discountAmount,
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
-      });
+      );
     } catch (error) {
       this.handleError(error, 'CartService.applyPromotion');
+      throw error;
     }
   }
 
-  /**
-   * Apply loyalty points to cart
-   * ✅ NEW METHOD
-   */
-  async applyLoyaltyPoints(cartId: string, customerId: string, points: number): Promise<CartResponse> {
+  async applyLoyaltyPoints(
+    cartId: string,
+    customerId: string,
+    points: number
+  ): Promise<CartResponse> {
     try {
       if (!customerId || points <= 0) {
-        throw new AppError('Valid customer ID and points are required', 400);
+        throw new AppError(
+          'Valid customer ID and points are required',
+          400
+        );
       }
 
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const customer = await tx.customer.findUnique({
-          where: { id: customerId },
-        });
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const customer = await tx.customer.findUnique({
+            where: { id: customerId },
+          });
 
-        if (!customer) {
-          throw new AppError('Customer not found', 404);
-        }
+          if (!customer) {
+            throw new AppError('Customer not found', 404);
+          }
 
-        if ((customer.loyaltyPoints || 0) < points) {
-          throw new AppError('Insufficient loyalty points', 400);
-        }
+          if ((customer.loyaltyPoints || 0) < points) {
+            throw new AppError('Insufficient loyalty points', 400);
+          }
 
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-        });
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+          });
 
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
-        }
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
+          }
 
-        // 10 points = $1 discount
-        const discountFromPoints = points * 0.1;
-        const maxDiscount = cart.subtotal * 0.5; // Max 50% off
+          const discountFromPoints = points * 0.1;
+          const maxDiscount = cart.subtotal * 0.5;
 
-        const actualDiscount = Math.min(discountFromPoints, maxDiscount);
-        const actualPointsUsed = Math.ceil(actualDiscount / 0.1);
+          const actualDiscount = Math.min(discountFromPoints, maxDiscount);
+          const actualPointsUsed = Math.ceil(actualDiscount / 0.1);
 
-        // Deduct points from customer
-        await tx.customer.update({
-          where: { id: customerId },
-          data: {
-            loyaltyPoints: {
-              decrement: actualPointsUsed,
+          await tx.customer.update({
+            where: { id: customerId },
+            data: {
+              loyaltyPoints: {
+                decrement: actualPointsUsed,
+              },
             },
-          },
-        });
+          });
 
-        // Record loyalty history
-        await tx.loyaltyHistory.create({
-          data: {
+          await tx.loyaltyHistory.create({
+            data: {
+              customerId,
+              points: -actualPointsUsed,
+              type: 'REDEEM',
+              notes: `Redeemed for cart ${cartId}`,
+              userId: cart.userId,
+            },
+          });
+
+          const updatedCart = await this.recalculateCart(
+            tx,
+            cartId,
+            cart.businessUnitId,
+            actualDiscount
+          );
+
+          await tx.cart.update({
+            where: { id: cartId },
+            data: {
+              loyaltyPointsUsed: actualPointsUsed,
+              loyaltyDiscount: actualDiscount,
+            },
+          });
+
+          await safeEmitEvent(`cart:${cartId}:loyalty-applied`, {
+            cartId,
             customerId,
-            points: -actualPointsUsed,
-            type: 'REDEEM',
-            notes: `Redeemed for cart ${cartId}`,
-            userId: cart.userId,
-          },
-        });
+            points: actualPointsUsed,
+            discount: actualDiscount,
+          });
 
-        const updatedCart = await this.recalculateCart(tx, cartId, cart.businessUnitId, actualDiscount);
-
-        await tx.cart.update({
-          where: { id: cartId },
-          data: {
-            loyaltyPointsUsed: actualPointsUsed,
-            loyaltyDiscount: actualDiscount,
-          },
-        });
-
-        await safeEmitEvent(`cart:${cartId}:loyalty-applied`, {
-          cartId,
-          customerId,
-          points: actualPointsUsed,
-          discount: actualDiscount,
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
-      });
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            cart.businessUnitId
+          );
+        }
+      );
     } catch (error) {
       this.handleError(error, 'CartService.applyLoyaltyPoints');
+      throw error;
     }
   }
 
-  /**
-  /**
-   * Export cart analytics data - returns data, not API call
-   */
   async exportCartAnalytics(params: {
     businessUnitId: string;
     startDate: Date;
     endDate: Date;
     includeDetailedData?: boolean;
-  }): Promise<{
-    analytics: any;
-    detailedData: any[];
-  }> {
+  }): Promise<{ analytics: any; detailedData: any[] }> {
     try {
-      const { businessUnitId, startDate, endDate, includeDetailedData = true } = params;
+      const {
+        businessUnitId,
+        startDate,
+        endDate,
+        includeDetailedData = true,
+      } = params;
 
-      // Get analytics summary
       const analytics = await this.getCartAnalytics({
         businessUnitId,
         startDate,
         endDate,
       });
 
-      // Get detailed data if requested
       let detailedData: any[] = [];
       if (includeDetailedData) {
         detailedData = await this.prisma.cart.findMany({
@@ -1010,14 +1164,14 @@ export class CartService extends BaseService {
       return { analytics, detailedData };
     } catch (error) {
       this.handleError(error, 'CartService.exportCartAnalytics');
+      throw error;
     }
   }
 
-  /**
-   * Associate customer with cart
-   * ✅ NEW METHOD
-   */
-  async associateCustomer(cartId: string, customerId: string): Promise<CartResponse> {
+  async associateCustomer(
+    cartId: string,
+    customerId: string
+  ): Promise<CartResponse> {
     try {
       if (!customerId) {
         throw new AppError('Customer ID is required', 400);
@@ -1063,16 +1217,16 @@ export class CartService extends BaseService {
       });
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        cart.businessUnitId
+      );
     } catch (error) {
       this.handleError(error, 'CartService.associateCustomer');
+      throw error;
     }
   }
 
-  /**
-   * Update cart notes
-   * ✅ NEW METHOD
-   */
   async updateCartNotes(cartId: string, notes?: string): Promise<CartResponse> {
     try {
       const cart = await this.prisma.cart.update({
@@ -1107,24 +1261,22 @@ export class CartService extends BaseService {
       });
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        cart.businessUnitId
+      );
     } catch (error) {
       this.handleError(error, 'CartService.updateCartNotes');
+      throw error;
     }
   }
 
-    /**
-   * Get cart settings
-   * GET /cart/settings
-   */
   async getCartSettings(businessUnitId: string): Promise<any> {
-    // Get or create settings
     let settings = await this.prisma.cartSettings.findFirst({
       where: { businessUnitId },
     });
-    
+
     if (!settings) {
-      // Create default settings
       settings = await this.prisma.cartSettings.create({
         data: {
           businessUnitId,
@@ -1161,14 +1313,10 @@ export class CartService extends BaseService {
         },
       });
     }
-    
+
     return settings;
   }
 
-  /**
-   * Update cart settings
-   * PUT /cart/settings
-   */
   async updateCartSettings(businessUnitId: string, data: any): Promise<any> {
     const settings = await this.prisma.cartSettings.update({
       where: { businessUnitId },
@@ -1177,16 +1325,13 @@ export class CartService extends BaseService {
         updatedAt: new Date(),
       },
     });
-    
+
     return settings;
   }
 
-  /**
-   * Recalculate cart totals
-   */
   private async recalculateCart(
-    tx: Prisma.TransactionClient, 
-    cartId: string, 
+    tx: Prisma.TransactionClient,
+    cartId: string,
     businessUnitId: string,
     discountOverride?: number
   ) {
@@ -1207,11 +1352,14 @@ export class CartService extends BaseService {
       },
     });
 
-    const subtotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
-    
+    const subtotal = items.reduce(
+      (sum: number, item: any) => sum + item.total,
+      0
+    );
+
     let tax = 0;
     for (const item of items) {
-      const taxRate = (item.product as any).taxRate || 0.10;
+      const taxRate = (item.product as any).taxRate || 0.1;
       tax += item.total * taxRate;
     }
 
@@ -1223,7 +1371,8 @@ export class CartService extends BaseService {
       throw new AppError('Cart not found', 404);
     }
 
-    const discount = discountOverride !== undefined ? discountOverride : cart.discount || 0;
+    const discount =
+      discountOverride !== undefined ? discountOverride : cart.discount || 0;
     const total = Math.max(0, subtotal + tax - discount);
 
     return await tx.cart.update({
@@ -1264,25 +1413,29 @@ export class CartService extends BaseService {
     });
   }
 
-  /**
-   * Format cart response
-   */
-  private async formatCartResponse(cart: any, businessUnitId?: string): Promise<CartResponse> {
+  private async formatCartResponse(
+    cart: any,
+    businessUnitId?: string
+  ): Promise<CartResponse> {
     const items: CartItemResponse[] = await Promise.all(
       (cart.items || []).map(async (item: any) => {
         let availableStock = 0;
         let isInStock = false;
         try {
+          // ✅ Relation-filtered inventory lookup
           const inventory = await this.prisma.inventory.findFirst({
-            where: {
-              productId: item.productId,
-              variantId: item.variantId || null,
-              businessUnitId: businessUnitId || cart.businessUnitId,
-            },
+            where: inventoryWhereFor(
+              item.productId,
+              item.variantId,
+              businessUnitId || cart.businessUnitId
+            ),
           });
-          
+
           if (inventory) {
-            availableStock = Math.max(0, (inventory.quantity || 0) - (inventory.reserved || 0));
+            availableStock = Math.max(
+              0,
+              (inventory.quantity || 0) - (inventory.reserved || 0)
+            );
             isInStock = availableStock > 0;
           }
         } catch (error) {
@@ -1341,17 +1494,20 @@ export class CartService extends BaseService {
       status: status as 'ACTIVE' | 'SAVED' | 'CHECKED_OUT' | 'ABANDONED',
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
-      itemCount: items.reduce((sum: number, item: any) => sum + item.quantity, 0),
+      itemCount: items.reduce(
+        (sum: number, item: any) => sum + item.quantity,
+        0
+      ),
     };
   }
 
-  /**
-   * Get cart count for user
-   */
   async getCartCount(userId: string, businessUnitId: string): Promise<number> {
     try {
       if (!userId || !businessUnitId) {
-        throw new AppError('User ID and Business Unit ID are required', 400);
+        throw new AppError(
+          'User ID and Business Unit ID are required',
+          400
+        );
       }
 
       const cart = await this.prisma.cart.findFirst({
@@ -1369,17 +1525,22 @@ export class CartService extends BaseService {
         return 0;
       }
 
-      return cart.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
+      return cart.items.reduce(
+        (sum: number, item: any) => sum + item.quantity,
+        0
+      );
     } catch (error) {
       this.handleError(error, 'CartService.getCartCount');
+      throw error;
     }
   }
 
   /**
-   * Checkout cart
+   * Checkout cart.
+   * ✅ FIXED: relation-filtered inventory lookups for decrement + logging.
    */
   async checkoutCart(
-    cartId: string, 
+    cartId: string,
     userId: string,
     options: {
       customerId?: string;
@@ -1392,169 +1553,191 @@ export class CartService extends BaseService {
     }
   ): Promise<any> {
     try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-          include: {
-            items: {
-              include: {
-                product: {
-                  include: {
-                    inventory: true,
-                  },
-                },
-                variant: {
-                  include: {
-                    inventory: true,
-                  },
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+            include: {
+              items: {
+                include: {
+                  product: true,
+                  variant: true,
                 },
               },
-            },
-            customer: true,
-          },
-        });
-
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
-        }
-
-        if (cart.items.length === 0) {
-          throw new AppError('Cart is empty', 400);
-        }
-
-        // Sync cart with inventory
-        const syncResult = await this.syncCartWithInventory(cartId, cart.businessUnitId);
-        if (!syncResult.valid) {
-          throw new AppError(`Cart has inventory issues: ${syncResult.issues.join(', ')}`, 400);
-        }
-
-        // Calculate totals
-        const subtotal = cart.items.reduce((sum: number, item: any) => sum + item.total, 0);
-        const tax = cart.items.reduce((sum: number, item: any) => {
-          const taxRate = item.product.taxRate || 0.10;
-          return sum + (item.total * taxRate);
-        }, 0);
-        const total = subtotal + tax - (cart.discount || 0);
-
-        // Create sale
-        const receiptNumber = `RCP-${Date.now()}`;
-        const sale = await tx.sale.create({
-          data: {
-            receiptNumber,
-            subtotal,
-            tax,
-            discount: cart.discount || 0,
-            total: options.paidAmount || total,
-            paidAmount: options.paidAmount || total,
-            changeAmount: Math.max(0, (options.paidAmount || total) - total),
-            notes: options.notes || cart.notes || null,
-            status: 'COMPLETED',
-            saleDate: new Date(),
-            businessUnitId: cart.businessUnitId,
-            userId,
-            customerId: options.customerId || cart.customerId || null,
-            cashRegisterId: options.cashRegisterId || null,
-            cashRegisterSessionId: options.cashRegisterSessionId || null,
-          },
-        });
-
-        // Create sale items and update inventory
-        for (const item of cart.items) {
-          await tx.saleItem.create({
-            data: {
-              saleId: sale.id,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              total: item.total,
-              notes: item.notes,
+              customer: true,
             },
           });
 
-          const inventory = item.product.inventory;
-          if (inventory) {
-            await tx.inventory.update({
-              where: { id: inventory.id },
-              data: {
-                quantity: {
-                  decrement: item.quantity,
-                },
-                available: {
-                  decrement: item.quantity,
-                },
-              },
-            });
+          if (!cart) {
+            throw new AppError('Cart not found', 404);
+          }
 
-            await tx.inventoryTransaction.create({
+          if (cart.items.length === 0) {
+            throw new AppError('Cart is empty', 400);
+          }
+
+          const syncResult = await this.syncCartWithInventory(
+            cartId,
+            cart.businessUnitId
+          );
+          if (!syncResult.valid) {
+            throw new AppError(
+              `Cart has inventory issues: ${syncResult.issues.join(', ')}`,
+              400
+            );
+          }
+
+          const subtotal = cart.items.reduce(
+            (sum: number, item: any) => sum + item.total,
+            0
+          );
+          const tax = cart.items.reduce((sum: number, item: any) => {
+            const taxRate = item.product.taxRate || 0.1;
+            return sum + item.total * taxRate;
+          }, 0);
+          const total = subtotal + tax - (cart.discount || 0);
+
+          const receiptNumber = `RCP-${Date.now()}`;
+          const sale = await tx.sale.create({
+            data: {
+              receiptNumber,
+              subtotal,
+              tax,
+              discount: cart.discount || 0,
+              total: options.paidAmount || total,
+              paidAmount: options.paidAmount || total,
+              changeAmount: Math.max(
+                0,
+                (options.paidAmount || total) - total
+              ),
+              notes: options.notes || cart.notes || null,
+              status: 'COMPLETED',
+              saleDate: new Date(),
+              businessUnitId: cart.businessUnitId,
+              userId,
+              customerId: options.customerId || cart.customerId || null,
+              cashRegisterId: options.cashRegisterId || null,
+              cashRegisterSessionId:
+                options.cashRegisterSessionId || null,
+            },
+          });
+
+          for (const item of cart.items) {
+            await tx.saleItem.create({
               data: {
-                transactionType: 'SALE',
-                quantity: -item.quantity,
-                notes: `Sale ${sale.receiptNumber}`,
-                reference: sale.id,
+                saleId: sale.id,
                 productId: item.productId,
                 variantId: item.variantId || null,
-                inventoryId: inventory.id,
-                businessUnitId: cart.businessUnitId,
-                userId,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                total: item.total,
+                notes: item.notes,
               },
             });
+
+            // ✅ Relation-filtered inventory lookup
+            const inventory = await tx.inventory.findFirst({
+              where: inventoryWhereFor(
+                item.productId,
+                item.variantId,
+                cart.businessUnitId
+              ),
+            });
+
+            if (inventory) {
+              await tx.inventory.update({
+                where: { id: inventory.id },
+                data: {
+                  quantity: {
+                    decrement: item.quantity,
+                  },
+                  available: {
+                    decrement: item.quantity,
+                  },
+                },
+              });
+
+              await tx.inventoryTransaction.create({
+                data: {
+                  transactionType: 'SALE',
+                  quantity: -item.quantity,
+                  notes: `Sale ${sale.receiptNumber}`,
+                  reference: sale.id,
+                  productId: item.productId,
+                  variantId: item.variantId || null,
+                  inventoryId: inventory.id,
+                  businessUnitId: cart.businessUnitId,
+                  userId,
+                },
+              });
+            }
           }
+
+          await tx.cart.update({
+            where: { id: cartId },
+            data: {
+              status: 'CHECKED_OUT',
+            },
+          });
+
+          await tx.cartItem.deleteMany({
+            where: { cartId },
+          });
+
+          await safeEmitEvent('sale:created', {
+            saleId: sale.id,
+            receiptNumber: sale.receiptNumber,
+            total: sale.total,
+            businessUnitId: sale.businessUnitId,
+          });
+
+          const updatedCart = await tx.cart.findUnique({
+            where: { id: cartId },
+            include: {
+              items: true,
+              customer: true,
+            },
+          });
+
+          const cartWithStatus = ensureCartStatus(updatedCart || cart);
+
+          return {
+            sale,
+            cart: await this.formatCartResponse(
+              cartWithStatus,
+              cart.businessUnitId
+            ),
+            message: 'Checkout completed successfully',
+          };
         }
-
-        // Update cart status to CHECKED_OUT
-        await tx.cart.update({
-          where: { id: cartId },
-          data: {
-            status: 'CHECKED_OUT',
-          },
-        });
-
-        // Delete cart items
-        await tx.cartItem.deleteMany({
-          where: { cartId },
-        });
-
-        await safeEmitEvent('sale:created', {
-          saleId: sale.id,
-          receiptNumber: sale.receiptNumber,
-          total: sale.total,
-          businessUnitId: sale.businessUnitId,
-        });
-
-        const updatedCart = await tx.cart.findUnique({
-          where: { id: cartId },
-          include: {
-            items: true,
-            customer: true,
-          },
-        });
-
-        const cartWithStatus = ensureCartStatus(updatedCart || cart);
-        
-        return {
-          sale,
-          cart: await this.formatCartResponse(cartWithStatus, cart.businessUnitId),
-          message: 'Checkout completed successfully',
-        };
-      });
+      );
     } catch (error) {
       this.handleError(error, 'CartService.checkoutCart');
+      throw error;
     }
   }
 
-  /**
-   * Get abandoned carts
-   */
   async getAbandonedCarts(params: {
     businessUnitId: string;
     hours?: number;
     minValue?: number;
     page?: number;
     limit?: number;
-  }): Promise<{ carts: any[]; total: number; page: number; totalPages: number; limit: number }> {
+  }): Promise<{
+    carts: any[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
     try {
-      const { businessUnitId, hours = 24, minValue, page = 1, limit = 10 } = params;
+      const {
+        businessUnitId,
+        hours = 24,
+        minValue,
+        page = 1,
+        limit = 10,
+      } = params;
       const skip = (page - 1) * limit;
       const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
 
@@ -1603,12 +1786,10 @@ export class CartService extends BaseService {
       };
     } catch (error) {
       this.handleError(error, 'CartService.getAbandonedCarts');
+      throw error;
     }
   }
 
-  /**
-   * Get cart analytics
-   */
   async getCartAnalytics(params: {
     businessUnitId: string;
     startDate?: Date;
@@ -1638,26 +1819,35 @@ export class CartService extends BaseService {
 
       return {
         totalCarts,
-        activeCarts: await this.prisma.cart.count({ where: { ...where, status: 'ACTIVE' } }),
-        abandonedCarts: await this.prisma.cart.count({ where: { ...where, status: 'ABANDONED' } }),
+        activeCarts: await this.prisma.cart.count({
+          where: { ...where, status: 'ACTIVE' },
+        }),
+        abandonedCarts: await this.prisma.cart.count({
+          where: { ...where, status: 'ABANDONED' },
+        }),
         averageItems,
         averageValue,
-        conversionRate: totalCarts > 0 ? ((totalCarts - 0) / totalCarts) * 100 : 0,
+        conversionRate:
+          totalCarts > 0 ? ((totalCarts - 0) / totalCarts) * 100 : 0,
       };
     } catch (error) {
       this.handleError(error, 'CartService.getCartAnalytics');
+      throw error;
     }
   }
 
-  /**
-   * Get cart history for a user
-   */
   async getCartHistory(params: {
     userId: string;
     businessUnitId: string;
     page?: number;
     limit?: number;
-  }): Promise<{ carts: any[]; total: number; page: number; totalPages: number; limit: number }> {
+  }): Promise<{
+    carts: any[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
     try {
       const { userId, businessUnitId, page = 1, limit = 10 } = params;
       const skip = (page - 1) * limit;
@@ -1695,12 +1885,10 @@ export class CartService extends BaseService {
       };
     } catch (error) {
       this.handleError(error, 'CartService.getCartHistory');
+      throw error;
     }
   }
 
-  /**
-   * Save cart for later
-   */
   async saveCartForLater(cartId: string): Promise<CartResponse> {
     try {
       const cart = await this.prisma.cart.update({
@@ -1737,284 +1925,62 @@ export class CartService extends BaseService {
       });
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        cart.businessUnitId
+      );
     } catch (error) {
       this.handleError(error, 'CartService.saveCartForLater');
+      throw error;
     }
   }
 
-  /**
-   * Restore saved cart
-   */
-  async restoreSavedCart(savedCartId: string, userId: string, businessUnitId: string): Promise<CartResponse> {
-    try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const savedCart = await tx.cart.findUnique({
-          where: { id: savedCartId },
-          include: {
-            items: true,
-          },
-        });
-
-        if (!savedCart) {
-          throw new AppError('Saved cart not found', 404);
-        }
-
-        if (savedCart.userId !== userId) {
-          throw new AppError('You do not have permission to restore this cart', 403);
-        }
-
-        if (savedCart.status && savedCart.status !== 'SAVED') {
-          throw new AppError('Cart is not saved', 400);
-        }
-
-        let activeCart: any = await tx.cart.findFirst({
-          where: {
-            userId,
-            businessUnitId,
-            status: 'ACTIVE',
-          },
-        });
-
-        if (activeCart) {
-          await tx.cartItem.deleteMany({
-            where: { cartId: activeCart.id },
-          });
-        } else {
-          activeCart = await tx.cart.create({
-            data: {
-              userId,
-              businessUnitId,
-              subtotal: 0,
-              tax: 0,
-              discount: 0,
-              total: 0,
-            },
-          });
-        }
-
-        for (const item of savedCart.items) {
-          await tx.cartItem.create({
-            data: {
-              cartId: activeCart.id,
-              productId: item.productId,
-              variantId: item.variantId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              total: item.total,
-              notes: item.notes,
-            },
-          });
-        }
-
-        await tx.cart.update({
-          where: { id: savedCartId },
-          data: {
-            status: 'ACTIVE',
-          },
-        });
-
-        const updatedCart = await this.recalculateCart(tx, activeCart.id, businessUnitId);
-
-        const cartWithStatus = ensureCartStatus(updatedCart);
-        return await this.formatCartResponse(cartWithStatus, businessUnitId);
-      });
-    } catch (error) {
-      this.handleError(error, 'CartService.restoreSavedCart');
-    }
-  }
-
-  /**
-   * Transfer cart to another user
-   */
-  async transferCart(fromUserId: string, toUserId: string, businessUnitId: string): Promise<CartResponse> {
-    try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const targetUser = await tx.user.findUnique({
-          where: { id: toUserId },
-        });
-
-        if (!targetUser) {
-          throw new AppError('Target user not found', 404);
-        }
-
-        const sourceCart = await tx.cart.findFirst({
-          where: {
-            userId: fromUserId,
-            businessUnitId,
-            status: 'ACTIVE',
-          },
-        });
-
-        if (!sourceCart) {
-          throw new AppError('Source cart not found', 404);
-        }
-
-        let targetCart: any = await tx.cart.findFirst({
-          where: {
-            userId: toUserId,
-            businessUnitId,
-            status: 'ACTIVE',
-          },
-        });
-
-        if (targetCart) {
-          const sourceItems = await tx.cartItem.findMany({
-            where: { cartId: sourceCart.id },
-          });
-
-          for (const item of sourceItems) {
-            const existingItem = await tx.cartItem.findFirst({
-              where: {
-                cartId: targetCart.id,
-                productId: item.productId,
-                variantId: item.variantId || null,
-              },
-            });
-
-            if (existingItem) {
-              await tx.cartItem.update({
-                where: { id: existingItem.id },
-                data: {
-                  quantity: existingItem.quantity + item.quantity,
-                  total: (existingItem.quantity + item.quantity) * item.unitPrice,
-                },
-              });
-            } else {
-              await tx.cartItem.create({
-                data: {
-                  cartId: targetCart.id,
-                  productId: item.productId,
-                  variantId: item.variantId,
-                  quantity: item.quantity,
-                  unitPrice: item.unitPrice,
-                  total: item.total,
-                  notes: item.notes,
-                },
-              });
-            }
-          }
-
-          await tx.cartItem.deleteMany({
-            where: { cartId: sourceCart.id },
-          });
-
-          await tx.cart.update({
-            where: { id: sourceCart.id },
-            data: {
-              subtotal: 0,
-              tax: 0,
-              discount: 0,
-              total: 0,
-              status: 'ABANDONED',
-            },
-          });
-
-          const updatedCart = await this.recalculateCart(tx, targetCart.id, businessUnitId);
-
-          const cartWithStatus = ensureCartStatus(updatedCart);
-          return await this.formatCartResponse(cartWithStatus, businessUnitId);
-        } else {
-          const transferredCart = await tx.cart.update({
-            where: { id: sourceCart.id },
-            data: {
-              userId: toUserId,
-            },
-            include: {
-              items: {
-                include: {
-                  product: {
-                    select: {
-                      id: true,
-                      name: true,
-                      sku: true,
-                      unitPrice: true,
-                      images: true,
-                      taxRate: true,
-                    },
-                  },
-                  variant: {
-                    select: {
-                      id: true,
-                      name: true,
-                      sku: true,
-                      price: true,
-                      attributes: true,
-                    },
-                  },
-                },
-              },
-              customer: true,
-            },
-          });
-
-          const cartWithStatus = ensureCartStatus(transferredCart);
-          return await this.formatCartResponse(cartWithStatus, businessUnitId);
-        }
-      });
-    } catch (error) {
-      this.handleError(error, 'CartService.transferCart');
-    }
-  }
-
-  /**
-   * Split cart items
-   */
-  async splitCart(
+  async restoreSavedCart(
+    savedCartId: string,
     userId: string,
-    splits: Array<{ cartItemId: string; quantity: number; targetUserId: string }>,
     businessUnitId: string
-  ): Promise<{ sourceCart: CartResponse; targetCarts: CartResponse[] }> {
+  ): Promise<CartResponse> {
     try {
-      return await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const sourceCart = await tx.cart.findFirst({
-          where: {
-            userId,
-            businessUnitId,
-            status: 'ACTIVE',
-          },
-        });
-
-        if (!sourceCart) {
-          throw new AppError('Source cart not found', 404);
-        }
-
-        const targetCarts: CartResponse[] = [];
-        const processedItems: string[] = [];
-
-        for (const split of splits) {
-          if (processedItems.includes(split.cartItemId)) {
-            continue;
-          }
-
-          const cartItem = await tx.cartItem.findUnique({
-            where: { id: split.cartItemId },
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const savedCart = await tx.cart.findUnique({
+            where: { id: savedCartId },
+            include: {
+              items: true,
+            },
           });
 
-          if (!cartItem) {
-            throw new AppError(`Cart item ${split.cartItemId} not found`, 404);
+          if (!savedCart) {
+            throw new AppError('Saved cart not found', 404);
           }
 
-          if (cartItem.cartId !== sourceCart.id) {
-            throw new AppError(`Cart item ${split.cartItemId} does not belong to source cart`, 400);
+          if (savedCart.userId !== userId) {
+            throw new AppError(
+              'You do not have permission to restore this cart',
+              403
+            );
           }
 
-          if (cartItem.quantity < split.quantity) {
-            throw new AppError(`Insufficient quantity for item ${cartItem.id}`, 400);
+          if (savedCart.status && savedCart.status !== 'SAVED') {
+            throw new AppError('Cart is not saved', 400);
           }
 
-          let targetCart: any = await tx.cart.findFirst({
+          let activeCart: any = await tx.cart.findFirst({
             where: {
-              userId: split.targetUserId,
+              userId,
               businessUnitId,
               status: 'ACTIVE',
             },
           });
 
-          if (!targetCart) {
-            targetCart = await tx.cart.create({
+          if (activeCart) {
+            await tx.cartItem.deleteMany({
+              where: { cartId: activeCart.id },
+            });
+          } else {
+            activeCart = await tx.cart.create({
               data: {
-                userId: split.targetUserId,
+                userId,
                 businessUnitId,
                 subtotal: 0,
                 tax: 0,
@@ -2024,50 +1990,339 @@ export class CartService extends BaseService {
             });
           }
 
-          await tx.cartItem.create({
-            data: {
-              cartId: targetCart.id,
-              productId: cartItem.productId,
-              variantId: cartItem.variantId,
-              quantity: split.quantity,
-              unitPrice: cartItem.unitPrice,
-              total: split.quantity * cartItem.unitPrice,
-              notes: cartItem.notes,
-            },
-          });
-
-          if (cartItem.quantity === split.quantity) {
-            await tx.cartItem.delete({
-              where: { id: split.cartItemId },
-            });
-          } else {
-            await tx.cartItem.update({
-              where: { id: split.cartItemId },
+          for (const item of savedCart.items) {
+            await tx.cartItem.create({
               data: {
-                quantity: cartItem.quantity - split.quantity,
-                total: (cartItem.quantity - split.quantity) * cartItem.unitPrice,
+                cartId: activeCart.id,
+                productId: item.productId,
+                variantId: item.variantId,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                total: item.total,
+                notes: item.notes,
               },
             });
           }
 
-          processedItems.push(split.cartItemId);
+          await tx.cart.update({
+            where: { id: savedCartId },
+            data: {
+              status: 'ACTIVE',
+            },
+          });
 
-          const updatedTargetCart = await this.recalculateCart(tx, targetCart.id, businessUnitId);
-          const targetCartWithStatus = ensureCartStatus(updatedTargetCart);
-          targetCarts.push(await this.formatCartResponse(targetCartWithStatus, businessUnitId));
+          const updatedCart = await this.recalculateCart(
+            tx,
+            activeCart.id,
+            businessUnitId
+          );
+
+          const cartWithStatus = ensureCartStatus(updatedCart);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            businessUnitId
+          );
         }
+      );
+    } catch (error) {
+      this.handleError(error, 'CartService.restoreSavedCart');
+      throw error;
+    }
+  }
 
-        const updatedSourceCart = await this.recalculateCart(tx, sourceCart.id, businessUnitId);
-        const sourceCartWithStatus = ensureCartStatus(updatedSourceCart);
-        const sourceCartResponse = await this.formatCartResponse(sourceCartWithStatus, businessUnitId);
+  async transferCart(
+    fromUserId: string,
+    toUserId: string,
+    businessUnitId: string
+  ): Promise<CartResponse> {
+    try {
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const targetUser = await tx.user.findUnique({
+            where: { id: toUserId },
+          });
 
-        return {
-          sourceCart: sourceCartResponse,
-          targetCarts,
-        };
-      });
+          if (!targetUser) {
+            throw new AppError('Target user not found', 404);
+          }
+
+          const sourceCart = await tx.cart.findFirst({
+            where: {
+              userId: fromUserId,
+              businessUnitId,
+              status: 'ACTIVE',
+            },
+          });
+
+          if (!sourceCart) {
+            throw new AppError('Source cart not found', 404);
+          }
+
+          let targetCart: any = await tx.cart.findFirst({
+            where: {
+              userId: toUserId,
+              businessUnitId,
+              status: 'ACTIVE',
+            },
+          });
+
+          if (targetCart) {
+            const sourceItems = await tx.cartItem.findMany({
+              where: { cartId: sourceCart.id },
+            });
+
+            for (const item of sourceItems) {
+              const existingItem = await tx.cartItem.findFirst({
+                where: {
+                  cartId: targetCart.id,
+                  productId: item.productId,
+                  variantId: item.variantId || null,
+                },
+              });
+
+              if (existingItem) {
+                await tx.cartItem.update({
+                  where: { id: existingItem.id },
+                  data: {
+                    quantity: existingItem.quantity + item.quantity,
+                    total:
+                      (existingItem.quantity + item.quantity) *
+                      item.unitPrice,
+                  },
+                });
+              } else {
+                await tx.cartItem.create({
+                  data: {
+                    cartId: targetCart.id,
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    total: item.total,
+                    notes: item.notes,
+                  },
+                });
+              }
+            }
+
+            await tx.cartItem.deleteMany({
+              where: { cartId: sourceCart.id },
+            });
+
+            await tx.cart.update({
+              where: { id: sourceCart.id },
+              data: {
+                subtotal: 0,
+                tax: 0,
+                discount: 0,
+                total: 0,
+                status: 'ABANDONED',
+              },
+            });
+
+            const updatedCart = await this.recalculateCart(
+              tx,
+              targetCart.id,
+              businessUnitId
+            );
+
+            const cartWithStatus = ensureCartStatus(updatedCart);
+            return await this.formatCartResponse(
+              cartWithStatus,
+              businessUnitId
+            );
+          } else {
+            const transferredCart = await tx.cart.update({
+              where: { id: sourceCart.id },
+              data: {
+                userId: toUserId,
+              },
+              include: {
+                items: {
+                  include: {
+                    product: {
+                      select: {
+                        id: true,
+                        name: true,
+                        sku: true,
+                        unitPrice: true,
+                        images: true,
+                        taxRate: true,
+                      },
+                    },
+                    variant: {
+                      select: {
+                        id: true,
+                        name: true,
+                        sku: true,
+                        price: true,
+                        attributes: true,
+                      },
+                    },
+                  },
+                },
+                customer: true,
+              },
+            });
+
+            const cartWithStatus = ensureCartStatus(transferredCart);
+            return await this.formatCartResponse(
+              cartWithStatus,
+              businessUnitId
+            );
+          }
+        }
+      );
+    } catch (error) {
+      this.handleError(error, 'CartService.transferCart');
+      throw error;
+    }
+  }
+
+  async splitCart(
+    userId: string,
+    splits: Array<{
+      cartItemId: string;
+      quantity: number;
+      targetUserId: string;
+    }>,
+    businessUnitId: string
+  ): Promise<{ sourceCart: CartResponse; targetCarts: CartResponse[] }> {
+    try {
+      return await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const sourceCart = await tx.cart.findFirst({
+            where: {
+              userId,
+              businessUnitId,
+              status: 'ACTIVE',
+            },
+          });
+
+          if (!sourceCart) {
+            throw new AppError('Source cart not found', 404);
+          }
+
+          const targetCarts: CartResponse[] = [];
+          const processedItems: string[] = [];
+
+          for (const split of splits) {
+            if (processedItems.includes(split.cartItemId)) {
+              continue;
+            }
+
+            const cartItem = await tx.cartItem.findUnique({
+              where: { id: split.cartItemId },
+            });
+
+            if (!cartItem) {
+              throw new AppError(
+                `Cart item ${split.cartItemId} not found`,
+                404
+              );
+            }
+
+            if (cartItem.cartId !== sourceCart.id) {
+              throw new AppError(
+                `Cart item ${split.cartItemId} does not belong to source cart`,
+                400
+              );
+            }
+
+            if (cartItem.quantity < split.quantity) {
+              throw new AppError(
+                `Insufficient quantity for item ${cartItem.id}`,
+                400
+              );
+            }
+
+            let targetCart: any = await tx.cart.findFirst({
+              where: {
+                userId: split.targetUserId,
+                businessUnitId,
+                status: 'ACTIVE',
+              },
+            });
+
+            if (!targetCart) {
+              targetCart = await tx.cart.create({
+                data: {
+                  userId: split.targetUserId,
+                  businessUnitId,
+                  subtotal: 0,
+                  tax: 0,
+                  discount: 0,
+                  total: 0,
+                },
+              });
+            }
+
+            await tx.cartItem.create({
+              data: {
+                cartId: targetCart.id,
+                productId: cartItem.productId,
+                variantId: cartItem.variantId,
+                quantity: split.quantity,
+                unitPrice: cartItem.unitPrice,
+                total: split.quantity * cartItem.unitPrice,
+                notes: cartItem.notes,
+              },
+            });
+
+            if (cartItem.quantity === split.quantity) {
+              await tx.cartItem.delete({
+                where: { id: split.cartItemId },
+              });
+            } else {
+              await tx.cartItem.update({
+                where: { id: split.cartItemId },
+                data: {
+                  quantity: cartItem.quantity - split.quantity,
+                  total:
+                    (cartItem.quantity - split.quantity) *
+                    cartItem.unitPrice,
+                },
+              });
+            }
+
+            processedItems.push(split.cartItemId);
+
+            const updatedTargetCart = await this.recalculateCart(
+              tx,
+              targetCart.id,
+              businessUnitId
+            );
+            const targetCartWithStatus = ensureCartStatus(
+              updatedTargetCart
+            );
+            targetCarts.push(
+              await this.formatCartResponse(
+                targetCartWithStatus,
+                businessUnitId
+              )
+            );
+          }
+
+          const updatedSourceCart = await this.recalculateCart(
+            tx,
+            sourceCart.id,
+            businessUnitId
+          );
+          const sourceCartWithStatus = ensureCartStatus(updatedSourceCart);
+          const sourceCartResponse = await this.formatCartResponse(
+            sourceCartWithStatus,
+            businessUnitId
+          );
+
+          return {
+            sourceCart: sourceCartResponse,
+            targetCarts,
+          };
+        }
+      );
     } catch (error) {
       this.handleError(error, 'CartService.splitCart');
+      throw error;
     }
   }
 }

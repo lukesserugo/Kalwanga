@@ -953,13 +953,13 @@ export class PaymentService extends BaseService {
    */
   async processPayment(data: ProcessPaymentData): Promise<any> {
     try {
-      const { 
-        amount, 
-        paymentMethod, 
-        saleId, 
-        orderId, 
-        userId, 
-        cashRegisterId, 
+      const {
+        amount,
+        paymentMethod,
+        saleId,
+        orderId,
+        userId,
+        cashRegisterId,
         cashRegisterSessionId,
         gatewayId,
         currency = 'USD',
@@ -1055,6 +1055,57 @@ export class PaymentService extends BaseService {
         providerName = paymentResult.provider || paymentMethod;
       }
 
+      // ✅ Resolve the actual PaymentGateway FK.
+      //
+      // `gatewayId` in the Payment model is a foreign key to
+      // `PaymentGateway.id` (the Stripe/Paystack/... credential rows).
+      // For CASH, MOBILE_MONEY, BANK_TRANSFER, GIFT_CARD, LOYALTY_POINTS
+      // there is no gateway row, so it MUST be null — writing "CASH"
+      // here throws a foreign key constraint violation.
+      //
+      // Only resolve to a real gateway row for the providers that have
+      // one. The provider NAME (e.g. "CASH", "STRIPE") is preserved in
+      // metadata.provider below so reports can still group by it.
+      let resolvedGatewayId: string | null = null;
+      const methodNeedsGateway =
+        paymentMethod === 'CREDIT_CARD' ||
+        paymentMethod === 'DEBIT_CARD' ||
+        paymentMethod === 'PAYPAL' ||
+        paymentMethod === 'FLUTTERWAVE' ||
+        paymentMethod === 'PAYSTACK' ||
+        paymentMethod === 'SQUARE';
+
+      if (methodNeedsGateway) {
+        // Prefer an explicit gatewayId if the caller supplied one AND
+        // it points at a real gateway row.
+        if (gatewayId) {
+          const gatewayExists = await this.prisma.paymentGateway.findUnique({
+            where: { id: gatewayId },
+            select: { id: true },
+          });
+          if (gatewayExists) {
+            resolvedGatewayId = gatewayExists.id;
+          }
+        }
+
+        // Otherwise look up a PaymentGateway row for this provider by name.
+        if (!resolvedGatewayId && providerName) {
+          const gateway = await this.prisma.paymentGateway.findFirst({
+            where: {
+              isActive: true,
+              OR: [
+                { name: { equals: providerName, mode: 'insensitive' } },
+                { type: { equals: providerName, mode: 'insensitive' } },
+              ],
+            },
+            select: { id: true },
+          });
+          if (gateway) {
+            resolvedGatewayId = gateway.id;
+          }
+        }
+      }
+
       // Create payment record
       const payment = await this.prisma.payment.create({
         data: {
@@ -1070,9 +1121,15 @@ export class PaymentService extends BaseService {
           userId,
           cashRegisterId: cashRegisterId || null,
           cashRegisterSessionId: cashRegisterSessionId || null,
-          gatewayId: gatewayId || providerName || null,
+          gatewayId: resolvedGatewayId,
+          businessUnitId: businessUnitId || null,
           metadata: {
+            provider: providerName,
             providerResponse: paymentResult,
+            source,
+            customerId,
+            tipAmount,
+            savePaymentMethod,
             ...metadata,
           },
         },

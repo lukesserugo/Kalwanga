@@ -1415,6 +1415,7 @@ model OrderItem {
   id        String  @id @default(cuid())
   quantity  Int
   unitPrice Float
+  discount  Float   @default(0)
   total     Float
   notes     String?
 
@@ -1473,6 +1474,7 @@ model SaleItem {
   id        String  @id @default(cuid())
   quantity  Int
   unitPrice Float
+  discount  Float   @default(0)
   total     Float
   notes     String?
 
@@ -1498,6 +1500,7 @@ model Payment {
   transactionId String?
   reference     String?
   notes         String?
+  metadata      Json? 
   processedAt   DateTime      @default(now())
 
   saleId                String?
@@ -1880,6 +1883,8 @@ model CashRegisterSession {
   sales            Sale[]
   payments         Payment[]
   cashTransactions CashTransaction[]
+    // ✅ NEW: back-relation
+  shiftLog ShiftLog?
 
   @@map("cash_register_sessions")
 }
@@ -2097,6 +2102,10 @@ model ShiftLog {
   businessUnitId String
   businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
 
+  // ✅ NEW: optional link to the session
+  cashRegisterSessionId String?              @unique
+  cashRegisterSession   CashRegisterSession? @relation(fields: [cashRegisterSessionId], references: [id])
+
   @@map("shift_logs")
 }
 
@@ -2110,6 +2119,9 @@ model Notification {
   link      String?
   createdAt DateTime             @default(now())
   readAt    DateTime?
+
+  // ✅ ADD THIS
+  data Json?
 
   userId         String
   user           User          @relation(fields: [userId], references: [id])

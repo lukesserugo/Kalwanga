@@ -77,6 +77,18 @@ interface RefundItemInput {
 // ============================================
 
 export class SaleService extends BaseService {
+
+  private async findActiveSession(tx: any, userId: string, businessUnitId: string) {
+    return tx.cashRegisterSession.findFirst({
+      where: {
+        userId,
+        status: 'OPEN',
+        cashRegister: { businessUnitId },
+      },
+      orderBy: { openedAt: 'desc' },
+    });
+  }
+
   /**
    * Safely emit new sale event
    */
@@ -378,7 +390,7 @@ export class SaleService extends BaseService {
   // ============================================
   // PUBLIC METHODS
   // ============================================
-
+  
   /**
    * Get all sales with pagination and filters
    */
@@ -963,13 +975,27 @@ export class SaleService extends BaseService {
       return await this.prisma.$transaction(async (tx: any) => {
         await this.validateStock(tx, data.items, data.businessUnitId);
 
+        // ✅ Auto-detect the active shift session for this user
+        const activeSession = await this.findActiveSession(
+          tx,
+          userId,
+          data.businessUnitId
+        );
+
+        const cashRegisterId =
+          data.cashRegisterId || activeSession?.cashRegisterId || null;
+        const cashRegisterSessionId =
+          data.cashRegisterSessionId || activeSession?.id || null;
+
         const receiptNumber = generateReceiptNumber();
         const subtotal = calculateTotal(data.items);
         const taxRate = data.taxRate || 0;
         const tax = calculateTax(subtotal, taxRate);
         const discount = data.discount || 0;
         const tipAmount = data.tipAmount || 0;
-        const loyaltyDiscount = data.loyaltyPointsUsed ? data.loyaltyPointsUsed * 0.1 : 0;
+        const loyaltyDiscount = data.loyaltyPointsUsed
+          ? data.loyaltyPointsUsed * 0.1
+          : 0;
         const total = subtotal + tax - discount - loyaltyDiscount + tipAmount;
         const paidAmount = data.paidAmount || total;
         const changeAmount = Math.max(0, paidAmount - total);
@@ -987,8 +1013,8 @@ export class SaleService extends BaseService {
             businessUnitId: data.businessUnitId,
             userId,
             customerId: data.customerId,
-            cashRegisterId: data.cashRegisterId,
-            cashRegisterSessionId: data.cashRegisterSessionId,
+            cashRegisterId,               // ✅ auto-linked
+            cashRegisterSessionId,        // ✅ auto-linked
             status: 'COMPLETED',
             saleDate: new Date(),
           },
@@ -998,7 +1024,6 @@ export class SaleService extends BaseService {
           const product = await tx.product.findUnique({
             where: { id: item.productId },
           });
-
           if (!product) {
             throw new AppError(`Product ${item.productId} not found`, 404);
           }
@@ -1011,7 +1036,7 @@ export class SaleService extends BaseService {
               quantity: item.quantity,
               unitPrice: item.unitPrice,
               discount: item.discount || 0,
-              total: (item.quantity * item.unitPrice) - (item.discount || 0),
+              total: item.quantity * item.unitPrice - (item.discount || 0),
               notes: item.notes,
             },
           });
@@ -1029,8 +1054,8 @@ export class SaleService extends BaseService {
         await this.createSalePayment(tx, sale.id, userId, {
           paymentMethod: data.paymentMethod,
           paidAmount: paidAmount,
-          cashRegisterId: data.cashRegisterId,
-          cashRegisterSessionId: data.cashRegisterSessionId,
+          cashRegisterId,               // ✅ auto-linked
+          cashRegisterSessionId,        // ✅ auto-linked
           reference: `PAY-${receiptNumber}`,
         });
 
@@ -1056,6 +1081,7 @@ export class SaleService extends BaseService {
             total,
             items: data.items.length,
             paymentMethod: data.paymentMethod,
+            cashRegisterSessionId,      // ✅ log the link
           },
           'INFO'
         );
@@ -1078,9 +1104,7 @@ export class SaleService extends BaseService {
     paymentData: SalePaymentData
   ) {
     try {
-      if (!cartId) {
-        throw new AppError('Cart ID is required', 400);
-      }
+      if (!cartId) throw new AppError('Cart ID is required', 400);
 
       return await this.prisma.$transaction(async (tx: any) => {
         const cart = await tx.cart.findUnique({
@@ -1088,11 +1112,7 @@ export class SaleService extends BaseService {
           include: {
             items: {
               include: {
-                product: {
-                  include: {
-                    inventory: true,
-                  },
-                },
+                product: { include: { inventory: true } },
                 variant: true,
               },
             },
@@ -1100,13 +1120,13 @@ export class SaleService extends BaseService {
           },
         });
 
-        if (!cart) {
-          throw new AppError('Cart not found', 404);
-        }
+        if (!cart) throw new AppError('Cart not found', 404);
+        if (cart.items.length === 0) throw new AppError('Cart is empty', 400);
 
-        if (cart.items.length === 0) {
-          throw new AppError('Cart is empty', 400);
-        }
+        // ✅ Auto-link to the active shift session
+        const activeSession = await this.findActiveSession(tx, userId, cart.businessUnitId);
+        const cashRegisterId = paymentData.cashRegisterId || activeSession?.cashRegisterId || null;
+        const cashRegisterSessionId = paymentData.cashRegisterSessionId || activeSession?.id || null;
 
         let total = cart.total;
         let loyaltyPointsUsed = 0;
@@ -1153,8 +1173,8 @@ export class SaleService extends BaseService {
             businessUnitId: cart.businessUnitId,
             userId,
             customerId: cart.customerId,
-            cashRegisterId: paymentData.cashRegisterId,
-            cashRegisterSessionId: paymentData.cashRegisterSessionId,
+            cashRegisterId,                 // ✅ auto-linked
+            cashRegisterSessionId,          // ✅ auto-linked
             status: 'COMPLETED',
             saleDate: new Date(),
           },
@@ -1187,8 +1207,8 @@ export class SaleService extends BaseService {
         await this.createSalePayment(tx, sale.id, userId, {
           paymentMethod: paymentData.paymentMethod,
           paidAmount: paidAmount,
-          cashRegisterId: paymentData.cashRegisterId,
-          cashRegisterSessionId: paymentData.cashRegisterSessionId,
+          cashRegisterId,                 // ✅ auto-linked
+          cashRegisterSessionId,          // ✅ auto-linked
           reference: `PAY-${receiptNumber}`,
         });
 
@@ -1225,8 +1245,9 @@ export class SaleService extends BaseService {
           {
             total,
             items: cart.items.length,
-            cartId: cartId,
+            cartId,
             paymentMethod: paymentData.paymentMethod,
+            cashRegisterSessionId,        // ✅ log the link
           },
           'INFO'
         );

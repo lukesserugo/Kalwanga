@@ -13,14 +13,13 @@ const cartService = new CartService();
 // VALIDATION SCHEMAS
 // ============================================
 
-// ✅ FIXED: More permissive productId validation
 const addItemSchema = z.object({
-  productId: z.string()
+  productId: z
+    .string()
     .min(1, 'Product ID is required')
     .refine(
       (val) => {
         const trimmed = val.trim();
-        // Accept any non-empty string without spaces
         return trimmed.length > 0 && !trimmed.includes(' ');
       },
       { message: 'Invalid product ID format' }
@@ -54,7 +53,14 @@ const associateCustomerSchema = z.object({
 
 const checkoutSchema = z.object({
   customerId: z.string().optional(),
-  paymentMethod: z.enum(['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY', 'BANK_TRANSFER', 'GIFT_CARD']),
+  paymentMethod: z.enum([
+    'CASH',
+    'CREDIT_CARD',
+    'DEBIT_CARD',
+    'MOBILE_MONEY',
+    'BANK_TRANSFER',
+    'GIFT_CARD',
+  ]),
   paidAmount: z.number().positive('Paid amount must be positive'),
   cashRegisterId: z.string().optional(),
   cashRegisterSessionId: z.string().optional(),
@@ -76,73 +82,122 @@ const transferCartSchema = z.object({
 });
 
 const splitCartSchema = z.object({
-  items: z.array(z.object({
-    cartItemId: z.string().min(1, 'Cart item ID is required'),
-    quantity: z.number().int().positive('Quantity must be positive'),
-    targetUserId: z.string().min(1, 'Target user ID is required'),
-  })).min(1, 'At least one item split is required'),
+  items: z
+    .array(
+      z.object({
+        cartItemId: z.string().min(1, 'Cart item ID is required'),
+        quantity: z.number().int().positive('Quantity must be positive'),
+        targetUserId: z.string().min(1, 'Target user ID is required'),
+      })
+    )
+    .min(1, 'At least one item split is required'),
 });
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================
 
+/**
+ * Resolve the effective business unit ID for a request.
+ *
+ * ✅ FIXED: Explicit header / body / query value is now checked FIRST,
+ *    then the user's own unit, then the most recent active unit.
+ *    Previously the user's unit won over explicit params, and the
+ *    `x-business-unit-id` header was ignored entirely.
+ */
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
-  
-  let businessUnitId = 
-    user?.businessUnitId || 
+
+  // 1. Explicit override (header > body > query)
+  const explicit =
+    (req.headers['x-business-unit-id'] as string | undefined) ||
+    (req.body?.businessUnitId as string | undefined) ||
+    (req.query?.businessUnitId as string | undefined);
+
+  if (
+    explicit &&
+    explicit !== 'default' &&
+    explicit !== 'default-business-unit'
+  ) {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: explicit },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
+    }
+    console.warn(
+      `⚠️ Explicit businessUnitId "${explicit}" not found or inactive, falling back`
+    );
+  }
+
+  // 2. User's own unit
+  const userBu =
+    user?.businessUnitId ||
     user?.businessUnits?.[0]?.businessUnitId ||
-    req.body?.businessUnitId ||
-    req.query?.businessUnitId;
-  
-  if (!businessUnitId || businessUnitId === 'default') {
-    try {
-      const businessUnit = await prisma.businessUnit.findFirst({
-        where: { isActive: true },
-        orderBy: { createdAt: 'asc' },
-      });
-      
-      if (businessUnit) {
-        return businessUnit.id;
-      }
-      
-      let company = await prisma.company.findFirst();
-      if (!company) {
-        company = await prisma.company.create({
-          data: {
-            name: 'Default Company',
-            email: 'default@company.com',
-            phone: '+0000000000',
-            isActive: true,
-          },
-        });
-      }
-      
-      const newBusinessUnit = await prisma.businessUnit.create({
-        data: {
-          name: 'Default Business Unit',
-          code: 'DEFAULT',
-          isActive: true,
-          companyId: company.id,
-        },
-      });
-      
-      return newBusinessUnit.id;
-    } catch (error) {
-      console.error('❌ Failed to get/create default business unit:', error);
-      throw new AppError('Failed to resolve business unit ID', 500);
+    user?.businessUnits?.[0]?.id;
+
+  if (userBu && userBu !== 'default') {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: userBu },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
     }
   }
-  
-  return businessUnitId as string;
+
+  // 3. Fallback: most recent active unit
+  try {
+    const businessUnit = await prisma.businessUnit.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (businessUnit) {
+      console.log(
+        `✅ getBusinessUnitId: falling back to "${businessUnit.name}" (${businessUnit.id})`
+      );
+      return businessUnit.id;
+    }
+
+    // 4. Bootstrap a default company + unit
+    let company = await prisma.company.findFirst();
+    if (!company) {
+      company = await prisma.company.create({
+        data: {
+          name: 'Default Company',
+          email: 'default@company.com',
+          phone: '+0000000000',
+          isActive: true,
+        },
+      });
+    }
+
+    const newBusinessUnit = await prisma.businessUnit.create({
+      data: {
+        name: 'Default Business Unit',
+        code: `BU-${Date.now().toString().slice(-6)}`,
+        isActive: true,
+        companyId: company.id,
+      },
+    });
+
+    return newBusinessUnit.id;
+  } catch (error) {
+    console.error('❌ Failed to resolve business unit:', error);
+    throw new AppError('Failed to resolve business unit ID', 500);
+  }
 }
 
 async function safeEmitEvent(eventName: string, data: any): Promise<void> {
   try {
     if (realtimeService && typeof (realtimeService as any).emit === 'function') {
       await (realtimeService as any).emit(eventName, data);
-    } else if (realtimeService && typeof (realtimeService as any).emitCartEvent === 'function') {
+    } else if (
+      realtimeService &&
+      typeof (realtimeService as any).emitCartEvent === 'function'
+    ) {
       await (realtimeService as any).emitCartEvent(eventName, data);
     } else {
       console.log(`📡 Cart real-time event: ${eventName}`, data);
@@ -153,12 +208,16 @@ async function safeEmitEvent(eventName: string, data: any): Promise<void> {
 }
 
 // ============================================
-// EXPORT HELPER FUNCTIONS
+// EXPORT HELPERS
 // ============================================
 
-function generateCSV(analytics: any, detailedData: any[], includeSummary: boolean): string {
-  let rows: string[] = [];
-  
+function generateCSV(
+  analytics: any,
+  detailedData: any[],
+  includeSummary: boolean
+): string {
+  const rows: string[] = [];
+
   if (includeSummary) {
     rows.push('Cart Analytics Summary');
     rows.push(`Total Carts,${analytics.totalCarts}`);
@@ -167,8 +226,8 @@ function generateCSV(analytics: any, detailedData: any[], includeSummary: boolea
     rows.push(`Average Items,${analytics.averageItems}`);
     rows.push(`Average Value,${analytics.averageValue}`);
     rows.push(`Conversion Rate,${analytics.conversionRate}%`);
-    rows.push(`Today\'s Carts,${analytics.todayCarts}`);
-    rows.push(`Today\'s Revenue,${analytics.todayRevenue}`);
+    rows.push(`Today's Carts,${analytics.todayCarts}`);
+    rows.push(`Today's Revenue,${analytics.todayRevenue}`);
     rows.push('');
     rows.push('Status Breakdown');
     rows.push('Status,Count,Percentage');
@@ -180,12 +239,20 @@ function generateCSV(analytics: any, detailedData: any[], includeSummary: boolea
 
   if (detailedData.length > 0) {
     rows.push('Detailed Cart Data');
-    rows.push('Cart ID,Status,User,Customer,Items,Subtotal,Total,Created At');
+    rows.push(
+      'Cart ID,Status,User,Customer,Items,Subtotal,Total,Created At'
+    );
     detailedData.forEach((cart: any) => {
       const user = cart.user || {};
       const customer = cart.customer || {};
       rows.push(
-        `${cart.id},${cart.status},${user.firstName || ''} ${user.lastName || ''},${customer.firstName || ''} ${customer.lastName || ''},${cart.items?.length || 0},${cart.subtotal || 0},${cart.total || 0},${new Date(cart.createdAt).toLocaleString()}`
+        `${cart.id},${cart.status},${user.firstName || ''} ${
+          user.lastName || ''
+        },${customer.firstName || ''} ${customer.lastName || ''},${
+          cart.items?.length || 0
+        },${cart.subtotal || 0},${cart.total || 0},${new Date(
+          cart.createdAt
+        ).toLocaleString()}`
       );
     });
   }
@@ -193,17 +260,21 @@ function generateCSV(analytics: any, detailedData: any[], includeSummary: boolea
   return rows.join('\n');
 }
 
-async function generateExcel(analytics: any, detailedData: any[], includeSummary: boolean): Promise<Buffer> {
+async function generateExcel(
+  analytics: any,
+  detailedData: any[],
+  includeSummary: boolean
+): Promise<Buffer> {
   try {
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
-    
+
     const summarySheet = workbook.addWorksheet('Summary');
     summarySheet.columns = [
       { header: 'Metric', key: 'metric', width: 25 },
       { header: 'Value', key: 'value', width: 20 },
     ];
-    
+
     if (includeSummary) {
       const summaryData = [
         { metric: 'Total Carts', value: analytics.totalCarts },
@@ -211,13 +282,16 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
         { metric: 'Abandoned Carts', value: analytics.abandonedCarts },
         { metric: 'Average Items', value: analytics.averageItems },
         { metric: 'Average Value', value: analytics.averageValue },
-        { metric: 'Conversion Rate', value: `${analytics.conversionRate}%` },
+        {
+          metric: 'Conversion Rate',
+          value: `${analytics.conversionRate}%`,
+        },
         { metric: "Today's Carts", value: analytics.todayCarts },
         { metric: "Today's Revenue", value: analytics.todayRevenue },
       ];
-      summaryData.forEach(row => summarySheet.addRow(row));
+      summaryData.forEach((row) => summarySheet.addRow(row));
     }
-    
+
     summarySheet.getRow(1).font = { bold: true };
     summarySheet.getRow(1).fill = {
       type: 'pattern',
@@ -225,8 +299,11 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
       fgColor: { argb: 'FF4472C4' },
     };
     summarySheet.getRow(1).font = { color: { argb: 'FFFFFFFF' } };
-    
-    if (analytics.statusBreakdown && analytics.statusBreakdown.length > 0) {
+
+    if (
+      analytics.statusBreakdown &&
+      analytics.statusBreakdown.length > 0
+    ) {
       const statusSheet = workbook.addWorksheet('Status Breakdown');
       statusSheet.columns = [
         { header: 'Status', key: 'status', width: 20 },
@@ -248,8 +325,11 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
       };
       statusSheet.getRow(1).font = { color: { argb: 'FFFFFFFF' } };
     }
-    
-    if (analytics.categoryBreakdown && analytics.categoryBreakdown.length > 0) {
+
+    if (
+      analytics.categoryBreakdown &&
+      analytics.categoryBreakdown.length > 0
+    ) {
       const categorySheet = workbook.addWorksheet('Category Breakdown');
       categorySheet.columns = [
         { header: 'Category', key: 'category', width: 30 },
@@ -271,7 +351,7 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
       };
       categorySheet.getRow(1).font = { color: { argb: 'FFFFFFFF' } };
     }
-    
+
     if (detailedData.length > 0) {
       const detailsSheet = workbook.addWorksheet('Detailed Data');
       detailsSheet.columns = [
@@ -284,22 +364,25 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
         { header: 'Total', key: 'total', width: 15 },
         { header: 'Created At', key: 'createdAt', width: 25 },
       ];
-      
+
       detailedData.forEach((cart: any) => {
         const user = cart.user || {};
         const customer = cart.customer || {};
         detailsSheet.addRow({
           id: cart.id,
           status: cart.status,
-          user: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'N/A',
-          customer: `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A',
+          user:
+            `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'N/A',
+          customer:
+            `${customer.firstName || ''} ${customer.lastName || ''}`.trim() ||
+            'N/A',
           items: cart.items?.length || 0,
           subtotal: cart.subtotal || 0,
           total: cart.total || 0,
           createdAt: new Date(cart.createdAt).toLocaleString(),
         });
       });
-      
+
       detailsSheet.getRow(1).font = { bold: true };
       detailsSheet.getRow(1).fill = {
         type: 'pattern',
@@ -308,7 +391,7 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
       };
       detailsSheet.getRow(1).font = { color: { argb: 'FFFFFFFF' } };
     }
-    
+
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   } catch (error) {
@@ -317,23 +400,30 @@ async function generateExcel(analytics: any, detailedData: any[], includeSummary
   }
 }
 
-async function generatePDF(analytics: any, detailedData: any[], includeSummary: boolean, includeCharts: boolean): Promise<Buffer> {
+async function generatePDF(
+  analytics: any,
+  detailedData: any[],
+  includeSummary: boolean,
+  includeCharts: boolean
+): Promise<Buffer> {
   try {
     const PDFDocument = await import('pdfkit');
     const doc = new PDFDocument.default({ margin: 50 });
-    
+
     const chunks: Buffer[] = [];
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    
+
     doc.fontSize(24).text('Cart Analytics Report', { align: 'center' });
     doc.moveDown();
-    doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc
+      .fontSize(12)
+      .text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
     doc.moveDown(2);
-    
+
     if (includeSummary) {
       doc.fontSize(18).text('Summary', { underline: true });
       doc.moveDown();
-      
+
       const summaryData = [
         ['Total Carts', analytics.totalCarts.toString()],
         ['Active Carts', analytics.activeCarts.toString()],
@@ -344,27 +434,27 @@ async function generatePDF(analytics: any, detailedData: any[], includeSummary: 
         ["Today's Carts", analytics.todayCarts.toString()],
         ["Today's Revenue", `$${analytics.todayRevenue.toFixed(2)}`],
       ];
-      
+
       summaryData.forEach(([label, value]) => {
         doc.fontSize(12).text(`${label}: ${value}`, { indent: 20 });
       });
       doc.moveDown(2);
     }
-    
+
     if (analytics.statusBreakdown && analytics.statusBreakdown.length > 0) {
       doc.fontSize(18).text('Status Breakdown', { underline: true });
       doc.moveDown();
-      
+
       const tableTop = doc.y;
       const col1 = 50;
       const col2 = 200;
       const col3 = 350;
-      
+
       doc.fontSize(12).font('Helvetica-Bold');
       doc.text('Status', col1, tableTop);
       doc.text('Count', col2, tableTop);
       doc.text('Percentage', col3, tableTop);
-      
+
       doc.font('Helvetica');
       let rowY = tableTop + 20;
       analytics.statusBreakdown.forEach((row: any) => {
@@ -375,21 +465,24 @@ async function generatePDF(analytics: any, detailedData: any[], includeSummary: 
       });
       doc.moveDown(2);
     }
-    
-    if (analytics.categoryBreakdown && analytics.categoryBreakdown.length > 0) {
+
+    if (
+      analytics.categoryBreakdown &&
+      analytics.categoryBreakdown.length > 0
+    ) {
       doc.fontSize(18).text('Category Breakdown', { underline: true });
       doc.moveDown();
-      
+
       const tableTop = doc.y;
       const col1 = 50;
       const col2 = 250;
       const col3 = 400;
-      
+
       doc.fontSize(12).font('Helvetica-Bold');
       doc.text('Category', col1, tableTop);
       doc.text('Count', col2, tableTop);
       doc.text('Percentage', col3, tableTop);
-      
+
       doc.font('Helvetica');
       let rowY = tableTop + 20;
       analytics.categoryBreakdown.forEach((row: any) => {
@@ -400,7 +493,7 @@ async function generatePDF(analytics: any, detailedData: any[], includeSummary: 
       });
       doc.moveDown(2);
     }
-    
+
     const pageCount = doc.bufferedPageRange().count;
     for (let i = 0; i < pageCount; i++) {
       doc.switchToPage(i);
@@ -411,9 +504,9 @@ async function generatePDF(analytics: any, detailedData: any[], includeSummary: 
         { align: 'center' }
       );
     }
-    
+
     doc.end();
-    
+
     return new Promise<Buffer>((resolve, reject) => {
       doc.on('end', () => {
         resolve(Buffer.concat(chunks));
@@ -443,7 +536,6 @@ function getSummary(analytics: any) {
 
 export const cartController = {
   /**
-   * Get current user's cart
    * GET /cart
    */
   async getCart(req: Request, res: Response, next: NextFunction) {
@@ -451,7 +543,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -468,16 +560,15 @@ export const cartController = {
   },
 
   /**
-   * Get cart by ID
    * GET /cart/:id
    */
   async getCartById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       const cart = await cartService.getCartById(id, businessUnitId);
-      
+
       if (!cart) {
         throw new AppError('Cart not found', 404);
       }
@@ -492,7 +583,6 @@ export const cartController = {
   },
 
   /**
-   * Get cart count
    * GET /cart/count
    */
   async getCartCount(req: Request, res: Response, next: NextFunction) {
@@ -500,7 +590,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -517,7 +607,6 @@ export const cartController = {
   },
 
   /**
-   * Get cart summary
    * GET /cart/summary
    */
   async getCartSummary(req: Request, res: Response, next: NextFunction) {
@@ -525,7 +614,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -543,36 +632,39 @@ export const cartController = {
   },
 
   /**
-   * Add item to cart
    * POST /cart/items
-   * ✅ FIXED: Enhanced error handling and logging
    */
   async addItem(req: Request, res: Response, next: NextFunction) {
     try {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       console.log('📥 [addItem] Request body:', JSON.stringify(req.body, null, 2));
       console.log('📥 [addItem] User ID:', userId);
       console.log('📥 [addItem] Business Unit ID:', businessUnitId);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
 
-      // ✅ FIXED: Parse body and validate with Zod
       let validatedData;
       try {
         validatedData = addItemSchema.parse(req.body);
-        console.log('✅ [addItem] Validation passed:', JSON.stringify(validatedData, null, 2));
+        console.log(
+          '✅ [addItem] Validation passed:',
+          JSON.stringify(validatedData, null, 2)
+        );
       } catch (validationError) {
         if (validationError instanceof z.ZodError) {
-          console.error('❌ [addItem] Validation error:', validationError.errors);
+          console.error(
+            '❌ [addItem] Validation error:',
+            validationError.errors
+          );
           return res.status(400).json({
             success: false,
             message: 'Validation error',
-            errors: validationError.errors.map(e => ({
+            errors: validationError.errors.map((e) => ({
               field: e.path.join('.'),
               message: e.message,
             })),
@@ -581,7 +673,6 @@ export const cartController = {
         throw validationError;
       }
 
-      // ✅ FIXED: Ensure productId is a clean string
       const productId = String(validatedData.productId).trim();
       if (!productId || productId.length === 0) {
         console.error('❌ [addItem] Empty productId after validation');
@@ -592,7 +683,6 @@ export const cartController = {
         });
       }
 
-      // ✅ FIXED: Validate product exists
       const product = await prisma.product.findUnique({
         where: { id: productId },
         select: { id: true, name: true, isActive: true, unitPrice: true },
@@ -620,7 +710,7 @@ export const cartController = {
       const updatedCart = await cartService.addItemToCart(
         cart.id,
         {
-          productId: productId,
+          productId,
           variantId: validatedData.variantId,
           quantity: validatedData.quantity,
           notes: validatedData.notes,
@@ -634,7 +724,7 @@ export const cartController = {
       await safeEmitEvent('cart:item-added', {
         cartId: cart.id,
         userId,
-        productId: productId,
+        productId,
         variantId: validatedData.variantId,
         quantity: validatedData.quantity,
       });
@@ -650,7 +740,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -661,7 +751,6 @@ export const cartController = {
   },
 
   /**
-   * Add multiple items to cart
    * POST /cart/items/bulk
    */
   async addMultipleItems(req: Request, res: Response, next: NextFunction) {
@@ -669,7 +758,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -695,7 +784,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -706,7 +795,6 @@ export const cartController = {
   },
 
   /**
-   * Update cart item quantity
    * PUT /cart/items/:itemId
    */
   async updateItemQuantity(req: Request, res: Response, next: NextFunction) {
@@ -715,7 +803,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { itemId } = req.params;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -734,14 +822,17 @@ export const cartController = {
       res.status(200).json({
         success: true,
         data: updatedCart,
-        message: validatedData.quantity === 0 ? 'Item removed from cart' : 'Cart updated',
+        message:
+          validatedData.quantity === 0
+            ? 'Item removed from cart'
+            : 'Cart updated',
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -752,7 +843,6 @@ export const cartController = {
   },
 
   /**
-   * Remove item from cart
    * DELETE /cart/items/:itemId
    */
   async removeItem(req: Request, res: Response, next: NextFunction) {
@@ -761,7 +851,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { itemId } = req.params;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -781,7 +871,6 @@ export const cartController = {
   },
 
   /**
-   * Clear cart
    * DELETE /cart
    */
   async clearCart(req: Request, res: Response, next: NextFunction) {
@@ -789,7 +878,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -809,7 +898,6 @@ export const cartController = {
   },
 
   /**
-   * Apply discount to cart
    * POST /cart/discount
    */
   async applyDiscount(req: Request, res: Response, next: NextFunction) {
@@ -818,7 +906,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { discount, discountType } = applyDiscountSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -834,14 +922,16 @@ export const cartController = {
       res.status(200).json({
         success: true,
         data: updatedCart,
-        message: `${discountType === 'PERCENTAGE' ? 'Percentage' : 'Fixed'} discount applied`,
+        message: `${
+          discountType === 'PERCENTAGE' ? 'Percentage' : 'Fixed'
+        } discount applied`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -852,7 +942,6 @@ export const cartController = {
   },
 
   /**
-   * Apply promotion to cart
    * POST /cart/promotion
    */
   async applyPromotion(req: Request, res: Response, next: NextFunction) {
@@ -861,14 +950,17 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { promotionCode } = applyPromotionSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
 
       const cart = await cartService.getOrCreateCart(userId, businessUnitId);
 
-      const updatedCart = await cartService.applyPromotion(cart.id, promotionCode);
+      const updatedCart = await cartService.applyPromotion(
+        cart.id,
+        promotionCode
+      );
 
       res.status(200).json({
         success: true,
@@ -880,7 +972,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -891,7 +983,6 @@ export const cartController = {
   },
 
   /**
-   * Apply loyalty points to cart
    * POST /cart/loyalty
    */
   async applyLoyaltyPoints(req: Request, res: Response, next: NextFunction) {
@@ -900,7 +991,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { customerId, points } = applyLoyaltyPointsSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -923,7 +1014,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -934,7 +1025,6 @@ export const cartController = {
   },
 
   /**
-   * Associate customer with cart
    * POST /cart/customer
    */
   async associateCustomer(req: Request, res: Response, next: NextFunction) {
@@ -943,14 +1033,17 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { customerId } = associateCustomerSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
 
       const cart = await cartService.getOrCreateCart(userId, businessUnitId);
 
-      const updatedCart = await cartService.associateCustomer(cart.id, customerId);
+      const updatedCart = await cartService.associateCustomer(
+        cart.id,
+        customerId
+      );
 
       res.status(200).json({
         success: true,
@@ -962,7 +1055,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -973,7 +1066,6 @@ export const cartController = {
   },
 
   /**
-   * Update cart notes
    * PATCH /cart/notes
    */
   async updateCartNotes(req: Request, res: Response, next: NextFunction) {
@@ -982,7 +1074,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { notes } = updateCartNotesSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -1001,7 +1093,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -1012,17 +1104,16 @@ export const cartController = {
   },
 
   /**
-   * Get cart settings
    * GET /cart/settings
    */
   async getCartSettings(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       let settings = await prisma.cartSettings.findFirst({
         where: { businessUnitId },
       });
-      
+
       if (!settings) {
         settings = await prisma.cartSettings.create({
           data: {
@@ -1060,7 +1151,7 @@ export const cartController = {
           },
         });
       }
-      
+
       res.status(200).json({
         success: true,
         data: settings,
@@ -1071,14 +1162,13 @@ export const cartController = {
   },
 
   /**
-   * Update cart settings
    * PUT /cart/settings
    */
   async updateCartSettings(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const data = req.body;
-      
+
       const settings = await prisma.cartSettings.update({
         where: { businessUnitId },
         data: {
@@ -1086,7 +1176,7 @@ export const cartController = {
           updatedAt: new Date(),
         },
       });
-      
+
       res.status(200).json({
         success: true,
         data: settings,
@@ -1098,7 +1188,6 @@ export const cartController = {
   },
 
   /**
-   * Sync cart with inventory
    * POST /cart/sync
    */
   async syncCart(req: Request, res: Response, next: NextFunction) {
@@ -1106,18 +1195,23 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
 
       const cart = await cartService.getOrCreateCart(userId, businessUnitId);
-      const syncResult = await cartService.syncCartWithInventory(cart.id, businessUnitId);
+      const syncResult = await cartService.syncCartWithInventory(
+        cart.id,
+        businessUnitId
+      );
 
       res.status(200).json({
         success: true,
         data: syncResult,
-        message: syncResult.valid ? 'Cart is in sync with inventory' : 'Cart has inventory issues',
+        message: syncResult.valid
+          ? 'Cart is in sync with inventory'
+          : 'Cart has inventory issues',
       });
     } catch (error) {
       next(error);
@@ -1125,7 +1219,6 @@ export const cartController = {
   },
 
   /**
-   * Checkout cart
    * POST /cart/checkout
    */
   async checkout(req: Request, res: Response, next: NextFunction) {
@@ -1133,7 +1226,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -1141,25 +1234,28 @@ export const cartController = {
       const validatedData = checkoutSchema.parse(req.body);
 
       const cart = await cartService.getOrCreateCart(userId, businessUnitId);
-      
-      const cartWithItems = await cartService.getCartById(cart.id, businessUnitId);
-      if (!cartWithItems || !cartWithItems.items || cartWithItems.items.length === 0) {
+
+      const cartWithItems = await cartService.getCartById(
+        cart.id,
+        businessUnitId
+      );
+      if (
+        !cartWithItems ||
+        !cartWithItems.items ||
+        cartWithItems.items.length === 0
+      ) {
         throw new AppError('Cart is empty', 400);
       }
 
-      const result = await cartService.checkoutCart(
-        cart.id,
-        userId,
-        {
-          customerId: validatedData.customerId,
-          paymentMethod: validatedData.paymentMethod,
-          paidAmount: validatedData.paidAmount,
-          cashRegisterId: validatedData.cashRegisterId,
-          cashRegisterSessionId: validatedData.cashRegisterSessionId,
-          notes: validatedData.notes,
-          tipAmount: validatedData.tipAmount,
-        }
-      );
+      const result = await cartService.checkoutCart(cart.id, userId, {
+        customerId: validatedData.customerId,
+        paymentMethod: validatedData.paymentMethod,
+        paidAmount: validatedData.paidAmount,
+        cashRegisterId: validatedData.cashRegisterId,
+        cashRegisterSessionId: validatedData.cashRegisterSessionId,
+        notes: validatedData.notes,
+        tipAmount: validatedData.tipAmount,
+      });
 
       await safeEmitEvent('cart:checked-out', {
         cartId: cart.id,
@@ -1178,7 +1274,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -1189,7 +1285,6 @@ export const cartController = {
   },
 
   /**
-   * Transfer cart to another user
    * POST /cart/transfer
    */
   async transferCart(req: Request, res: Response, next: NextFunction) {
@@ -1198,12 +1293,16 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { fromUserId, toUserId } = transferCartSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
 
-      const result = await cartService.transferCart(fromUserId, toUserId, businessUnitId);
+      const result = await cartService.transferCart(
+        fromUserId,
+        toUserId,
+        businessUnitId
+      );
 
       res.status(200).json({
         success: true,
@@ -1215,7 +1314,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -1226,7 +1325,6 @@ export const cartController = {
   },
 
   /**
-   * Split cart items
    * POST /cart/split
    */
   async splitCart(req: Request, res: Response, next: NextFunction) {
@@ -1235,7 +1333,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { items } = splitCartSchema.parse(req.body);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -1252,7 +1350,7 @@ export const cartController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -1263,7 +1361,6 @@ export const cartController = {
   },
 
   /**
-   * Save cart for later
    * POST /cart/save-for-later
    */
   async saveCartForLater(req: Request, res: Response, next: NextFunction) {
@@ -1271,7 +1368,7 @@ export const cartController = {
       const user = (req as any).user;
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -1290,7 +1387,6 @@ export const cartController = {
   },
 
   /**
-   * Restore saved cart
    * POST /cart/restore
    */
   async restoreSavedCart(req: Request, res: Response, next: NextFunction) {
@@ -1299,7 +1395,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { savedCartId } = req.body;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -1308,7 +1404,11 @@ export const cartController = {
         throw new AppError('Saved cart ID is required', 400);
       }
 
-      const result = await cartService.restoreSavedCart(savedCartId, userId, businessUnitId);
+      const result = await cartService.restoreSavedCart(
+        savedCartId,
+        userId,
+        businessUnitId
+      );
 
       res.status(200).json({
         success: true,
@@ -1321,7 +1421,6 @@ export const cartController = {
   },
 
   /**
-   * Get cart history
    * GET /cart/history
    */
   async getCartHistory(req: Request, res: Response, next: NextFunction) {
@@ -1330,7 +1429,7 @@ export const cartController = {
       const userId = user?.id || user?.userId;
       const businessUnitId = await getBusinessUnitId(req);
       const { page, limit } = req.query;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 400);
       }
@@ -1358,7 +1457,6 @@ export const cartController = {
   },
 
   /**
-   * Get cart analytics
    * GET /cart/analytics
    */
   async getCartAnalytics(req: Request, res: Response, next: NextFunction) {
@@ -1382,7 +1480,6 @@ export const cartController = {
   },
 
   /**
-   * Export cart history
    * POST /cart/history/export
    */
   async exportCartHistory(req: Request, res: Response, next: NextFunction) {
@@ -1398,7 +1495,7 @@ export const cartController = {
       } = req.body;
 
       let start: Date, end: Date;
-      
+
       if (dateRange === 'custom' && startDate && endDate) {
         start = new Date(startDate);
         end = new Date(endDate);
@@ -1439,16 +1536,18 @@ export const cartController = {
           ...(status && status !== 'all' ? { status } : {}),
         },
         include: {
-          items: includeItems ? {
-            include: { product: true, variant: true }
-          } : false,
-          user: { 
-            select: { 
-              id: true, 
-              firstName: true, 
-              lastName: true, 
-              email: true 
-            } 
+          items: includeItems
+            ? {
+                include: { product: true, variant: true },
+              }
+            : false,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
           customer: true,
         },
@@ -1462,72 +1561,99 @@ export const cartController = {
 
       switch (format) {
         case 'csv': {
-          let rows: string[] = [];
+          const rows: string[] = [];
           rows.push('Cart History Export');
           rows.push(`Generated: ${new Date().toLocaleString()}`);
           rows.push('');
-          rows.push('Cart ID,Status,User,Email,Items,Subtotal,Total,Created At');
-          
+          rows.push(
+            'Cart ID,Status,User,Email,Items,Subtotal,Total,Created At'
+          );
+
           carts.forEach((cart: any) => {
             const user = cart.user || {};
             const itemsCount = cart.items?.length || 0;
             rows.push(
-              `${cart.id},${cart.status},${user.firstName || ''} ${user.lastName || ''},${user.email || ''},${itemsCount},${cart.subtotal || 0},${cart.total || 0},${new Date(cart.createdAt).toLocaleString()}`
+              `${cart.id},${cart.status},${user.firstName || ''} ${
+                user.lastName || ''
+              },${user.email || ''},${itemsCount},${cart.subtotal || 0},${
+                cart.total || 0
+              },${new Date(cart.createdAt).toLocaleString()}`
             );
           });
-          
+
           exportData = rows.join('\n');
           contentType = 'text/csv';
-          filename = `cart-history-${new Date().toISOString().split('T')[0]}.csv`;
+          filename = `cart-history-${
+            new Date().toISOString().split('T')[0]
+          }.csv`;
           break;
         }
 
         case 'json': {
-          exportData = JSON.stringify({
-            exportedAt: new Date().toISOString(),
-            dateRange: { start, end },
-            total: carts.length,
-            carts: carts.map((cart: any) => ({
-              id: cart.id,
-              status: cart.status,
-              user: cart.user ? `${cart.user.firstName} ${cart.user.lastName}` : 'N/A',
-              email: cart.user?.email || 'N/A',
-              items: cart.items?.length || 0,
-              subtotal: cart.subtotal,
-              total: cart.total,
-              createdAt: cart.createdAt,
-            })),
-          }, null, 2);
+          exportData = JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              dateRange: { start, end },
+              total: carts.length,
+              carts: carts.map((cart: any) => ({
+                id: cart.id,
+                status: cart.status,
+                user: cart.user
+                  ? `${cart.user.firstName} ${cart.user.lastName}`
+                  : 'N/A',
+                email: cart.user?.email || 'N/A',
+                items: cart.items?.length || 0,
+                subtotal: cart.subtotal,
+                total: cart.total,
+                createdAt: cart.createdAt,
+              })),
+            },
+            null,
+            2
+          );
           contentType = 'application/json';
-          filename = `cart-history-${new Date().toISOString().split('T')[0]}.json`;
+          filename = `cart-history-${
+            new Date().toISOString().split('T')[0]
+          }.json`;
           break;
         }
 
         case 'excel':
         case 'pdf':
         default: {
-          let rows: string[] = [];
+          const rows: string[] = [];
           rows.push('Cart History Export');
           rows.push(`Generated: ${new Date().toLocaleString()}`);
           rows.push('');
-          rows.push('Cart ID,Status,User,Email,Items,Subtotal,Total,Created At');
-          
+          rows.push(
+            'Cart ID,Status,User,Email,Items,Subtotal,Total,Created At'
+          );
+
           carts.forEach((cart: any) => {
             const user = cart.user || {};
             const itemsCount = cart.items?.length || 0;
             rows.push(
-              `${cart.id},${cart.status},${user.firstName || ''} ${user.lastName || ''},${user.email || ''},${itemsCount},${cart.subtotal || 0},${cart.total || 0},${new Date(cart.createdAt).toLocaleString()}`
+              `${cart.id},${cart.status},${user.firstName || ''} ${
+                user.lastName || ''
+              },${user.email || ''},${itemsCount},${cart.subtotal || 0},${
+                cart.total || 0
+              },${new Date(cart.createdAt).toLocaleString()}`
             );
           });
-          
+
           exportData = rows.join('\n');
           contentType = 'text/csv';
-          filename = `cart-history-${new Date().toISOString().split('T')[0]}.csv`;
+          filename = `cart-history-${
+            new Date().toISOString().split('T')[0]
+          }.csv`;
         }
       }
 
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
       res.send(exportData);
     } catch (error) {
       console.error('Export cart history error:', error);
@@ -1536,7 +1662,6 @@ export const cartController = {
   },
 
   /**
-   * Export abandoned carts
    * POST /cart/abandoned/export
    */
   async exportAbandonedCarts(req: Request, res: Response, next: NextFunction) {
@@ -1561,21 +1686,26 @@ export const cartController = {
           ...(status && status !== 'all' ? { status } : {}),
         },
         include: {
-          items: { 
-            include: { 
-              product: { 
-                select: { id: true, name: true, sku: true, unitPrice: true } 
-              }, 
-              variant: true 
-            } 
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  unitPrice: true,
+                },
+              },
+              variant: true,
+            },
           },
-          user: { 
-            select: { 
-              id: true, 
-              firstName: true, 
-              lastName: true, 
-              email: true 
-            } 
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
           customer: includeCustomerDetails,
         },
@@ -1589,82 +1719,118 @@ export const cartController = {
 
       switch (format) {
         case 'csv': {
-          let rows: string[] = [];
+          const rows: string[] = [];
           rows.push('Abandoned Carts Export');
           rows.push(`Generated: ${new Date().toLocaleString()}`);
           rows.push(`Abandoned for: ${hours} hours`);
           rows.push('');
-          rows.push('Cart ID,User,Email,Items,Total,Abandoned At,Hours Abandoned');
-          
+          rows.push(
+            'Cart ID,User,Email,Items,Total,Abandoned At,Hours Abandoned'
+          );
+
           carts.forEach((cart: any) => {
             const user = cart.user || {};
-            const hoursAbandoned = Math.floor((Date.now() - new Date(cart.updatedAt).getTime()) / (1000 * 60 * 60));
+            const hoursAbandoned = Math.floor(
+              (Date.now() - new Date(cart.updatedAt).getTime()) /
+                (1000 * 60 * 60)
+            );
             const itemsCount = cart.items?.length || 0;
             rows.push(
-              `${cart.id},${user.firstName || ''} ${user.lastName || ''},${user.email || ''},${itemsCount},${cart.total || 0},${new Date(cart.updatedAt).toLocaleString()},${hoursAbandoned}`
+              `${cart.id},${user.firstName || ''} ${
+                user.lastName || ''
+              },${user.email || ''},${itemsCount},${cart.total || 0},${new Date(
+                cart.updatedAt
+              ).toLocaleString()},${hoursAbandoned}`
             );
           });
-          
+
           exportData = rows.join('\n');
           contentType = 'text/csv';
-          filename = `abandoned-carts-${new Date().toISOString().split('T')[0]}.csv`;
+          filename = `abandoned-carts-${
+            new Date().toISOString().split('T')[0]
+          }.csv`;
           break;
         }
 
         case 'json': {
-          exportData = JSON.stringify({
-            exportedAt: new Date().toISOString(),
-            hoursAbandoned: hours,
-            minValue: minValue || null,
-            total: carts.length,
-            carts: carts.map((cart: any) => ({
-              id: cart.id,
-              user: cart.user ? `${cart.user.firstName} ${cart.user.lastName}` : 'N/A',
-              email: cart.user?.email || 'N/A',
-              items: cart.items?.map((item: any) => ({
-                product: item.product.name,
-                sku: item.product.sku,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                total: item.total,
+          exportData = JSON.stringify(
+            {
+              exportedAt: new Date().toISOString(),
+              hoursAbandoned: hours,
+              minValue: minValue || null,
+              total: carts.length,
+              carts: carts.map((cart: any) => ({
+                id: cart.id,
+                user: cart.user
+                  ? `${cart.user.firstName} ${cart.user.lastName}`
+                  : 'N/A',
+                email: cart.user?.email || 'N/A',
+                items: cart.items?.map((item: any) => ({
+                  product: item.product.name,
+                  sku: item.product.sku,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  total: item.total,
+                })),
+                total: cart.total,
+                abandonedAt: cart.updatedAt,
+                hoursAbandoned: Math.floor(
+                  (Date.now() - new Date(cart.updatedAt).getTime()) /
+                    (1000 * 60 * 60)
+                ),
               })),
-              total: cart.total,
-              abandonedAt: cart.updatedAt,
-              hoursAbandoned: Math.floor((Date.now() - new Date(cart.updatedAt).getTime()) / (1000 * 60 * 60)),
-            })),
-          }, null, 2);
+            },
+            null,
+            2
+          );
           contentType = 'application/json';
-          filename = `abandoned-carts-${new Date().toISOString().split('T')[0]}.json`;
+          filename = `abandoned-carts-${
+            new Date().toISOString().split('T')[0]
+          }.json`;
           break;
         }
 
         case 'excel':
         case 'pdf':
         default: {
-          let rows: string[] = [];
+          const rows: string[] = [];
           rows.push('Abandoned Carts Export');
           rows.push(`Generated: ${new Date().toLocaleString()}`);
           rows.push(`Abandoned for: ${hours} hours`);
           rows.push('');
-          rows.push('Cart ID,User,Email,Items,Total,Abandoned At,Hours Abandoned');
-          
+          rows.push(
+            'Cart ID,User,Email,Items,Total,Abandoned At,Hours Abandoned'
+          );
+
           carts.forEach((cart: any) => {
             const user = cart.user || {};
-            const hoursAbandoned = Math.floor((Date.now() - new Date(cart.updatedAt).getTime()) / (1000 * 60 * 60));
+            const hoursAbandoned = Math.floor(
+              (Date.now() - new Date(cart.updatedAt).getTime()) /
+                (1000 * 60 * 60)
+            );
             const itemsCount = cart.items?.length || 0;
             rows.push(
-              `${cart.id},${user.firstName || ''} ${user.lastName || ''},${user.email || ''},${itemsCount},${cart.total || 0},${new Date(cart.updatedAt).toLocaleString()},${hoursAbandoned}`
+              `${cart.id},${user.firstName || ''} ${
+                user.lastName || ''
+              },${user.email || ''},${itemsCount},${cart.total || 0},${new Date(
+                cart.updatedAt
+              ).toLocaleString()},${hoursAbandoned}`
             );
           });
-          
+
           exportData = rows.join('\n');
           contentType = 'text/csv';
-          filename = `abandoned-carts-${new Date().toISOString().split('T')[0]}.csv`;
+          filename = `abandoned-carts-${
+            new Date().toISOString().split('T')[0]
+          }.csv`;
         }
       }
 
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
       res.send(exportData);
     } catch (error) {
       console.error('Export abandoned carts error:', error);
@@ -1673,7 +1839,6 @@ export const cartController = {
   },
 
   /**
-   * Export cart analytics
    * POST /cart/analytics/export
    */
   async exportAnalytics(req: Request, res: Response, next: NextFunction) {
@@ -1691,7 +1856,7 @@ export const cartController = {
       } = req.body;
 
       let start: Date, end: Date;
-      
+
       if (dateRange === 'custom' && startDate && endDate) {
         start = new Date(startDate);
         end = new Date(endDate);
@@ -1770,8 +1935,8 @@ export const cartController = {
 
       switch (format) {
         case 'csv': {
-          let rows: string[] = [];
-          
+          const rows: string[] = [];
+
           if (includeSummary) {
             rows.push('Cart Analytics Summary');
             rows.push(`Total Carts,${analytics.totalCarts}`);
@@ -1793,49 +1958,69 @@ export const cartController = {
 
           if (detailedData.length > 0) {
             rows.push('Detailed Cart Data');
-            rows.push('Cart ID,Status,User,Customer,Items,Subtotal,Total,Created At');
+            rows.push(
+              'Cart ID,Status,User,Customer,Items,Subtotal,Total,Created At'
+            );
             detailedData.forEach((cart: any) => {
               const user = cart.user || {};
               const customer = cart.customer || {};
               rows.push(
-                `${cart.id},${cart.status},${user.firstName || ''} ${user.lastName || ''},${customer.firstName || ''} ${customer.lastName || ''},${cart.items?.length || 0},${cart.subtotal || 0},${cart.total || 0},${new Date(cart.createdAt).toLocaleString()}`
+                `${cart.id},${cart.status},${user.firstName || ''} ${
+                  user.lastName || ''
+                },${customer.firstName || ''} ${
+                  customer.lastName || ''
+                },${cart.items?.length || 0},${cart.subtotal || 0},${
+                  cart.total || 0
+                },${new Date(cart.createdAt).toLocaleString()}`
               );
             });
           }
 
           exportData = rows.join('\n');
           contentType = 'text/csv';
-          filename = `cart-analytics-${new Date().toISOString().split('T')[0]}.csv`;
+          filename = `cart-analytics-${
+            new Date().toISOString().split('T')[0]
+          }.csv`;
           break;
         }
 
         case 'json': {
-          exportData = JSON.stringify({
-            analytics,
-            detailedData: includeDetailedData ? detailedData : undefined,
-            summary: includeSummary ? {
-              totalCarts: analytics.totalCarts,
-              activeCarts: analytics.activeCarts,
-              abandonedCarts: analytics.abandonedCarts,
-              averageItems: analytics.averageItems,
-              averageValue: analytics.averageValue,
-              conversionRate: analytics.conversionRate,
-            } : undefined,
-            exportedAt: new Date().toISOString(),
-            dateRange: { start, end },
-          }, null, 2);
+          exportData = JSON.stringify(
+            {
+              analytics,
+              detailedData: includeDetailedData ? detailedData : undefined,
+              summary: includeSummary
+                ? {
+                    totalCarts: analytics.totalCarts,
+                    activeCarts: analytics.activeCarts,
+                    abandonedCarts: analytics.abandonedCarts,
+                    averageItems: analytics.averageItems,
+                    averageValue: analytics.averageValue,
+                    conversionRate: analytics.conversionRate,
+                  }
+                : undefined,
+              exportedAt: new Date().toISOString(),
+              dateRange: { start, end },
+            },
+            null,
+            2
+          );
           contentType = 'application/json';
-          filename = `cart-analytics-${new Date().toISOString().split('T')[0]}.json`;
+          filename = `cart-analytics-${
+            new Date().toISOString().split('T')[0]
+          }.json`;
           break;
         }
 
         case 'excel':
         case 'pdf':
         default: {
-          let rows: string[] = [];
+          const rows: string[] = [];
           rows.push('Cart Analytics Report');
           rows.push(`Generated: ${new Date().toLocaleString()}`);
-          rows.push(`Date Range: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`);
+          rows.push(
+            `Date Range: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`
+          );
           rows.push('');
           if (includeSummary) {
             rows.push('Summary');
@@ -1850,12 +2035,17 @@ export const cartController = {
           }
           exportData = rows.join('\n');
           contentType = 'text/plain';
-          filename = `cart-analytics-${new Date().toISOString().split('T')[0]}.txt`;
+          filename = `cart-analytics-${
+            new Date().toISOString().split('T')[0]
+          }.txt`;
         }
       }
 
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
       res.send(exportData);
     } catch (error) {
       console.error('Export error:', error);
@@ -1864,7 +2054,6 @@ export const cartController = {
   },
 
   /**
-   * Get abandoned carts
    * GET /cart/abandoned
    */
   async getAbandonedCarts(req: Request, res: Response, next: NextFunction) {

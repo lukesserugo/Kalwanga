@@ -94,61 +94,6 @@ interface BarcodeInfo {
 const SIZES = {
   container: 'max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16',
   headerHeight: 'pt-24 md:pt-28 lg:pt-32',
-  spacing: {
-    section: 'py-8 md:py-12 lg:py-16',
-    grid: 'gap-5 md:gap-6 lg:gap-8 xl:gap-10',
-  },
-  borderRadius: {
-    card: 'rounded-2xl xl:rounded-3xl',
-    button: 'rounded-xl xl:rounded-2xl',
-    input: 'rounded-xl xl:rounded-2xl',
-  },
-  shadows: {
-    card: 'shadow-sm hover:shadow-xl xl:hover:shadow-2xl',
-    sticky: 'shadow-lg shadow-orange-100/50 dark:shadow-gray-900/50',
-    modal: 'shadow-2xl xl:shadow-3xl',
-  },
-  transitions: {
-    default: 'transition-all duration-300 ease-in-out',
-    fast: 'transition-all duration-200 ease-in-out',
-    slow: 'transition-all duration-500 ease-in-out',
-  },
-  typography: {
-    hero: 'text-4xl md:text-5xl lg:text-6xl 2xl:text-7xl',
-    title: 'text-2xl md:text-3xl lg:text-4xl 2xl:text-5xl',
-    subtitle: 'text-lg md:text-xl lg:text-2xl',
-    body: 'text-sm md:text-base lg:text-lg',
-    small: 'text-xs md:text-sm',
-  },
-};
-
-const COLORS = {
-  gradient: {
-    primary: 'from-orange-500 via-red-500 to-rose-500',
-    primaryHover: 'hover:from-orange-600 hover:via-red-600 hover:to-rose-600',
-    secondary: 'from-emerald-500 via-teal-500 to-green-500',
-    secondaryHover: 'hover:from-emerald-600 hover:via-teal-600 hover:to-green-600',
-    accent: 'from-amber-400 via-yellow-500 to-orange-400',
-    trust: 'from-blue-500 via-sky-500 to-cyan-500',
-    hero: 'from-orange-600 via-red-500 to-rose-600',
-    dark: 'from-gray-900 via-gray-800 to-gray-900',
-  },
-  solid: {
-    primary: 'bg-orange-500',
-    primaryHover: 'hover:bg-orange-600',
-    urgency: 'bg-red-500',
-    urgencyHover: 'hover:bg-red-600',
-    success: 'bg-emerald-500',
-    successHover: 'hover:bg-emerald-600',
-    premium: 'bg-amber-400',
-    trust: 'bg-blue-500',
-    trustHover: 'hover:bg-blue-600',
-  },
-  glass: {
-    light: 'bg-white/20 backdrop-blur-md border border-white/30',
-    warm: 'bg-orange-100/20 backdrop-blur-md border border-orange-200/30',
-    dark: 'bg-black/20 backdrop-blur-md border border-white/10',
-  },
 };
 
 const PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -189,12 +134,13 @@ export default function ShopProductPage() {
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const [variantImageErrors, setVariantImageErrors] = useState<Record<string, boolean>>({});
 
-  // ✅ FIXED: Use refs to prevent duplicate requests
+  // Refs to prevent duplicate requests
   const productLoadedRef = useRef(false);
   const relatedLoadedRef = useRef(false);
+  const wishlistFetchedRef = useRef(false);
 
   // ============================================
-  // ✅ FIXED: Image error handlers
+  // Image error handlers
   // ============================================
 
   const handleImageError = useCallback((imageUrl: string) => {
@@ -218,7 +164,7 @@ export default function ShopProductPage() {
   }, [variantImageErrors]);
 
   // ============================================
-  // ✅ FIXED: CART & PAYMENT HANDLERS with useCallback
+  // Cart handlers
   // ============================================
 
   const fetchCartData = useCallback(async () => {
@@ -229,7 +175,7 @@ export default function ShopProductPage() {
         setCartTotal(response.total || 0);
       }
     } catch (error) {
-      // Silently fail - cart data is not critical
+      // Silently fail
     }
   }, []);
 
@@ -267,7 +213,7 @@ export default function ShopProductPage() {
   }, [product, router]);
 
   // ============================================
-  // ✅ FIXED: DATA FETCHING with useCallback and refs
+  // Data fetching
   // ============================================
 
   const loadRelatedProducts = useCallback(async (productId: string) => {
@@ -391,12 +337,9 @@ export default function ShopProductPage() {
       setLightboxImages(transformedProduct.images || []);
       productLoadedRef.current = true;
       
+      // Add to recently viewed (don't await to avoid blocking)
       if (isAuthenticated) {
-        try {
-          await productService.addRecentlyViewed(id);
-        } catch (error) {
-          console.error('Failed to add to recently viewed:', error);
-        }
+        productService.addRecentlyViewed(id).catch(() => {});
       }
       
       await loadRelatedProducts(id);
@@ -411,21 +354,21 @@ export default function ShopProductPage() {
   }, [id, isAuthenticated, fetchCartData, loadRelatedProducts]);
 
   // ============================================
-  // ✅ FIXED: useEffect with proper dependencies
+  // useEffect
   // ============================================
 
   useEffect(() => {
     if (id) {
-      // Reset refs when product ID changes
       productLoadedRef.current = false;
       relatedLoadedRef.current = false;
+      wishlistFetchedRef.current = false;
       fetchProduct();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // ============================================
-  // ✅ FIXED: HANDLERS
+  // Handlers
   // ============================================
 
   const handleQuantityChange = useCallback((delta: number) => {
@@ -575,7 +518,7 @@ export default function ShopProductPage() {
   }, []);
 
   // ============================================
-  // HELPERS
+  // Helpers
   // ============================================
 
   const getStockStatus = useCallback(() => {
@@ -654,7 +597,7 @@ export default function ShopProductPage() {
 
   const isLinkedToInventory = !!product?.inventoryId;
 
-  // ✅ FIXED: Memoize related product cards
+  // ✅ Memoize related product cards with proper type handling
   const relatedProductCards = useMemo(() => {
     if (relatedProducts.length === 0) return null;
     
@@ -680,8 +623,12 @@ export default function ShopProductPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {relatedProducts.map((relatedProduct, index) => {
+            // ✅ Fix: Handle null values by converting to undefined
             const cardProduct = {
-              ...relatedProduct,
+              id: relatedProduct.id,
+              name: relatedProduct.name,
+              sku: relatedProduct.sku,
+              unitPrice: relatedProduct.unitPrice,
               costPrice: relatedProduct.costPrice ?? undefined,
               images: relatedProduct.images || [],
               description: relatedProduct.description || undefined,
@@ -691,6 +638,19 @@ export default function ShopProductPage() {
                 reserved: relatedProduct.inventory.reserved,
               }] : undefined,
               minStock: relatedProduct.minStock ?? undefined,
+              rating: relatedProduct.rating ?? undefined,
+              reviewCount: relatedProduct.reviewCount ?? undefined,
+              isActive: relatedProduct.isActive,
+              isDigital: relatedProduct.isDigital || false,
+              weight: relatedProduct.weight,
+              taxRate: relatedProduct.taxRate || 0,
+              attributes: relatedProduct.attributes || null,
+              tags: relatedProduct.tags || [],
+              featured: relatedProduct.featured || false,
+              inventoryId: relatedProduct.inventoryId || null,
+              createdAt: relatedProduct.createdAt,
+              updatedAt: relatedProduct.updatedAt,
+              variants: relatedProduct.variants || [],
             };
             return (
               <motion.div
@@ -746,7 +706,7 @@ export default function ShopProductPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`bg-white dark:bg-gray-900 ${SIZES.borderRadius.card} shadow-sm p-16 xl:p-20 text-center`}
+            className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm p-16 xl:p-20 text-center"
           >
             <div className="inline-flex items-center justify-center w-24 h-24 xl:w-32 xl:h-32 bg-gradient-to-br from-orange-100 to-amber-100 dark:from-orange-900/20 dark:to-amber-900/20 rounded-full mb-6">
               <Package className="w-12 h-12 xl:w-16 xl:h-16 text-orange-500" />
@@ -808,7 +768,7 @@ export default function ShopProductPage() {
           <span className="text-gray-700 dark:text-gray-300 font-medium truncate">{product.name}</span>
         </nav>
 
-        {/* ✅ Cart Status Bar */}
+        {/* Cart Status Bar */}
         {cartCount > 0 && (
           <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-2xl border border-emerald-200 dark:border-emerald-800 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -847,7 +807,7 @@ export default function ShopProductPage() {
         >
           {/* Image Gallery */}
           <div className="space-y-4">
-            <div className={`relative bg-white dark:bg-gray-900 ${SIZES.borderRadius.card} shadow-sm border border-orange-100 dark:border-gray-700 overflow-hidden aspect-square group`}>
+            <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-100 dark:border-gray-700 overflow-hidden aspect-square group">
               {hasImages ? (
                 <img
                   src={getValidImage(images[selectedImage])}
@@ -933,7 +893,7 @@ export default function ShopProductPage() {
             {/* Title & Rating */}
             <div>
               <div className="flex items-start justify-between gap-4">
-                <h1 className={`${SIZES.typography.title} font-bold text-gray-900 dark:text-white`}>
+                <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white">
                   {product.name}
                 </h1>
                 <WishlistButton productId={product.id} variant="icon" size="lg" />
@@ -1245,7 +1205,7 @@ export default function ShopProductPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className={`mt-16 bg-white dark:bg-gray-900 ${SIZES.borderRadius.card} shadow-sm border border-orange-50 dark:border-gray-700 overflow-hidden`}
+          className="mt-16 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-50 dark:border-gray-700 overflow-hidden"
         >
           <div className="border-b border-gray-200 dark:border-gray-700 px-6 overflow-x-auto">
             <nav className="flex gap-8">
@@ -1421,18 +1381,20 @@ export default function ShopProductPage() {
           </div>
         </motion.div>
 
-        {/* Related Products - ✅ FIXED: Using memoized version */}
+        {/* Related Products */}
         {relatedProductCards}
 
-        {/* Recently Viewed */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-          className="mt-16"
-        >
-          <RecentlyViewed limit={6} />
-        </motion.div>
+        {/* Recently Viewed - ✅ Only render if product exists */}
+        {product && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="mt-16"
+          >
+            <RecentlyViewed limit={6} />
+          </motion.div>
+        )}
 
         {/* Lightbox */}
         <AnimatePresence>
@@ -1514,7 +1476,7 @@ export default function ShopProductPage() {
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className={`relative bg-white dark:bg-gray-900 ${SIZES.borderRadius.card} shadow-2xl max-w-md w-full p-8 max-h-[90vh] overflow-y-auto`}
+                className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-8 max-h-[90vh] overflow-y-auto"
               >
                 <button
                   onClick={() => setShowBarcodeModal(false)}

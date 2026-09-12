@@ -1,13 +1,14 @@
 // D:\Projects\Kalwanga\packages\web\types\index.ts
 
 // ============================================
-// EXPORT ALL ENUMS
+// ENUMS (single source of truth)
 // ============================================
 export * from './enums';
 
 // ============================================
-// PAGINATED RESPONSE - Shared across all services
+// API RESPONSE WRAPPERS
 // ============================================
+
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;
@@ -16,9 +17,6 @@ export interface PaginatedResponse<T> {
   limit: number;
 }
 
-// ============================================
-// API RESPONSE TYPES
-// ============================================
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -40,31 +38,25 @@ export interface ApiError {
 }
 
 // ============================================
-// USER TYPES
+// USER / COMPANY / BUSINESS UNIT
 // ============================================
 export type { User, Company, BusinessUnit, BusinessUnitUser } from './user';
 
 // ============================================
-// CATEGORY TYPES
+// CATEGORY
 // ============================================
 export type { Category } from './category';
 
 // ============================================
-// PRODUCT TYPES
+// PRODUCT
 // ============================================
-// FIXED: Removed ProductImage since it doesn't exist in './product'
 export type { Product, ProductVariant, ProductReview } from './product';
 
 // ============================================
-// INVENTORY TYPES
+// INVENTORY
 // ============================================
-// FIXED: Removed non-existent types, kept only Inventory and InventoryTransaction
-export type { 
-  Inventory, 
-  InventoryTransaction
-} from './inventory';
+export type { Inventory, InventoryTransaction } from './inventory';
 
-// FIXED: Define missing inventory types locally
 export interface InventoryItem {
   id: string;
   inventoryId: string;
@@ -136,11 +128,10 @@ export interface StockCountItem {
 }
 
 // ============================================
-// SALE TYPES
+// SALE
 // ============================================
 import type { Sale, SaleItem } from './sale';
 
-// FIXED: Define missing sale types locally
 export interface SaleSearchParams {
   search?: string;
   businessUnitId?: string;
@@ -253,14 +244,10 @@ export interface ExportSalesParams {
 }
 
 // ============================================
-// ORDER TYPES
+// ORDER
 // ============================================
-export type { 
-  Order, 
-  OrderItem
-} from './order';
+export type { Order, OrderItem } from './order';
 
-// FIXED: Define missing order types locally
 export interface OrderSearchParams {
   search?: string;
   businessUnitId?: string;
@@ -270,6 +257,14 @@ export interface OrderSearchParams {
   endDate?: string;
   page?: number;
   limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  priority?: string;
+  paymentStatus?: string;
+  minTotal?: number;
+  maxTotal?: number;
+  includeDeleted?: boolean;
+  userId?: string;
 }
 
 export interface OrderStatusHistory {
@@ -282,16 +277,15 @@ export interface OrderStatusHistory {
 }
 
 // ============================================
-// CUSTOMER TYPES
+// CUSTOMER
 // ============================================
-export type { 
+export type {
   Customer,
   LoyaltyHistory,
   GiftCard,
-  GiftCardTransaction
+  GiftCardTransaction,
 } from './customer';
 
-// FIXED: Define missing customer types locally
 export interface CustomerSearchParams {
   search?: string;
   businessUnitId?: string;
@@ -315,14 +309,10 @@ export interface CustomerStats {
 }
 
 // ============================================
-// PAYMENT TYPES
+// PAYMENT
 // ============================================
-export type { 
-  Payment,
-  PaymentGateway
-} from './payment';
+export type { Payment, PaymentGateway } from './payment';
 
-// FIXED: Define missing payment types locally
 export interface PaymentSearchParams {
   search?: string;
   businessUnitId?: string;
@@ -371,9 +361,8 @@ export interface Refund {
 }
 
 // ============================================
-// RETURN & REFUND TYPES
+// RETURN & REFUND
 // ============================================
-// FIXED: Define return types locally since './returns' module doesn't exist
 export interface Return {
   id: string;
   returnNumber: string;
@@ -445,14 +434,10 @@ export interface RefundStats {
 }
 
 // ============================================
-// INVOICE & RECEIPT TYPES
+// INVOICE & RECEIPT
 // ============================================
-export type { 
-  Invoice,
-  Receipt
-} from './invoice';
+export type { Invoice, Receipt } from './invoice';
 
-// FIXED: Define missing invoice types locally
 export interface InvoiceItem {
   id: string;
   invoiceId: string;
@@ -508,31 +493,32 @@ export interface ReceiptStats {
   emailedReceipts: number;
 }
 
-export type InvoicePaymentTerms = 'NET_7' | 'NET_15' | 'NET_30' | 'NET_60' | 'DUE_ON_RECEIPT';
+export type InvoicePaymentTerms =
+  | 'NET_7'
+  | 'NET_15'
+  | 'NET_30'
+  | 'NET_60'
+  | 'DUE_ON_RECEIPT';
 
 // ============================================
-// SUPPLIER TYPES
+// SUPPLIER
 // ============================================
-export type { 
-  Supplier, 
-  SupplierContact, 
+export type {
+  Supplier,
+  SupplierContact,
   SupplierProduct,
   PurchaseOrder,
   PurchaseOrderItem,
   SupplierPayment,
   SupplierRating,
-  SupplierSearchParams
+  SupplierSearchParams,
 } from './supplier';
 
 // ============================================
-// CART TYPES
+// CART
 // ============================================
-export type { 
-  Cart, 
-  CartItem
-} from './cart';
+export type { Cart, CartItem } from './cart';
 
-// FIXED: Define CartSummary locally
 export interface CartSummary {
   items: number;
   subtotal: number;
@@ -542,51 +528,62 @@ export interface CartSummary {
 }
 
 // ============================================
-// REGISTER TYPES
+// REGISTER + SHIFT
+// (single source of truth: ./register)
 // ============================================
-export type { 
-  CashRegister, 
-  CashRegisterSession
+
+// Cash register
+export type {
+  CashRegister,
+  CashRegisterStatus,
+  CashRegisterSession,
+  CashRegisterSessionStatus,
+  Register,
 } from './register';
 
-// FIXED: Define missing register types locally
-export interface CashRegisterTransaction {
-  id: string;
-  cashRegisterId: string;
-  type: 'CASH_IN' | 'CASH_OUT' | 'SALE' | 'REFUND' | 'ADJUSTMENT' | 'DEPOSIT' | 'WITHDRAWAL';
-  amount: number;
-  reason: string;
-  notes?: string;
-  userId: string;
-  createdAt: string;
-}
+// Cash / shift primitives
+export type {
+  CashTransaction,
+  CashTransactionType,
+  CashTransactionPayload,
+  ShiftLog,
+} from './register';
 
-export interface Shift {
-  id: string;
-  shiftStart: string;
-  shiftEnd?: string;
-  startingCash: number;
-  endingCash?: number;
-  expectedCash?: number;
-  discrepancy?: number;
-  status: 'OPEN' | 'CLOSED' | 'VOID' | 'PENDING';
-  type: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'WEEKEND';
-}
+// Shift
+export type {
+  Shift,
+  ShiftStatus,
+  ShiftType,
+  ShiftScope,
+  ShiftStats,
+  ShiftSummary,
+} from './register';
 
-export interface ShiftSummary {
-  totalSales: number;
-  totalRevenue: number;
-  totalCash: number;
-  totalCard: number;
-  totalMobileMoney: number;
-  totalRefunds: number;
-  discrepancy: number;
-}
+// Query params
+export type {
+  ShiftSearchParams,
+  ShiftStatsParams,
+  RegisterSearchParams,
+} from './register';
+
+// Mutation payloads
+export type {
+  StartShiftPayload,
+  EndShiftPayload,
+  CreateRegisterPayload,
+  UpdateRegisterPayload,
+} from './register';
+
+// Response envelopes
+export type {
+  RegistersListResponse,
+  ShiftsListResponse,
+} from './register';
 
 // ============================================
-// BOOKKEEPING TYPES
+// BOOKKEEPING
 // ============================================
-export type { 
+export type {
   Account,
   JournalEntry,
   JournalLine,
@@ -594,10 +591,9 @@ export type {
   FinancialReport,
   TrialBalance,
   BalanceSheet,
-  IncomeStatement
+  IncomeStatement,
 } from './bookkeeping';
 
-// FIXED: Define missing bookkeeping types locally
 export interface CashFlowStatement {
   operatingActivities: number;
   investingActivities: number;
@@ -621,7 +617,7 @@ export interface LedgerEntry {
 }
 
 // ============================================
-// SEARCH TYPES
+// SEARCH
 // ============================================
 export type {
   SearchParams,
@@ -629,10 +625,9 @@ export type {
   ProductSearchParams,
   InventorySearchParams,
   PurchaseOrderSearchParams,
-  ReportSearchParams
+  ReportSearchParams,
 } from './search';
 
-// FIXED: Define common search types locally
 export interface DateRangeParams {
   startDate?: string;
   endDate?: string;
@@ -649,7 +644,7 @@ export interface SortParams {
 }
 
 // ============================================
-// DASHBOARD TYPES
+// DASHBOARD
 // ============================================
 export type {
   DashboardStats as DashboardStatsType,
@@ -660,10 +655,9 @@ export type {
   SalesTrend,
   TopProduct,
   CustomerInsight,
-  ActivityItem
+  ActivityItem,
 } from './dashboard';
 
-// FIXED: Define missing dashboard types locally
 export interface DashboardWidget {
   id: string;
   type: string;
@@ -682,9 +676,8 @@ export interface DashboardWidgetConfig {
 }
 
 // ============================================
-// REPORT TYPES
+// REPORT
 // ============================================
-// FIXED: Define report types locally since './report' module doesn't exist
 export interface Report {
   id: string;
   name: string;
@@ -751,9 +744,8 @@ export interface ReportExportOptions {
 }
 
 // ============================================
-// EXPORT TYPES
+// EXPORT
 // ============================================
-// FIXED: Define export types locally since './export' module doesn't exist
 export interface ExportFilter {
   field: string;
   value: any;
@@ -777,7 +769,11 @@ export interface ExportStats {
 }
 
 export type ExportFormatType = 'CSV' | 'EXCEL' | 'JSON' | 'PDF' | 'XML';
-export type ExportStatusType = 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'SCHEDULED';
+export type ExportStatusType =
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'SCHEDULED';
 
 export interface ExportOptions {
   format: ExportFormatType;
@@ -795,17 +791,16 @@ export interface ExportSchedule {
 }
 
 // ============================================
-// NOTIFICATION TYPES
+// NOTIFICATION
 // ============================================
-export type { 
+export type {
   Notification,
   NotificationPreference,
   NotificationTemplate,
   NotificationGroup,
-  NotificationStats
+  NotificationStats,
 } from './notification';
 
-// FIXED: Define missing notification types locally
 export interface NotificationChannel {
   id: string;
   name: string;
@@ -823,15 +818,10 @@ export interface NotificationDelivery {
 }
 
 // ============================================
-// PERMISSION TYPES
+// PERMISSIONS
 // ============================================
-// FIXED: Only export what exists in './permissions'
-export type {
-  PERMISSIONS,
-  ROLE_PERMISSIONS
-} from './permissions';
+export type { PERMISSIONS, ROLE_PERMISSIONS } from './permissions';
 
-// FIXED: Define permission types locally
 export interface Permission {
   action: string;
   resource: string;
@@ -854,17 +844,30 @@ export interface UserPermissionsType {
   permissions: Permission[];
 }
 
-export type PermissionActionType = 'create' | 'read' | 'update' | 'delete' | 'manage' | 'export' | 'import';
-export type PermissionResourceType = 'products' | 'categories' | 'inventory' | 'sales' | 'customers' | 'users' | 'reports' | 'settings';
+export type PermissionActionType =
+  | 'create'
+  | 'read'
+  | 'update'
+  | 'delete'
+  | 'manage'
+  | 'export'
+  | 'import';
+
+export type PermissionResourceType =
+  | 'products'
+  | 'categories'
+  | 'inventory'
+  | 'sales'
+  | 'customers'
+  | 'users'
+  | 'reports'
+  | 'settings';
 
 // ============================================
-// AUTH TYPES
+// AUTH
 // ============================================
-export type {
-  Session
-} from './auth';
+export type { Session } from './auth';
 
-// FIXED: Define missing auth types locally
 export interface AuthUser {
   id: string;
   email: string;
@@ -912,13 +915,23 @@ export interface Token {
 }
 
 // ============================================
-// FORM TYPES
+// FORM
 // ============================================
-// FIXED: Define form types locally since './forms' module doesn't exist
 export interface FormField {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'email' | 'password' | 'select' | 'textarea' | 'checkbox' | 'radio' | 'date' | 'time' | 'file';
+  type:
+    | 'text'
+    | 'number'
+    | 'email'
+    | 'password'
+    | 'select'
+    | 'textarea'
+    | 'checkbox'
+    | 'radio'
+    | 'date'
+    | 'time'
+    | 'file';
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
@@ -971,9 +984,8 @@ export interface FormConfig {
 }
 
 // ============================================
-// TABLE TYPES
+// TABLE
 // ============================================
-// FIXED: Define table types locally since './table' module doesn't exist
 export interface TableColumn {
   key: string;
   label: string;
@@ -1030,9 +1042,8 @@ export interface TableConfig {
 }
 
 // ============================================
-// CHART TYPES
+// CHART
 // ============================================
-// FIXED: Define chart types locally since './chart' module doesn't exist
 export interface ChartData {
   labels: string[];
   datasets: Array<{
@@ -1087,12 +1098,17 @@ export interface ChartConfig {
   tooltip?: ChartTooltip;
 }
 
-export type ChartType = 'line' | 'bar' | 'pie' | 'doughnut' | 'area' | 'radar';
+export type ChartType =
+  | 'line'
+  | 'bar'
+  | 'pie'
+  | 'doughnut'
+  | 'area'
+  | 'radar';
 
 // ============================================
-// COMMON STATISTICS TYPES
+// COMMON STATISTICS
 // ============================================
-
 export interface BaseStats {
   total: number;
   count: number;
@@ -1139,60 +1155,29 @@ export interface BaseFilter {
 // HELPER TYPE UTILITIES
 // ============================================
 
-/**
- * Make all properties optional recursively
- */
 export type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 };
 
-/**
- * Make all properties required
- */
 export type DeepRequired<T> = {
   [P in keyof T]-?: T[P] extends object ? DeepRequired<T[P]> : T[P];
 };
 
-/**
- * Pick a subset of properties
- */
-export type PickRequired<T, K extends keyof T> = Required<Pick<T, K>> & Omit<T, K>;
+export type PickRequired<T, K extends keyof T> = Required<Pick<T, K>> &
+  Omit<T, K>;
 
-/**
- * Make all properties nullable
- */
 export type Nullable<T> = {
   [P in keyof T]: T[P] | null;
 };
 
-/**
- * Extract the type from a Promise
- */
 export type Awaited<T> = T extends Promise<infer U> ? U : T;
 
-/**
- * Extract the type from an array
- */
 export type ArrayElement<T> = T extends (infer U)[] ? U : never;
 
-/**
- * Extract the type from a function
- */
 export type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
 
-/**
- * Extract the type from a record
- */
 export type ValueOf<T> = T[keyof T];
 
-/**
- * Extract keys of a specific type
- */
 export type KeysOfType<T, U> = {
   [P in keyof T]: T[P] extends U ? P : never;
 }[keyof T];
-
-// ============================================
-// EXPORT ALL ENUMS AGAIN FOR CONVENIENCE
-// ============================================
-export * from './enums';

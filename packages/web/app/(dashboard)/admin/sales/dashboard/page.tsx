@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TrendingUp, TrendingDown, DollarSign, ShoppingBag,
@@ -8,7 +9,8 @@ import {
   BarChart3, PieChart, Download, RefreshCw, Filter,
   Eye, Printer, MoreVertical, ChevronRight, X,
   Loader2, CheckCircle, AlertCircle, CreditCard,
-  Package, Store, Phone, Mail, User, Tag, Lock
+  Package, Store, Phone, Mail, User, Tag, Lock,
+  ArrowLeft, List, ShoppingCart, LayoutDashboard
 } from 'lucide-react';
 import { saleService } from '../../../../../services/saleService';
 import { formatCurrency, formatDate, formatTime } from '../../../../../utils/formatters';
@@ -168,6 +170,7 @@ const RevenueChart: React.FC<{ data: Array<{ day: string; revenue: number; sales
 export default function SalesDashboard() {
   const { user } = useAuth();
   const { canView } = usePermission();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -178,6 +181,15 @@ export default function SalesDashboard() {
   const [showDetailModal, setShowDetailModal] = useState(false);
 
   const canViewStats = canView?.(`${PermissionResource.SALE}:view_stats`) || user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.role === 'MANAGER' || false;
+
+  // Navigation handlers
+  const goToSalesList = () => {
+    router.push('/admin/sales');
+  };
+
+  const goToPos = () => {
+    router.push('/admin/sales/pos');
+  };
 
   useEffect(() => {
     if (canViewStats) {
@@ -196,7 +208,6 @@ export default function SalesDashboard() {
         businessUnitId: user?.businessUnits?.[0]?.businessUnitId
       });
       
-      // Ensure the data matches the expected structure
       setStats({
         today: {
           totalSales: data?.today?.totalSales || 0,
@@ -255,22 +266,44 @@ export default function SalesDashboard() {
           break;
       }
 
-      // Remove 'format' from params as it's not expected
-      const blob = await saleService.exportSalesCsv({
+      const result = await saleService.exportSales({
         startDate: startDate.toISOString().split('T')[0],
         endDate: endDate.toISOString().split('T')[0],
+        format: exportFormat,
         businessUnitId: user?.businessUnits?.[0]?.businessUnitId
       });
       
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sales-report-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
-      toast.success('Sales report exported successfully');
-      setShowExportModal(false);
+      if (result && result.data) {
+        const headers = ['Receipt', 'Date', 'Customer', 'Subtotal', 'Tax', 'Discount', 'Total', 'Payment', 'Status', 'Items'];
+        const rows = result.data.map((sale: any) => [
+          sale.receiptNumber || sale.id,
+          sale.date || sale.saleDate || '',
+          sale.customer || 'Guest',
+          sale.subtotal || 0,
+          sale.tax || 0,
+          sale.discount || 0,
+          sale.total || 0,
+          sale.paymentMethod || 'N/A',
+          sale.status || 'COMPLETED',
+          sale.items || 0,
+        ]);
+
+        const csvContent = [headers.join(','), ...rows.map((row: any[]) => row.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sales-report-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast.success('Sales report exported successfully');
+        setShowExportModal(false);
+      } else {
+        toast.error('No data to export');
+      }
     } catch (error) {
       console.error('Export error:', error);
       toast.error('Failed to export sales report');
@@ -292,6 +325,12 @@ export default function SalesDashboard() {
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
           You don't have permission to view sales statistics.
         </p>
+        <button
+          onClick={() => router.push('/admin/sales')}
+          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Go to Sales
+        </button>
       </div>
     );
   }
@@ -322,10 +361,43 @@ export default function SalesDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
+      {/* Navigation Bar */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/admin/sales')}
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Back to Sales</span>
+          </button>
+          <div className="h-6 w-px bg-gray-300 dark:bg-gray-600 hidden sm:block"></div>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+            Sales Dashboard
+          </h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={goToPos}
+            className="px-3 py-1.5 text-sm bg-green-600 text-white hover:bg-green-700 rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span className="hidden sm:inline">POS</span>
+          </button>
+          <button
+            onClick={goToSalesList}
+            className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-1.5 text-gray-700 dark:text-gray-300"
+          >
+            <List className="w-4 h-4" />
+            <span className="hidden sm:inline">Sales List</span>
+          </button>
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Sales Dashboard
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
@@ -408,7 +480,10 @@ export default function SalesDashboard() {
             <h3 className="font-semibold text-gray-900 dark:text-white">
               Revenue Overview
             </h3>
-            <button className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1">
+            <button 
+              onClick={goToSalesList}
+              className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+            >
               View Details <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -454,7 +529,10 @@ export default function SalesDashboard() {
             )}
           </div>
           {topProducts.length > 5 && (
-            <button className="mt-4 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+            <button 
+              onClick={goToSalesList}
+              className="mt-4 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
               View all products →
             </button>
           )}
@@ -467,7 +545,10 @@ export default function SalesDashboard() {
           <h3 className="font-semibold text-gray-900 dark:text-white">
             Recent Sales
           </h3>
-          <button className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1">
+          <button 
+            onClick={goToSalesList}
+            className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+          >
             View All <ChevronRight className="w-4 h-4" />
           </button>
         </div>

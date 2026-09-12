@@ -166,11 +166,14 @@ export default function LandingPage() {
               barcode: v.barcode || null,
               inventoryId: v.inventoryId || null,
             })) || [],
-            inventory: p.inventory?.map((inv: any) => ({
-              quantity: inv.quantity || 0,
-              reserved: inv.reserved || 0,
-              available: (inv.quantity || 0) - (inv.reserved || 0),
-            })) || [],
+            // ✅ FIXED: Handle inventory safely - ensure it's always an array
+            inventory: Array.isArray(p.inventory) 
+              ? p.inventory.map((inv: any) => ({
+                  quantity: inv.quantity || 0,
+                  reserved: inv.reserved || 0,
+                  available: (inv.quantity || 0) - (inv.reserved || 0),
+                }))
+              : [],
             rating: p.rating,
             reviewCount: p.reviewCount || 0,
             tags: p.tags || [],

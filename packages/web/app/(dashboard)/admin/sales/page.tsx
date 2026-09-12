@@ -35,7 +35,9 @@ import {
   Store,
   Phone,
   Mail,
-  Plus
+  Plus,
+  LayoutDashboard,
+  ShoppingCart
 } from 'lucide-react';
 import { saleService } from '../../../../services/saleService';
 import { formatCurrency, formatDate, formatTime } from '../../../../utils/formatters';
@@ -48,7 +50,7 @@ import { Sale, SaleItem } from '../../../../types/sale';
 // Define user role type
 type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'EMPLOYEE' | 'CASHIER' | 'VIEWER';
 
-// FIXED: Extended SalesStats interface matching the service
+// SalesStats interface matching the service
 interface SalesStats {
   totalRevenue: number;
   totalSales: number;
@@ -57,8 +59,7 @@ interface SalesStats {
   todaySales: number;
   pendingOrders: number;
   refundedOrders: number;
-  totalItems: number;
-  // Additional fields that may come from API
+  totalItemsSold: number;
   totalSubtotal?: number;
   totalTax?: number;
   totalDiscount?: number;
@@ -146,7 +147,7 @@ export default function SalesPage() {
     todaySales: 0,
     pendingOrders: 0,
     refundedOrders: 0,
-    totalItems: 0,
+    totalItemsSold: 0,
   });
   const [showStats, setShowStats] = useState(true);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -183,13 +184,14 @@ export default function SalesPage() {
            ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole);
   }, [userRole, canView]);
 
-  // Get business unit ID for filtering
-  const getBusinessUnitId = useCallback(() => {
-    if (userRole === 'MANAGER' && authUser?.businessUnits?.length) {
-      return authUser.businessUnits[0].businessUnitId;
-    }
-    return undefined;
-  }, [userRole, authUser]);
+  // Navigation handlers
+  const goToPos = () => {
+    router.push('/admin/sales/pos');
+  };
+
+  const goToDashboard = () => {
+    router.push('/admin/sales/dashboard');
+  };
 
   // Redirect if not authenticated or not authorized
   useEffect(() => {
@@ -233,14 +235,11 @@ export default function SalesPage() {
       // Role-based filtering
       if (!canViewAllSales()) {
         if (userRole === 'CASHIER' || userRole === 'EMPLOYEE') {
-          // Cashiers and employees only see their own sales
           params.userId = authUser.id;
         } else if (userRole === 'MANAGER' && authUser.businessUnits?.length) {
-          // Managers see sales from their business unit
           params.businessUnitId = authUser.businessUnits[0].businessUnitId;
         }
       }
-      // SUPER_ADMIN and ADMIN see all sales
 
       const result = await saleService.getAllSales(params);
       
@@ -272,7 +271,6 @@ export default function SalesPage() {
     }
   }, [authUser, page, filter, searchQuery, dateRange, userRole, router, canViewAllSales]);
 
-  // FIXED: Fetch stats with proper mapping from API response
   const fetchStats = useCallback(async () => {
     if (!authUser || !canViewStats()) return;
 
@@ -285,7 +283,6 @@ export default function SalesPage() {
       const response = await saleService.getSalesStats(params);
       
       if (response) {
-        // Calculate today's stats from orders if available
         const today = new Date().toISOString().split('T')[0];
         let todayRevenue = 0;
         let todaySales = 0;
@@ -303,7 +300,6 @@ export default function SalesPage() {
           todaySales = todayOrders.length;
         }
 
-        // FIXED: Use response.todayRevenue/todaySales if available, otherwise calculate
         setStats({
           totalRevenue: response.totalRevenue || 0,
           totalSales: response.totalSales || 0,
@@ -312,7 +308,7 @@ export default function SalesPage() {
           todaySales: response.todaySales || todaySales || 0,
           pendingOrders: response.pendingOrders || 0,
           refundedOrders: response.refundedOrders || 0,
-          totalItems: response.totalItemsSold || response.totalItems || 0,
+          totalItemsSold: response.totalItemsSold || response.totalItems || 0,
           totalSubtotal: response.totalSubtotal || 0,
           totalTax: response.totalTax || 0,
           totalDiscount: response.totalDiscount || 0,
@@ -356,17 +352,38 @@ export default function SalesPage() {
         params.businessUnitId = authUser.businessUnits[0].businessUnitId;
       }
 
-      const blob = await saleService.exportSalesCsv(params);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sales-${dateRange.start}-${dateRange.end}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const result = await saleService.exportSales(params);
       
-      toast.success('Sales exported successfully');
+      if (result && result.data) {
+        const headers = ['Receipt', 'Date', 'Customer', 'Subtotal', 'Tax', 'Discount', 'Total', 'Payment', 'Status', 'Items'];
+        const rows = result.data.map((sale: any) => [
+          sale.receiptNumber || sale.id,
+          sale.date || sale.saleDate || '',
+          sale.customer || 'Guest',
+          sale.subtotal || 0,
+          sale.tax || 0,
+          sale.discount || 0,
+          sale.total || 0,
+          sale.paymentMethod || 'N/A',
+          sale.status || 'COMPLETED',
+          sale.items || 0,
+        ]);
+
+        const csvContent = [headers.join(','), ...rows.map((row: any[]) => row.join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sales-${dateRange.start}-${dateRange.end}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast.success('Sales exported successfully');
+      } else {
+        toast.error('No data to export');
+      }
     } catch (error) {
       console.error('Failed to export:', error);
       toast.error('Failed to export sales');
@@ -387,14 +404,12 @@ export default function SalesPage() {
     }
   };
 
-  // FIXED: Safe date formatting helper
   const safeFormatDate = (date: string | Date | undefined | null): string => {
     if (!date) return 'N/A';
     const dateStr = typeof date === 'string' ? date : date.toISOString();
     return formatDate(dateStr);
   };
 
-  // FIXED: Safe time formatting helper
   const safeFormatTime = (date: string | Date | undefined | null): string => {
     if (!date) return '';
     const dateStr = typeof date === 'string' ? date : date.toISOString();
@@ -445,6 +460,24 @@ export default function SalesPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            {/* POS Button - Navigate to POS */}
+            <button
+              onClick={goToPos}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              POS
+            </button>
+            
+            {/* Dashboard Button - Navigate to Dashboard */}
+            <button
+              onClick={goToDashboard}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </button>
+            
             <button
               onClick={() => fetchOrders(true)}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -457,6 +490,7 @@ export default function SalesPage() {
               )}
               Refresh
             </button>
+            
             {canViewStats() && (
               <>
                 <button
@@ -479,6 +513,7 @@ export default function SalesPage() {
                 </button>
               </>
             )}
+            
             <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('list')}
@@ -621,12 +656,28 @@ export default function SalesPage() {
                 ? 'No orders match your search criteria.'
                 : "No sales transactions found."}
             </p>
-            <Link 
-              href="/products" 
-              className="mt-4 inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Start Shopping
-            </Link>
+            <div className="flex flex-wrap gap-3 justify-center mt-4">
+              <button 
+                onClick={goToPos}
+                className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                Open POS
+              </button>
+              <button
+                onClick={goToDashboard}
+                className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                View Dashboard
+              </button>
+              <Link 
+                href="/products" 
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Start Shopping
+              </Link>
+            </div>
           </div>
         ) : (
           <>

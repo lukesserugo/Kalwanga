@@ -1,8 +1,65 @@
 // src/controllers/bookkeepingController.ts
+
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { bookkeepingService } from '../services/bookkeepingService.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { z } from 'zod';
+
+// ============================================
+// VALIDATION SCHEMAS
+// ============================================
+
+const createJournalEntrySchema = z.object({
+  description: z.string().min(1, 'Description is required'),
+  reference: z.string().optional(),
+  date: z.string().or(z.date()).optional(),
+  lines: z.array(z.object({
+    accountId: z.string().min(1, 'Account ID is required'),
+    debit: z.number().min(0, 'Debit must be positive'),
+    credit: z.number().min(0, 'Credit must be positive'),
+    description: z.string().optional(),
+  })).min(1, 'At least one line is required'),
+});
+
+const calculateTaxSchema = z.object({
+  subtotal: z.number().min(0, 'Subtotal must be positive'),
+});
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+const handleValidationError = (error: z.ZodError, res: Response) => {
+  return res.status(400).json({
+    success: false,
+    message: 'Validation error',
+    errors: error.errors.map((e: z.ZodIssue) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    })),
+  });
+};
+
+const getBusinessUnitId = (req: Request): string => {
+  const businessUnitId = req.user?.businessUnitId;
+  if (!businessUnitId) {
+    throw new AppError('Business unit required', 400);
+  }
+  return businessUnitId;
+};
+
+const getUserId = (req: Request): string => {
+  const userId = req.user?.id || req.user?.userId;
+  if (!userId) {
+    throw new AppError('User ID required', 400);
+  }
+  return userId;
+};
+
+// ============================================
+// CONTROLLER
+// ============================================
 
 export const bookkeepingController = {
   /**
@@ -11,13 +68,9 @@ export const bookkeepingController = {
    */
   async getJournalEntries(req: Request, res: Response, next: NextFunction) {
     try {
-      const { businessUnitId } = (req as any).user || {};
+      const businessUnitId = getBusinessUnitId(req);
       const { page = 1, limit = 50, startDate, endDate } = req.query;
       
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
-      }
-
       const where: any = { businessUnitId };
       
       if (startDate || endDate) {
@@ -62,23 +115,18 @@ export const bookkeepingController = {
    */
   async createJournalEntry(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id: userId, businessUnitId } = (req as any).user || {};
-      const { description, reference, lines, date = new Date() } = req.body;
+      const userId = getUserId(req);
+      const businessUnitId = getBusinessUnitId(req);
       
-      if (!userId || !businessUnitId) {
-        throw new AppError('User and business unit required', 400);
-      }
+      const validatedData = createJournalEntrySchema.parse(req.body);
+      const { description, reference, lines, date } = validatedData;
       
-      if (!description || !lines || !Array.isArray(lines)) {
-        throw new AppError('Description and lines are required', 400);
-      }
-
       const entry = await bookkeepingService.createJournalEntry({
         businessUnitId,
         createdBy: userId,
         description,
         reference,
-        date: new Date(date),
+        date: date ? new Date(date) : new Date(),
         lines,
       });
 
@@ -88,6 +136,9 @@ export const bookkeepingController = {
         message: 'Journal entry created successfully',
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return handleValidationError(error, res);
+      }
       next(error);
     }
   },
@@ -98,17 +149,12 @@ export const bookkeepingController = {
    */
   async getAccounts(req: Request, res: Response, next: NextFunction) {
     try {
-      const { businessUnitId } = (req as any).user || {};
-      
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
-      }
+      const businessUnitId = getBusinessUnitId(req);
 
       const accounts = await prisma.account.findMany({
         where: { businessUnitId, isActive: true },
         include: { 
           lines: {
-            // FIXED: Removed orderBy with createdAt since JournalLine model may not have createdAt field
             take: 10,
           },
         },
@@ -132,17 +178,20 @@ export const bookkeepingController = {
   async getAccountById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
+      const businessUnitId = getBusinessUnitId(req);
       
       if (!id) {
         throw new AppError('Account ID is required', 400);
       }
 
-      const account = await prisma.account.findUnique({
-        where: { id },
+      const account = await prisma.account.findFirst({
+        where: { 
+          id,
+          businessUnitId, // Ensure account belongs to the business unit
+        },
         include: { 
           lines: {
             include: { journalEntry: true },
-            // FIXED: Removed orderBy with createdAt since JournalLine model may not have createdAt field
           },
         },
       });
@@ -163,11 +212,7 @@ export const bookkeepingController = {
    */
   async generateBalanceSheet(req: Request, res: Response, next: NextFunction) {
     try {
-      const { businessUnitId } = (req as any).user || {};
-      
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
-      }
+      const businessUnitId = getBusinessUnitId(req);
 
       const balanceSheet = await bookkeepingService.generateBalanceSheet(businessUnitId);
       
@@ -187,12 +232,8 @@ export const bookkeepingController = {
    */
   async generateIncomeStatement(req: Request, res: Response, next: NextFunction) {
     try {
-      const { businessUnitId } = (req as any).user || {};
+      const businessUnitId = getBusinessUnitId(req);
       const { startDate, endDate } = req.query;
-      
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
-      }
 
       const report = await bookkeepingService.generateFinancialReport(
         businessUnitId,
@@ -216,17 +257,13 @@ export const bookkeepingController = {
    */
   async generateTrialBalance(req: Request, res: Response, next: NextFunction) {
     try {
-      const { businessUnitId } = (req as any).user || {};
-      
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
-      }
+      const businessUnitId = getBusinessUnitId(req);
 
       const trialBalance = await bookkeepingService.generateTrialBalance(businessUnitId);
       
       // Calculate totals
-      const totalDebits = trialBalance.reduce((sum: number, account: any) => sum + account.debit, 0);
-      const totalCredits = trialBalance.reduce((sum: number, account: any) => sum + account.credit, 0);
+      const totalDebits = trialBalance.reduce((sum: number, account: any) => sum + (account.debit || 0), 0);
+      const totalCredits = trialBalance.reduce((sum: number, account: any) => sum + (account.credit || 0), 0);
       
       res.json({ 
         success: true, 
@@ -251,13 +288,10 @@ export const bookkeepingController = {
   async recordSale(req: Request, res: Response, next: NextFunction) {
     try {
       const { saleId } = req.params;
-      const { businessUnitId } = (req as any).user || {};
+      const businessUnitId = getBusinessUnitId(req);
       
       if (!saleId) {
         throw new AppError('Sale ID is required', 400);
-      }
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
       }
 
       const entries = await bookkeepingService.recordSale(saleId, businessUnitId);
@@ -278,18 +312,13 @@ export const bookkeepingController = {
    */
   async calculateTax(req: Request, res: Response, next: NextFunction) {
     try {
-      const { businessUnitId } = (req as any).user || {};
-      const { subtotal } = req.body;
+      const businessUnitId = getBusinessUnitId(req);
       
-      if (!businessUnitId) {
-        throw new AppError('Business unit required', 400);
-      }
-      if (subtotal === undefined || subtotal === null || isNaN(subtotal)) {
-        throw new AppError('Valid subtotal is required', 400);
-      }
+      const validatedData = calculateTaxSchema.parse(req.body);
+      const { subtotal } = validatedData;
 
       const taxCalculation = await bookkeepingService.calculateTax(
-        Number(subtotal),
+        subtotal,
         businessUnitId
       );
       
@@ -298,7 +327,97 @@ export const bookkeepingController = {
         data: taxCalculation,
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return handleValidationError(error, res);
+      }
+      next(error);
+    }
+  },
+
+  /**
+   * Get account balance
+   * GET /bookkeeping/accounts/:id/balance
+   */
+  async getAccountBalance(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const businessUnitId = getBusinessUnitId(req);
+      
+      if (!id) {
+        throw new AppError('Account ID is required', 400);
+      }
+
+      const balance = await bookkeepingService.getAccountBalance(id, businessUnitId);
+      
+      res.json({ 
+        success: true, 
+        data: balance,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Get journal entry by ID
+   * GET /bookkeeping/journal-entries/:id
+   */
+  async getJournalEntryById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const businessUnitId = getBusinessUnitId(req);
+      
+      if (!id) {
+        throw new AppError('Journal entry ID is required', 400);
+      }
+
+      const entry = await prisma.journalEntry.findFirst({
+        where: { 
+          id,
+          businessUnitId,
+        },
+        include: { 
+          lines: { 
+            include: { account: true },
+          },
+        },
+      });
+
+      if (!entry) {
+        throw new AppError('Journal entry not found', 404);
+      }
+
+      res.json({ success: true, data: entry });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Void journal entry
+   * POST /bookkeeping/journal-entries/:id/void
+   */
+  async voidJournalEntry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const businessUnitId = getBusinessUnitId(req);
+      
+      if (!id) {
+        throw new AppError('Journal entry ID is required', 400);
+      }
+
+      const entry = await bookkeepingService.voidJournalEntry(id, businessUnitId, userId);
+      
+      res.json({ 
+        success: true, 
+        data: entry,
+        message: 'Journal entry voided successfully',
+      });
+    } catch (error) {
       next(error);
     }
   },
 };
+
+export default bookkeepingController;

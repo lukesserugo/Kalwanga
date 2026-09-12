@@ -2,7 +2,6 @@
 
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
-import * as crypto from 'crypto';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -37,26 +36,21 @@ interface QRCodeData {
   [key: string]: any;
 }
 
-interface ProductWithRelations {
-  id: string;
-  name: string;
-  sku: string;
-  barcode: string | null;
-  unitPrice: number;
-  description: string | null;
-  category: any | null;
-  businessUnit: any;
-  supplier: any | null;
-  inventory: any | null;
-  variants: any[];
-  [key: string]: any;
-}
-
 // ============================================
 // BARCODE SERVICE
 // ============================================
 
 export class BarcodeService {
+  private readonly appUrl: string;
+  private readonly barcodeApiUrl: string;
+  private readonly qrApiUrl: string;
+
+  constructor() {
+    this.appUrl = process.env.APP_URL || 'http://localhost:3000';
+    this.barcodeApiUrl = process.env.BARCODE_API_URL || 'https://barcode.tec-it.com/barcode.ashx';
+    this.qrApiUrl = process.env.QR_API_URL || 'https://api.qrserver.com/v1/create-qr-code';
+  }
+
   /**
    * Get product barcode - returns existing or generates new
    */
@@ -73,7 +67,6 @@ export class BarcodeService {
 
       let barcode = product.barcode;
       
-      // Generate barcode if not exists
       if (!barcode) {
         barcode = this.generateEAN13();
         await prisma.product.update({
@@ -106,12 +99,10 @@ export class BarcodeService {
       const maxAttempts = 100;
 
       do {
-        // Generate random numeric barcode
         const randomPart = Math.floor(Math.random() * Math.pow(10, length - prefix.length - 1))
           .toString()
           .padStart(length - prefix.length - 1, '0');
         
-        // Add check digit
         const base = prefix + randomPart;
         let sum = 0;
         for (let i = 0; i < base.length; i++) {
@@ -122,7 +113,6 @@ export class BarcodeService {
 
         attempts++;
         
-        // Check if barcode already exists
         const existing = await prisma.product.findFirst({
           where: { barcode },
           select: { id: true },
@@ -154,9 +144,8 @@ export class BarcodeService {
         throw new AppError('Barcode is required', 400);
       }
 
-      // Use external barcode API
       const codeFormat = format || 'EAN13';
-      const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${codeFormat}&dpi=96&datatype=Content`;
+      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=${codeFormat}&dpi=96&datatype=Content`;
       
       return { barcodeUrl };
     } catch (error) {
@@ -181,8 +170,7 @@ export class BarcodeService {
         timestamp: new Date().toISOString(),
       };
 
-      // Use external QR code API
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
+      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
       return {
         qrCodeUrl,
@@ -204,12 +192,10 @@ export class BarcodeService {
         return { valid: false, message: 'Barcode is required' };
       }
 
-      // Check format - EAN-13 should be 13 digits
       if (!/^\d{13}$/.test(barcode)) {
         return { valid: false, message: 'Invalid barcode format. Must be 13 digits.' };
       }
 
-      // Validate checksum
       let sum = 0;
       for (let i = 0; i < 12; i++) {
         sum += parseInt(barcode[i]) * (i % 2 === 0 ? 1 : 3);
@@ -219,7 +205,6 @@ export class BarcodeService {
         return { valid: false, message: 'Invalid barcode checksum' };
       }
 
-      // Check if barcode already exists
       const where: any = { barcode };
       if (excludeProductId) {
         where.id = { not: excludeProductId };
@@ -256,7 +241,6 @@ export class BarcodeService {
         throw new AppError('Barcode is required', 400);
       }
 
-      // Check if product exists
       const product = await prisma.product.findUnique({
         where: { id: productId },
         select: { id: true, name: true },
@@ -266,7 +250,6 @@ export class BarcodeService {
         throw new AppError('Product not found', 404);
       }
 
-      // Check if barcode is already assigned to another product
       const existing = await prisma.product.findFirst({
         where: {
           barcode,
@@ -279,7 +262,6 @@ export class BarcodeService {
         throw new AppError(`Barcode is already assigned to product "${existing.name}"`, 409);
       }
 
-      // Update product with barcode
       await prisma.product.update({
         where: { id: productId },
         data: { barcode },
@@ -317,7 +299,6 @@ export class BarcodeService {
         throw new AppError('Product not found', 404);
       }
 
-      // Get or generate barcode
       let barcode = product.barcode;
       if (!barcode) {
         barcode = this.generateEAN13();
@@ -338,7 +319,7 @@ export class BarcodeService {
         timestamp: new Date().toISOString(),
       };
 
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
+      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
       return {
         qrCodeUrl,
@@ -379,10 +360,10 @@ export class BarcodeService {
         saleId: receipt.saleId,
         total: receipt.total || 0,
         timestamp: receipt.createdAt || new Date(),
-        verificationUrl: `${process.env.APP_URL || 'http://localhost:3000'}/verify/${receipt.receiptNumber}`,
+        verificationUrl: `${this.appUrl}/verify/${receipt.receiptNumber}`,
       };
 
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
+      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
       return {
         qrCodeUrl,
@@ -470,7 +451,6 @@ export class BarcodeService {
     const barHeight = 100;
     let x = 0;
 
-    // Simple EAN-13 barcode rendering
     for (const char of barcode) {
       const code = char.charCodeAt(0);
       for (let i = 0; i < 7; i++) {
@@ -589,7 +569,7 @@ export class BarcodeService {
         });
       }
 
-      const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
+      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
       const qrData = {
         type: 'PRODUCT',
         id: product.id,
@@ -599,7 +579,7 @@ export class BarcodeService {
         barcode: barcode,
         timestamp: new Date().toISOString(),
       };
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
+      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
       return {
         barcode,
@@ -706,7 +686,6 @@ export class BarcodeService {
         throw new AppError('Barcode is required', 400);
       }
 
-      // Try to find product by barcode
       let product = await prisma.product.findFirst({
         where: { 
           barcode,
@@ -722,7 +701,6 @@ export class BarcodeService {
         },
       });
 
-      // If not found, try to find variant by barcode
       let variant = null;
       let productFromVariant = null;
 
@@ -744,7 +722,6 @@ export class BarcodeService {
         });
 
         if (variant) {
-          // Use type assertion to handle the variant product
           productFromVariant = variant.product as any;
           product = productFromVariant;
         }
@@ -754,13 +731,10 @@ export class BarcodeService {
         throw new AppError('Product not found for this barcode', 404);
       }
 
-      // Get inventory info using the correct field names
       let inventory = null;
       if (product.inventory) {
-        // If product has inventory directly
         inventory = product.inventory;
       } else {
-        // Try to find inventory by productId
         inventory = await prisma.inventory.findFirst({
           where: {
             productId: product.id,
@@ -773,8 +747,7 @@ export class BarcodeService {
         });
       }
 
-      // Generate barcode image URL
-      const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
+      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
       const qrData = {
         type: 'PRODUCT',
         id: product.id,
@@ -784,7 +757,7 @@ export class BarcodeService {
         barcode: barcode,
         timestamp: new Date().toISOString(),
       };
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
+      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
       return {
         product,
@@ -830,7 +803,7 @@ export class BarcodeService {
         });
       }
 
-      const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
+      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
 
       return {
         barcodeUrl,

@@ -19,18 +19,19 @@ import auditRoutes from './routes/audit.js';
 import cartRoutes from './routes/cart.js';
 import checkoutRoutes from './routes/checkout.js';
 import posRoutes from './routes/pos.js';
-import salesRoutes from './routes/sales.js';
+import salesRoutes from './routes/sale.ts';
 import inventoryRoutes from './routes/inventory.js';
 import userRoutes from './routes/users.js';
 import customerRoutes from './routes/customers.js';
 import categoryRoutes from './routes/categories.js';
 import productRoutes from './routes/products.js';
 import paymentRoutes from './routes/payment.js';
-import providerRoutes from './routes/providers.js'; 
+import providerRoutes from './routes/providers.js';
 import reportRoutes from './routes/reports.js';
 import supplierRoutes from './routes/suppliers.js';
 import purchaseOrderRoutes from './routes/purchaseOrders.js';
-import shiftRoutes from './routes/shifts.js';
+import orderRoutes from './routes/orders.js';
+import shiftRoutes from './routes/shift.ts';
 import notificationRoutes from './routes/notification.js';
 import barcodeRoutes from './routes/barcodes.js';
 import receiptRoutes from './routes/receipts.js';
@@ -73,13 +74,28 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 
+// ============================================
+// CORS — MUST ALLOW ALL CUSTOM HEADERS USED BY FRONTEND
+// ============================================
+
 app.use(cors({
   origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8081'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'x-business-unit-id',   // 👈 FIX: frontend sends this on many routes
+    'x-company-id',
+    'x-request-id',
+  ],
   exposedHeaders: ['Content-Disposition'],
+  maxAge: 86400, // cache preflight for 24h — reduces OPTIONS traffic
 }));
+
+// Explicitly answer preflight for every route (belt-and-braces)
+app.options('*', cors());
 
 // ============================================
 // RATE LIMITING
@@ -149,7 +165,7 @@ app.use('/users/invite', invitationLimiter);
 // BODY PARSING - MUST COME FIRST
 // ============================================
 
-app.use(express.json({ 
+app.use(express.json({
   limit: '50mb',
   verify: (req, res, buf) => {
     try {
@@ -166,7 +182,6 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // ============================================
 
 app.use((req, res, next) => {
-  // Log all POST/PUT requests to /products
   if ((req.method === 'POST' || req.method === 'PUT') && req.path.includes('/products')) {
     console.log('🔍 [REQUEST BODY DEBUG]');
     console.log(`   Method: ${req.method}`);
@@ -180,7 +195,7 @@ app.use((req, res, next) => {
     console.log(`   supplierId: ${req.body?.supplierId || 'undefined'}`);
     console.log(`   tags: ${JSON.stringify(req.body?.tags) || 'undefined'}`);
     console.log(`   images count: ${req.body?.images?.length || 0}`);
-    
+
     if (!req.body || Object.keys(req.body).length === 0) {
       console.error('❌ EMPTY REQUEST BODY! Check body parser middleware.');
     }
@@ -228,7 +243,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // PUBLIC ENDPOINTS (No Authentication)
 // ============================================
 
-// Health check
 app.get('/health', (req: express.Request, res: express.Response) => {
   res.json({
     status: 'ok',
@@ -243,7 +257,6 @@ app.get('/health', (req: express.Request, res: express.Response) => {
   });
 });
 
-// Detailed health check
 app.get('/health/detailed', async (req: express.Request, res: express.Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -264,7 +277,7 @@ app.get('/health/detailed', async (req: express.Request, res: express.Response) 
 });
 
 // ============================================
-// AUTH ROUTES - MUST BE MOUNTED BEFORE OTHER ROUTES
+// AUTH ROUTES
 // ============================================
 
 app.use('/auth', authLimiter, authRoutes);
@@ -277,26 +290,24 @@ logger.info('Auth routes mounted at: /auth');
 
 app.use('/webhooks', webhookRoutes);
 
-// Stripe webhook endpoint (no auth, raw body)
 app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req: express.Request, res: express.Response) => {
   logger.info('Stripe webhook received');
   res.status(200).json({ received: true });
 });
 
-// Clerk webhook endpoint (no auth)
 app.post('/webhooks/clerk', (req: express.Request, res: express.Response) => {
   logger.info('Clerk webhook received');
   res.status(200).json({ received: true });
 });
 
 // ============================================
-// REALTIME ROUTES (Public - SSE/WebSocket)
+// REALTIME ROUTES
 // ============================================
 
 app.use('/realtime', realtimeRoutes);
 
 // ============================================
-// PUBLIC INVITATION ROUTES (No Auth Required)
+// PUBLIC INVITATION ROUTES
 // ============================================
 
 app.use('/users/invite', userInvitationRoutes);
@@ -327,14 +338,8 @@ logger.info('Audit routes mounted at: /audit');
 // ============================================
 
 app.use('/users', authMiddleware, userRoutes);
-
-// User activity routes
 app.use('/users', authMiddleware, userActivityRoutes);
-
-// User import routes
 app.use('/users/import', authMiddleware, userImportRoutes);
-
-// User group routes
 app.use('/user-groups', authMiddleware, userGroupRoutes);
 
 logger.info('User routes mounted at: /users');
@@ -346,7 +351,6 @@ logger.info('User group routes mounted at: /user-groups');
 
 console.log('🔄 Registering business unit routes...');
 
-// GET routes
 app.get('/business-units', businessUnitController.getAllBusinessUnits);
 app.get('/business-units/default/:companyId', businessUnitController.getOrCreateDefaultBusinessUnit);
 app.get('/business-units/company/:companyId', businessUnitController.getBusinessUnitsByCompany);
@@ -356,16 +360,13 @@ app.get('/business-units/:id/users', businessUnitController.getBusinessUnitUsers
 app.get('/business-units/:id/details', businessUnitController.getBusinessUnitWithDetails);
 app.get('/business-units/:id', businessUnitController.getBusinessUnitById);
 
-// POST routes
 app.post('/business-units', businessUnitController.createBusinessUnit);
 app.post('/business-units/bulk-delete', businessUnitController.bulkDeleteBusinessUnits);
 app.post('/business-units/ensure', businessUnitController.ensureUserBusinessUnit);
 app.post('/business-units/:id/users', businessUnitController.addUserToBusinessUnit);
 
-// PUT routes
 app.put('/business-units/:id', businessUnitController.updateBusinessUnit);
 
-// DELETE routes
 app.delete('/business-units/:id/users/:userId', businessUnitController.removeUserFromBusinessUnit);
 app.delete('/business-units/:id', businessUnitController.deleteBusinessUnit);
 
@@ -380,9 +381,6 @@ console.log('   - DELETE /business-units/:id');
 // MAIN ROUTE REGISTRATION (NO /api PREFIX)
 // ============================================
 
-// ✅ All routes are mounted WITHOUT /api prefix
-// The frontend calls /products, /inventory, /categories, etc. directly
-
 app.use('/cart', cartRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/pos', posRoutes);
@@ -392,10 +390,11 @@ app.use('/customers', customerRoutes);
 app.use('/categories', categoryRoutes);
 app.use('/products', productRoutes);
 app.use('/payments', paymentRoutes);
-app.use('/payment-providers', providerRoutes); // ✅ ADD THIS - Mount provider routes
+app.use('/payment-providers', providerRoutes);
 app.use('/reports', reportRoutes);
 app.use('/suppliers', supplierRoutes);
 app.use('/purchase-orders', purchaseOrderRoutes);
+app.use('/orders', orderRoutes);
 app.use('/shifts', shiftRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/barcodes', barcodeRoutes);
@@ -428,15 +427,16 @@ logger.info('   - /products/*');
 logger.info('   - /inventory/*');
 logger.info('   - /categories/*');
 logger.info('   - /suppliers/*');
+logger.info('   - /purchase-orders/*');
+logger.info('   - /orders/*');
 logger.info('   - /sales/*');
 logger.info('   - /payments/*');
-logger.info('   - /payment-providers/*'); // ✅ ADD THIS
+logger.info('   - /payment-providers/*');
 logger.info('   - /customers/*');
 logger.info('   - /cart/*');
 logger.info('   - /checkout/*');
 logger.info('   - /pos/*');
 logger.info('   - /reports/*');
-logger.info('   - /purchase-orders/*');
 logger.info('   - /shifts/*');
 logger.info('   - /notifications/*');
 logger.info('   - /barcodes/*');
@@ -483,7 +483,6 @@ app.use(errorHandler);
 
 const server = createServer(app);
 
-// Start background services
 if (process.env.NODE_ENV === 'production') {
   reorderService.startInventoryMonitor().catch(error => {
     logger.error('Failed to start reorder service:', error);
@@ -501,11 +500,12 @@ server.listen(PORT, async () => {
   logger.info(`🔗 Inventory API: http://localhost:${PORT}/inventory`);
   logger.info(`🔗 Categories API: http://localhost:${PORT}/categories`);
   logger.info(`🔗 Suppliers API: http://localhost:${PORT}/suppliers`);
+  logger.info(`🔗 Orders API: http://localhost:${PORT}/orders`);
   logger.info(`🔗 Business Units API: http://localhost:${PORT}/business-units`);
   logger.info(`🔗 Users API: http://localhost:${PORT}/users`);
   logger.info(`🔗 User Groups API: http://localhost:${PORT}/user-groups`);
   logger.info(`🔗 Payments API: http://localhost:${PORT}/payments`);
-  logger.info(`🔗 Payment Providers API: http://localhost:${PORT}/payment-providers`); // ✅ ADD THIS
+  logger.info(`🔗 Payment Providers API: http://localhost:${PORT}/payment-providers`);
   logger.info(`🔗 Health: http://localhost:${PORT}/health`);
 
   try {
@@ -522,7 +522,7 @@ server.listen(PORT, async () => {
 
 const gracefulShutdown = async () => {
   logger.info('Shutting down gracefully...');
-  
+
   try {
     server.close(() => {
       logger.info('Server closed');

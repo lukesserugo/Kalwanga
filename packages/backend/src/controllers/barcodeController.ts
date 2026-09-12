@@ -49,6 +49,27 @@ const scanBarcodeSchema = z.object({
 });
 
 // ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+const handleValidationError = (error: z.ZodError, res: Response) => {
+  return res.status(400).json({
+    success: false,
+    message: 'Validation error',
+    errors: error.errors.map((e: z.ZodIssue) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    })),
+  });
+};
+
+// Helper to safely get user ID from request
+// Uses the global Express.Request.user type from auth.ts
+const getUserId = (req: Request): string | null => {
+  return req.user?.id || req.user?.userId || null;
+};
+
+// ============================================
 // CONTROLLER
 // ============================================
 
@@ -122,7 +143,7 @@ export const barcodeController = {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
       
-      const result = await barcodeService.generateBarcodeImage(productId);
+      const result = await barcodeService.generateBarcodeImageForProduct(productId);
       
       res.json({
         success: true,
@@ -149,14 +170,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -178,14 +192,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -208,14 +215,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -237,14 +237,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -291,14 +284,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -360,14 +346,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -409,14 +388,7 @@ export const barcodeController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return handleValidationError(error, res);
       }
       next(error);
     }
@@ -496,8 +468,8 @@ export const barcodeController = {
       let barcode = variant.barcode;
       if (!barcode) {
         const generated = await barcodeService.generateUniqueBarcode({
-          productName: variant.name,
-          sku: variant.sku,
+          productName: variant.name || 'Variant',
+          sku: variant.sku || undefined,
         });
         barcode = generated.barcode;
         
@@ -521,50 +493,49 @@ export const barcodeController = {
       };
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
-      // ✅ FIX: Get user ID with proper type handling
-      const user = (req as any).user;
-      const userId: string | null = user?.id || null;
+      // Get user ID using the helper - works with global Express.Request.user type
+      const userId = getUserId(req);
 
-      // 🔥 FIXED: Use 'CUSTOM' type for variant QR codes since 'VARIANT' is not allowed
-      // Also handle the case where QRCodeRecord might not exist in the Prisma schema
+      // Save QR code record to database - use 'CUSTOM' type for variants
       try {
-        // Save QR code record to database - use 'CUSTOM' type for variants
-        await prisma.qRCodeRecord.create({
-          data: {
-            code: `QR-${variantId}-${Date.now()}`,
-            data: JSON.stringify(qrData),
-            type: 'CUSTOM', // 'VARIANT' is not allowed, use 'CUSTOM'
-            imageUrl: qrCodeUrl,
-            isActive: true,
-            variantId: variant.id,
-            productId: variant.productId,
-            businessUnitId: variant.product?.businessUnitId || undefined,
-            createdBy: userId,
-          },
-        });
+        if (prisma.qRCodeRecord) {
+          await prisma.qRCodeRecord.create({
+            data: {
+              code: `QR-${variantId}-${Date.now()}`,
+              data: JSON.stringify(qrData),
+              type: 'CUSTOM',
+              imageUrl: qrCodeUrl,
+              isActive: true,
+              variantId: variant.id,
+              productId: variant.productId,
+              businessUnitId: variant.product?.businessUnitId || undefined,
+              createdBy: userId || undefined,
+            },
+          });
+        }
       } catch (qrError) {
-        // If QRCodeRecord table doesn't exist, just log and continue
         console.warn('Could not save QR code record:', qrError);
       }
 
       // Save barcode image record
       try {
-        await prisma.barcodeImageRecord.create({
-          data: {
-            code: barcode,
-            barcode: barcode,
-            format: 'EAN-13',
-            data: barcode,
-            imageUrl: barcodeUrl,
-            isActive: true,
-            variantId: variant.id,
-            productId: variant.productId,
-            businessUnitId: variant.product?.businessUnitId || undefined,
-            createdBy: userId,
-          },
-        });
+        if (prisma.barcodeImageRecord) {
+          await prisma.barcodeImageRecord.create({
+            data: {
+              code: barcode,
+              barcode: barcode,
+              format: 'EAN-13',
+              data: barcode,
+              imageUrl: barcodeUrl,
+              isActive: true,
+              variantId: variant.id,
+              productId: variant.productId,
+              businessUnitId: variant.product?.businessUnitId || undefined,
+              createdBy: userId || undefined,
+            },
+          });
+        }
       } catch (barcodeError) {
-        // If BarcodeImageRecord table doesn't exist, just log and continue
         console.warn('Could not save barcode image record:', barcodeError);
       }
 
@@ -598,6 +569,10 @@ export const barcodeController = {
       const { code } = req.params;
       if (!code) throw new AppError('QR code is required', 400);
       
+      if (!prisma.qRCodeRecord) {
+        throw new AppError('QR code records are not available', 503);
+      }
+
       const qrCode = await prisma.qRCodeRecord.findUnique({
         where: { code },
         include: {
@@ -664,6 +639,10 @@ export const barcodeController = {
       const { barcode } = req.params;
       if (!barcode) throw new AppError('Barcode is required', 400);
       
+      if (!prisma.barcodeImageRecord) {
+        throw new AppError('Barcode image records are not available', 503);
+      }
+
       const barcodeImage = await prisma.barcodeImageRecord.findUnique({
         where: { code: barcode },
         include: {
@@ -715,6 +694,10 @@ export const barcodeController = {
       const { code } = req.params;
       if (!code) throw new AppError('QR code is required', 400);
       
+      if (!prisma.qRCodeRecord) {
+        throw new AppError('QR code records are not available', 503);
+      }
+
       const qrCode = await prisma.qRCodeRecord.update({
         where: { code },
         data: { isActive: false },
@@ -739,6 +722,10 @@ export const barcodeController = {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
       
+      if (!prisma.qRCodeRecord) {
+        throw new AppError('QR code records are not available', 503);
+      }
+
       const qrCodes = await prisma.qRCodeRecord.findMany({
         where: { 
           productId,

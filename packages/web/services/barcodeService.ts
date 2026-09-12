@@ -23,23 +23,225 @@ export interface GenerateBarcodeOptions {
   includeQR?: boolean;
 }
 
+export interface ScanBarcodeResult {
+  product: any;
+  inventory?: {
+    quantity: number;
+    reserved: number;
+    available: number;
+  };
+  barcodeInfo: {
+    barcode: string;
+    barcodeUrl: string;
+    qrCodeUrl: string;
+  };
+  variant?: any;
+}
+
+export interface BarcodeValidationResult {
+  valid: boolean;
+  message?: string;
+}
+
+export interface BulkGenerateResult {
+  generated: number;
+  failed: number;
+}
+
+export interface VariantBarcodeInfo extends BarcodeInfo {
+  variantName?: string;
+  productName?: string;
+  variantId?: string;
+}
+
 // Helper to check if we're on the client
 const isClient = typeof window !== 'undefined';
 
 export const barcodeService = {
+  // ============================================
+  // PRODUCT BARCODE ROUTES
+  // ============================================
+
+  /**
+   * Get barcode for a product
+   * GET /barcodes/product/:productId
+   */
+  async getBarcodeByProduct(productId: string): Promise<{ barcode: string; productId: string; generatedAt: Date }> {
+    if (!isClient) {
+      return {} as any;
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/product/${productId}`);
+      return response || { barcode: '', productId, generatedAt: new Date() };
+    } catch (error) {
+      console.error(`Error fetching barcode for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get full barcode info for a product (with images)
+   * GET /barcodes/product/:productId/info
+   */
+  async getProductBarcodeInfo(productId: string): Promise<BarcodeInfo> {
+    if (!isClient) {
+      return {} as BarcodeInfo;
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/product/${productId}/info`);
+      return response || ({} as BarcodeInfo);
+    } catch (error) {
+      console.error(`Error fetching barcode info for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get QR code for a product
+   * GET /barcodes/product/:productId/qr
+   */
+  async getProductQRCode(productId: string): Promise<{ qrCodeUrl: string; qrData: any; generatedAt: Date }> {
+    if (!isClient) {
+      return { qrCodeUrl: '', qrData: null, generatedAt: new Date() };
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/product/${productId}/qr`);
+      return response || { qrCodeUrl: '', qrData: null, generatedAt: new Date() };
+    } catch (error) {
+      console.error(`Error fetching QR code for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get barcode image for a product
+   * GET /barcodes/product/:productId/image
+   */
+  async getBarcodeImage(productId: string): Promise<{ barcodeUrl: string; barcode: string; generatedAt: Date }> {
+    if (!isClient) {
+      return { barcodeUrl: '', barcode: '', generatedAt: new Date() };
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/product/${productId}/image`);
+      return response || { barcodeUrl: '', barcode: '', generatedAt: new Date() };
+    } catch (error) {
+      console.error(`Error fetching barcode image for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get SVG barcode for a product
+   * GET /barcodes/product/:productId/svg
+   * FIXED: Returns string directly, not an object with .data
+   */
+  async getSVGBarcode(productId: string): Promise<string> {
+    if (!isClient) {
+      return '';
+    }
+    try {
+      // The API returns the SVG string directly when responseType is 'text'
+      const response = await api.get<string>(`/barcodes/product/${productId}/svg`);
+      // response is already the string (not { data: string })
+      return response || '';
+    } catch (error) {
+      console.error(`Error fetching SVG barcode for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all QR codes for a product
+   * GET /barcodes/product/:productId/qr-codes
+   */
+  async getProductQRCodes(productId: string): Promise<{ data: any[]; count: number }> {
+    if (!isClient) {
+      return { data: [], count: 0 };
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/product/${productId}/qr-codes`);
+      return response || { data: [], count: 0 };
+    } catch (error) {
+      console.error(`Error fetching QR codes for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
+  // ============================================
+  // VARIANT BARCODE ROUTES
+  // ============================================
+
+  /**
+   * Generate barcode for a product variant
+   * POST /barcodes/variant/:variantId
+   */
+  async generateVariantBarcode(variantId: string): Promise<{ barcode: string; variantId: string }> {
+    if (!isClient) {
+      throw new Error('Cannot generate variant barcode on server');
+    }
+    try {
+      const response = await api.post<any>(`/barcodes/variant/${variantId}`);
+      return response || { barcode: '', variantId };
+    } catch (error) {
+      console.error(`Error generating barcode for variant ${variantId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get variant barcode info
+   * GET /barcodes/variant/:variantId/info
+   */
+  async getVariantBarcodeInfo(variantId: string): Promise<VariantBarcodeInfo> {
+    if (!isClient) {
+      return {} as VariantBarcodeInfo;
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/variant/${variantId}/info`);
+      return response || ({} as VariantBarcodeInfo);
+    } catch (error) {
+      console.error(`Error fetching variant barcode info for ${variantId}:`, error);
+      throw error;
+    }
+  },
+
+  // ============================================
+  // BARCODE GENERATION ROUTES
+  // ============================================
+
+  /**
+   * Generate a barcode for an existing product
+   * POST /barcodes/generate
+   */
+  async generateBarcode(productId: string, type?: string): Promise<{ barcode: string; productId: string }> {
+    if (!isClient) {
+      throw new Error('Cannot generate barcode on server');
+    }
+    try {
+      const response = await api.post<any>('/barcodes/generate', { 
+        productId, 
+        type: type || 'EAN13' 
+      });
+      return response || { barcode: '', productId };
+    } catch (error) {
+      console.error(`Error generating barcode for product ${productId}:`, error);
+      throw error;
+    }
+  },
+
   /**
    * Generate a unique barcode (for pre-creation)
+   * POST /barcodes/generate-unique
    */
   async generateUniqueBarcode(options?: GenerateBarcodeOptions): Promise<{ barcode: string }> {
     if (!isClient) {
       throw new Error('Cannot generate barcode on server');
     }
     try {
-      // Try the backend API first
-      const response = await api.post<any>('/products/barcode/generate', options || {});
-      return response?.data || response || { barcode: '' };
+      const response = await api.post<any>('/barcodes/generate-unique', options || {});
+      return response || { barcode: '' };
     } catch (error) {
-      console.warn('Backend barcode generation failed, using fallback:', error);
+      console.error('Error generating unique barcode:', error);
       // Fallback: generate client-side barcode
       const prefix = options?.prefix || 'PRD';
       const length = options?.length || 12;
@@ -51,146 +253,160 @@ export const barcodeService = {
   },
 
   /**
-   * Generate a barcode for an existing product
+   * Bulk generate barcodes for products without barcodes
+   * POST /barcodes/bulk-generate
    */
-  async generateBarcode(productId: string, options?: GenerateBarcodeOptions): Promise<BarcodeInfo> {
+  async bulkGenerateBarcodes(): Promise<BulkGenerateResult> {
     if (!isClient) {
-      throw new Error('Cannot generate barcode on server');
+      throw new Error('Cannot bulk generate barcodes on server');
     }
     try {
-      const response = await api.post<any>(`/products/${productId}/barcode`, options || {});
-      return response?.data || response;
+      const response = await api.post<any>('/barcodes/bulk-generate');
+      return response || { generated: 0, failed: 0 };
     } catch (error) {
-      console.error(`Error generating barcode for product ${productId}:`, error);
-      // Return fallback data
-      const fallbackBarcode = this.generateFallbackBarcode();
-      return {
-        barcode: fallbackBarcode,
-        barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(fallbackBarcode)}&code=EAN-13&dpi=96`,
-        qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify({ productId, barcode: fallbackBarcode }))}&size=200x200`,
-        productId,
-        format: 'EAN-13',
-        generatedAt: new Date().toISOString(),
-      };
+      console.error('Error bulk generating barcodes:', error);
+      throw error;
     }
   },
+
+  // ============================================
+  // BARCODE IMAGE ROUTES
+  // ============================================
 
   /**
    * Generate barcode image from barcode string
+   * POST /barcodes/image
    */
-  async generateBarcodeImage(barcode: string, format?: string): Promise<{ barcodeUrl: string }> {
+  async generateBarcodeImage(barcode: string, format?: 'EAN-13' | 'UPC-A' | 'CODE128'): Promise<{ barcodeUrl: string }> {
     if (!isClient) {
       return { barcodeUrl: '' };
     }
     try {
-      // Try the API endpoint first
-      try {
-        const response = await api.post<any>('/products/barcode/image', { barcode, format });
-        return response?.data || response || { barcodeUrl: '' };
-      } catch (apiError) {
-        // Fallback to external service
-        console.warn('Using fallback barcode generation:', apiError);
-        const formatParam = format || 'EAN-13';
-        return {
-          barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${formatParam}&dpi=96`
-        };
-      }
+      const response = await api.post<any>('/barcodes/image', { barcode, format });
+      return response || { barcodeUrl: '' };
     } catch (error) {
       console.error('Error generating barcode image:', error);
-      const formatParam = format || 'EAN-13';
+      // Fallback to external service
+      const formatParam = format || 'EAN13';
       return {
-        barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${formatParam}&dpi=96`
+        barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${formatParam}&dpi=96&datatype=Content`
       };
     }
   },
 
   /**
-   * Generate QR code from data
+   * Get barcode image by barcode
+   * GET /barcodes/image/:barcode
    */
-  async generateQRCode(data: any): Promise<{ qrCodeUrl: string }> {
-    if (!isClient) {
-      return { qrCodeUrl: '' };
-    }
-    try {
-      // Try the API endpoint first
-      try {
-        const response = await api.post<any>('/products/qrcode', { data });
-        return response?.data || response || { qrCodeUrl: '' };
-      } catch (apiError) {
-        // Fallback to external service
-        console.warn('Using fallback QR generation:', apiError);
-        return {
-          qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify(data))}&size=200x200`
-        };
-      }
-    } catch (error) {
-      console.error('Error generating QR code:', error);
-      return {
-        qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify(data))}&size=200x200`
-      };
-    }
-  },
-
-  /**
-   * Get barcode info for a product
-   */
-  async getBarcodeByProduct(productId: string): Promise<BarcodeInfo> {
-    if (!isClient) {
-      return {} as BarcodeInfo;
-    }
-    try {
-      const response = await api.get<any>(`/products/${productId}/barcode`);
-      return response?.data || response || ({} as BarcodeInfo);
-    } catch (error) {
-      console.error(`Error fetching barcode for product ${productId}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get barcode image for a product
-   */
-  async getBarcodeImage(productId: string): Promise<{ barcodeUrl: string }> {
-    if (!isClient) {
-      return { barcodeUrl: '' };
-    }
-    try {
-      const response = await api.get<any>(`/products/${productId}/barcode/image`);
-      return response?.data || response || { barcodeUrl: '' };
-    } catch (error) {
-      console.error(`Error fetching barcode image for product ${productId}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get QR code for a product
-   */
-  async getProductQRCode(productId: string): Promise<{ qrCodeUrl: string }> {
-    if (!isClient) {
-      return { qrCodeUrl: '' };
-    }
-    try {
-      const response = await api.get<any>(`/products/${productId}/qrcode`);
-      return response?.data || response || { qrCodeUrl: '' };
-    } catch (error) {
-      console.error(`Error fetching QR code for product ${productId}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Get product by barcode
-   */
-  async getProductByBarcode(barcode: string): Promise<{ productId: string } | null> {
+  async getBarcodeImageByCode(barcode: string): Promise<any> {
     if (!isClient) {
       return null;
     }
     try {
-      const response = await api.get<any>(`/products/barcode/${barcode}`);
-      return response?.data || response || null;
+      const response = await api.get<any>(`/barcodes/image/${barcode}`);
+      return response || null;
+    } catch (error) {
+      console.error(`Error fetching barcode image ${barcode}:`, error);
+      throw error;
+    }
+  },
+
+  // ============================================
+  // QR CODE ROUTES
+  // ============================================
+
+  /**
+   * Generate QR code from data
+   * POST /barcodes/qr
+   */
+  async generateQRCode(data: Record<string, any>): Promise<{ qrCodeUrl: string; qrData: Record<string, any> }> {
+    if (!isClient) {
+      return { qrCodeUrl: '', qrData: {} };
+    }
+    try {
+      const response = await api.post<any>('/barcodes/qr', { data });
+      return response || { qrCodeUrl: '', qrData: {} };
+    } catch (error) {
+      console.error('Error generating QR code:', error);
+      // Fallback to external service
+      const qrData = {
+        ...data,
+        timestamp: new Date().toISOString(),
+      };
+      return {
+        qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`,
+        qrData,
+      };
+    }
+  },
+
+  /**
+   * Get QR code by code
+   * GET /barcodes/qr/:code
+   */
+  async getQRCodeByCode(code: string): Promise<any> {
+    if (!isClient) {
+      return null;
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/qr/${code}`);
+      return response || null;
+    } catch (error) {
+      console.error(`Error fetching QR code ${code}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deactivate QR code
+   * PATCH /barcodes/qr/:code/deactivate
+   */
+  async deactivateQRCode(code: string): Promise<any> {
+    if (!isClient) {
+      throw new Error('Cannot deactivate QR code on server');
+    }
+    try {
+      const response = await api.patch<any>(`/barcodes/qr/${code}/deactivate`);
+      return response || { success: true };
+    } catch (error) {
+      console.error(`Error deactivating QR code ${code}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get receipt QR code
+   * GET /barcodes/receipt/:receiptNumber/qr
+   */
+  async getReceiptQRCode(receiptNumber: string): Promise<{ qrCodeUrl: string; qrData: any; generatedAt: Date }> {
+    if (!isClient) {
+      return { qrCodeUrl: '', qrData: null, generatedAt: new Date() };
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/receipt/${receiptNumber}/qr`);
+      return response || { qrCodeUrl: '', qrData: null, generatedAt: new Date() };
+    } catch (error) {
+      console.error(`Error fetching receipt QR code for ${receiptNumber}:`, error);
+      throw error;
+    }
+  },
+
+  // ============================================
+  // BARCODE LOOKUP & VALIDATION ROUTES
+  // ============================================
+
+  /**
+   * Get product by barcode
+   * GET /barcodes/lookup/:barcode
+   */
+  async getProductByBarcode(barcode: string): Promise<any | null> {
+    if (!isClient) {
+      return null;
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/lookup/${barcode}`);
+      return response || null;
     } catch (error: any) {
-      // If 404, barcode is available
       if (error?.response?.status === 404) {
         return null;
       }
@@ -200,47 +416,105 @@ export const barcodeService = {
   },
 
   /**
+   * Validate barcode format
+   * GET /barcodes/validate/:barcode
+   */
+  async validateBarcodeFormat(barcode: string): Promise<{ isValid: boolean; format: string }> {
+    if (!isClient) {
+      return { isValid: false, format: 'EAN-13' };
+    }
+    try {
+      const response = await api.get<any>(`/barcodes/validate/${barcode}`);
+      return response || { isValid: false, format: 'EAN-13' };
+    } catch (error) {
+      console.error(`Error validating barcode ${barcode}:`, error);
+      // Client-side validation fallback
+      const isValid = /^\d{13}$/.test(barcode) && this.validateChecksum(barcode);
+      return { isValid, format: 'EAN-13' };
+    }
+  },
+
+  /**
+   * Validate barcode with uniqueness check
+   * POST /barcodes/validate
+   */
+  async validateBarcode(barcode: string, excludeProductId?: string): Promise<BarcodeValidationResult> {
+    if (!isClient) {
+      return { valid: false, message: 'Cannot validate on server' };
+    }
+    try {
+      const response = await api.post<any>('/barcodes/validate', { barcode, excludeProductId });
+      return response || { valid: false, message: 'Validation failed' };
+    } catch (error) {
+      console.error(`Error validating barcode ${barcode}:`, error);
+      // Client-side validation fallback
+      const isValid = /^\d{13}$/.test(barcode) && this.validateChecksum(barcode);
+      return { 
+        valid: isValid, 
+        message: isValid ? 'Barcode is valid' : 'Invalid barcode format' 
+      };
+    }
+  },
+
+  // ============================================
+  // BARCODE ASSOCIATION ROUTES
+  // ============================================
+
+  /**
    * Associate a barcode with a product
+   * POST /barcodes/associate
    */
   async associateBarcode(productId: string, barcode: string): Promise<{ success: boolean; message: string }> {
     if (!isClient) {
       throw new Error('Cannot associate barcode on server');
     }
     try {
-      const response = await api.post<any>(`/products/${productId}/barcode/associate`, { barcode });
-      return response?.data || response || { success: true, message: 'Barcode associated successfully' };
+      const response = await api.post<any>('/barcodes/associate', { productId, barcode });
+      return response || { success: true, message: 'Barcode associated successfully' };
     } catch (error) {
       console.error(`Error associating barcode with product ${productId}:`, error);
-      // Return success anyway since the product has the barcode
-      return { success: true, message: 'Barcode associated (local)' };
+      throw error;
     }
   },
 
+  // ============================================
+  // BARCODE SCAN ROUTES
+  // ============================================
+
   /**
-   * Bulk generate barcodes
+   * Scan a barcode and get product info
+   * POST /barcodes/scan
    */
-  async bulkGenerateBarcodes(productIds: string[], options?: GenerateBarcodeOptions): Promise<{ results: any[]; errors: any[] }> {
+  async scanBarcode(barcode: string, businessUnitId?: string): Promise<ScanBarcodeResult> {
     if (!isClient) {
-      throw new Error('Cannot bulk generate barcodes on server');
+      throw new Error('Cannot scan barcode on server');
     }
     try {
-      const response = await api.post<any>('/products/barcode/bulk-generate', { productIds, options });
-      return response?.data || response || { results: [], errors: [] };
+      const response = await api.post<any>('/barcodes/scan', { barcode, businessUnitId });
+      return response;
     } catch (error) {
-      console.error('Error bulk generating barcodes:', error);
-      // Fallback: generate individually
-      const results: any[] = [];
-      const errors: any[] = [];
-      for (const id of productIds) {
-        try {
-          const result = await this.generateBarcode(id, options);
-          results.push(result);
-        } catch (e) {
-          errors.push({ id, message: (e as Error).message });
-        }
-      }
-      return { results, errors };
+      console.error(`Error scanning barcode ${barcode}:`, error);
+      throw error;
     }
+  },
+
+  // ============================================
+  // CLIENT-SIDE UTILITY METHODS
+  // ============================================
+
+  /**
+   * Validate barcode checksum (client-side)
+   */
+  validateChecksum(barcode: string): boolean {
+    if (!/^\d{13}$/.test(barcode)) {
+      return false;
+    }
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(barcode[i]) * (i % 2 === 0 ? 1 : 3);
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return checkDigit === parseInt(barcode[12]);
   },
 
   /**

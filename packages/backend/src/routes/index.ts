@@ -2,7 +2,7 @@
 
 import { Router } from 'express';
 import productRoutes from './products.js';
-import saleRoutes from './sales.js';
+import saleRoutes from './sale.ts';
 import inventoryRoutes from './inventory.js';
 import customerRoutes from './customers.js';
 import userRoutes from './users.js';
@@ -18,7 +18,7 @@ import providerRoutes from './providers.js'; // ✅ ADD THIS IMPORT
 import reportRoutes from './reports.js';
 import supplierRoutes from './suppliers.js';
 import purchaseOrderRoutes from './purchaseOrders.js';
-import shiftRoutes from './shifts.js';
+import shiftRoutes from './shift.ts';
 import notificationRoutes from './notification.js';
 import barcodeRoutes from './barcodes.js';
 import receiptRoutes from './receipts.js';

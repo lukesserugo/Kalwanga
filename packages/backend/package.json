@@ -9,7 +9,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "clean": "rm -rf dist node_modules"
+    "clean": "rm -rf dist node_modules",
+    "backfill:inventory": "tsx scripts/backfillInventory.ts"
   },
   "prisma": {
     "schema": "prisma/schema.prisma"

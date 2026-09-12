@@ -16,7 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { customerService } from '../../../services/customerService';
-import { useToast } from '../../common/Toast';
+import { useToast } from '../../../utils/toast-manager';
 import { formatCurrency } from '../../../utils/formatters';
 
 interface Customer {

@@ -5,53 +5,78 @@ import { logger } from '../lib/logger.js';
 
 export const auditMiddleware = (action: string, entityType: string) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Capture the original response json method
-    const originalJson = res.json;
-    const originalSend = res.send;
+    // Guard so we only log ONCE per response, even though res.json
+    // internally calls res.send.
+    let logged = false;
 
-    // Helper to log audit
     const logAudit = async (body: any, statusCode: number) => {
+      if (logged) return;
+      logged = true;
+
+      // Only log successful operations
+      if (statusCode < 200 || statusCode >= 300) return;
+
       try {
-        const entityId = req.params.id || body?.data?.id || body?.id || req.body?.id;
-        
-        // Only log successful operations
-        if (statusCode >= 200 && statusCode < 300) {
-          await auditService.logAction(req, action, entityType, entityId, body?.data || body);
-        }
+        const entityId =
+          req.params?.id ||
+          (body && typeof body === 'object' && body.data?.id) ||
+          (body && typeof body === 'object' && body.id) ||
+          req.body?.id;
+
+        const payload =
+          body && typeof body === 'object' && 'data' in body
+            ? (body as any).data
+            : body;
+
+        await auditService.logAction(req, action, entityType, entityId, payload);
       } catch (error) {
         logger.error('Audit middleware failed to log action:', error);
-        // Don't block the response if audit logging fails
+        // Never block the response because of audit logging
       }
     };
 
-    // Override res.json
-    res.json = function(body: any) {
-      const statusCode = res.statusCode;
-      logAudit(body, statusCode);
-      return originalJson.call(this, body);
+    // Capture originals
+    const originalJson = res.json.bind(res);
+    const originalSend = res.send.bind(res);
+
+    // Override res.json — this is the primary path for API responses
+    res.json = function (body: any) {
+      void logAudit(body, res.statusCode);
+      return originalJson(body);
     };
 
-    // Override res.send (for CSV exports and other non-JSON responses)
-    res.send = function(body: any) {
-      const statusCode = res.statusCode;
+    // Override res.send — handles CSV/string exports and any
+    // response that bypasses res.json. The `logged` guard prevents
+    // double-logging when res.json calls res.send internally.
+    res.send = function (body: any) {
       if (typeof body === 'string') {
-        // For CSV or string responses, just log a simple entry
-        const entityId = req.params.id || req.body?.id;
-        auditService.logAction(req, action, entityType, entityId, { exported: true })
-          .catch(err => logger.error('Audit log failed:', err));
+        // String body (CSV, HTML, plain text) — log a lightweight entry
+        if (!logged) {
+          logged = true;
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            const entityId = req.params?.id || req.body?.id;
+            auditService
+              .logAction(req, action, entityType, entityId, { exported: true })
+              .catch((err) => logger.error('Audit log failed:', err));
+          }
+        }
       } else {
-        logAudit(body, statusCode);
+        void logAudit(body, res.statusCode);
       }
-      return originalSend.call(this, body);
+      return originalSend(body);
     };
 
     next();
   };
 };
 
-// Specific audit middleware helpers
-export const auditCreate = (entityType: string) => auditMiddleware('CREATE', entityType);
-export const auditUpdate = (entityType: string) => auditMiddleware('UPDATE', entityType);
-export const auditDelete = (entityType: string) => auditMiddleware('DELETE', entityType);
-export const auditView = (entityType: string) => auditMiddleware('VIEW', entityType);
-export const auditExport = (entityType: string) => auditMiddleware('EXPORT', entityType);
+export const auditCreate = (entityType: string) =>
+  auditMiddleware('CREATE', entityType);
+export const auditUpdate = (entityType: string) =>
+  auditMiddleware('UPDATE', entityType);
+export const auditDelete = (entityType: string) =>
+  auditMiddleware('DELETE', entityType);
+export const auditView = (entityType: string) =>
+  auditMiddleware('VIEW', entityType);
+export const auditExport = (entityType: string) =>
+  auditMiddleware('EXPORT', entityType);

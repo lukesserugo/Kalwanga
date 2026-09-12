@@ -3,7 +3,12 @@
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
-import type { CreateCompanyDto, UpdateCompanyDto, CompanyQueryParams, CompanyStats } from '../types/company.types.js';
+import type {
+  CreateCompanyDto,
+  UpdateCompanyDto,
+  CompanyQueryParams,
+  CompanyStats,
+} from '../types/company.types.js';
 
 // Import the enum type from Prisma
 import { BusinessUnitType } from '../generated/prisma/index.js';
@@ -25,10 +30,10 @@ export class CompanyService extends BaseService {
    */
   async getAllCompanies(params: CompanyQueryParams) {
     try {
-      const { 
-        page = 1, 
-        limit = 10, 
-        search, 
+      const {
+        page = 1,
+        limit = 10,
+        search,
         isActive,
         sortBy = 'createdAt',
         sortOrder = 'desc',
@@ -37,7 +42,7 @@ export class CompanyService extends BaseService {
       const skip = (page - 1) * limit;
 
       const where: any = {};
-      
+
       if (search) {
         where.OR = [
           { name: { contains: search, mode: 'insensitive' } },
@@ -46,7 +51,7 @@ export class CompanyService extends BaseService {
           { taxId: { contains: search, mode: 'insensitive' } },
         ];
       }
-      
+
       if (isActive !== undefined) where.isActive = isActive;
 
       const [companies, total] = await Promise.all([
@@ -185,7 +190,6 @@ export class CompanyService extends BaseService {
         throw new AppError('Company not found', 404);
       }
 
-      // Get stats
       const stats = await this.getCompanyStats(id);
 
       return {
@@ -240,16 +244,13 @@ export class CompanyService extends BaseService {
 
   /**
    * Create a new company with default business unit
-   * Supports creating with custom business unit name and code
    */
   async createCompany(data: ExtendedCreateCompanyDto) {
     try {
-      // Validate required fields
       if (!data.name || !data.email || !data.phone) {
         throw new AppError('Name, email, and phone are required', 400);
       }
 
-      // Check if email already exists
       const existing = await this.prisma.company.findUnique({
         where: { email: data.email },
       });
@@ -258,121 +259,130 @@ export class CompanyService extends BaseService {
         throw new AppError('Company with this email already exists', 400);
       }
 
-      // Create company in transaction
-      const result = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // 1. Create the company
-        const created = await tx.company.create({
-          data: {
-            name: data.name.trim(),
-            email: data.email.trim(),
-            phone: data.phone.trim(),
-            address: data.address || null,
-            taxId: data.taxId || null,
-            currency: data.currency || 'USD',
-            timezone: data.timezone || 'UTC',
-            logo: data.logo || null,
-            isActive: data.isActive !== undefined ? data.isActive : true,
-          },
-        });
-
-        console.log(`✅ Company created: ${created.name} (${created.id})`);
-
-        // 2. Create default business unit - use provided name or default
-        const businessUnitName = data.businessUnitName || 'Main Store';
-        const businessUnitCode = data.businessUnitCode || 'MAIN';
-        const businessUnitType = data.businessUnitType 
-          ? this.mapBusinessUnitType(data.businessUnitType) 
-          : BusinessUnitType.STORE;
-
-        const defaultBusinessUnit = await tx.businessUnit.create({
-          data: {
-            name: businessUnitName,
-            code: businessUnitCode.toUpperCase(),
-            companyId: created.id,
-            isActive: true,
-            type: businessUnitType,
-            address: data.address || null,
-            phone: data.phone || null,
-            email: data.email || null,
-          },
-        });
-
-        console.log(`✅ Default business unit created: ${defaultBusinessUnit.name} (${defaultBusinessUnit.id})`);
-
-        // 3. Create default company settings
-        await tx.companySettings.create({
-          data: {
-            companyId: created.id,
-            taxRate: 0,
-            taxInclusive: false,
-            lowStockThreshold: 10,
-            autoReorder: false,
-            allowReturns: true,
-            requireCustomerForReturn: false,
-            maxReturnDays: 30,
-            allowCash: true,
-            allowCard: true,
-            allowMobileMoney: true,
-            allowGiftCards: true,
-          },
-        });
-
-        // 4. Create default sales settings
-        const currencySymbol = data.currency === 'UGX' ? 'UGX' : 
-                              data.currency === 'EUR' ? '€' : 
-                              data.currency === 'GBP' ? '£' : '$';
-        
-        await tx.salesSettings.create({
-          data: {
-            companyId: created.id,
-            taxRate: 8,
-            discountEnabled: true,
-            maxDiscount: 20,
-            loyaltyPointsEnabled: true,
-            pointsPerDollar: 10,
-            autoPrintReceipt: true,
-            emailReceipts: true,
-            receiptFooter: 'Thank you for your business!',
-            defaultPaymentMethod: 'CASH',
-            currencySymbol: currencySymbol,
-            currencyCode: data.currency || 'USD',
-            invoicePrefix: 'INV-',
-            receiptPrefix: 'RCP-',
-          },
-        });
-
-        // 5. Create audit log
-        try {
-          await tx.auditLog.create({
+      const result = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          // 1. Create the company
+          const created = await tx.company.create({
             data: {
-              action: 'CREATE',
-              entityType: 'COMPANY',
-              entityId: created.id,
-              entityName: created.name,
-              userId: 'system',
-              severity: 'HIGH',
-              changes: {
-                name: created.name,
-                email: created.email,
-                phone: created.phone,
-                businessUnitId: defaultBusinessUnit.id,
-                businessUnitName: defaultBusinessUnit.name,
-              },
+              name: data.name.trim(),
+              email: data.email.trim(),
+              phone: data.phone.trim(),
+              address: data.address || null,
+              taxId: data.taxId || null,
+              currency: data.currency || 'USD',
+              timezone: data.timezone || 'UTC',
+              logo: data.logo || null,
+              isActive: data.isActive !== undefined ? data.isActive : true,
             },
           });
-        } catch (auditError) {
-          console.warn('Audit log creation skipped:', auditError);
+
+          console.log(`✅ Company created: ${created.name} (${created.id})`);
+
+          // 2. Create default business unit
+          const businessUnitName = data.businessUnitName || 'Main Store';
+          const businessUnitCode = data.businessUnitCode || 'MAIN';
+          const businessUnitType = data.businessUnitType
+            ? this.mapBusinessUnitType(data.businessUnitType)
+            : BusinessUnitType.STORE;
+
+          const defaultBusinessUnit = await tx.businessUnit.create({
+            data: {
+              name: businessUnitName,
+              code: businessUnitCode.toUpperCase(),
+              companyId: created.id,
+              isActive: true,
+              type: businessUnitType,
+              address: data.address || null,
+              phone: data.phone || null,
+              email: data.email || null,
+            },
+          });
+
+          console.log(
+            `✅ Default business unit created: ${defaultBusinessUnit.name} (${defaultBusinessUnit.id})`
+          );
+
+          // 3. Create default company settings
+          await tx.companySettings.create({
+            data: {
+              companyId: created.id,
+              taxRate: 0,
+              taxInclusive: false,
+              lowStockThreshold: 10,
+              autoReorder: false,
+              allowReturns: true,
+              requireCustomerForReturn: false,
+              maxReturnDays: 30,
+              allowCash: true,
+              allowCard: true,
+              allowMobileMoney: true,
+              allowGiftCards: true,
+            },
+          });
+
+          // 4. Create default sales settings
+          const currencySymbol =
+            data.currency === 'UGX'
+              ? 'UGX'
+              : data.currency === 'EUR'
+              ? '€'
+              : data.currency === 'GBP'
+              ? '£'
+              : '$';
+
+          await tx.salesSettings.create({
+            data: {
+              companyId: created.id,
+              taxRate: 8,
+              discountEnabled: true,
+              maxDiscount: 20,
+              loyaltyPointsEnabled: true,
+              pointsPerDollar: 10,
+              autoPrintReceipt: true,
+              emailReceipts: true,
+              receiptFooter: 'Thank you for your business!',
+              defaultPaymentMethod: 'CASH',
+              currencySymbol,
+              currencyCode: data.currency || 'USD',
+              invoicePrefix: 'INV-',
+              receiptPrefix: 'RCP-',
+            },
+          });
+
+          // 5. Create audit log
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'CREATE',
+                entityType: 'COMPANY',
+                entityId: created.id,
+                entityName: created.name,
+                userId: 'system',
+                severity: 'HIGH',
+                changes: {
+                  name: created.name,
+                  email: created.email,
+                  phone: created.phone,
+                  businessUnitId: defaultBusinessUnit.id,
+                  businessUnitName: defaultBusinessUnit.name,
+                },
+              },
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation skipped:', auditError);
+          }
+
+          return {
+            ...created,
+            businessUnits: [defaultBusinessUnit],
+            defaultBusinessUnit,
+          };
         }
+      );
 
-        // Return company with business units included
-        return {
-          ...created,
-          businessUnits: [defaultBusinessUnit],
-          defaultBusinessUnit: defaultBusinessUnit,
-        };
-      });
-
-      console.log(`✅ Company created successfully with business unit: ${result.name} (${result.id})`);
+      console.log(
+        `✅ Company created successfully with business unit: ${result.name} (${result.id})`
+      );
       return result;
     } catch (error) {
       this.handleError(error, 'CompanyService.createCompany');
@@ -386,11 +396,10 @@ export class CompanyService extends BaseService {
   private mapBusinessUnitType(type: string): BusinessUnitType {
     const normalizedType = type.toUpperCase();
     const enumValues = Object.values(BusinessUnitType);
-    const matched = enumValues.find(v => v === normalizedType);
+    const matched = enumValues.find((v) => v === normalizedType);
     if (matched) {
       return matched;
     }
-    // Default to STORE if invalid
     return BusinessUnitType.STORE;
   }
 
@@ -411,7 +420,6 @@ export class CompanyService extends BaseService {
         throw new AppError('Company not found', 404);
       }
 
-      // Check email uniqueness if being changed
       if (data.email && data.email !== company.email) {
         const existing = await this.prisma.company.findUnique({
           where: { email: data.email },
@@ -432,51 +440,54 @@ export class CompanyService extends BaseService {
       if (data.logo !== undefined) updateData.logo = data.logo || null;
       if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
-      const updatedCompany = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const updated = await tx.company.update({
-          where: { id },
-          data: updateData,
-          include: {
-            businessUnits: {
-              where: { isActive: true },
-            },
-            users: {
-              where: { isActive: true },
-              select: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-                role: true,
+      const updatedCompany = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const updated = await tx.company.update({
+            where: { id },
+            data: updateData,
+            include: {
+              businessUnits: {
+                where: { isActive: true },
               },
-              take: 10,
-            },
-          },
-        });
-
-        // Create audit log
-        try {
-          await tx.auditLog.create({
-            data: {
-              action: 'UPDATE',
-              entityType: 'COMPANY',
-              entityId: id,
-              entityName: updated.name,
-              userId: 'system',
-              severity: 'INFO',
-              changes: {
-                updatedFields: Object.keys(updateData),
+              users: {
+                where: { isActive: true },
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                  role: true,
+                },
+                take: 10,
               },
             },
           });
-        } catch (auditError) {
-          console.warn('Audit log creation skipped:', auditError);
+
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'UPDATE',
+                entityType: 'COMPANY',
+                entityId: id,
+                entityName: updated.name,
+                userId: 'system',
+                severity: 'INFO',
+                changes: {
+                  updatedFields: Object.keys(updateData),
+                },
+              },
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation skipped:', auditError);
+          }
+
+          return updated;
         }
+      );
 
-        return updated;
-      });
-
-      console.log(`✅ Company updated: ${updatedCompany.name} (${updatedCompany.id})`);
+      console.log(
+        `✅ Company updated: ${updatedCompany.name} (${updatedCompany.id})`
+      );
       return updatedCompany;
     } catch (error) {
       this.handleError(error, 'CompanyService.updateCompany');
@@ -516,54 +527,52 @@ export class CompanyService extends BaseService {
         throw new AppError('Company not found', 404);
       }
 
-      const hasAssociations = 
+      const hasAssociations =
         company.businessUnits.length > 0 ||
         company.users.length > 0 ||
         company.customers.length > 0 ||
         company.suppliers.length > 0;
 
       if (hasAssociations) {
-        // Soft delete
-        const archived = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-          const updated = await tx.company.update({
-            where: { id },
-            data: { isActive: false },
-          });
-
-          // Deactivate all business units
-          await tx.businessUnit.updateMany({
-            where: { companyId: id, isActive: true },
-            data: { isActive: false },
-          });
-
-          // Deactivate all users
-          await tx.user.updateMany({
-            where: { companyId: id, isActive: true },
-            data: { isActive: false },
-          });
-
-          // Create audit log
-          try {
-            await tx.auditLog.create({
-              data: {
-                action: 'UPDATE',
-                entityType: 'COMPANY',
-                entityId: id,
-                entityName: company.name,
-                userId: 'system',
-                severity: 'HIGH',
-                changes: {
-                  isActive: { old: true, new: false },
-                  status: 'archived',
-                },
-              },
+        const archived = await this.prisma.$transaction(
+          async (tx: Prisma.TransactionClient) => {
+            const updated = await tx.company.update({
+              where: { id },
+              data: { isActive: false },
             });
-          } catch (auditError) {
-            console.warn('Audit log creation skipped:', auditError);
-          }
 
-          return updated;
-        });
+            await tx.businessUnit.updateMany({
+              where: { companyId: id, isActive: true },
+              data: { isActive: false },
+            });
+
+            await tx.user.updateMany({
+              where: { companyId: id, isActive: true },
+              data: { isActive: false },
+            });
+
+            try {
+              await tx.auditLog.create({
+                data: {
+                  action: 'UPDATE',
+                  entityType: 'COMPANY',
+                  entityId: id,
+                  entityName: company.name,
+                  userId: 'system',
+                  severity: 'HIGH',
+                  changes: {
+                    isActive: { old: true, new: false },
+                    status: 'archived',
+                  },
+                },
+              });
+            } catch (auditError) {
+              console.warn('Audit log creation skipped:', auditError);
+            }
+
+            return updated;
+          }
+        );
 
         return {
           message: 'Company archived (soft deleted) due to associated records',
@@ -572,9 +581,7 @@ export class CompanyService extends BaseService {
         };
       }
 
-      // Hard delete if no associations
       await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        // Delete related settings first
         await tx.companySettings.deleteMany({
           where: { companyId: id },
         });
@@ -586,7 +593,6 @@ export class CompanyService extends BaseService {
           where: { id },
         });
 
-        // Create audit log
         try {
           await tx.auditLog.create({
             data: {
@@ -650,19 +656,19 @@ export class CompanyService extends BaseService {
           where: { companyId: id, isActive: true },
         }),
         this.prisma.product.count({
-          where: { 
+          where: {
             businessUnit: { companyId: id },
             isActive: true,
           },
         }),
         this.prisma.sale.count({
-          where: { 
+          where: {
             businessUnit: { companyId: id },
             status: 'COMPLETED',
           },
         }),
         this.prisma.sale.aggregate({
-          where: { 
+          where: {
             businessUnit: { companyId: id },
             status: 'COMPLETED',
           },
@@ -694,14 +700,17 @@ export class CompanyService extends BaseService {
   /**
    * Add a business unit to a company
    */
-  async addBusinessUnit(companyId: string, data: { 
-    name: string; 
-    code: string; 
-    address?: string; 
-    phone?: string; 
-    email?: string; 
-    type?: string;
-  }) {
+  async addBusinessUnit(
+    companyId: string,
+    data: {
+      name: string;
+      code: string;
+      address?: string;
+      phone?: string;
+      email?: string;
+      type?: string;
+    }
+  ) {
     try {
       if (!companyId) {
         throw new AppError('Company ID is required', 400);
@@ -715,7 +724,6 @@ export class CompanyService extends BaseService {
         throw new AppError('Company not found', 404);
       }
 
-      // Check if business unit code already exists
       const existing = await this.prisma.businessUnit.findFirst({
         where: {
           code: data.code.toUpperCase(),
@@ -724,11 +732,14 @@ export class CompanyService extends BaseService {
       });
 
       if (existing) {
-        throw new AppError(`Business unit with code "${data.code}" already exists for this company`, 400);
+        throw new AppError(
+          `Business unit with code "${data.code}" already exists for this company`,
+          400
+        );
       }
 
-      const businessUnitType = data.type 
-        ? this.mapBusinessUnitType(data.type) 
+      const businessUnitType = data.type
+        ? this.mapBusinessUnitType(data.type)
         : BusinessUnitType.STORE;
 
       const businessUnit = await this.prisma.businessUnit.create({
@@ -744,7 +755,6 @@ export class CompanyService extends BaseService {
         },
       });
 
-      // Create audit log
       try {
         await this.prisma.auditLog.create({
           data: {
@@ -766,7 +776,9 @@ export class CompanyService extends BaseService {
         console.warn('Audit log creation skipped:', auditError);
       }
 
-      console.log(`✅ Business unit added: ${businessUnit.name} (${businessUnit.id}) to company ${company.name}`);
+      console.log(
+        `✅ Business unit added: ${businessUnit.name} (${businessUnit.id}) to company ${company.name}`
+      );
       return businessUnit;
     } catch (error) {
       this.handleError(error, 'CompanyService.addBusinessUnit');
@@ -776,6 +788,11 @@ export class CompanyService extends BaseService {
 
   /**
    * Get default business unit for a company
+   *
+   * ✅ FIXED: Now returns the MOST RECENT active unit, matching the
+   *    fallback order used by shiftController, productController, and
+   *    inventoryController. Previously used 'asc' (oldest), which
+   *    returned a unit that owned none of the current data.
    */
   async getDefaultBusinessUnit(companyId: string) {
     try {
@@ -791,14 +808,13 @@ export class CompanyService extends BaseService {
         throw new AppError('Company not found', 404);
       }
 
-      // Get the first active business unit (oldest)
       const defaultBusinessUnit = await this.prisma.businessUnit.findFirst({
         where: {
           companyId: companyId,
           isActive: true,
         },
         orderBy: {
-          createdAt: 'asc',
+          createdAt: 'desc',
         },
         include: {
           _count: {
@@ -812,7 +828,7 @@ export class CompanyService extends BaseService {
       });
 
       if (!defaultBusinessUnit) {
-        // Create a default business unit if none exists
+        // Only create a default if the company has NO active units yet
         return await this.prisma.businessUnit.create({
           data: {
             name: 'Main Store',
@@ -857,7 +873,6 @@ export class CompanyService extends BaseService {
         throw new AppError('Business unit not found', 404);
       }
 
-      // ✅ FIX: Check if company exists before returning
       if (!businessUnit.company) {
         throw new AppError('Company not found for this business unit', 404);
       }
@@ -878,7 +893,6 @@ export class CompanyService extends BaseService {
    */
   async getOrCreateDefaultCompany(): Promise<any> {
     try {
-      // Try to find an existing active company
       let company = await this.prisma.company.findFirst({
         where: { isActive: true },
         orderBy: { createdAt: 'asc' },
@@ -893,79 +907,76 @@ export class CompanyService extends BaseService {
         return company;
       }
 
-      // Create a default company with business unit
-      company = await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        const created = await tx.company.create({
-          data: {
-            name: 'Default Company',
-            email: 'default@company.com',
-            phone: '+1234567890',
-            address: 'Default Address',
-            isActive: true,
-            currency: 'USD',
-            timezone: 'UTC',
-          },
-        });
-
-        // Create default business unit
-        await tx.businessUnit.create({
-          data: {
-            name: 'Main Store',
-            code: 'MAIN',
-            companyId: created.id,
-            isActive: true,
-            type: BusinessUnitType.STORE,
-          },
-        });
-
-        // Create default company settings
-        await tx.companySettings.create({
-          data: {
-            companyId: created.id,
-            taxRate: 0,
-            taxInclusive: false,
-            lowStockThreshold: 10,
-            autoReorder: false,
-            allowReturns: true,
-            requireCustomerForReturn: false,
-            maxReturnDays: 30,
-            allowCash: true,
-            allowCard: true,
-            allowMobileMoney: true,
-            allowGiftCards: true,
-          },
-        });
-
-        // Create default sales settings
-        await tx.salesSettings.create({
-          data: {
-            companyId: created.id,
-            taxRate: 8,
-            discountEnabled: true,
-            maxDiscount: 20,
-            loyaltyPointsEnabled: true,
-            pointsPerDollar: 10,
-            autoPrintReceipt: true,
-            emailReceipts: true,
-            receiptFooter: 'Thank you for your business!',
-            defaultPaymentMethod: 'CASH',
-            currencySymbol: '$',
-            currencyCode: 'USD',
-            invoicePrefix: 'INV-',
-            receiptPrefix: 'RCP-',
-          },
-        });
-
-        // Return company with business units
-        return await tx.company.findUnique({
-          where: { id: created.id },
-          include: {
-            businessUnits: {
-              where: { isActive: true },
+      company = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const created = await tx.company.create({
+            data: {
+              name: 'Default Company',
+              email: 'default@company.com',
+              phone: '+1234567890',
+              address: 'Default Address',
+              isActive: true,
+              currency: 'USD',
+              timezone: 'UTC',
             },
-          },
-        });
-      });
+          });
+
+          await tx.businessUnit.create({
+            data: {
+              name: 'Main Store',
+              code: 'MAIN',
+              companyId: created.id,
+              isActive: true,
+              type: BusinessUnitType.STORE,
+            },
+          });
+
+          await tx.companySettings.create({
+            data: {
+              companyId: created.id,
+              taxRate: 0,
+              taxInclusive: false,
+              lowStockThreshold: 10,
+              autoReorder: false,
+              allowReturns: true,
+              requireCustomerForReturn: false,
+              maxReturnDays: 30,
+              allowCash: true,
+              allowCard: true,
+              allowMobileMoney: true,
+              allowGiftCards: true,
+            },
+          });
+
+          await tx.salesSettings.create({
+            data: {
+              companyId: created.id,
+              taxRate: 8,
+              discountEnabled: true,
+              maxDiscount: 20,
+              loyaltyPointsEnabled: true,
+              pointsPerDollar: 10,
+              autoPrintReceipt: true,
+              emailReceipts: true,
+              receiptFooter: 'Thank you for your business!',
+              defaultPaymentMethod: 'CASH',
+              currencySymbol: '$',
+              currencyCode: 'USD',
+              invoicePrefix: 'INV-',
+              receiptPrefix: 'RCP-',
+            },
+          });
+
+          return await tx.company.findUnique({
+            where: { id: created.id },
+            include: {
+              businessUnits: {
+                where: { isActive: true },
+              },
+            },
+          });
+        }
+      );
 
       console.log(`✅ Created default company: ${company?.id}`);
       return company;
@@ -992,7 +1003,6 @@ export class CompanyService extends BaseService {
         throw new AppError('User not found', 404);
       }
 
-      // If user already has a company, return it
       if (user.companyId) {
         const company = await this.prisma.company.findUnique({
           where: { id: user.companyId },
@@ -1007,11 +1017,9 @@ export class CompanyService extends BaseService {
         }
       }
 
-      // Get or create default company
       const company = await this.getOrCreateDefaultCompany();
 
       if (company) {
-        // Assign user to company
         await this.prisma.user.update({
           where: { id: userId },
           data: { companyId: company.id },
@@ -1092,7 +1100,10 @@ export class CompanyService extends BaseService {
   /**
    * Get company activity feed
    */
-  async getCompanyActivity(id: string, params?: { limit?: number; offset?: number }) {
+  async getCompanyActivity(
+    id: string,
+    params?: { limit?: number; offset?: number }
+  ) {
     try {
       if (!id) {
         throw new AppError('Company ID is required', 400);
@@ -1100,7 +1111,6 @@ export class CompanyService extends BaseService {
 
       const { limit = 20, offset = 0 } = params || {};
 
-      // Check if company exists
       const company = await this.prisma.company.findUnique({
         where: { id },
         select: { id: true },
@@ -1110,13 +1120,9 @@ export class CompanyService extends BaseService {
         throw new AppError('Company not found', 404);
       }
 
-      // Now we know company exists, fetch activities
       const activities = await this.prisma.auditLog.findMany({
         where: {
-          OR: [
-            { entityType: 'COMPANY', entityId: id },
-            { companyId: id },
-          ],
+          OR: [{ entityType: 'COMPANY', entityId: id }, { companyId: id }],
         },
         orderBy: { createdAt: 'desc' },
         skip: offset,
@@ -1135,10 +1141,7 @@ export class CompanyService extends BaseService {
 
       const total = await this.prisma.auditLog.count({
         where: {
-          OR: [
-            { entityType: 'COMPANY', entityId: id },
-            { companyId: id },
-          ],
+          OR: [{ entityType: 'COMPANY', entityId: id }, { companyId: id }],
         },
       });
 

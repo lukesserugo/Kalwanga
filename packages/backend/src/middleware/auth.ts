@@ -41,7 +41,7 @@ const ALL_PERMISSIONS = [
   'analytics:view', 'analytics:export',
   'settings:view', 'settings:edit', 'settings:manage',
   'system:logs', 'system:backup', 'system:restore', 'system:settings',
-  'business_unit:view', 'business_unit:create', 'business_unit:edit', 
+  'business_unit:view', 'business_unit:create', 'business_unit:edit',
   'business_unit:delete', 'business_unit:manage',
   'sale:view', 'sale:create', 'sale:edit', 'sale:delete', 'sale:manage',
   'sale:export', 'sale:print', 'sale:email',
@@ -78,19 +78,19 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     console.log('🔐 Auth middleware called');
     console.log('   Method:', req.method);
     console.log('   URL:', req.url);
-    
+
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
     let token = null;
-    
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.split(' ')[1];
       console.log('   Token present:', token ? 'YES' : 'NO');
     }
-    
+
     // For now, use the default SUPER_ADMIN user
     const defaultEmail = 'lukesserugo09@gmail.com';
-    
+
     // Find or create the default SUPER_ADMIN user
     let user = await prisma.user.findFirst({
       where: { email: defaultEmail },
@@ -104,9 +104,8 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
     if (!user) {
       console.log('🆕 Creating default SUPER_ADMIN user...');
-      
+
       try {
-        // Try creating with permissions field
         user = await prisma.user.create({
           data: {
             clerkId: `clerk_default_${Date.now()}`,
@@ -128,7 +127,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         });
         console.log('✅ Default user created with permissions:', user.email);
       } catch (createError: any) {
-        // If permissions field doesn't exist, create without it
         if (createError.message?.includes('Unknown argument `permissions`')) {
           console.log('⚠️ Permissions field not available, creating user without permissions...');
           user = await prisma.user.create({
@@ -156,12 +154,12 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       }
     }
 
-    // Get user permissions
+    // ─────────────────────────────────────────────────────────────
+    // Resolve permissions (unchanged from original logic)
+    // ─────────────────────────────────────────────────────────────
     let permissions: string[] = [];
-    
-    // Try to get permissions from user object
+
     try {
-      // Check if permissions field exists on user
       if (user && 'permissions' in user && user.permissions) {
         permissions = Array.isArray(user.permissions) ? user.permissions : [];
         console.log(`✅ Got ${permissions.length} permissions from user`);
@@ -169,28 +167,92 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     } catch (e) {
       console.log('⚠️ Permissions field not available, using role-based permissions');
     }
-    
-    // If no permissions found or SUPER_ADMIN, use role-based permissions
+
     if (permissions.length === 0 || user.role === UserRole.SUPER_ADMIN) {
       permissions = getRoleBasedPermissions(user.role);
       console.log(`✅ Using ${permissions.length} role-based permissions for ${user.role}`);
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Resolve companyId — guarantee it's never undefined.
+    //   1. Use user.companyId if present
+    //   2. Fall back to user's first active business unit's company
+    //   3. Fall back to oldest Company row in the DB
+    //   4. Create one if none exists, then persist the link on the user
+    // ─────────────────────────────────────────────────────────────
+    let companyId: string | null = (user as any).companyId ?? null;
+
+    // Fallback 1: business unit's company
+    if (!companyId && user.businessUnits[0]?.businessUnit) {
+      companyId =
+        ((user.businessUnits[0].businessUnit as any).companyId as string | null) ??
+        null;
+    }
+
+    // Fallback 2: any existing company, else create one
+    if (!companyId) {
+      console.warn(
+        `⚠️  User ${user.email} has no companyId — resolving fallback company`
+      );
+
+      let fallbackCompany = await prisma.company.findFirst({
+        orderBy: { createdAt: 'desc' }, // most recent active company
+      });
+
+      if (!fallbackCompany) {
+        console.warn(
+          '⚠️  No Company rows exist — creating a default company'
+        );
+
+        // Only send fields that exist on your model. If Prisma complains
+        // about a missing required field, add it here.
+        fallbackCompany = await prisma.company.create({
+          data: {
+            name: 'Default Company',
+            email: 'admin@kalwanga.local',
+            phone: '+0000000000',
+            isActive: true,
+          } as any,
+        });
+
+        console.log('✅ Created fallback Company:', fallbackCompany.id);
+      }
+
+      companyId = fallbackCompany.id;
+
+      // Persist the link on the user so subsequent requests are fast
+      await prisma.user
+        .update({
+          where: { id: user.id },
+          data: { companyId: fallbackCompany.id },
+        })
+        .catch((err: any) =>
+          console.warn(
+            '⚠️  Could not persist user.companyId:',
+            err?.message || err
+          )
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Build req.user — companyId is guaranteed to be a string
+    // ─────────────────────────────────────────────────────────────
     req.user = {
       id: user.id,
       userId: user.id,
       clerkId: user.clerkId,
       email: user.email,
       role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: user.firstName ?? undefined,
+      lastName: user.lastName ?? undefined,
       businessUnitId: user.businessUnits[0]?.businessUnitId,
-      businessUnits: user.businessUnits.map(bu => bu.businessUnitId),
-      companyId: user.companyId || undefined,
+      businessUnits: user.businessUnits.map((bu) => bu.businessUnitId),
+      companyId: companyId ?? undefined,
       permissions: permissions,
     };
 
     console.log(`✅ Authenticated as: ${user.email} (${user.role})`);
+    console.log(`   companyId: ${companyId}`);
     console.log(`   Permissions: ${permissions.length} permissions`);
     next();
   } catch (error) {
@@ -203,7 +265,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   }
 };
 
-// Helper function to get role-based permissions
+// Helper function to get role-based permissions (unchanged)
 function getRoleBasedPermissions(role: UserRole): string[] {
   const permissionsMap: Record<UserRole, string[]> = {
     [UserRole.SUPER_ADMIN]: ALL_PERMISSIONS,
@@ -327,16 +389,16 @@ export const requireAuth = authMiddleware;
 export const requireRole = (roles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Unauthorized', 
-        code: 'NO_USER' 
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        code: 'NO_USER',
       });
     }
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Insufficient role', 
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient role',
         code: 'FORBIDDEN',
         required: roles,
         current: req.user.role,
@@ -346,9 +408,12 @@ export const requireRole = (roles: UserRole[]) => {
   };
 };
 
-export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
+export const optionalAuth = async (
+  _req: Request,
+  _res: Response,
+  next: NextFunction
+) => {
   next();
 };
 
-// Export ALL_PERMISSIONS for use in other files
 export { ALL_PERMISSIONS };

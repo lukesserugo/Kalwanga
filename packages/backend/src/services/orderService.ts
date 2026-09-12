@@ -66,6 +66,35 @@ interface OrderResponse {
 }
 
 // ============================================
+// INVENTORY LOOKUP HELPER
+// ============================================
+//
+// In the current Prisma schema, `Inventory` has NO scalar `productId` /
+// `variantId` columns. The FK lives on the *other* side of the relation:
+//   Product.inventoryId        → Inventory.id  (relation "ProductInventory")
+//   ProductVariant.inventoryId → Inventory.id  (relation "VariantInventory")
+//
+// Prisma's generated client therefore only accepts relation filters here —
+// `where: { productId: ... }` throws
+//   "Unknown argument `productId`. Did you mean `product`?"
+//
+// This helper builds the correct `where` clause for whichever of
+// product/variant identifies the inventory row.
+//
+function inventoryWhereFor(
+  productId: string,
+  variantId: string | null | undefined,
+  businessUnitId: string
+) {
+  return {
+    ...(variantId
+      ? { variant: { id: variantId } }
+      : { product: { id: productId } }),
+    businessUnitId,
+  };
+}
+
+// ============================================
 // ORDER SERVICE CLASS
 // ============================================
 
@@ -110,7 +139,7 @@ export class OrderService extends BaseService {
     let counter = 0;
     const prefix = 'ORD';
     const timestamp = Date.now().toString().slice(-6);
-    
+
     do {
       const random = Math.random().toString(36).substring(2, 6).toUpperCase();
       orderNumber = `${prefix}-${timestamp}-${random}`;
@@ -119,7 +148,7 @@ export class OrderService extends BaseService {
         throw new AppError('Failed to generate unique order number', 500);
       }
     } while (await tx.order.findUnique({ where: { orderNumber } }));
-    
+
     return orderNumber;
   }
 
@@ -149,6 +178,7 @@ export class OrderService extends BaseService {
 
   /**
    * Release reserved inventory for cancelled order
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
   private async releaseReservedInventory(tx: Prisma.TransactionClient, order: any): Promise<void> {
     const orderItems = await tx.orderItem.findMany({
@@ -157,11 +187,11 @@ export class OrderService extends BaseService {
 
     for (const item of orderItems) {
       const inventory = await tx.inventory.findFirst({
-        where: {
-          productId: item.productId,
-          variantId: item.variantId || null,
-          businessUnitId: order.businessUnitId,
-        },
+        where: inventoryWhereFor(
+          item.productId,
+          item.variantId,
+          order.businessUnitId
+        ),
       });
 
       if (inventory && inventory.reserved > 0) {
@@ -179,6 +209,7 @@ export class OrderService extends BaseService {
 
   /**
    * Deduct inventory for completed order
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
   private async deductInventoryForOrder(tx: Prisma.TransactionClient, order: any): Promise<void> {
     const orderItems = await tx.orderItem.findMany({
@@ -187,11 +218,11 @@ export class OrderService extends BaseService {
 
     for (const item of orderItems) {
       const inventory = await tx.inventory.findFirst({
-        where: {
-          productId: item.productId,
-          variantId: item.variantId || null,
-          businessUnitId: order.businessUnitId,
-        },
+        where: inventoryWhereFor(
+          item.productId,
+          item.variantId,
+          order.businessUnitId
+        ),
       });
 
       if (inventory) {
@@ -264,39 +295,33 @@ export class OrderService extends BaseService {
         maxTotal,
         includeDeleted = false,
       } = params;
-      
+
       const validatedPage = Math.max(1, page);
       const validatedLimit = Math.min(100, Math.max(1, limit));
       const skip = (validatedPage - 1) * validatedLimit;
 
       const where: any = {};
 
-      // Business unit filter
       if (businessUnitId) {
         where.businessUnitId = businessUnitId;
       }
 
-      // Customer filter
       if (customerId) {
         where.customerId = customerId;
       }
 
-      // User filter
       if (userId) {
         where.userId = userId;
       }
 
-      // Status filter
       if (status) {
         where.status = status as any;
       }
 
-      // Priority filter
       if (priority) {
         where.priority = priority as any;
       }
 
-      // Amount filters
       if (minTotal !== undefined) {
         where.total = { gte: minTotal };
       }
@@ -304,19 +329,16 @@ export class OrderService extends BaseService {
         where.total = { ...(where.total as any), lte: maxTotal };
       }
 
-      // Date range filter
       if (startDate || endDate) {
         where.createdAt = {};
         if (startDate) where.createdAt.gte = startDate;
         if (endDate) where.createdAt.lte = endDate;
       }
 
-      // Exclude deleted
-      if (!includeDeleted) {
-        where.status = { not: 'DELETED' };
+      if (!includeDeleted && !status) {
+        where.status = { not: 'CANCELLED' };
       }
 
-      // Search filter
       if (search) {
         where.OR = [
           { orderNumber: { contains: search, mode: 'insensitive' } },
@@ -417,8 +439,8 @@ export class OrderService extends BaseService {
         ...order,
         itemCount: order._count?.items || 0,
         totalQuantity: order.items.reduce((sum: number, item: any) => sum + item.quantity, 0),
-        customerName: order.customer 
-          ? `${order.customer.firstName} ${order.customer.lastName}`.trim() 
+        customerName: order.customer
+          ? `${order.customer.firstName} ${order.customer.lastName}`.trim()
           : 'Guest',
         hasSale: !!order.sale,
         hasPayment: !!order.payment,
@@ -440,7 +462,6 @@ export class OrderService extends BaseService {
   /**
    * Get order statistics
    */
-
   private async getOrderStats(where: any) {
     try {
       const [statusCounts, totalValue, pendingCount, completedCount] = await Promise.all([
@@ -604,8 +625,8 @@ export class OrderService extends BaseService {
         ...order,
         itemCount: order._count?.items || 0,
         totalQuantity,
-        customerName: order.customer 
-          ? `${order.customer.firstName} ${order.customer.lastName}`.trim() 
+        customerName: order.customer
+          ? `${order.customer.firstName} ${order.customer.lastName}`.trim()
           : 'Guest',
         customerTotalOrders: order.customer?._count?.orders || 0,
         customerTotalSales: order.customer?._count?.sales || 0,
@@ -694,6 +715,9 @@ export class OrderService extends BaseService {
 
   /**
    * Create order with comprehensive validation
+   * ✅ FIXED: inventory lookup now uses relation filters on `Inventory`
+   *    and no longer relies on the bogus `product.inventory?.[0]` access
+   *    (Product.inventory is a to-one relation, not an array).
    */
   async createOrder(data: CreateOrderData, userId: string) {
     try {
@@ -707,7 +731,6 @@ export class OrderService extends BaseService {
         throw new AppError('User ID is required', 400);
       }
 
-      // Validate items
       for (const item of data.items) {
         if (!item.productId) {
           throw new AppError('Product ID is required for all items', 400);
@@ -721,11 +744,9 @@ export class OrderService extends BaseService {
       }
 
       return await this.prisma.$transaction(async (tx: any) => {
-        // Generate unique order number
         const orderNumber = await this.generateUniqueOrderNumber(tx);
-        
-        // Calculate totals
-        const subtotal = data.items.reduce((sum: number, item: OrderItemInput) => 
+
+        const subtotal = data.items.reduce((sum: number, item: OrderItemInput) =>
           sum + (item.quantity * item.unitPrice) - (item.discount || 0), 0
         );
         const totalDiscount = data.discount || 0;
@@ -736,15 +757,10 @@ export class OrderService extends BaseService {
           throw new AppError('Order total cannot be negative', 400);
         }
 
-        // Validate products and inventory
+        // ✅ Validate products and inventory using relation filter.
         for (const item of data.items) {
           const product = await tx.product.findUnique({
             where: { id: item.productId },
-            include: {
-              inventory: {
-                where: { businessUnitId: data.businessUnitId },
-              },
-            },
           });
 
           if (!product) {
@@ -755,21 +771,30 @@ export class OrderService extends BaseService {
             throw new AppError(`Product ${product.name} is not active`, 400);
           }
 
-          const inventory = product.inventory?.[0];
-          if (inventory) {
-            const availableStock = inventory.quantity - inventory.reserved;
-            if (availableStock < item.quantity) {
-              throw new AppError(
-                `Insufficient stock for ${product.name}. Available: ${availableStock}, Requested: ${item.quantity}`,
-                400
-              );
-            }
-          } else {
-            throw new AppError(`No inventory found for ${product.name} in this location`, 400);
+          const inventory = await tx.inventory.findFirst({
+            where: inventoryWhereFor(
+              item.productId,
+              item.variantId,
+              data.businessUnitId
+            ),
+          });
+
+          if (!inventory) {
+            throw new AppError(
+              `No inventory found for ${product.name} in this location`,
+              400
+            );
+          }
+
+          const availableStock = (inventory.quantity || 0) - (inventory.reserved || 0);
+          if (availableStock < item.quantity) {
+            throw new AppError(
+              `Insufficient stock for ${product.name}. Available: ${availableStock}, Requested: ${item.quantity}`,
+              400
+            );
           }
         }
 
-        // Create order
         const order = await tx.order.create({
           data: {
             orderNumber,
@@ -785,7 +810,7 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Create order items and reserve inventory
+        // Create order items and reserve inventory.
         for (const item of data.items) {
           await tx.orderItem.create({
             data: {
@@ -800,13 +825,13 @@ export class OrderService extends BaseService {
             },
           });
 
-          // Reserve inventory
+          // ✅ Relation-filtered inventory lookup.
           const inventory = await tx.inventory.findFirst({
-            where: {
-              productId: item.productId,
-              variantId: item.variantId || null,
-              businessUnitId: data.businessUnitId,
-            },
+            where: inventoryWhereFor(
+              item.productId,
+              item.variantId,
+              data.businessUnitId
+            ),
           });
 
           if (inventory) {
@@ -820,7 +845,6 @@ export class OrderService extends BaseService {
           }
         }
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'CREATE',
@@ -838,7 +862,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Emit event and send notification
         this.safeEmitNewOrder(order, data.businessUnitId);
 
         try {
@@ -852,7 +875,6 @@ export class OrderService extends BaseService {
           logger.warn('Failed to send notification:', notifError);
         }
 
-        // Return created order with details
         return await tx.order.findUnique({
           where: { id: order.id },
           include: {
@@ -912,7 +934,7 @@ export class OrderService extends BaseService {
       }
 
       const updateData: any = {};
-      
+
       if (data.notes !== undefined) updateData.notes = data.notes;
       if (data.priority) updateData.priority = data.priority as any;
       if (data.shippingAddress) updateData.shippingAddress = data.shippingAddress;
@@ -949,7 +971,6 @@ export class OrderService extends BaseService {
         },
       });
 
-      // Create audit log
       await this.prisma.auditLog.create({
         data: {
           action: 'UPDATE',
@@ -1004,7 +1025,7 @@ export class OrderService extends BaseService {
           where: { id },
           data: {
             status: status as any,
-            notes: notes 
+            notes: notes
               ? `${order.notes || ''}\n[${new Date().toISOString()}] Status changed to ${status}: ${notes}`
               : `${order.notes || ''}\n[${new Date().toISOString()}] Status changed to ${status}`,
           },
@@ -1018,7 +1039,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Handle inventory based on status change
         if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
           await this.releaseReservedInventory(tx, order);
         }
@@ -1027,7 +1047,6 @@ export class OrderService extends BaseService {
           await this.deductInventoryForOrder(tx, order);
         }
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'UPDATE',
@@ -1035,7 +1054,7 @@ export class OrderService extends BaseService {
             entityId: order.id,
             userId: userId,
             entityName: order.orderNumber,
-            changes: { 
+            changes: {
               oldStatus: order.status,
               newStatus: status,
               notes: notes,
@@ -1081,7 +1100,6 @@ export class OrderService extends BaseService {
           throw new AppError('Order is already cancelled', 400);
         }
 
-        // Release reserved inventory
         await this.releaseReservedInventory(tx, order);
 
         const updatedOrder = await tx.order.update({
@@ -1094,7 +1112,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'DELETE',
@@ -1119,6 +1136,7 @@ export class OrderService extends BaseService {
 
   /**
    * Add item to order
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
   async addItemToOrder(orderId: string, itemData: OrderItemInput, userId: string) {
     try {
@@ -1139,14 +1157,8 @@ export class OrderService extends BaseService {
           throw new AppError(`Cannot add items to ${order.status.toLowerCase()} order`, 400);
         }
 
-        // Validate product
         const product = await tx.product.findUnique({
           where: { id: itemData.productId },
-          include: {
-            inventory: {
-              where: { businessUnitId: order.businessUnitId },
-            },
-          },
         });
 
         if (!product) {
@@ -1157,10 +1169,17 @@ export class OrderService extends BaseService {
           throw new AppError(`Product ${product.name} is not active`, 400);
         }
 
-        // Check stock
-        const inventory = product.inventory?.[0];
+        // ✅ Relation-filtered inventory lookup.
+        const inventory = await tx.inventory.findFirst({
+          where: inventoryWhereFor(
+            itemData.productId,
+            itemData.variantId,
+            order.businessUnitId
+          ),
+        });
+
         if (inventory) {
-          const availableStock = inventory.quantity - inventory.reserved;
+          const availableStock = (inventory.quantity || 0) - (inventory.reserved || 0);
           if (availableStock < itemData.quantity) {
             throw new AppError(
               `Insufficient stock for ${product.name}. Available: ${availableStock}`,
@@ -1169,7 +1188,6 @@ export class OrderService extends BaseService {
           }
         }
 
-        // Create order item
         const orderItem = await tx.orderItem.create({
           data: {
             orderId: order.id,
@@ -1183,7 +1201,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Reserve inventory
         if (inventory) {
           await tx.inventory.update({
             where: { id: inventory.id },
@@ -1194,7 +1211,6 @@ export class OrderService extends BaseService {
           });
         }
 
-        // Update order totals
         const orderItems = await tx.orderItem.findMany({
           where: { orderId: order.id },
         });
@@ -1210,7 +1226,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'CREATE',
@@ -1237,6 +1252,7 @@ export class OrderService extends BaseService {
 
   /**
    * Update order item
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
   async updateOrderItem(orderId: string, itemId: string, data: any, userId: string) {
     try {
@@ -1270,19 +1286,19 @@ export class OrderService extends BaseService {
           throw new AppError('Order item does not belong to this order', 400);
         }
 
-        // Update inventory reservation
+        // ✅ Relation-filtered inventory lookup.
         const inventory = await tx.inventory.findFirst({
-          where: {
-            productId: orderItem.productId,
-            variantId: orderItem.variantId || null,
-            businessUnitId: order.businessUnitId,
-          },
+          where: inventoryWhereFor(
+            orderItem.productId,
+            orderItem.variantId,
+            order.businessUnitId
+          ),
         });
 
         if (inventory && data.quantity) {
           const quantityDiff = data.quantity - orderItem.quantity;
           if (quantityDiff > 0) {
-            const availableStock = inventory.quantity - inventory.reserved;
+            const availableStock = (inventory.quantity || 0) - (inventory.reserved || 0);
             if (availableStock < quantityDiff) {
               throw new AppError(`Insufficient stock. Available: ${availableStock}`, 400);
             }
@@ -1304,7 +1320,6 @@ export class OrderService extends BaseService {
           }
         }
 
-        // Update order item
         const updatedItem = await tx.orderItem.update({
           where: { id: itemId },
           data: {
@@ -1316,7 +1331,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Update order totals
         const orderItems = await tx.orderItem.findMany({
           where: { orderId: order.id },
         });
@@ -1332,7 +1346,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'UPDATE',
@@ -1360,6 +1373,7 @@ export class OrderService extends BaseService {
 
   /**
    * Remove order item
+   * ✅ FIXED: relation-filtered inventory lookup.
    */
   async removeOrderItem(orderId: string, itemId: string, userId: string) {
     try {
@@ -1392,13 +1406,13 @@ export class OrderService extends BaseService {
           throw new AppError('Order item does not belong to this order', 400);
         }
 
-        // Release reserved inventory
+        // ✅ Relation-filtered inventory lookup.
         const inventory = await tx.inventory.findFirst({
-          where: {
-            productId: orderItem.productId,
-            variantId: orderItem.variantId || null,
-            businessUnitId: order.businessUnitId,
-          },
+          where: inventoryWhereFor(
+            orderItem.productId,
+            orderItem.variantId,
+            order.businessUnitId
+          ),
         });
 
         if (inventory) {
@@ -1411,12 +1425,10 @@ export class OrderService extends BaseService {
           });
         }
 
-        // Delete order item
         await tx.orderItem.delete({
           where: { id: itemId },
         });
 
-        // Update order totals
         const orderItems = await tx.orderItem.findMany({
           where: { orderId: order.id },
         });
@@ -1432,7 +1444,6 @@ export class OrderService extends BaseService {
           },
         });
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'DELETE',
@@ -1492,7 +1503,6 @@ export class OrderService extends BaseService {
           throw new AppError('Cancelled orders cannot be converted to sale', 400);
         }
 
-        // Generate receipt number
         let receiptNumber: string;
         let counter = 0;
         do {
@@ -1503,7 +1513,8 @@ export class OrderService extends BaseService {
           }
         } while (await tx.sale.findUnique({ where: { receiptNumber } }));
 
-        // Create sale
+        // ✅ Sale starts PENDING. The payments service will flip it to
+        //    COMPLETED after recording a successful payment.
         const sale = await tx.sale.create({
           data: {
             receiptNumber,
@@ -1511,19 +1522,18 @@ export class OrderService extends BaseService {
             tax: order.tax,
             discount: order.discount,
             total: order.total,
-            paidAmount: order.payment?.amount || order.total,
+            paidAmount: 0,                 // nothing paid yet
             changeAmount: 0,
             notes: `Converted from order ${order.orderNumber}`,
             businessUnitId: order.businessUnitId,
             userId,
             customerId: order.customerId,
-            orderId: order.id,
-            status: 'COMPLETED',
+            orderId: order.id,             // ✅ Sale → Order link
+            status: 'PENDING',             // ✅ no longer 'COMPLETED'
             saleDate: new Date(),
           },
         });
 
-        // Create sale items
         for (const item of order.items) {
           await tx.saleItem.create({
             data: {
@@ -1539,16 +1549,16 @@ export class OrderService extends BaseService {
           });
         }
 
-        // Update order status
+        // ✅ Order moves to PROCESSING, not COMPLETED. It becomes
+        //    COMPLETED once the payment service confirms payment.
+        //    Do NOT set `saleId` here — the link lives on Sale.orderId.
         await tx.order.update({
           where: { id: orderId },
           data: {
-            status: 'COMPLETED',
-            saleId: sale.id,
+            status: 'PROCESSING',
           },
         });
 
-        // Create audit log
         await tx.auditLog.create({
           data: {
             action: 'CREATE',
@@ -1560,13 +1570,21 @@ export class OrderService extends BaseService {
               orderId: orderId,
               orderNumber: order.orderNumber,
               total: sale.total,
+              saleStatus: 'PENDING',
+              orderStatus: 'PROCESSING',
             },
             severity: 'INFO',
             createdAt: new Date(),
           },
         });
 
-        this.safeEmitOrderStatusChange(orderId, 'COMPLETED', order.businessUnitId);
+        // Emit PROCESSING rather than COMPLETED. The payment service
+        // will emit COMPLETED once payment succeeds.
+        this.safeEmitOrderStatusChange(
+          orderId,
+          'PROCESSING',
+          order.businessUnitId
+        );
 
         return sale;
       });
@@ -1585,8 +1603,8 @@ export class OrderService extends BaseService {
       }
 
       const history = await this.prisma.auditLog.findMany({
-        where: { 
-          entityType: 'ORDER', 
+        where: {
+          entityType: 'ORDER',
           entityId: orderId,
         },
         include: {
@@ -1655,7 +1673,6 @@ export class OrderService extends BaseService {
         throw new AppError('Order not found', 404);
       }
 
-      // Build timeline events
       const timeline: any[] = [
         {
           id: `created-${order.id}`,
@@ -1719,7 +1736,6 @@ export class OrderService extends BaseService {
         });
       }
 
-      // Sort by timestamp (oldest first)
       timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       return timeline;
@@ -1745,7 +1761,7 @@ export class OrderService extends BaseService {
 
       const where: any = {
         createdAt: { gte: startDate, lte: endDate },
-        status: { not: 'DELETED' },
+        status: { not: 'CANCELLED' },
       };
       if (businessUnitId) where.businessUnitId = businessUnitId;
 
@@ -1807,13 +1823,12 @@ export class OrderService extends BaseService {
         where: { id: { in: orderIds } },
         data: {
           status: status as any,
-          notes: notes 
+          notes: notes
             ? `${notes}\nBulk update at ${new Date().toISOString()}`
             : `Bulk update at ${new Date().toISOString()}`,
         },
       });
 
-      // Create audit logs for each updated order
       for (const orderId of orderIds) {
         await this.prisma.auditLog.create({
           data: {
@@ -1846,7 +1861,6 @@ export class OrderService extends BaseService {
    */
   async deleteOrder(orderId: string, userId: string) {
     try {
-      // Use CANCELLED instead of DELETED if DELETED doesn't exist in enum
       return await this.prisma.order.update({
         where: { id: orderId },
         data: { status: 'CANCELLED' },
@@ -1865,7 +1879,6 @@ export class OrderService extends BaseService {
         throw new AppError('Order IDs are required', 400);
       }
 
-      // Use CANCELLED instead of DELETED if DELETED doesn't exist in enum
       const result = await this.prisma.order.updateMany({
         where: { id: { in: orderIds } },
         data: { status: 'CANCELLED' },
@@ -1893,7 +1906,7 @@ export class OrderService extends BaseService {
       const { businessUnitId, startDate, endDate, groupBy = 'day' } = params;
 
       const where: any = {
-        status: { not: 'DELETED' },
+        status: { not: 'CANCELLED' },
       };
       if (businessUnitId) where.businessUnitId = businessUnitId;
       if (startDate || endDate) {
@@ -1916,13 +1929,11 @@ export class OrderService extends BaseService {
       const totalOrders = orders.length;
       const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-      // Order status distribution
       const statusDistribution: Record<string, number> = {};
       orders.forEach((order: any) => {
         statusDistribution[order.status] = (statusDistribution[order.status] || 0) + 1;
       });
 
-      // Daily/monthly trend
       const trend: Record<string, { revenue: number; count: number }> = {};
       orders.forEach((order: any) => {
         let key: string;
@@ -1948,7 +1959,6 @@ export class OrderService extends BaseService {
         trend[key].count += 1;
       });
 
-      // Customer insights
       const customerOrders: Record<string, { count: number; total: number }> = {};
       orders.forEach((order: any) => {
         const key = order.customerId || 'guest';
@@ -1994,7 +2004,7 @@ export class OrderService extends BaseService {
   async getOrderFulfillmentStatus(businessUnitId?: string) {
     try {
       const where: any = {
-        status: { notIn: ['COMPLETED', 'CANCELLED', 'DELETED'] },
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
       };
       if (businessUnitId) where.businessUnitId = businessUnitId;
 

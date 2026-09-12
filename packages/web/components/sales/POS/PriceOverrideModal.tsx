@@ -10,7 +10,7 @@ import {
   Percent,
   Calculator
 } from 'lucide-react';
-import { useToast } from '../../common/Toast';
+import { useToast } from '../../../utils/toast-manager';
 import { formatCurrency } from '../../../utils/formatters';
 
 interface PriceOverrideModalProps {

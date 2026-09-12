@@ -128,32 +128,37 @@ router.delete('/', cartController.clearCart);
 /**
  * Add item to cart
  * POST /cart/items
+ *
+ * ⚠️ FIX: Validation is performed INSIDE cartController.addItem using its
+ * own inline Zod schema (addItemSchema). The previous
+ * `validateRequest(addCartItemSchema)` middleware was stripping/rewriting
+ * req.body before the controller could see it, which caused every add-item
+ * request to fail with `productId: Required (undefined)` even though the
+ * client sent a valid `{ productId, quantity }` payload.
+ *
+ * The controller already returns the same
+ * `{ success: false, message: 'Validation error', errors: [...] }`
+ * shape on invalid input, so removing the middleware changes nothing for
+ * clients — it only removes the duplicate, broken validation layer.
  */
-router.post(
-  '/items',
-  validateRequest(addCartItemSchema),
-  cartController.addItem
-);
+router.post('/items', cartController.addItem);
 
 /**
  * Add multiple items to cart
  * POST /cart/items/bulk
+ *
+ * Same reasoning as above — the controller validates inline with
+ * addMultipleItemsSchema.
  */
-router.post(
-  '/items/bulk',
-  validateRequest(addMultipleCartItemsSchema),
-  cartController.addMultipleItems
-);
+router.post('/items/bulk', cartController.addMultipleItems);
 
 /**
  * Update cart item quantity
  * PUT /cart/items/:itemId
+ *
+ * The controller validates inline with updateQuantitySchema.
  */
-router.put(
-  '/items/:itemId',
-  validateRequest(updateCartItemQuantitySchema),
-  cartController.updateItemQuantity
-);
+router.put('/items/:itemId', cartController.updateItemQuantity);
 
 /**
  * Remove item from cart
@@ -168,52 +173,42 @@ router.delete('/items/:itemId', cartController.removeItem);
 /**
  * Apply discount to cart
  * POST /cart/discount
+ *
+ * Controller validates inline with applyDiscountSchema.
  */
-router.post(
-  '/discount',
-  validateRequest(applyCartDiscountSchema),
-  cartController.applyDiscount
-);
+router.post('/discount', cartController.applyDiscount);
 
 /**
  * Apply promotion to cart
  * POST /cart/promotion
+ *
+ * Controller validates inline with applyPromotionSchema.
  */
-router.post(
-  '/promotion',
-  validateRequest(applyCartPromotionSchema),
-  cartController.applyPromotion
-);
+router.post('/promotion', cartController.applyPromotion);
 
 /**
  * Apply loyalty points to cart
  * POST /cart/loyalty
+ *
+ * Controller validates inline with applyLoyaltyPointsSchema.
  */
-router.post(
-  '/loyalty',
-  validateRequest(applyLoyaltyPointsSchema),
-  cartController.applyLoyaltyPoints
-);
+router.post('/loyalty', cartController.applyLoyaltyPoints);
 
 /**
  * Associate customer with cart
  * POST /cart/customer
+ *
+ * Controller validates inline with associateCustomerSchema.
  */
-router.post(
-  '/customer',
-  validateRequest(associateCustomerSchema),
-  cartController.associateCustomer
-);
+router.post('/customer', cartController.associateCustomer);
 
 /**
  * Update cart notes
  * PATCH /cart/notes
+ *
+ * Controller validates inline with updateCartNotesSchema.
  */
-router.patch(
-  '/notes',
-  validateRequest(updateCartNotesSchema),
-  cartController.updateCartNotes
-);
+router.patch('/notes', cartController.updateCartNotes);
 
 // ============================================
 // CART ACTION ENDPOINTS
@@ -228,12 +223,10 @@ router.post('/sync', cartController.syncCart);
 /**
  * Checkout cart
  * POST /cart/checkout
+ *
+ * Controller validates inline with checkoutSchema.
  */
-router.post(
-  '/checkout',
-  validateRequest(cartCheckoutSchema),
-  cartController.checkout
-);
+router.post('/checkout', cartController.checkout);
 
 /**
  * Transfer cart to another user (admin only)

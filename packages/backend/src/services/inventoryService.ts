@@ -323,7 +323,7 @@ export class InventoryService extends BaseService {
     try {
       const businessUnits = await this.prisma.businessUnit.findMany({
         where: { isActive: true },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           name: true,
@@ -369,14 +369,26 @@ export class InventoryService extends BaseService {
   /**
    * Ensure business unit exists and return it
    */
-  private async ensureBusinessUnit(businessUnitId?: string): Promise<{ id: string; name: string }> {
+  private async ensureBusinessUnit(
+    businessUnitId?: string
+  ): Promise<{ id: string; name: string }> {
     console.log('🔍 Ensuring business unit for ID:', businessUnitId);
-    
-    if (!businessUnitId || businessUnitId === 'default' || businessUnitId === 'default-business-unit') {
+
+    const isSentinel =
+      !businessUnitId ||
+      businessUnitId === 'default' ||
+      businessUnitId === 'default-business-unit' ||
+      businessUnitId === 'undefined' ||
+      businessUnitId === 'null' ||
+      businessUnitId === '';
+
+    if (isSentinel) {
       const allUnits = await this.getAllBusinessUnits();
-      
+
       if (allUnits.length > 0) {
-        console.log(`✅ Using first active business unit: ${allUnits[0].id} (${allUnits[0].name})`);
+        console.log(
+          `✅ Using first active business unit: ${allUnits[0].id} (${allUnits[0].name})`
+        );
         return allUnits[0];
       }
 
@@ -395,7 +407,6 @@ export class InventoryService extends BaseService {
             isActive: true,
           },
         });
-        console.log('✅ Created default company:', company.id);
       }
 
       const newBusinessUnit = await this.prisma.businessUnit.create({
@@ -408,7 +419,11 @@ export class InventoryService extends BaseService {
         },
       });
 
-      console.log('✅ Created default business unit:', newBusinessUnit.id, newBusinessUnit.name);
+      console.log(
+        '✅ Created default business unit:',
+        newBusinessUnit.id,
+        newBusinessUnit.name
+      );
       return { id: newBusinessUnit.id, name: newBusinessUnit.name };
     }
 
@@ -422,10 +437,12 @@ export class InventoryService extends BaseService {
       return { id: existing.id, name: existing.name };
     }
 
-    console.warn(`⚠️ Business unit ${businessUnitId} not found or inactive, falling back to first active`);
+    console.warn(
+      `⚠️ Business unit ${businessUnitId} not found or inactive, falling back to first active`
+    );
     const fallback = await this.prisma.businessUnit.findFirst({
       where: { isActive: true },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' }, // ✅ most recent first
       select: { id: true, name: true },
     });
 

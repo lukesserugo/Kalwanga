@@ -15,7 +15,7 @@ import {
   FileText,
   Clock
 } from 'lucide-react';
-import { useToast } from '../../common/Toast';
+import { useToast } from '../../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../../utils/formatters';
 
 interface Receipt {

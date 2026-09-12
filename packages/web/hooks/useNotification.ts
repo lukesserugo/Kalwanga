@@ -20,14 +20,6 @@ interface Notification {
   companyId?: string;
 }
 
-interface PaginatedResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  totalPages: number;
-  limit: number;
-}
-
 interface UseNotificationOptions {
   autoFetch?: boolean;
   limit?: number;
@@ -35,7 +27,11 @@ interface UseNotificationOptions {
 }
 
 export function useNotification(options: UseNotificationOptions = {}) {
-  const { autoFetch = true, limit = 20, refreshInterval = 30000 } = options;
+  const {
+    autoFetch = true,
+    limit = 20,
+    refreshInterval = 60_000, // ✅ 60 seconds — was 30s, still fine
+  } = options;
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -46,92 +42,140 @@ export function useNotification(options: UseNotificationOptions = {}) {
   const [totalPages, setTotalPages] = useState(1);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const loadNotifications = useCallback(async (unreadOnly?: boolean) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const params: any = { limit, page };
-      if (unreadOnly) params.unreadOnly = 'true';
-      
-      const response = await notificationService.getNotifications(params);
-      
-      // Extract data from paginated response
-      let notificationData: Notification[] = [];
-      let totalCount = 0;
-      let currentPage = 1;
-      let totalPagesCount = 1;
-      
-      if (Array.isArray(response)) {
-        notificationData = response;
-        totalCount = response.length;
-      } else if (response && typeof response === 'object') {
-        // Check if response has data property
-        if ('data' in response) {
-          const data = response.data;
-          if (Array.isArray(data)) {
-            notificationData = data;
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mountedRef = useRef(true);
+
+  // ✅ Track mounted state to avoid setState after unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ============================================
+  // FETCHERS — stable, no external state deps
+  // ============================================
+
+  /**
+   * Load a page of notifications.
+   * @param pageOverride  optional page number (defaults to current `page`)
+   * @param unreadOnly    optional filter
+   *
+   * NOTE: `page` is read via a ref-free pattern: we pass it in as an argument
+   * so this callback can have a stable identity and not cause loops.
+   */
+  const loadNotifications = useCallback(
+    async (pageOverride?: number, unreadOnly?: boolean) => {
+      try {
+        if (mountedRef.current) {
+          setLoading(true);
+          setError(null);
+        }
+
+        const targetPage = pageOverride ?? 1;
+        const params: any = { limit, page: targetPage };
+        if (unreadOnly) params.unreadOnly = 'true';
+
+        const response = await notificationService.getNotifications(params);
+
+        if (!mountedRef.current) return [];
+
+        // Normalize response
+        let notificationData: Notification[] = [];
+        let totalCount = 0;
+        let currentPage = targetPage;
+        let totalPagesCount = 1;
+
+        if (Array.isArray(response)) {
+          notificationData = response;
+          totalCount = response.length;
+        } else if (response && typeof response === 'object') {
+          const r: any = response;
+          if (Array.isArray(r.data)) {
+            notificationData = r.data;
+          } else if (Array.isArray(r.notifications)) {
+            notificationData = r.notifications;
           }
+          if (typeof r.total === 'number') totalCount = r.total;
+          if (typeof r.page === 'number') currentPage = r.page;
+          if (typeof r.totalPages === 'number') totalPagesCount = r.totalPages;
         }
-        // Check for pagination
-        if ('total' in response) {
-          totalCount = response.total || 0;
+
+        setNotifications(notificationData);
+        setTotal(totalCount || notificationData.length);
+        setPage(currentPage);
+        setTotalPages(totalPagesCount);
+
+        // Update unread count from the list if server didn't send a total
+        const computedUnread = notificationData.filter((n) => !n.isRead).length;
+        setUnreadCount((prev) =>
+          totalCount ? computedUnread : Math.max(prev, computedUnread)
+        );
+
+        return notificationData;
+      } catch (err: any) {
+        console.error('Failed to load notifications:', err);
+        if (mountedRef.current) {
+          setError(err?.message || 'Failed to load notifications');
         }
-        if ('page' in response) {
-          currentPage = response.page || 1;
-        }
-        if ('totalPages' in response) {
-          totalPagesCount = response.totalPages || 1;
+        return [];
+      } finally {
+        if (mountedRef.current) setLoading(false);
+      }
+    },
+    [limit] // ✅ only depends on `limit` — that's a primitive prop
+  );
+
+  /**
+   * Fetch just the unread count.
+   * This MUST have zero state dependencies to avoid re-subscribing the interval.
+   */
+  const fetchUnreadCount = useCallback(async (): Promise<number> => {
+    try {
+      const response: any = await notificationService.getUnreadCount();
+
+      let count = 0;
+      if (typeof response === 'number') {
+        count = response;
+      } else if (response && typeof response === 'object') {
+        if (typeof response.count === 'number') {
+          count = response.count;
+        } else if (typeof response.data === 'number') {
+          count = response.data;
+        } else if (response.data && typeof response.data.count === 'number') {
+          count = response.data.count;
         }
       }
-      
-      setNotifications(notificationData);
-      setTotal(totalCount || notificationData.length);
-      setPage(currentPage);
-      setTotalPages(totalPagesCount);
-      setUnreadCount(notificationData.filter((n: Notification) => !n.isRead).length);
-      
-      return notificationData;
-    } catch (error) {
-      console.error('Failed to load notifications:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load notifications');
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, [limit, page]);
 
-  const fetchUnreadCount = useCallback(async () => {
-    try {
-      const response = await notificationService.getUnreadCount();
-      const count = typeof response === 'number' ? response : response?.count || 0;
-      setUnreadCount(count);
+      if (mountedRef.current) setUnreadCount(count);
       return count;
-    } catch (error) {
-      console.error('Failed to fetch unread count:', error);
-      return unreadCount;
+    } catch (err) {
+      console.error('Failed to fetch unread count:', err);
+      return 0; // ✅ never return `unreadCount` (that would create a dependency)
     }
-  }, [unreadCount]);
+  }, []); // ✅ NO dependencies
+
+  // ============================================
+  // MUTATIONS
+  // ============================================
 
   const markAsRead = useCallback(async (id: string) => {
     try {
       setMarkingId(id);
       await notificationService.markAsRead(id);
-      
-      setNotifications(prev =>
-        prev.map(n => 
+
+      setNotifications((prev) =>
+        prev.map((n) =>
           n.id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n
         )
       );
-      setUnreadCount(prev => Math.max(0, prev - 1));
-      
+      setUnreadCount((prev) => Math.max(0, prev - 1));
       return true;
-    } catch (error) {
-      console.error('Failed to mark as read:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to mark as read:', err);
+      throw err;
     } finally {
       setMarkingId(null);
     }
@@ -140,34 +184,31 @@ export function useNotification(options: UseNotificationOptions = {}) {
   const markAllAsRead = useCallback(async () => {
     try {
       await notificationService.markAllAsRead();
-      
-      setNotifications(prev =>
-        prev.map(n => ({ ...n, isRead: true, readAt: new Date().toISOString() }))
+      setNotifications((prev) =>
+        prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() }))
       );
       setUnreadCount(0);
-      
       return true;
-    } catch (error) {
-      console.error('Failed to mark all as read:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to mark all as read:', err);
+      throw err;
     }
   }, []);
 
   const deleteNotification = useCallback(async (id: string) => {
     try {
       setDeletingId(id);
-      const deleted = notifications.find(n => n.id === id);
+      const deleted = notifications.find((n) => n.id === id);
       await notificationService.deleteNotification(id);
-      
-      setNotifications(prev => prev.filter(n => n.id !== id));
+
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
       if (deleted && !deleted.isRead) {
-        setUnreadCount(prev => Math.max(0, prev - 1));
+        setUnreadCount((prev) => Math.max(0, prev - 1));
       }
-      
       return true;
-    } catch (error) {
-      console.error('Failed to delete notification:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to delete notification:', err);
+      throw err;
     } finally {
       setDeletingId(null);
     }
@@ -179,45 +220,48 @@ export function useNotification(options: UseNotificationOptions = {}) {
       setNotifications([]);
       setUnreadCount(0);
       return true;
-    } catch (error) {
-      console.error('Failed to delete all notifications:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to delete all notifications:', err);
+      throw err;
     }
   }, []);
 
   const refresh = useCallback(async () => {
-    await loadNotifications();
+    await loadNotifications(1);
     await fetchUnreadCount();
   }, [loadNotifications, fetchUnreadCount]);
 
-  // Auto-fetch on mount
+  // ============================================
+  // EFFECTS
+  // ============================================
+
+  // ✅ Initial fetch — runs once on mount
   useEffect(() => {
-    if (autoFetch) {
-      loadNotifications();
+    if (!autoFetch) return;
+    loadNotifications(1);
+    fetchUnreadCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFetch]);
+
+  // ✅ Polling interval — stable identity, only depends on primitives
+  useEffect(() => {
+    if (!autoFetch || refreshInterval <= 0) return;
+
+    intervalRef.current = setInterval(() => {
       fetchUnreadCount();
-    }
-    
+    }, refreshInterval);
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [autoFetch, loadNotifications, fetchUnreadCount]);
-
-  // Setup refresh interval
-  useEffect(() => {
-    if (autoFetch && refreshInterval > 0) {
-      intervalRef.current = setInterval(() => {
-        fetchUnreadCount();
-      }, refreshInterval);
-      
-      return () => {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
-      };
-    }
   }, [autoFetch, refreshInterval, fetchUnreadCount]);
+
+  // ============================================
+  // RETURN
+  // ============================================
 
   return {
     // State
@@ -230,7 +274,7 @@ export function useNotification(options: UseNotificationOptions = {}) {
     totalPages,
     markingId,
     deletingId,
-    
+
     // Actions
     loadNotifications,
     fetchUnreadCount,

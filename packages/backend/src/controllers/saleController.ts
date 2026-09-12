@@ -246,7 +246,16 @@ export const saleController = {
         throw new AppError('User ID is required', 400);
       }
 
-      const sale = await saleService.createSale(data, userId);
+      // Get the business unit ID
+      const businessUnitId = await getBusinessUnitId(req);
+
+      // Add businessUnitId to the data
+      const saleData = {
+        ...data,
+        businessUnitId,
+      };
+
+      const sale = await saleService.createSale(saleData, userId);
 
       res.status(201).json({
         success: true,
@@ -1797,3 +1806,4 @@ export const saleController = {
 };
 
 export default saleController;
+

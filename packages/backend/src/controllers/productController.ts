@@ -1,9 +1,10 @@
-// D:\Projects\Kalwanga\packages\backend\src\controllers\productController.ts
+// src/controllers/productController.ts
 
 import { Request, Response, NextFunction } from 'express';
 import { ProductService, ProductCreateData } from '../services/productService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
+import { prisma } from '../lib/prisma.js';
 import {
   createProductSchema,
   updateProductSchema,
@@ -26,6 +27,12 @@ import {
   bulkCreateVariantsSchema,
 } from '../utils/validators.js';
 import { z } from 'zod';
+
+// ✅ NEW: Inventory invariant helpers
+import {
+  ensureProductInventory,
+  ensureVariantInventory,
+} from '../lib/ensureInventory.js';
 
 // Initialize product service
 const productService = new ProductService();
@@ -52,22 +59,95 @@ type ProductSearchParams = z.infer<typeof productSearchSchema>;
 // HELPER FUNCTIONS
 // ============================================
 
-function getBusinessUnitId(req: Request): string {
+/**
+ * Resolve the effective business unit ID for a request.
+ *
+ * ✅ UNIFIED with cartController/orderController/inventoryController:
+ *    explicit header > body > query, then user BU, then newest active BU,
+ *    then bootstrap a default. Keeping the priority order identical across
+ *    controllers is what prevents cart/order/inventory from pointing at
+ *    different BUs.
+ */
+async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
-  
-  const businessUnitId = 
-    user?.businessUnitId || 
-    user?.businessUnits?.[0]?.businessUnitId ||
-    req.query?.businessUnitId as string ||
-    req.body?.businessUnitId ||
-    req.headers['x-business-unit-id'] as string;
 
-  if (!businessUnitId) {
-    console.error('❌ No business unit ID found. User:', user?.id || 'unknown');
-    throw new AppError('Business unit ID is required', 400);
+  // 1. Explicit override (header > body > query)
+  const explicit =
+    (req.headers['x-business-unit-id'] as string | undefined) ||
+    (req.body?.businessUnitId as string | undefined) ||
+    (req.query?.businessUnitId as string | undefined);
+
+  if (
+    explicit &&
+    explicit !== 'default' &&
+    explicit !== 'default-business-unit' &&
+    explicit !== 'undefined' &&
+    explicit !== 'null'
+  ) {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: explicit },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
+    }
+    console.warn(
+      `⚠️ Explicit businessUnitId "${explicit}" not found or inactive, falling back`
+    );
   }
 
-  return businessUnitId;
+  // 2. User's own unit
+  const userBu =
+    (user?.businessUnitId as string | undefined) ||
+    (user?.businessUnits?.[0]?.businessUnitId as string | undefined) ||
+    (user?.businessUnits?.[0]?.id as string | undefined);
+
+  if (userBu && userBu !== 'default') {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: userBu },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
+    }
+  }
+
+  // 3. Fallback: most recent active unit
+  const businessUnit = await prisma.businessUnit.findFirst({
+    where: { isActive: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (businessUnit) {
+    console.warn(
+      `⚠️ getBusinessUnitId (products): falling back to "${businessUnit.name}" (${businessUnit.id})`
+    );
+    return businessUnit.id;
+  }
+
+  // 4. Bootstrap a default company + unit
+  let company = await prisma.company.findFirst();
+  if (!company) {
+    company = await prisma.company.create({
+      data: {
+        name: 'Default Company',
+        email: 'default@company.com',
+        phone: '+0000000000',
+        isActive: true,
+      },
+    });
+  }
+
+  const newBusinessUnit = await prisma.businessUnit.create({
+    data: {
+      name: 'Default Business Unit',
+      code: `BU-${Date.now().toString().slice(-6)}`,
+      isActive: true,
+      companyId: company.id,
+    },
+  });
+
+  return newBusinessUnit.id;
 }
 
 function getUserId(req: Request): string {
@@ -84,11 +164,11 @@ function getUserId(req: Request): string {
 
 function getCompanyId(req: Request): string {
   const user = (req as any).user;
-  const companyId = 
-    user?.companyId || 
-    req.query?.companyId as string || 
+  const companyId =
+    user?.companyId ||
+    (req.query?.companyId as string) ||
     req.body?.companyId ||
-    req.headers['x-company-id'] as string;
+    (req.headers['x-company-id'] as string);
 
   if (!companyId) {
     console.warn('⚠️ No company ID found, using fallback');
@@ -133,13 +213,12 @@ function nullToStringUndefined(value: string | null | undefined): string | undef
 function convertToCSV(data: any[]): string {
   if (data.length === 0) return '';
   const headers = Object.keys(data[0]);
-  const rows = data.map((row: any) => 
+  const rows = data.map((row: any) =>
     headers.map((h: string) => JSON.stringify(row[h] || '')).join(',')
   );
   return [headers.join(','), ...rows].join('\n');
 }
 
-// ✅ FIXED: Clean and validate images without filtering them out
 function sanitizeProductData(data: any, businessUnitId: string): any {
   const name = data.name?.trim();
   if (!name) {
@@ -156,31 +235,29 @@ function sanitizeProductData(data: any, businessUnitId: string): any {
   const unitPrice = data.unitPrice ?? data.price ?? 0;
   const stock = data.stock ?? data.initialStock ?? 0;
 
-  // ✅ FIXED: Don't filter out images, just clean them
   let images = data.images || [];
-  const MAX_IMAGES = 10; // Allow up to 10 images
-  
+  const MAX_IMAGES = 10;
+
   if (images.length > MAX_IMAGES) {
     images = images.slice(0, MAX_IMAGES);
     console.log(`⚠️ Trimmed images to ${MAX_IMAGES}`);
   }
-  
-  // ✅ FIXED: Only clean images, don't replace them with placeholders
+
   if (images.length > 0) {
-    images = images
-      .filter((img: string) => {
-        if (typeof img !== 'string') {
-          console.warn('⚠️ Skipping non-string image');
-          return false;
-        }
-        // Allow images up to 5MB
-        const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-        if (img.length > MAX_IMAGE_SIZE) {
-          console.warn(`⚠️ Image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`);
-          return false;
-        }
-        return true;
-      });
+    images = images.filter((img: string) => {
+      if (typeof img !== 'string') {
+        console.warn('⚠️ Skipping non-string image');
+        return false;
+      }
+      const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+      if (img.length > MAX_IMAGE_SIZE) {
+        console.warn(
+          `⚠️ Image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`
+        );
+        return false;
+      }
+      return true;
+    });
   }
 
   let tags = data.tags || [];
@@ -197,24 +274,28 @@ function sanitizeProductData(data: any, businessUnitId: string): any {
     variants = variants.map((variant: any, index: number) => {
       let variantImages = variant.images || [];
       if (Array.isArray(variantImages)) {
-        // ✅ FIXED: Only clean images, don't replace them with placeholders
-        variantImages = variantImages
-          .filter((img: string) => {
-            if (typeof img !== 'string') return false;
-            const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-            if (img.length > MAX_IMAGE_SIZE) {
-              console.warn(`⚠️ Variant image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`);
-              return false;
-            }
-            return true;
-          });
+        variantImages = variantImages.filter((img: string) => {
+          if (typeof img !== 'string') return false;
+          const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+          if (img.length > MAX_IMAGE_SIZE) {
+            console.warn(
+              `⚠️ Variant image too large (${Math.round(img.length / 1024 / 1024)}MB), skipping`
+            );
+            return false;
+          }
+          return true;
+        });
       }
-      
+
       return {
         ...variant,
-        sku: variant.sku && variant.sku !== 'SKU' 
-          ? variant.sku.toUpperCase() 
-          : productService.generateVariantSKU(name, variant.name || `VAR${index + 1}`),
+        sku:
+          variant.sku && variant.sku !== 'SKU'
+            ? variant.sku.toUpperCase()
+            : productService.generateVariantSKU(
+                name,
+                variant.name || `VAR${index + 1}`
+              ),
         images: variantImages,
       };
     });
@@ -260,7 +341,7 @@ export const productController = {
 
   async getAllProducts(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const params = productSearchSchema.parse(req.query);
 
       const result = await productService.getAllProducts({
@@ -280,6 +361,10 @@ export const productController = {
         sortBy: params.sortBy || 'createdAt',
         sortOrder: params.sortOrder || 'desc',
       });
+
+      console.log(
+        `📦 getAllProducts: businessUnitId="${businessUnitId}", count=${result?.products?.length ?? 0}, total=${result?.total ?? 0}`
+      );
 
       res.json({
         success: true,
@@ -303,7 +388,7 @@ export const productController = {
   async getPublicProducts(req: Request, res: Response, next: NextFunction) {
     try {
       const { businessUnitId } = req.query;
-      
+
       const result = await productService.getAllProducts({
         businessUnitId: businessUnitId as string,
         isPublic: true,
@@ -315,8 +400,8 @@ export const productController = {
         maxPrice: parseFloatParam(String(req.query.maxPrice)),
         featured: parseBoolean(req.query.featured as string),
         inStock: true,
-        sortBy: req.query.sortBy as string || 'createdAt',
-        sortOrder: req.query.sortOrder as 'asc' | 'desc' || 'desc',
+        sortBy: (req.query.sortBy as string) || 'createdAt',
+        sortOrder: (req.query.sortOrder as 'asc' | 'desc') || 'desc',
       });
 
       res.json({
@@ -347,19 +432,23 @@ export const productController = {
   async checkSKUExists(req: Request, res: Response, next: NextFunction) {
     try {
       const { sku } = req.params;
-      
+
       if (!sku) {
         return res.json({
           success: true,
           data: { exists: false },
         });
       }
-      
-      const businessUnitId = getBusinessUnitId(req);
+
+      const businessUnitId = await getBusinessUnitId(req);
       const excludeProductId = req.query.excludeProductId as string;
-      
-      const exists = await productService.checkSKUExists(sku, businessUnitId, excludeProductId);
-      
+
+      const exists = await productService.checkSKUExists(
+        sku,
+        businessUnitId,
+        excludeProductId
+      );
+
       res.json({
         success: true,
         data: { exists },
@@ -377,18 +466,18 @@ export const productController = {
     try {
       const userId = getUserId(req);
       const { productId } = req.params;
-      
+
       const result = await productService.addRecentlyViewed(userId, productId);
-      
-      res.json({ 
-        success: true, 
-        data: result || { message: 'Added to recently viewed' } 
+
+      res.json({
+        success: true,
+        data: result || { message: 'Added to recently viewed' },
       });
     } catch (error) {
       console.error('❌ Error in addRecentlyViewed:', error);
-      res.json({ 
-        success: true, 
-        data: { message: 'Recently viewed tracking is currently unavailable' } 
+      res.json({
+        success: true,
+        data: { message: 'Recently viewed tracking is currently unavailable' },
       });
     }
   },
@@ -398,18 +487,18 @@ export const productController = {
       const userId = getUserId(req);
       const { limit = 10 } = req.query;
       const limitNum = parseIntParam(String(limit)) || 10;
-      
+
       const products = await productService.getRecentlyViewed(userId, limitNum);
-      
-      res.json({ 
-        success: true, 
-        data: products || [] 
+
+      res.json({
+        success: true,
+        data: products || [],
       });
     } catch (error) {
       console.error('❌ Error in getRecentlyViewed:', error);
-      res.json({ 
-        success: true, 
-        data: [] 
+      res.json({
+        success: true,
+        data: [],
       });
     }
   },
@@ -418,15 +507,15 @@ export const productController = {
     try {
       const userId = getUserId(req);
       const result = await productService.clearRecentlyViewed(userId);
-      res.json({ 
-        success: true, 
-        data: result || { message: 'Recently viewed cleared' } 
+      res.json({
+        success: true,
+        data: result || { message: 'Recently viewed cleared' },
       });
     } catch (error) {
       console.error('❌ Error in clearRecentlyViewed:', error);
-      res.json({ 
-        success: true, 
-        data: { message: 'Recently viewed cleared' } 
+      res.json({
+        success: true,
+        data: { message: 'Recently viewed cleared' },
       });
     }
   },
@@ -435,13 +524,13 @@ export const productController = {
     try {
       const { id } = req.params;
       const product = await productService.getProductById(id);
-      
+
       if (!product) {
         throw new AppError('Product not found', 404);
       }
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         data: {
           ...product,
           inventory: product.inventory,
@@ -449,7 +538,7 @@ export const productController = {
             ...v,
             inventory: v.inventory,
           })),
-        }
+        },
       });
     } catch (error) {
       next(error);
@@ -459,13 +548,13 @@ export const productController = {
   async getProductBySku(req: Request, res: Response, next: NextFunction) {
     try {
       const { sku } = req.params;
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const product = await productService.getProductBySku(sku, businessUnitId);
-      
+
       if (!product) {
         throw new AppError('Product not found', 404);
       }
-      
+
       res.json({ success: true, data: product });
     } catch (error) {
       next(error);
@@ -475,14 +564,17 @@ export const productController = {
   async getProductByBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const { barcode } = req.params;
-      const businessUnitId = getBusinessUnitId(req);
-      
-      const product = await productService.getProductByBarcode(barcode, businessUnitId);
-      
+      const businessUnitId = await getBusinessUnitId(req);
+
+      const product = await productService.getProductByBarcode(
+        barcode,
+        businessUnitId
+      );
+
       if (!product) {
         throw new AppError(`Product with barcode "${barcode}" not found`, 404);
       }
-      
+
       res.json({ success: true, data: product });
     } catch (error) {
       next(error);
@@ -493,9 +585,11 @@ export const productController = {
     try {
       const { limit = 10, businessUnitId } = req.query;
       const limitNum = parseIntParam(String(limit)) || 10;
+      const resolvedBusinessUnitId =
+        (businessUnitId as string) || (await getBusinessUnitId(req));
       const products = await productService.getFeaturedProducts(
         limitNum,
-        (businessUnitId as string) || getBusinessUnitId(req)
+        resolvedBusinessUnitId
       );
       res.json({ success: true, data: products });
     } catch (error) {
@@ -507,9 +601,11 @@ export const productController = {
     try {
       const { limit = 10, businessUnitId } = req.query;
       const limitNum = parseIntParam(String(limit)) || 10;
+      const resolvedBusinessUnitId =
+        (businessUnitId as string) || (await getBusinessUnitId(req));
       const products = await productService.getPopularProducts(
         limitNum,
-        (businessUnitId as string) || getBusinessUnitId(req)
+        resolvedBusinessUnitId
       );
       res.json({ success: true, data: products });
     } catch (error) {
@@ -521,9 +617,11 @@ export const productController = {
     try {
       const { limit = 10, businessUnitId } = req.query;
       const limitNum = parseIntParam(String(limit)) || 10;
+      const resolvedBusinessUnitId =
+        (businessUnitId as string) || (await getBusinessUnitId(req));
       const products = await productService.getNewArrivals(
         limitNum,
-        (businessUnitId as string) || getBusinessUnitId(req)
+        resolvedBusinessUnitId
       );
       res.json({ success: true, data: products });
     } catch (error) {
@@ -546,8 +644,10 @@ export const productController = {
   async getProductStatistics(req: Request, res: Response, next: NextFunction) {
     try {
       const { businessUnitId } = req.query;
+      const resolvedBusinessUnitId =
+        (businessUnitId as string) || (await getBusinessUnitId(req));
       const stats = await productService.getProductStatistics(
-        (businessUnitId as string) || getBusinessUnitId(req)
+        resolvedBusinessUnitId
       );
       res.json({ success: true, data: stats });
     } catch (error) {
@@ -557,15 +657,15 @@ export const productController = {
 
   async getProductsWithoutBarcode(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const { page = 1, limit = 20 } = req.query;
-      
+
       const result = await productService.getProductsWithoutBarcode({
         businessUnitId,
         page: parseIntParam(String(page)) || 1,
         limit: parseIntParam(String(limit)) || 20,
       });
-      
+
       res.json({
         success: true,
         data: result?.products || [],
@@ -582,24 +682,25 @@ export const productController = {
   },
 
   // ============================================
-  // CREATE PRODUCT - ✅ FIXED
+  // CREATE PRODUCT
   // ============================================
 
   async createProduct(req: Request, res: Response, next: NextFunction) {
     try {
       console.log('📝 [createProduct] ========== START ==========');
-      
-      let body = req.body;
-      
+
+      const body = req.body;
+
       if (!body || Object.keys(body).length === 0) {
         return res.status(400).json({
           success: false,
-          message: 'Empty request body. Please ensure Content-Type is application/json.',
+          message:
+            'Empty request body. Please ensure Content-Type is application/json.',
         });
       }
 
       const name = body.name?.trim() || body.productName?.trim();
-      
+
       if (!name) {
         return res.status(400).json({
           success: false,
@@ -610,7 +711,7 @@ export const productController = {
 
       let businessUnitId: string;
       try {
-        businessUnitId = body.businessUnitId || getBusinessUnitId(req);
+        businessUnitId = body.businessUnitId || (await getBusinessUnitId(req));
       } catch (err) {
         return res.status(400).json({
           success: false,
@@ -626,25 +727,29 @@ export const productController = {
         console.warn('⚠️ Using fallback user ID');
       }
 
-      // Handle category ID
       let categoryId = body.categoryId || body.category || body.category_id;
-      
+
       if (categoryId && typeof categoryId === 'object' && categoryId.id) {
         categoryId = categoryId.id;
       }
-      
-      if (categoryId === 'null' || categoryId === '' || categoryId === 'undefined') {
+
+      if (
+        categoryId === 'null' ||
+        categoryId === '' ||
+        categoryId === 'undefined'
+      ) {
         categoryId = undefined;
       }
-      
+
       console.log(`🔍 Category ID resolved: "${categoryId}"`);
 
-      let sku = body.sku?.trim()?.toUpperCase() || body.productSku?.trim()?.toUpperCase();
+      let sku =
+        body.sku?.trim()?.toUpperCase() || body.productSku?.trim()?.toUpperCase();
       if (!sku || sku === 'SKU' || sku.trim() === '') {
         sku = productService.generateProductSKU(name);
         console.log(`✅ Auto-generated SKU: ${sku}`);
       }
-      
+
       const unitPrice = body.unitPrice ?? body.price ?? 0;
       const costPrice = body.costPrice ?? body.productCostPrice;
       const barcode = body.barcode || body.productBarcode;
@@ -663,7 +768,6 @@ export const productController = {
       const variants = Array.isArray(body.variants) ? body.variants : [];
       const inventoryId = body.inventoryId;
 
-      // ✅ FIXED: Log image count for debugging
       console.log(`📸 Images received: ${images.length} images`);
 
       if (inventoryId) {
@@ -674,11 +778,26 @@ export const productController = {
         );
 
         if (!product || !product.id) {
-          console.error('❌ Product creation from inventory failed - no ID returned:', product);
+          console.error(
+            '❌ Product creation from inventory failed - no ID returned:',
+            product
+          );
           return res.status(500).json({
             success: false,
             message: 'Product created but ID not returned',
           });
+        }
+
+        // ✅ Ensure inventory is linked for products created from inventory.
+        try {
+          await prisma.$transaction(async (tx) =>
+            ensureProductInventory(tx, product.id, businessUnitId)
+          );
+        } catch (ensureErr) {
+          console.warn(
+            `⚠️ ensureProductInventory failed for ${product.id}:`,
+            ensureErr
+          );
         }
 
         return res.status(201).json({
@@ -705,7 +824,7 @@ export const productController = {
         minStock: minStock,
         maxStock: maxStock,
         tags: tags,
-        images: images, // ✅ FIXED: Keep original images, don't sanitize here
+        images: images,
         notes: notes || undefined,
         seo: seo,
         businessUnitId: businessUnitId,
@@ -729,6 +848,30 @@ export const productController = {
         });
       }
 
+      // ✅ Ensure the product and every variant has a linked Inventory row
+      //    in the resolved business unit. Idempotent — safe on every create.
+      try {
+        await prisma.$transaction(async (tx) => {
+          await ensureProductInventory(tx, product.id, businessUnitId);
+
+          const createdVariants = await tx.productVariant.findMany({
+            where: { productId: product.id },
+            select: { id: true },
+          });
+
+          for (const v of createdVariants) {
+            await ensureVariantInventory(tx, v.id, businessUnitId);
+          }
+        });
+      } catch (ensureErr) {
+        // Do NOT fail the create — the product exists. The backfill
+        // script and the order/cart lookup will recover on next read.
+        console.warn(
+          `⚠️ ensureProductInventory/ensureVariantInventory failed for product ${product.id}:`,
+          ensureErr
+        );
+      }
+
       console.log('✅ [createProduct] Product created successfully:', product.id);
       console.log(`📸 Images stored: ${product.images?.length || 0} images`);
       console.log('📝 [createProduct] ========== END ==========');
@@ -740,7 +883,7 @@ export const productController = {
       });
     } catch (err: any) {
       console.error('❌ [createProduct] Error:', err);
-      
+
       if (err.code === 'P2002') {
         const target = err.meta?.target || 'field';
         return res.status(400).json({
@@ -754,7 +897,8 @@ export const productController = {
       if (err.code === 'P2003') {
         return res.status(400).json({
           success: false,
-          message: 'Foreign key constraint failed. Please check category, supplier, or business unit IDs.',
+          message:
+            'Foreign key constraint failed. Please check category, supplier, or business unit IDs.',
           error: 'FOREIGN_KEY_CONSTRAINT',
         });
       }
@@ -774,27 +918,27 @@ export const productController = {
           errors: err.details || [],
         });
       }
-      
+
       if (err.name === 'ZodError') {
-        const errors = err.errors?.map((e: any) => ({
-          field: e.path.join('.'),
-          message: e.message,
-        })) || [];
-        
+        const errors =
+          err.errors?.map((e: any) => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })) || [];
+
         return res.status(400).json({
           success: false,
           message: 'Validation error',
           errors: errors,
         });
       }
-      
+
       return res.status(500).json({
         success: false,
         message: err.message || 'An unexpected error occurred',
       });
     }
   },
-
 
   async updateProduct(req: Request, res: Response, next: NextFunction) {
     try {
@@ -803,24 +947,31 @@ export const productController = {
       const data = updateProductSchema.parse(req.body);
 
       const updateData: any = {};
-      
+
       if (data.name !== undefined) updateData.name = data.name?.trim();
-      if (data.description !== undefined) updateData.description = data.description?.trim();
+      if (data.description !== undefined)
+        updateData.description = data.description?.trim();
       if (data.sku !== undefined) updateData.sku = data.sku?.trim()?.toUpperCase();
       if (data.barcode !== undefined) updateData.barcode = data.barcode?.trim();
-      if (data.unitPrice !== undefined) updateData.unitPrice = Number(data.unitPrice);
+      if (data.unitPrice !== undefined)
+        updateData.unitPrice = Number(data.unitPrice);
       if (data.price !== undefined && data.unitPrice === undefined) {
         updateData.unitPrice = Number(data.price);
       }
-      if (data.costPrice !== undefined) updateData.costPrice = Number(data.costPrice);
+      if (data.costPrice !== undefined)
+        updateData.costPrice = Number(data.costPrice);
       if (data.taxRate !== undefined) updateData.taxRate = Number(data.taxRate);
-      if (data.minStock !== undefined) updateData.minStock = Number(data.minStock);
-      if (data.maxStock !== undefined) updateData.maxStock = Number(data.maxStock);
+      if (data.minStock !== undefined)
+        updateData.minStock = Number(data.minStock);
+      if (data.maxStock !== undefined)
+        updateData.maxStock = Number(data.maxStock);
       if (data.isActive !== undefined) updateData.isActive = data.isActive;
       if (data.isDigital !== undefined) updateData.isDigital = data.isDigital;
       if (data.featured !== undefined) updateData.featured = data.featured;
-      if (data.weight !== undefined) updateData.weight = data.weight ? Number(data.weight) : null;
-      if (data.dimensions !== undefined) updateData.dimensions = data.dimensions;
+      if (data.weight !== undefined)
+        updateData.weight = data.weight ? Number(data.weight) : null;
+      if (data.dimensions !== undefined)
+        updateData.dimensions = data.dimensions;
       if (data.images !== undefined) updateData.images = data.images;
       if (data.attributes !== undefined) updateData.attributes = data.attributes;
       if (data.notes !== undefined) updateData.notes = data.notes?.trim();
@@ -839,13 +990,36 @@ export const productController = {
 
       const product = await productService.updateProduct(id, updateData, userId);
 
-      // ✅ FIXED: Ensure product has an id before returning
       if (!product || !product.id) {
         console.error('❌ Product update failed - no ID returned:', product);
         return res.status(500).json({
           success: false,
           message: 'Product updated but ID not returned',
         });
+      }
+
+      // ✅ If the update added new variants, ensure they get inventory
+      //    rows too. Cheap and idempotent.
+      try {
+        const businessUnitId = await getBusinessUnitId(req);
+
+        await prisma.$transaction(async (tx) => {
+          await ensureProductInventory(tx, product.id, businessUnitId);
+
+          const variants = await tx.productVariant.findMany({
+            where: { productId: product.id },
+            select: { id: true },
+          });
+
+          for (const v of variants) {
+            await ensureVariantInventory(tx, v.id, businessUnitId);
+          }
+        });
+      } catch (ensureErr) {
+        console.warn(
+          `⚠️ ensureProductInventory failed during update for ${product.id}:`,
+          ensureErr
+        );
       }
 
       res.json({
@@ -879,16 +1053,19 @@ export const productController = {
           ...result,
           softDeleted: isSoftDelete,
           productId: id,
-          requiresAction: isSoftDelete ? 'Product was deactivated. It can be restored or permanently deleted.' : undefined,
+          requiresAction: isSoftDelete
+            ? 'Product was deactivated. It can be restored or permanently deleted.'
+            : undefined,
         },
       });
     } catch (error: any) {
       console.error('❌ Error in deleteProduct:', error);
-      
+
       if (error?.code === 'P2003') {
         return res.status(400).json({
           success: false,
-          message: 'Cannot delete product due to foreign key constraints. Product has associated sales, orders, or inventory records.',
+          message:
+            'Cannot delete product due to foreign key constraints. Product has associated sales, orders, or inventory records.',
           error: 'FOREIGN_KEY_CONSTRAINT',
           details: error.meta || {},
         });
@@ -910,9 +1087,12 @@ export const productController = {
     try {
       const { id } = req.params;
       const { keepInventory = true } = req.body;
-      
-      const result = await productService.deleteProductFromInventory(id, keepInventory);
-      
+
+      const result = await productService.deleteProductFromInventory(
+        id,
+        keepInventory
+      );
+
       res.json({
         success: true,
         data: result,
@@ -939,7 +1119,9 @@ export const productController = {
       res.json({
         success: true,
         data: result,
-        message: `Activated ${result.results?.length || 0} products, ${result.errors?.length || 0} failed`,
+        message: `Activated ${result.results?.length || 0} products, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       next(error);
@@ -958,7 +1140,9 @@ export const productController = {
       res.json({
         success: true,
         data: result,
-        message: `Deactivated ${result.results?.length || 0} products, ${result.errors?.length || 0} failed`,
+        message: `Deactivated ${result.results?.length || 0} products, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       next(error);
@@ -972,7 +1156,9 @@ export const productController = {
       res.json({
         success: true,
         data: result,
-        message: `Updated ${result.results?.length || 0} products, ${result.errors?.length || 0} failed`,
+        message: `Updated ${result.results?.length || 0} products, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -988,21 +1174,26 @@ export const productController = {
       if (!updates || !Array.isArray(updates) || updates.length === 0) {
         throw new AppError('Updates array is required', 400);
       }
-      
+
       for (const update of updates) {
         if (!update.id) {
           throw new AppError('Each update must have an id', 400);
         }
         if (update.stock === undefined || update.stock < 0) {
-          throw new AppError('Each update must have a non-negative stock value', 400);
+          throw new AppError(
+            'Each update must have a non-negative stock value',
+            400
+          );
         }
       }
-      
+
       const result = await productService.bulkUpdateStock(updates);
       res.json({
         success: true,
         data: result,
-        message: `Updated ${result.results?.length || 0} products, ${result.errors?.length || 0} failed`,
+        message: `Updated ${result.results?.length || 0} products, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       next(error);
@@ -1011,20 +1202,54 @@ export const productController = {
 
   async bulkCreateProducts(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const userId = getUserId(req);
       const data = bulkCreateProductsSchema.parse(req.body);
 
-      const sanitizedProducts = data.products.map((product: any) => 
+      const sanitizedProducts = data.products.map((product: any) =>
         sanitizeProductData(product, businessUnitId)
       );
 
-      const result = await productService.bulkCreateProducts(sanitizedProducts, businessUnitId, userId);
+      const result = await productService.bulkCreateProducts(
+        sanitizedProducts,
+        businessUnitId,
+        userId
+      );
+
+      // ✅ Ensure every created product has inventory linked.
+      try {
+        const created = (result?.results || []).filter(
+          (r: any) => r?.success && r?.data?.id
+        );
+
+        await prisma.$transaction(async (tx) => {
+          for (const r of created) {
+            const productId = r.data.id;
+            await ensureProductInventory(tx, productId, businessUnitId);
+
+            const variants = await tx.productVariant.findMany({
+              where: { productId },
+              select: { id: true },
+            });
+
+            for (const v of variants) {
+              await ensureVariantInventory(tx, v.id, businessUnitId);
+            }
+          }
+        });
+      } catch (ensureErr) {
+        console.warn(
+          `⚠️ ensureInventory failed during bulkCreateProducts:`,
+          ensureErr
+        );
+      }
 
       res.status(201).json({
         success: true,
         data: result,
-        message: `${result.results?.length || 0} products created, ${result.errors?.length || 0} failed`,
+        message: `${result.results?.length || 0} products created, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1036,15 +1261,20 @@ export const productController = {
 
   async bulkDeleteProducts(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const data = bulkDeleteProductsSchema.parse(req.body);
 
-      const result = await productService.bulkDeleteProducts(data.productIds, businessUnitId);
+      const result = await productService.bulkDeleteProducts(
+        data.productIds,
+        businessUnitId
+      );
 
       res.json({
         success: true,
         data: result,
-        message: `${result.results?.length || 0} products deleted, ${result.errors?.length || 0} failed`,
+        message: `${result.results?.length || 0} products deleted, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1062,9 +1292,9 @@ export const productController = {
     try {
       const { id } = req.params;
       const options = generateBarcodeSchema.parse(req.body || {});
-      
+
       const result = await productService.generateBarcode(id, options);
-      
+
       res.status(201).json({
         success: true,
         data: result,
@@ -1072,7 +1302,9 @@ export const productController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return next(new AppError('Invalid barcode generation options', 400, error.errors));
+        return next(
+          new AppError('Invalid barcode generation options', 400, error.errors)
+        );
       }
       next(error);
     }
@@ -1081,9 +1313,9 @@ export const productController = {
   async generateUniqueBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const options = generateBarcodeSchema.parse(req.body || {});
-      
+
       const result = await productService.generateUniqueBarcode(options);
-      
+
       res.status(201).json({
         success: true,
         data: result,
@@ -1091,7 +1323,9 @@ export const productController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return next(new AppError('Invalid barcode generation options', 400, error.errors));
+        return next(
+          new AppError('Invalid barcode generation options', 400, error.errors)
+        );
       }
       next(error);
     }
@@ -1101,11 +1335,11 @@ export const productController = {
     try {
       const { id } = req.params;
       const result = await productService.getProductBarcode(id);
-      
+
       if (!result) {
         throw new AppError('No barcode found for this product', 404);
       }
-      
+
       res.json({
         success: true,
         data: result,
@@ -1119,11 +1353,11 @@ export const productController = {
     try {
       const { id } = req.params;
       const result = await productService.getBarcodeImage(id);
-      
+
       if (!result || !result.barcodeUrl) {
         throw new AppError('No barcode image found for this product', 404);
       }
-      
+
       res.json({
         success: true,
         data: result,
@@ -1137,11 +1371,11 @@ export const productController = {
     try {
       const { id } = req.params;
       const result = await productService.getProductQRCode(id);
-      
+
       if (!result || !result.qrCodeUrl) {
         throw new AppError('No QR code found for this product', 404);
       }
-      
+
       res.json({
         success: true,
         data: result,
@@ -1154,13 +1388,13 @@ export const productController = {
   async generateBarcodeImage(req: Request, res: Response, next: NextFunction) {
     try {
       const { barcode, format } = req.body;
-      
+
       if (!barcode) {
         throw new AppError('Barcode string is required', 400);
       }
-      
+
       const result = await productService.generateBarcodeImage(barcode, format);
-      
+
       res.json({
         success: true,
         data: result,
@@ -1174,13 +1408,13 @@ export const productController = {
   async generateQRCode(req: Request, res: Response, next: NextFunction) {
     try {
       const { data } = req.body;
-      
+
       if (!data) {
         throw new AppError('QR code data is required', 400);
       }
-      
+
       const result = await productService.generateQRCode(data);
-      
+
       res.json({
         success: true,
         data: result,
@@ -1195,9 +1429,9 @@ export const productController = {
     try {
       const { id } = req.params;
       const { barcode } = associateBarcodeSchema.parse(req.body);
-      
+
       const result = await productService.associateBarcode(id, barcode);
-      
+
       res.json({
         success: true,
         data: result,
@@ -1214,16 +1448,21 @@ export const productController = {
   async validateBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const { barcode, excludeProductId } = validateBarcodeSchema.parse(req.body);
-      
-      const result = await productService.validateBarcode(barcode, excludeProductId);
-      
+
+      const result = await productService.validateBarcode(
+        barcode,
+        excludeProductId
+      );
+
       res.json({
         success: true,
         data: result,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return next(new AppError('Invalid barcode validation data', 400, error.errors));
+        return next(
+          new AppError('Invalid barcode validation data', 400, error.errors)
+        );
       }
       next(error);
     }
@@ -1232,17 +1471,22 @@ export const productController = {
   async bulkGenerateBarcodes(req: Request, res: Response, next: NextFunction) {
     try {
       const { productIds, options } = req.body;
-      
+
       if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
         throw new AppError('Product IDs array is required', 400);
       }
-      
-      const result = await productService.bulkGenerateBarcodes(productIds, options);
-      
+
+      const result = await productService.bulkGenerateBarcodes(
+        productIds,
+        options
+      );
+
       res.json({
         success: true,
         data: result,
-        message: `${result.results?.length || 0} barcodes generated, ${result.errors?.length || 0} failed`,
+        message: `${result.results?.length || 0} barcodes generated, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       next(error);
@@ -1252,16 +1496,18 @@ export const productController = {
   async scanBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const { barcode, businessUnitId } = req.body;
-      
+
       if (!barcode) {
         throw new AppError('Barcode is required', 400);
       }
-      
+
+      const resolvedBusinessUnitId =
+        businessUnitId || (await getBusinessUnitId(req));
       const result = await productService.scanBarcode(
         barcode,
-        businessUnitId || getBusinessUnitId(req)
+        resolvedBusinessUnitId
       );
-      
+
       res.json({
         success: true,
         data: result,
@@ -1278,6 +1524,7 @@ export const productController = {
   async addVariant(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
+      const businessUnitId = await getBusinessUnitId(req);
       const data = createVariantSchema.parse(req.body);
 
       if (!data.images) {
@@ -1285,7 +1532,21 @@ export const productController = {
       }
 
       const variant = await productService.addVariant(id, data);
-      
+
+      // ✅ Ensure the new variant has a linked Inventory row.
+      if (variant && (variant as any).id) {
+        try {
+          await prisma.$transaction(async (tx) =>
+            ensureVariantInventory(tx, (variant as any).id, businessUnitId)
+          );
+        } catch (ensureErr) {
+          console.warn(
+            `⚠️ ensureVariantInventory failed for ${(variant as any).id}:`,
+            ensureErr
+          );
+        }
+      }
+
       res.status(201).json({
         success: true,
         data: variant,
@@ -1302,6 +1563,7 @@ export const productController = {
   async bulkCreateVariants(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
+      const businessUnitId = await getBusinessUnitId(req);
       const data = bulkCreateVariantsSchema.parse(req.body);
 
       if (data.variants) {
@@ -1312,11 +1574,33 @@ export const productController = {
       }
 
       const result = await productService.bulkCreateVariants(id, data.variants);
-      
+
+      // ✅ Ensure every variant has inventory linked.
+      try {
+        const createdIds: string[] = (result?.results || [])
+          .map((r: any) => r?.data?.id || r?.id)
+          .filter((x: any) => typeof x === 'string');
+
+        if (createdIds.length > 0) {
+          await prisma.$transaction(async (tx) => {
+            for (const variantId of createdIds) {
+              await ensureVariantInventory(tx, variantId, businessUnitId);
+            }
+          });
+        }
+      } catch (ensureErr) {
+        console.warn(
+          `⚠️ ensureVariantInventory failed during bulkCreateVariants:`,
+          ensureErr
+        );
+      }
+
       res.status(201).json({
         success: true,
         data: result,
-        message: `${result.results?.length || 0} variants created, ${result.errors?.length || 0} failed`,
+        message: `${result.results?.length || 0} variants created, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1349,8 +1633,11 @@ export const productController = {
   async getVariantByBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const { barcode } = req.params;
-      const businessUnitId = getBusinessUnitId(req);
-      const variant = await productService.getVariantByBarcode(barcode, businessUnitId);
+      const businessUnitId = await getBusinessUnitId(req);
+      const variant = await productService.getVariantByBarcode(
+        barcode,
+        businessUnitId
+      );
       res.json({ success: true, data: variant });
     } catch (error) {
       next(error);
@@ -1360,7 +1647,7 @@ export const productController = {
   async getVariantBySku(req: Request, res: Response, next: NextFunction) {
     try {
       const { sku } = req.params;
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const variant = await productService.getVariantBySku(sku, businessUnitId);
       res.json({ success: true, data: variant });
     } catch (error) {
@@ -1373,7 +1660,7 @@ export const productController = {
       const { variantId } = req.params;
       const data = updateVariantSchema.parse(req.body);
       const variant = await productService.updateVariant(variantId, data);
-      
+
       res.json({
         success: true,
         data: variant,
@@ -1391,12 +1678,11 @@ export const productController = {
     try {
       const { variantId } = req.params;
       const result = await productService.deleteVariant(variantId);
-      
-      const isSoftDelete = result && typeof result === 'object' && 'message' in result;
-      const message = isSoftDelete 
-        ? result.message 
-        : 'Variant deleted successfully';
-      
+
+      const isSoftDelete =
+        result && typeof result === 'object' && 'message' in result;
+      const message = isSoftDelete ? result.message : 'Variant deleted successfully';
+
       res.json({
         success: true,
         message: message,
@@ -1413,13 +1699,15 @@ export const productController = {
       if (!variantIds || !Array.isArray(variantIds) || variantIds.length === 0) {
         throw new AppError('Variant IDs array is required', 400);
       }
-      
+
       const result = await productService.bulkDeleteVariants(variantIds);
-      
+
       res.json({
         success: true,
         data: result,
-        message: `${result.results?.length || 0} variants deleted, ${result.errors?.length || 0} failed`,
+        message: `${result.results?.length || 0} variants deleted, ${
+          result.errors?.length || 0
+        } failed`,
       });
     } catch (error) {
       next(error);
@@ -1459,7 +1747,7 @@ export const productController = {
 
   async getCategories(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const categories = await productService.getCategories(businessUnitId);
       res.json({
         success: true,
@@ -1472,7 +1760,7 @@ export const productController = {
 
   async getCategoryTree(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const tree = await productService.getCategoryTree(businessUnitId);
       res.json({ success: true, data: tree || [] });
     } catch (error) {
@@ -1483,7 +1771,7 @@ export const productController = {
   async getCategoryById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const category = await productService.getCategoryById(id, businessUnitId);
       res.json({
         success: true,
@@ -1519,7 +1807,7 @@ export const productController = {
 
   async createCategory(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const userId = getUserId(req);
       const data = createCategorySchema.parse(req.body);
 
@@ -1562,8 +1850,10 @@ export const productController = {
       } = {};
 
       if (data.name !== undefined) categoryData.name = data.name;
-      if (data.description !== undefined) categoryData.description = nullToUndefined(data.description);
-      if (data.parentId !== undefined) categoryData.parentId = nullToUndefined(data.parentId);
+      if (data.description !== undefined)
+        categoryData.description = nullToUndefined(data.description);
+      if (data.parentId !== undefined)
+        categoryData.parentId = nullToUndefined(data.parentId);
       if (data.isActive !== undefined) categoryData.isActive = data.isActive;
       if (data.featured !== undefined) categoryData.featured = data.featured;
 
@@ -1585,7 +1875,7 @@ export const productController = {
   async deleteCategory(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       await productService.deleteCategory(id, businessUnitId);
       res.json({
         success: true,
@@ -1733,7 +2023,11 @@ export const productController = {
       res.json({
         success: true,
         data: result?.reviews || [],
-        stats: result?.stats || { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
+        stats: result?.stats || {
+          average: 0,
+          total: 0,
+          distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        },
         pagination: result?.pagination || {
           total: 0,
           page: 1,
@@ -1752,7 +2046,11 @@ export const productController = {
       const stats = await productService.getReviewStats(id);
       res.json({
         success: true,
-        data: stats || { average: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
+        data: stats || {
+          average: 0,
+          total: 0,
+          distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        },
       });
     } catch (error) {
       next(error);
@@ -1768,24 +2066,36 @@ export const productController = {
       const reviews = result?.reviews || [];
 
       const exportData = reviews.map((review: any) => ({
-        'User': review.user ? `${review.user.firstName || ''} ${review.user.lastName || ''}`.trim() || 'Anonymous' : 'Anonymous',
-        'Rating': review.rating || 0,
-        'Title': review.title || '',
-        'Comment': review.comment || '',
-        'Verified': review.isVerified ? 'Yes' : 'No',
+        User: review.user
+          ? `${review.user.firstName || ''} ${
+              review.user.lastName || ''
+            }`.trim() || 'Anonymous'
+          : 'Anonymous',
+        Rating: review.rating || 0,
+        Title: review.title || '',
+        Comment: review.comment || '',
+        Verified: review.isVerified ? 'Yes' : 'No',
         'Helpful Count': review.helpfulCount || 0,
-        'Date': review.createdAt ? new Date(review.createdAt).toLocaleDateString() : '',
+        Date: review.createdAt
+          ? new Date(review.createdAt).toLocaleDateString()
+          : '',
       }));
 
       if (format === 'csv') {
         const csv = convertToCSV(exportData);
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=reviews_${id}.csv`);
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename=reviews_${id}.csv`
+        );
         return res.send(csv);
       }
 
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename=reviews_${id}.json`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=reviews_${id}.json`
+      );
       res.json(exportData);
     } catch (error) {
       next(error);
@@ -1823,7 +2133,11 @@ export const productController = {
       const userId = getUserId(req);
       const data = req.body;
 
-      const review = await productService.updateProductReview(reviewId, data, userId);
+      const review = await productService.updateProductReview(
+        reviewId,
+        data,
+        userId
+      );
 
       res.json({
         success: true,
@@ -1906,7 +2220,7 @@ export const productController = {
 
   async getTags(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
 
       const result = await productService.getAllProducts({
         businessUnitId,
@@ -1942,7 +2256,7 @@ export const productController = {
 
   async searchProducts(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const { query, category } = req.query;
 
       if (!query) {
@@ -2040,7 +2354,10 @@ export const productController = {
     try {
       const userId = getUserId(req);
       const result = await productService.clearWishlist(userId);
-      res.json({ success: true, data: result || { message: 'Wishlist cleared' } });
+      res.json({
+        success: true,
+        data: result || { message: 'Wishlist cleared' },
+      });
     } catch (error) {
       next(error);
     }
@@ -2069,7 +2386,7 @@ export const productController = {
 
   async exportProducts(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const { format = 'csv' } = req.query;
       const formatStr = (format as string) || 'csv';
 
@@ -2082,28 +2399,36 @@ export const productController = {
 
       if (formatStr === 'csv') {
         const exportData = products.map((product: any) => ({
-          'ID': product.id || '',
-          'Name': product.name || '',
-          'SKU': product.sku || '',
-          'Barcode': product.barcode || '',
+          ID: product.id || '',
+          Name: product.name || '',
+          SKU: product.sku || '',
+          Barcode: product.barcode || '',
           'Unit Price': product.unitPrice || 0,
           'Cost Price': product.costPrice || 0,
-          'Category': product.category?.name || '',
-          'Supplier': product.supplier?.name || '',
-          'Stock': product.inventory?.quantity || 0,
-          'Variants': product.variants?.length || 0,
-          'Status': product.isActive ? 'Active' : 'Inactive',
-          'Created At': product.createdAt ? new Date(product.createdAt).toLocaleDateString() : '',
+          Category: product.category?.name || '',
+          Supplier: product.supplier?.name || '',
+          Stock: product.inventory?.quantity || 0,
+          Variants: product.variants?.length || 0,
+          Status: product.isActive ? 'Active' : 'Inactive',
+          'Created At': product.createdAt
+            ? new Date(product.createdAt).toLocaleDateString()
+            : '',
         }));
 
         const csv = convertToCSV(exportData);
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=products_${Date.now()}.csv`);
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename=products_${Date.now()}.csv`
+        );
         return res.send(csv);
       }
 
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename=products_${Date.now()}.json`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=products_${Date.now()}.json`
+      );
       res.json({
         success: true,
         data: products,
@@ -2117,10 +2442,9 @@ export const productController = {
 
   async importProducts(req: Request, res: Response, next: NextFunction) {
     try {
-      const businessUnitId = getBusinessUnitId(req);
+      const businessUnitId = await getBusinessUnitId(req);
       const userId = getUserId(req);
 
-      // TODO: Implement actual import logic
       res.json({
         success: true,
         message: 'Products imported successfully',
@@ -2140,18 +2464,35 @@ export const productController = {
   async downloadImportTemplate(req: Request, res: Response, next: NextFunction) {
     try {
       const templateHeaders = [
-        'Name', 'SKU', 'Barcode', 'Description', 'Unit Price', 'Cost Price',
-        'Category', 'Supplier', 'Min Stock', 'Max Stock', 'Weight (kg)',
-        'Tax Rate (%)', 'Status (Active/Inactive)', 'Digital (Yes/No)',
-        'Featured (Yes/No)', 'Tags (comma separated)',
+        'Name',
+        'SKU',
+        'Barcode',
+        'Description',
+        'Unit Price',
+        'Cost Price',
+        'Category',
+        'Supplier',
+        'Min Stock',
+        'Max Stock',
+        'Weight (kg)',
+        'Tax Rate (%)',
+        'Status (Active/Inactive)',
+        'Digital (Yes/No)',
+        'Featured (Yes/No)',
+        'Tags (comma separated)',
       ];
 
       const csv = convertToCSV([templateHeaders]);
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=product_import_template.csv`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=product_import_template.csv`
+      );
       return res.send(csv);
     } catch (error) {
       next(error);
     }
   },
 };
+
+export default productController;

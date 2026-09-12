@@ -122,6 +122,9 @@ export class BusinessUnitService extends BaseService {
   /**
    * Get all business units with pagination and filtering
    */
+  /**
+   * Get all business units with pagination and filtering
+   */
   async getAllBusinessUnits(params: {
     page?: number;
     limit?: number;
@@ -130,6 +133,7 @@ export class BusinessUnitService extends BaseService {
     isActive?: boolean;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    includeDeleted?: boolean;
   }) {
     try {
       const { 
@@ -140,11 +144,17 @@ export class BusinessUnitService extends BaseService {
         isActive,
         sortBy = 'createdAt',
         sortOrder = 'desc',
+        includeDeleted = false,
       } = params;
       
       const skip = (page - 1) * limit;
 
       const where: any = {};
+
+      // ✅ Exclude soft-deleted units unless explicitly requested
+      if (!includeDeleted) {
+        where.deletedAt = null;
+      }
       
       if (search) {
         where.OR = [

@@ -1,4 +1,5 @@
 // D:\Projects\Kalwanga\packages\web\services\bookkeepingService.ts
+
 import { api } from './api';
 import { 
   JournalEntry, 
@@ -19,8 +20,12 @@ export interface PaginatedResponse<T> {
 
 // Export the service object directly (not as default)
 export const bookkeepingService = {
+  // ============================================
+  // JOURNAL ENTRY ROUTES
+  // ============================================
+
   /**
-   * Get journal entries - calls GET /bookkeeping/journal
+   * Get journal entries - GET /bookkeeping/journal-entries
    */
   async getJournalEntries(params?: {
     page?: number;
@@ -31,26 +36,51 @@ export const bookkeepingService = {
     endDate?: string;
     businessUnitId?: string;
   }): Promise<PaginatedResponse<JournalEntry>> {
-    const response = await api.get<PaginatedResponse<JournalEntry>>('/bookkeeping/journal', { params });
+    const response = await api.get<PaginatedResponse<JournalEntry>>('/bookkeeping/journal-entries', { params });
     return response;
   },
 
   /**
-   * Create journal entry - calls POST /bookkeeping/journal
+   * Get journal entry by ID - GET /bookkeeping/journal-entries/:id
+   */
+  async getJournalEntryById(id: string): Promise<JournalEntry> {
+    const response = await api.get<JournalEntry>(`/bookkeeping/journal-entries/${id}`);
+    return response;
+  },
+
+  /**
+   * Create journal entry - POST /bookkeeping/journal-entries
    */
   async createJournalEntry(data: {
-    date: string;
+    date: string | Date;
     description: string;
     reference?: string;
-    lines: Array<{ accountId: string; debit: number; credit: number; description?: string }>;
+    lines: Array<{ 
+      accountId: string; 
+      debit: number; 
+      credit: number; 
+      description?: string 
+    }>;
     businessUnitId?: string;
   }): Promise<JournalEntry> {
-    const response = await api.post<JournalEntry>('/bookkeeping/journal', data);
+    const response = await api.post<JournalEntry>('/bookkeeping/journal-entries', data);
     return response;
   },
 
   /**
-   * Get accounts - calls GET /bookkeeping/accounts
+   * Void journal entry - POST /bookkeeping/journal-entries/:id/void
+   */
+  async voidJournalEntry(id: string): Promise<JournalEntry> {
+    const response = await api.post<JournalEntry>(`/bookkeeping/journal-entries/${id}/void`);
+    return response;
+  },
+
+  // ============================================
+  // ACCOUNT ROUTES
+  // ============================================
+
+  /**
+   * Get accounts - GET /bookkeeping/accounts
    */
   async getAccounts(params?: { businessUnitId?: string; isActive?: boolean }): Promise<Account[]> {
     const response = await api.get<Account[]>('/bookkeeping/accounts', { params });
@@ -58,7 +88,7 @@ export const bookkeepingService = {
   },
 
   /**
-   * Get account by ID - calls GET /bookkeeping/accounts/:id
+   * Get account by ID - GET /bookkeeping/accounts/:id
    */
   async getAccountById(id: string): Promise<Account> {
     const response = await api.get<Account>(`/bookkeeping/accounts/${id}`);
@@ -66,35 +96,22 @@ export const bookkeepingService = {
   },
 
   /**
-   * Generate balance sheet - calls GET /bookkeeping/balance-sheet
+   * Get account balance - GET /bookkeeping/accounts/:id/balance
    */
-  async generateBalanceSheet(businessUnitId: string): Promise<BalanceSheet> {
-    const response = await api.get<BalanceSheet>('/bookkeeping/balance-sheet', { params: { businessUnitId } });
+  async getAccountBalance(id: string): Promise<{
+    accountId: string;
+    accountCode: string;
+    accountName: string;
+    debit: number;
+    credit: number;
+    balance: number;
+  }> {
+    const response = await api.get<any>(`/bookkeeping/accounts/${id}/balance`);
     return response;
   },
 
   /**
-   * Generate income statement - calls GET /bookkeeping/income-statement
-   */
-  async generateIncomeStatement(params: {
-    businessUnitId: string;
-    startDate: string;
-    endDate: string;
-  }): Promise<IncomeStatement> {
-    const response = await api.get<IncomeStatement>('/bookkeeping/income-statement', { params });
-    return response;
-  },
-
-  /**
-   * Generate trial balance - calls GET /bookkeeping/trial-balance
-   */
-  async generateTrialBalance(businessUnitId: string): Promise<TrialBalance> {
-    const response = await api.get<TrialBalance>('/bookkeeping/trial-balance', { params: { businessUnitId } });
-    return response;
-  },
-
-  /**
-   * Create account - calls POST /bookkeeping/accounts
+   * Create account - POST /bookkeeping/accounts
    */
   async createAccount(data: {
     code: string;
@@ -102,16 +119,128 @@ export const bookkeepingService = {
     type: string;
     category: string;
     businessUnitId: string;
+    isActive?: boolean;
   }): Promise<Account> {
     const response = await api.post<Account>('/bookkeeping/accounts', data);
     return response;
   },
 
   /**
-   * Update account - calls PUT /bookkeeping/accounts/:id
+   * Update account - PUT /bookkeeping/accounts/:id
    */
   async updateAccount(id: string, data: Partial<Account>): Promise<Account> {
     const response = await api.put<Account>(`/bookkeeping/accounts/${id}`, data);
+    return response;
+  },
+
+  // ============================================
+  // FINANCIAL REPORT ROUTES
+  // ============================================
+
+  /**
+   * Generate balance sheet - GET /bookkeeping/reports/balance-sheet
+   * Also supports /bookkeeping/balance-sheet for backward compatibility
+   */
+  async generateBalanceSheet(businessUnitId: string): Promise<BalanceSheet> {
+    // Try the new endpoint first, fallback to old if needed
+    try {
+      const response = await api.get<BalanceSheet>('/bookkeeping/reports/balance-sheet', { 
+        params: { businessUnitId } 
+      });
+      return response;
+    } catch (error) {
+      // Fallback to old endpoint
+      const response = await api.get<BalanceSheet>('/bookkeeping/balance-sheet', { 
+        params: { businessUnitId } 
+      });
+      return response;
+    }
+  },
+
+  /**
+   * Generate income statement - GET /bookkeeping/reports/income-statement
+   * Also supports /bookkeeping/income-statement for backward compatibility
+   */
+  async generateIncomeStatement(params: {
+    businessUnitId: string;
+    startDate: string | Date;
+    endDate: string | Date;
+  }): Promise<IncomeStatement> {
+    const queryParams = {
+      businessUnitId: params.businessUnitId,
+      startDate: typeof params.startDate === 'string' ? params.startDate : params.startDate.toISOString(),
+      endDate: typeof params.endDate === 'string' ? params.endDate : params.endDate.toISOString(),
+    };
+    
+    try {
+      const response = await api.get<IncomeStatement>('/bookkeeping/reports/income-statement', { 
+        params: queryParams 
+      });
+      return response;
+    } catch (error) {
+      // Fallback to old endpoint
+      const response = await api.get<IncomeStatement>('/bookkeeping/income-statement', { 
+        params: queryParams 
+      });
+      return response;
+    }
+  },
+
+  /**
+   * Generate trial balance - GET /bookkeeping/reports/trial-balance
+   * Also supports /bookkeeping/trial-balance for backward compatibility
+   */
+  async generateTrialBalance(businessUnitId: string): Promise<TrialBalance> {
+    try {
+      const response = await api.get<TrialBalance>('/bookkeeping/reports/trial-balance', { 
+        params: { businessUnitId } 
+      });
+      return response;
+    } catch (error) {
+      // Fallback to old endpoint
+      const response = await api.get<TrialBalance>('/bookkeeping/trial-balance', { 
+        params: { businessUnitId } 
+      });
+      return response;
+    }
+  },
+
+  // ============================================
+  // SALE RECORDING ROUTES
+  // ============================================
+
+  /**
+   * Record a sale in the journal - POST /bookkeeping/record-sale/:saleId
+   */
+  async recordSale(saleId: string): Promise<JournalEntry[]> {
+    const response = await api.post<JournalEntry[]>(`/bookkeeping/record-sale/${saleId}`);
+    return response;
+  },
+
+  // ============================================
+  // TAX ROUTES
+  // ============================================
+
+  /**
+   * Calculate tax - POST /bookkeeping/calculate-tax
+   */
+  async calculateTax(subtotal: number, businessUnitId?: string): Promise<{
+    subtotal: number;
+    taxRate: number;
+    taxAmount: number;
+    total: number;
+    taxBreakdown: {
+      federal: number;
+      state: number;
+      local: number;
+      vat: number;
+      salesTax: number;
+    };
+  }> {
+    const response = await api.post<any>('/bookkeeping/calculate-tax', { 
+      subtotal,
+      businessUnitId 
+    });
     return response;
   },
 };

@@ -28,7 +28,8 @@ const createOrderSchema = z.object({
   discount: z.number().min(0).optional(),
   tax: z.number().min(0).optional(),
   notes: z.string().optional(),
-  businessUnitId: z.string().min(1, 'Business unit ID is required'),
+  // ✅ Made optional — resolved via getBusinessUnitId() when missing
+  businessUnitId: z.string().optional(),
   expectedDeliveryDate: z.string().datetime().optional(),
   shippingAddress: z.string().optional(),
   paymentMethod: z.string().optional(),
@@ -85,70 +86,116 @@ const dateRangeSchema = z.object({
 // HELPER FUNCTIONS
 // ============================================
 
+/**
+ * Resolve the business unit ID for the current request.
+ *
+ * ⚠️ MUST match cartController.getBusinessUnitId exactly. The cart and
+ * order endpoints have to resolve the same BU for a given request,
+ * otherwise inventory created against one will be invisible to the
+ * other and the POS flow will throw "No inventory found for <product>".
+ *
+ * Priority:
+ *   1. Explicit override (x-business-unit-id header > body > query)
+ *   2. User's own businessUnitId / businessUnits[0]
+ *   3. Most recent active business unit
+ *   4. Bootstrap a default company + business unit
+ */
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
-  
-  let businessUnitId = 
-    user?.businessUnitId || 
+
+  // 1. Explicit override (header > body > query)
+  const explicit =
+    (req.headers['x-business-unit-id'] as string | undefined) ||
+    (req.body?.businessUnitId as string | undefined) ||
+    (req.query?.businessUnitId as string | undefined);
+
+  if (
+    explicit &&
+    explicit !== 'default' &&
+    explicit !== 'default-business-unit'
+  ) {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: explicit },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
+    }
+    console.warn(
+      `⚠️ Explicit businessUnitId "${explicit}" not found or inactive, falling back`
+    );
+  }
+
+  // 2. User's own unit
+  const userBu =
+    user?.businessUnitId ||
     user?.businessUnits?.[0]?.businessUnitId ||
-    req.body?.businessUnitId ||
-    req.query?.businessUnitId;
-  
-  if (!businessUnitId || businessUnitId === 'default') {
-    try {
-      const businessUnit = await prisma.businessUnit.findFirst({
-        where: { isActive: true },
-        orderBy: { createdAt: 'asc' },
-      });
-      
-      if (businessUnit) {
-        return businessUnit.id;
-      }
-      
-      let company = await prisma.company.findFirst();
-      if (!company) {
-        company = await prisma.company.create({
-          data: {
-            name: 'Default Company',
-            email: 'default@company.com',
-            phone: '+0000000000',
-            isActive: true,
-          },
-        });
-      }
-      
-      const newBusinessUnit = await prisma.businessUnit.create({
-        data: {
-          name: 'Default Business Unit',
-          code: 'DEFAULT',
-          isActive: true,
-          companyId: company.id,
-        },
-      });
-      
-      return newBusinessUnit.id;
-    } catch (error) {
-      console.error('❌ Failed to get/create default business unit:', error);
-      throw new AppError('Failed to resolve business unit ID', 500);
+    user?.businessUnits?.[0]?.id;
+
+  if (userBu && userBu !== 'default') {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: userBu },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
     }
   }
-  
-  return businessUnitId as string;
+
+  // 3. Fallback: most recent active unit
+  try {
+    const businessUnit = await prisma.businessUnit.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (businessUnit) {
+      console.log(
+        `✅ getBusinessUnitId (orders): falling back to "${businessUnit.name}" (${businessUnit.id})`
+      );
+      return businessUnit.id;
+    }
+
+    // 4. Bootstrap a default company + unit
+    let company = await prisma.company.findFirst();
+    if (!company) {
+      company = await prisma.company.create({
+        data: {
+          name: 'Default Company',
+          email: 'default@company.com',
+          phone: '+0000000000',
+          isActive: true,
+        },
+      });
+    }
+
+    const newBusinessUnit = await prisma.businessUnit.create({
+      data: {
+        name: 'Default Business Unit',
+        code: `BU-${Date.now().toString().slice(-6)}`,
+        isActive: true,
+        companyId: company.id,
+      },
+    });
+
+    return newBusinessUnit.id;
+  } catch (error) {
+    console.error('❌ Failed to resolve business unit:', error);
+    throw new AppError('Failed to resolve business unit ID', 500);
+  }
 }
 
 // ============================================
 // REAL-TIME EVENT HELPERS
 // ============================================
 
-/**
- * Safely emit real-time event
- */
-async function safeEmitEvent(eventName: string, data: any): Promise<void> {
+async function safeEmitEvent(eventName: string, data: unknown): Promise<void> {
   try {
-    if (realtimeService && typeof (realtimeService as any).emit === 'function') {
-      await (realtimeService as any).emit(eventName, data);
-    } else if (realtimeService && typeof (realtimeService as any).emitOrderEvent === 'function') {
-      await (realtimeService as any).emitOrderEvent(eventName, data);
+    const svc = realtimeService as any;
+    if (svc && typeof svc.emit === 'function') {
+      await svc.emit(eventName, data);
+    } else if (svc && typeof svc.emitOrderEvent === 'function') {
+      await svc.emitOrderEvent(eventName, data);
     } else {
       console.log(`📡 Real-time event: ${eventName}`, data);
     }
@@ -162,19 +209,15 @@ async function safeEmitEvent(eventName: string, data: any): Promise<void> {
 // ============================================
 
 export class OrderController {
-  /**
-   * Get all orders with pagination and filters
-   * GET /orders
-   */
   async getAllOrders(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       const params = {
         page: req.query.page ? parseInt(req.query.page as string) : undefined,
         limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
         search: req.query.search as string | undefined,
-        businessUnitId: businessUnitId,
+        businessUnitId,
         customerId: req.query.customerId as string | undefined,
         userId: req.query.userId as string | undefined,
         status: req.query.status as string | undefined,
@@ -190,7 +233,7 @@ export class OrderController {
       };
 
       const result = await orderService.getAllOrders(params);
-      
+
       res.json({
         success: true,
         data: result?.orders || [],
@@ -199,8 +242,8 @@ export class OrderController {
           page: result?.page || 1,
           limit: result?.limit || 10,
           totalPages: result?.totalPages || 1,
-          hasNextPage: result?.page < result?.totalPages,
-          hasPreviousPage: result?.page > 1,
+          hasNextPage: (result?.page || 1) < (result?.totalPages || 1),
+          hasPreviousPage: (result?.page || 1) > 1,
         },
         stats: result?.stats,
       });
@@ -209,54 +252,36 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get order by ID
-   * GET /orders/:id
-   */
   async getOrderById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const order = await orderService.getOrderById(id);
-      
+
       if (!order) {
         throw new AppError('Order not found', 404);
       }
-      
-      res.json({
-        success: true,
-        data: order,
-      });
+
+      res.json({ success: true, data: order });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Get order by order number
-   * GET /orders/number/:orderNumber
-   */
   async getOrderByNumber(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderNumber } = req.params;
       const order = await orderService.getOrderByNumber(orderNumber);
-      
+
       if (!order) {
         throw new AppError('Order not found', 404);
       }
-      
-      res.json({
-        success: true,
-        data: order,
-      });
+
+      res.json({ success: true, data: order });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Get orders by customer
-   * GET /orders/customer/:customerId
-   */
   async getOrdersByCustomer(req: Request, res: Response, next: NextFunction) {
     try {
       const { customerId } = req.params;
@@ -289,10 +314,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get orders by status
-   * GET /orders/status/:status
-   */
   async getOrdersByStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { status } = req.params;
@@ -321,10 +342,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Create order
-   * POST /orders
-   */
   async createOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
@@ -334,14 +351,19 @@ export class OrderController {
 
       const validatedData = createOrderSchema.parse(req.body);
 
+      // ✅ Resolve businessUnitId — same logic as cartController
+      const businessUnitId = await getBusinessUnitId(req);
+
       const orderData = {
         items: validatedData.items,
         customerId: validatedData.customerId,
         discount: validatedData.discount || 0,
         tax: validatedData.tax || 0,
         notes: validatedData.notes,
-        businessUnitId: validatedData.businessUnitId,
-        expectedDeliveryDate: validatedData.expectedDeliveryDate ? new Date(validatedData.expectedDeliveryDate) : undefined,
+        businessUnitId,
+        expectedDeliveryDate: validatedData.expectedDeliveryDate
+          ? new Date(validatedData.expectedDeliveryDate)
+          : undefined,
         shippingAddress: validatedData.shippingAddress,
         paymentMethod: validatedData.paymentMethod,
         paymentTerms: validatedData.paymentTerms,
@@ -349,12 +371,11 @@ export class OrderController {
       };
 
       const order = await orderService.createOrder(orderData, userId);
-      
-      // Emit real-time notification using safe helper
+
       await safeEmitEvent('order:created', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        businessUnitId: order.businessUnitId,
+        orderId: order!.id,
+        orderNumber: order!.orderNumber,
+        businessUnitId: order!.businessUnitId,
       });
 
       res.status(201).json({
@@ -377,32 +398,29 @@ export class OrderController {
     }
   }
 
-  /**
-   * Update order
-   * PUT /orders/:id
-   */
   async updateOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
 
       const validatedData = updateOrderSchema.parse(req.body);
 
-      // Convert string date to Date object for the service
       const updateData = {
         status: validatedData.status,
         notes: validatedData.notes,
         priority: validatedData.priority,
         shippingAddress: validatedData.shippingAddress,
-        expectedDeliveryDate: validatedData.expectedDeliveryDate ? new Date(validatedData.expectedDeliveryDate) : undefined,
+        expectedDeliveryDate: validatedData.expectedDeliveryDate
+          ? new Date(validatedData.expectedDeliveryDate)
+          : undefined,
       };
 
       const order = await orderService.updateOrder(id, updateData, userId);
-      
+
       res.json({
         success: true,
         data: order,
@@ -423,15 +441,11 @@ export class OrderController {
     }
   }
 
-  /**
-   * Update order status
-   * PATCH /orders/:id/status
-   */
   async updateOrderStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
@@ -439,18 +453,17 @@ export class OrderController {
       const validatedData = updateOrderStatusSchema.parse(req.body);
 
       const order = await orderService.updateOrderStatus(
-        id, 
-        validatedData.status, 
-        userId, 
+        id,
+        validatedData.status,
+        userId,
         validatedData.notes
       );
-      
-      // Emit real-time notification using safe helper
+
       await safeEmitEvent('order:status-updated', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        status: order.status,
-        businessUnitId: order.businessUnitId,
+        orderId: order!.id,
+        orderNumber: order!.orderNumber,
+        status: order!.status,
+        businessUnitId: order!.businessUnitId,
       });
 
       res.json({
@@ -473,15 +486,11 @@ export class OrderController {
     }
   }
 
-  /**
-   * Cancel order
-   * POST /orders/:id/cancel
-   */
   async cancelOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
@@ -489,12 +498,11 @@ export class OrderController {
       const validatedData = cancelOrderSchema.parse(req.body);
 
       const order = await orderService.cancelOrder(id, userId, validatedData.reason);
-      
-      // Emit real-time notification using safe helper
+
       await safeEmitEvent('order:cancelled', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        businessUnitId: order.businessUnitId,
+        orderId: order!.id,
+        orderNumber: order!.orderNumber,
+        businessUnitId: order!.businessUnitId,
         reason: validatedData.reason,
       });
 
@@ -518,15 +526,11 @@ export class OrderController {
     }
   }
 
-  /**
-   * Add item to order
-   * POST /orders/:id/items
-   */
   async addItemToOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
@@ -534,7 +538,7 @@ export class OrderController {
       const validatedData = addItemSchema.parse(req.body);
 
       const order = await orderService.addItemToOrder(id, validatedData, userId);
-      
+
       res.json({
         success: true,
         data: order,
@@ -555,15 +559,11 @@ export class OrderController {
     }
   }
 
-  /**
-   * Update order item
-   * PUT /orders/:orderId/items/:itemId
-   */
   async updateOrderItem(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderId, itemId } = req.params;
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
@@ -571,7 +571,7 @@ export class OrderController {
       const validatedData = updateItemSchema.parse(req.body);
 
       const order = await orderService.updateOrderItem(orderId, itemId, validatedData, userId);
-      
+
       res.json({
         success: true,
         data: order,
@@ -592,21 +592,17 @@ export class OrderController {
     }
   }
 
-  /**
-   * Remove item from order
-   * DELETE /orders/:orderId/items/:itemId
-   */
   async removeOrderItem(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderId, itemId } = req.params;
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
 
       const order = await orderService.removeOrderItem(orderId, itemId, userId);
-      
+
       res.json({
         success: true,
         data: order,
@@ -617,10 +613,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Convert order to sale
-   * POST /orders/:orderId/convert-to-sale
-   */
   async convertOrderToSale(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderId } = req.params;
@@ -631,12 +623,11 @@ export class OrderController {
       }
 
       const sale = await orderService.convertOrderToSale(orderId, userId);
-      
-      // Emit real-time notification using safe helper
+
       await safeEmitEvent('order:converted-to-sale', {
         orderId,
-        saleId: sale.id,
-        businessUnitId: sale.businessUnitId,
+        saleId: sale!.id,
+        businessUnitId: sale!.businessUnitId,
       });
 
       res.status(201).json({
@@ -649,15 +640,11 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get order history
-   * GET /orders/:orderId/history
-   */
   async getOrderHistory(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderId } = req.params;
       const history = await orderService.getOrderHistory(orderId);
-      
+
       res.json({
         success: true,
         data: history,
@@ -668,15 +655,11 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get order timeline
-   * GET /orders/:orderId/timeline
-   */
   async getOrderTimeline(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderId } = req.params;
       const timeline = await orderService.getOrderTimeline(orderId);
-      
+
       res.json({
         success: true,
         data: timeline,
@@ -687,20 +670,15 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get order statistics
-   * GET /orders/stats
-   */
   async getOrderStats(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const where: any = {};
-      
+
       if (businessUnitId) {
         where.businessUnitId = businessUnitId;
       }
 
-      // Remove priority from groupBy since it doesn't exist on Order model
       const [statusBreakdown, totalOrders, totalValue, recentOrders] = await Promise.all([
         prisma.order.groupBy({
           by: ['status'],
@@ -734,7 +712,8 @@ export class OrderController {
         data: {
           totalOrders,
           totalValue: totalValue._sum.total || 0,
-          averageOrderValue: totalOrders > 0 ? (totalValue._sum.total || 0) / totalOrders : 0,
+          averageOrderValue:
+            totalOrders > 0 ? (totalValue._sum.total || 0) / totalOrders : 0,
           statusBreakdown: statusBreakdown.map((s: any) => ({
             status: s.status,
             count: s._count._all,
@@ -747,10 +726,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get order by date range
-   * GET /orders/date-range
-   */
   async getOrdersByDateRange(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -787,14 +762,10 @@ export class OrderController {
     }
   }
 
-  /**
-   * Bulk update order status
-   * PATCH /orders/bulk-status
-   */
   async bulkUpdateStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
-      
+
       if (!userId) {
         throw new AppError('User ID is required', 401);
       }
@@ -808,7 +779,6 @@ export class OrderController {
         validatedData.notes
       );
 
-      // Emit real-time notifications using safe helper
       await safeEmitEvent('orders:bulk-status-updated', {
         orderIds: validatedData.orderIds,
         status: validatedData.status,
@@ -818,7 +788,7 @@ export class OrderController {
       res.json({
         success: true,
         data: result,
-        message: `${result.updated} orders updated successfully`,
+        message: `${result!.updated} orders updated successfully`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -835,10 +805,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Bulk delete orders
-   * DELETE /orders/bulk
-   */
   async bulkDeleteOrders(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderIds } = req.body;
@@ -857,17 +823,13 @@ export class OrderController {
       res.json({
         success: true,
         data: result,
-        message: `${result.deleted} orders deleted successfully`,
+        message: `${result!.deleted} orders deleted successfully`,
       });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Delete order (soft delete)
-   * DELETE /orders/:id
-   */
   async deleteOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -889,10 +851,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Export orders
-   * GET /orders/export
-   */
   async exportOrders(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -911,7 +869,9 @@ export class OrderController {
       const exportData = orders.map((order: any) => ({
         orderNumber: order.orderNumber,
         date: order.createdAt.toISOString().split('T')[0],
-        customer: order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : 'Guest',
+        customer: order.customer
+          ? `${order.customer.firstName} ${order.customer.lastName}`.trim()
+          : 'Guest',
         customerEmail: order.customer?.email || 'N/A',
         subtotal: order.subtotal,
         tax: order.tax,
@@ -920,7 +880,8 @@ export class OrderController {
         status: order.status,
         priority: order.priority || 'MEDIUM',
         items: order.items?.length || 0,
-        totalQuantity: order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+        totalQuantity:
+          order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
       }));
 
       res.json({
@@ -935,10 +896,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Export orders to CSV
-   * GET /orders/export/csv
-   */
   async exportOrdersCsv(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -946,15 +903,31 @@ export class OrderController {
 
       const orders = await orderService.getOrdersByDateRange({
         businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Subtotal', 'Tax', 'Discount', 'Total', 'Status', 'Priority', 'Items'];
+      const headers = [
+        'Order Number',
+        'Date',
+        'Customer',
+        'Email',
+        'Subtotal',
+        'Tax',
+        'Discount',
+        'Total',
+        'Status',
+        'Priority',
+        'Items',
+      ];
       const rows = orders.map((order: any) => [
         order.orderNumber,
         order.createdAt.toISOString().split('T')[0],
-        order.customer ? `${order.customer.firstName} ${order.customer.lastName}`.trim() : 'Guest',
+        order.customer
+          ? `${order.customer.firstName} ${order.customer.lastName}`.trim()
+          : 'Guest',
         order.customer?.email || 'N/A',
         order.subtotal.toFixed(2),
         order.tax.toFixed(2),
@@ -968,17 +941,16 @@ export class OrderController {
       const csvContent = [headers.join(','), ...rows.map((row: any[]) => row.join(','))].join('\n');
 
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=orders-${new Date().toISOString().split('T')[0]}.csv`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=orders-${new Date().toISOString().split('T')[0]}.csv`
+      );
       res.send(csvContent);
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Export orders to Excel
-   * GET /orders/export/excel
-   */
   async exportOrdersExcel(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -986,7 +958,9 @@ export class OrderController {
 
       const orders = await orderService.getOrdersByDateRange({
         businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
@@ -1001,10 +975,6 @@ export class OrderController {
     }
   }
 
-  /**
-   * Export orders to PDF
-   * GET /orders/export/pdf
-   */
   async exportOrdersPdf(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -1012,7 +982,9 @@ export class OrderController {
 
       const orders = await orderService.getOrdersByDateRange({
         businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
@@ -1027,51 +999,38 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get dashboard order data
-   * GET /orders/dashboard
-   */
   async getDashboardOrderData(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
-      const [todayOrders, pendingOrders, processingOrders, completedOrders, totalOrders, recentOrders] = await Promise.all([
+
+      const [
+        todayOrders,
+        pendingOrders,
+        processingOrders,
+        completedOrders,
+        totalOrders,
+        recentOrders,
+      ] = await Promise.all([
         prisma.order.count({
-          where: {
-            businessUnitId,
-            createdAt: { gte: today },
-          },
+          where: { businessUnitId, createdAt: { gte: today } },
         }),
         prisma.order.count({
-          where: {
-            businessUnitId,
-            status: 'PENDING',
-          },
+          where: { businessUnitId, status: 'PENDING' },
         }),
         prisma.order.count({
-          where: {
-            businessUnitId,
-            status: 'PROCESSING',
-          },
+          where: { businessUnitId, status: 'PROCESSING' },
         }),
         prisma.order.count({
-          where: {
-            businessUnitId,
-            status: 'COMPLETED',
-          },
+          where: { businessUnitId, status: 'COMPLETED' },
         }),
         prisma.order.count({
-          where: {
-            businessUnitId,
-          },
+          where: { businessUnitId },
         }),
         prisma.order.findMany({
-          where: {
-            businessUnitId,
-          },
+          where: { businessUnitId },
           take: 5,
           orderBy: { createdAt: 'desc' },
           include: {
@@ -1103,14 +1062,10 @@ export class OrderController {
     }
   }
 
-  /**
-   * Test notification (for debugging)
-   * POST /orders/test-notification
-   */
   async testNotification(req: Request, res: Response, next: NextFunction) {
     try {
       const { businessUnitId, orderNumber } = req.body;
-      
+
       if (!businessUnitId || !orderNumber) {
         throw new AppError('businessUnitId and orderNumber are required', 400);
       }
@@ -1122,19 +1077,15 @@ export class OrderController {
         100
       );
 
-      res.json({ 
+      res.json({
         success: true,
-        message: 'Test notification sent' 
+        message: 'Test notification sent',
       });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Get order analytics
-   * GET /orders/analytics
-   */
   async getOrderAnalytics(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -1156,14 +1107,10 @@ export class OrderController {
     }
   }
 
-  /**
-   * Get order fulfillment status
-   * GET /orders/fulfillment
-   */
   async getOrderFulfillmentStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       const status = await orderService.getOrderFulfillmentStatus(businessUnitId);
 
       res.json({

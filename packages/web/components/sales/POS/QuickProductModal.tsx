@@ -12,7 +12,7 @@ import {
   Check
 } from 'lucide-react';
 import { productService } from '../../../services/productService';
-import { useToast } from '../../common/Toast';
+import { useToast } from '../../../utils/toast-manager';
 import { formatCurrency } from '../../../utils/formatters';
 
 // Define Product interface matching the service response

@@ -75,6 +75,10 @@ export const businessUnitController = {
    * Get all business units
    * GET /business-units
    */
+  /**
+   * Get all business units
+   * GET /business-units
+   */
   async getAllBusinessUnits(req: Request, res: Response, next: NextFunction) {
     try {
       const { 
@@ -85,16 +89,43 @@ export const businessUnitController = {
         isActive,
         sortBy,
         sortOrder,
+        includeDeleted,
       } = req.query;
+
+      // ✅ Whitelist sortable fields so Prisma never sees an unknown key
+      const ALLOWED_SORT_FIELDS = new Set([
+        'createdAt',
+        'updatedAt',
+        'name',
+        'code',
+        'type',
+        'isActive',
+      ]);
+
+      const requestedSortBy = (sortBy as string) || 'createdAt';
+      const safeSortBy = ALLOWED_SORT_FIELDS.has(requestedSortBy)
+        ? requestedSortBy
+        : 'createdAt';
+
+      const requestedSortOrder =
+        sortOrder === 'asc' || sortOrder === 'desc'
+          ? (sortOrder as 'asc' | 'desc')
+          : 'desc';
 
       const result = await businessUnitService.getAllBusinessUnits({
         page: page ? parseInt(page as string) : undefined,
         limit: limit ? parseInt(limit as string) : undefined,
         search: search as string,
         companyId: companyId as string,
-        isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
-        sortBy: sortBy as string,
-        sortOrder: sortOrder as 'asc' | 'desc',
+        isActive:
+          isActive === 'true'
+            ? true
+            : isActive === 'false'
+            ? false
+            : undefined,
+        sortBy: safeSortBy,
+        sortOrder: requestedSortOrder,
+        includeDeleted: includeDeleted === 'true',
       });
 
       res.json({

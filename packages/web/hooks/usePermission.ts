@@ -4,8 +4,9 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from './useAuth';
+import { api } from '../services/api';
 import { UserRole } from '../types/enums';
-import { PERMISSIONS, ROLE_PERMISSIONS, hasPermission, hasAnyPermission, hasAllPermissions } from '../types/permissions';
+import { PERMISSIONS, ROLE_PERMISSIONS } from '../types/permissions';
 import type { Permission } from '../types/permissions';
 
 // ============================================
@@ -291,36 +292,39 @@ export function usePermission(): UsePermissionReturn {
 
   const extractBusinessUnits = useCallback((userData: any): BusinessUnit[] => {
     if (!userData) return [];
-    
+
     const units: BusinessUnit[] = [];
     const userAny = userData as any;
-    
+
     // Try multiple sources for business units
-    
+
     // 1. From user.businessUnits array
     if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
       const extracted = userAny.businessUnits
-        .map((bu: any) => {
+        .map((bu: any): BusinessUnit | null => {
           const id = bu.businessUnitId || bu.id || bu;
           if (!id || id === 'default' || id === 'default-business-unit') return null;
-          
+
           return {
             id: id,
             name: bu.businessUnit?.name || bu.name || bu.businessUnitName || 'Unnamed Business Unit',
             code: bu.businessUnit?.code || bu.code || '',
             type: bu.businessUnit?.type || bu.type || '',
-            isActive: bu.businessUnit?.isActive !== undefined 
-              ? bu.businessUnit.isActive 
-              : (bu.isActive !== undefined ? bu.isActive : true),
+            isActive:
+              bu.businessUnit?.isActive !== undefined
+                ? bu.businessUnit.isActive
+                : bu.isActive !== undefined
+                ? bu.isActive
+                : true,
             companyId: bu.businessUnit?.companyId || bu.companyId || '',
             companyName: bu.businessUnit?.company?.name || bu.companyName || '',
           };
         })
         .filter((bu: BusinessUnit | null): bu is BusinessUnit => bu !== null);
-      
+
       units.push(...extracted);
     }
-    
+
     // 2. From direct businessUnitId
     if (units.length === 0 && userAny?.businessUnitId) {
       const id = userAny.businessUnitId;
@@ -336,7 +340,7 @@ export function usePermission(): UsePermissionReturn {
         });
       }
     }
-    
+
     // 3. From localStorage
     if (units.length === 0) {
       const stored = localStorage.getItem(STORAGE_KEYS.BUSINESS_UNITS);
@@ -345,7 +349,7 @@ export function usePermission(): UsePermissionReturn {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed)) {
             const extracted = parsed
-              .map((bu: any) => {
+              .map((bu: any): BusinessUnit | null => {
                 const id = bu.businessUnitId || bu.id || bu;
                 if (!id || id === 'default' || id === 'default-business-unit') return null;
                 return {
@@ -358,7 +362,7 @@ export function usePermission(): UsePermissionReturn {
                   companyName: bu.businessUnit?.company?.name || bu.companyName || '',
                 };
               })
-              .filter((bu: BusinessUnit | null): bu is BusinessUnit => bu !== null);
+              .filter((bu): bu is BusinessUnit => bu !== null);
             units.push(...extracted);
           }
         } catch (e) {
@@ -366,7 +370,7 @@ export function usePermission(): UsePermissionReturn {
         }
       }
     }
-    
+
     // 4. From single localStorage entry
     if (units.length === 0) {
       const defaultBU = localStorage.getItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
@@ -380,7 +384,7 @@ export function usePermission(): UsePermissionReturn {
         });
       }
     }
-    
+
     return units;
   }, []);
 
@@ -392,83 +396,82 @@ export function usePermission(): UsePermissionReturn {
       setBusinessUnitsLoaded(true);
       return;
     }
-    
-    // If SUPER_ADMIN, we might want to load all business units from API
-    // For now, extract from user data
+
     setLoadingBusinessUnits(true);
-    
+
     try {
       let units = extractBusinessUnits(user);
-      
-      // If SUPER_ADMIN and no units found, try to fetch from API
+
+      // If SUPER_ADMIN and no units found, fetch from the backend API
       if (isSuperAdmin && units.length === 0) {
         try {
-          // Try to fetch from API
-          const response = await fetch('/api/business-units', {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-            },
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data?.data && Array.isArray(data.data)) {
-              units = data.data.map((bu: any) => ({
-                id: bu.id,
-                name: bu.name || 'Unnamed Business Unit',
-                code: bu.code || '',
-                type: bu.type || '',
-                isActive: bu.isActive !== false,
-                companyId: bu.companyId || '',
-                companyName: bu.company?.name || '',
-              }));
-            }
+          const response = await api.get<any>('/business-units');
+          const list = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.data)
+            ? response.data
+            : Array.isArray(response?.data?.data)
+            ? response.data.data
+            : [];
+
+          if (list.length > 0) {
+            units = list.map((bu: any) => ({
+              id: bu.id,
+              name: bu.name || 'Unnamed Business Unit',
+              code: bu.code || '',
+              type: bu.type || '',
+              isActive: bu.isActive !== false,
+              companyId: bu.companyId || '',
+              companyName: bu.company?.name || '',
+            }));
           }
         } catch (e) {
           console.warn('Failed to fetch business units from API:', e);
         }
       }
-      
-      // Save to state
+
       setBusinessUnits(units);
-      
-      // Auto-select business unit
+
+      // Auto-select a business unit
       if (units.length > 0) {
-        // Try saved selection
-        const savedId = localStorage.getItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT) || 
-                       localStorage.getItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
-        
+        // Try saved selection first
+        const savedId =
+          localStorage.getItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT) ||
+          localStorage.getItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
+
+        let chosen: BusinessUnit | undefined;
+
         if (savedId) {
-          const saved = units.find(bu => bu.id === savedId && bu.isActive !== false);
-          if (saved) {
-            setCurrentBusinessUnit(saved);
-            localStorage.setItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT, saved.id);
-            return;
-          }
+          chosen = units.find(
+            (bu) => bu.id === savedId && bu.isActive !== false
+          );
         }
-        
-        // Try first active unit
-        const active = units.find(bu => bu.isActive !== false);
-        if (active) {
-          setCurrentBusinessUnit(active);
-          localStorage.setItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT, active.id);
-          localStorage.setItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT, active.id);
-          return;
+
+        if (!chosen) {
+          chosen = units.find((bu) => bu.isActive !== false);
         }
-        
-        // Fallback to first unit
-        if (units.length > 0) {
-          setCurrentBusinessUnit(units[0]);
-          localStorage.setItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT, units[0].id);
+
+        if (!chosen) {
+          chosen = units[0];
         }
+
+        if (chosen) {
+          setCurrentBusinessUnit(chosen);
+          // ✅ Always write the canonical key that api.ts reads
+          localStorage.setItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT, chosen.id);
+          localStorage.setItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT, chosen.id);
+        }
+
+        // ✅ Always persist the units array (no early returns)
+        localStorage.setItem(
+          STORAGE_KEYS.BUSINESS_UNITS,
+          JSON.stringify(units)
+        );
       } else {
         setCurrentBusinessUnit(null);
+        // ✅ Clear any stale businessUnitId so nothing wrong is forwarded
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
       }
-      
-      // Save units to localStorage for persistence
-      if (units.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.BUSINESS_UNITS, JSON.stringify(units));
-      }
-      
     } catch (error) {
       console.error('Failed to load business units:', error);
     } finally {

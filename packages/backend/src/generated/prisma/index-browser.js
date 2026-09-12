@@ -628,6 +628,7 @@ exports.Prisma.OrderItemScalarFieldEnum = {
   id: 'id',
   quantity: 'quantity',
   unitPrice: 'unitPrice',
+  discount: 'discount',
   total: 'total',
   notes: 'notes',
   orderId: 'orderId',
@@ -660,6 +661,7 @@ exports.Prisma.SaleItemScalarFieldEnum = {
   id: 'id',
   quantity: 'quantity',
   unitPrice: 'unitPrice',
+  discount: 'discount',
   total: 'total',
   notes: 'notes',
   saleId: 'saleId',
@@ -675,6 +677,7 @@ exports.Prisma.PaymentScalarFieldEnum = {
   transactionId: 'transactionId',
   reference: 'reference',
   notes: 'notes',
+  metadata: 'metadata',
   processedAt: 'processedAt',
   saleId: 'saleId',
   orderId: 'orderId',
@@ -1041,7 +1044,8 @@ exports.Prisma.ShiftLogScalarFieldEnum = {
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   userId: 'userId',
-  businessUnitId: 'businessUnitId'
+  businessUnitId: 'businessUnitId',
+  cashRegisterSessionId: 'cashRegisterSessionId'
 };
 
 exports.Prisma.NotificationScalarFieldEnum = {
@@ -1054,6 +1058,7 @@ exports.Prisma.NotificationScalarFieldEnum = {
   link: 'link',
   createdAt: 'createdAt',
   readAt: 'readAt',
+  data: 'data',
   userId: 'userId',
   companyId: 'companyId',
   businessUnitId: 'businessUnitId'

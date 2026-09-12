@@ -106,7 +106,6 @@ export interface PaystackPaymentRequest extends ProcessPaymentRequest {
   };
 }
 
-// ✅ FIXED: Use Omit to avoid duplicate metadata property
 export interface SquarePaymentRequest extends Omit<ProcessPaymentRequest, 'metadata'> {
   cardNonce: string;
   metadata?: {
@@ -168,7 +167,6 @@ export interface CreatePaymentProviderRequest {
     maxAmount?: number;
     feePercentage?: number;
     feeFixed?: number;
-    // Provider-specific config
     apiKey?: string;
     publicKey?: string;
     secretKey?: string;
@@ -243,6 +241,7 @@ export interface CreatePaymentIntentResponse {
   status: string;
 }
 
+// ✅ FIXED: Complete ApiResponse interface with proper data handling
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -253,6 +252,8 @@ export interface ApiResponse<T = any> {
     totalPages: number;
     limit: number;
   };
+  error?: string;
+  errors?: Array<{ field: string; message: string }>;
 }
 
 export interface MpesaSTKPushRequest {
@@ -328,7 +329,7 @@ export interface PaystackVerifyResponse {
 }
 
 // ============================================
-// SQUARE TYPES - ✅ FIXED
+// SQUARE TYPES
 // ============================================
 
 export interface SquarePaymentRequest extends Omit<ProcessPaymentRequest, 'metadata'> {
@@ -368,6 +369,54 @@ export interface SquareCustomerResponse {
   name: string;
   phone?: string;
   referenceId?: string;
+}
+
+// ============================================
+// POS / ORDER FORM HELPER TYPES
+// ============================================
+
+/**
+ * Payment method union used by the POS / OrderForm.
+ * Mirrors the backend `processPaymentSchema` enum.
+ */
+export type PosPaymentMethod =
+  | 'CASH'
+  | 'CREDIT_CARD'
+  | 'DEBIT_CARD'
+  | 'MOBILE_MONEY'
+  | 'BANK_TRANSFER'
+  | 'GIFT_CARD'
+  | 'LOYALTY_POINTS'
+  | 'CHECK'
+  | 'PAYPAL'
+  | 'FLUTTERWAVE'
+  | 'PAYSTACK'
+  | 'SQUARE';
+
+export interface ProcessOrderPaymentInput {
+  saleId: string;
+  amount: number;
+  paymentMethod: PosPaymentMethod;
+  customerId?: string;
+  cashRegisterId?: string;
+  cashRegisterSessionId?: string;
+  currency?: string;
+  description?: string;
+  metadata?: Record<string, any>;
+  tipAmount?: number;
+  source?: string;
+  gatewayId?: string;
+  cardNonce?: string;
+}
+
+export interface InitiateMpesaSTKPushInput {
+  phoneNumber: string;
+  amount: number;
+  accountReference?: string;
+  transactionDesc?: string;
+  callbackUrl?: string;
+  saleId?: string;
+  orderId?: string;
 }
 
 // ============================================
@@ -583,8 +632,37 @@ export const paymentService = {
     isActive?: boolean;
     type?: string;
   }): Promise<ApiResponse<PaymentProviderStatus[]>> {
-    const response = await api.get<ApiResponse<PaymentProviderStatus[]>>('/payment-providers', { params });
-    return response;
+    try {
+      const response = await api.get<ApiResponse<PaymentProviderStatus[]>>('/payment-providers', { params });
+
+      if (response && typeof response === 'object') {
+        if ('data' in response) {
+          return response;
+        }
+        if (Array.isArray(response)) {
+          return {
+            success: true,
+            data: response,
+          };
+        }
+        if ('success' in response && 'data' in response) {
+          return response;
+        }
+      }
+
+      return {
+        success: true,
+        data: [],
+        message: 'No payment providers available',
+      };
+    } catch (error: any) {
+      console.error('Error fetching payment providers:', error);
+      return {
+        success: false,
+        data: [],
+        message: error?.message || 'Failed to fetch payment providers',
+      };
+    }
   },
 
   /**
@@ -592,10 +670,19 @@ export const paymentService = {
    * GET /payment-providers/:provider/status
    */
   async getProviderStatus(provider: string, businessUnitId?: string): Promise<ApiResponse<PaymentProviderStatus>> {
-    const response = await api.get<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${provider}/status`, { 
-      params: { businessUnitId } 
-    });
-    return response;
+    try {
+      const response = await api.get<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${provider}/status`, {
+        params: { businessUnitId }
+      });
+      return response;
+    } catch (error: any) {
+      console.error('Error fetching provider status:', error);
+      return {
+        success: false,
+        message: error?.message || 'Failed to fetch provider status',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -603,8 +690,17 @@ export const paymentService = {
    * POST /payment-providers
    */
   async createPaymentProvider(data: CreatePaymentProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
-    const response = await api.post<ApiResponse<PaymentProviderStatus>>('/payment-providers', data);
-    return response;
+    try {
+      const response = await api.post<ApiResponse<PaymentProviderStatus>>('/payment-providers', data);
+      return response;
+    } catch (error: any) {
+      console.error('Error creating payment provider:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to create provider',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -612,8 +708,17 @@ export const paymentService = {
    * PATCH /payment-providers/:id
    */
   async updatePaymentProvider(id: string, data: UpdatePaymentProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
-    const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}`, data);
-    return response;
+    try {
+      const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}`, data);
+      return response;
+    } catch (error: any) {
+      console.error('Error updating payment provider:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to update provider',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -622,7 +727,6 @@ export const paymentService = {
    */
   async togglePaymentProvider(id: string, isActive: boolean): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
-      // ✅ FIXED: Validate ID is not a default ID
       if (!id || id.startsWith('default_')) {
         console.warn('⚠️ Cannot toggle default provider - provider must be created in database first');
         return {
@@ -636,7 +740,6 @@ export const paymentService = {
       return response;
     } catch (error: any) {
       console.error('Toggle provider error:', error);
-      // Return a graceful error response
       return {
         success: false,
         message: error?.response?.data?.message || error?.message || 'Failed to toggle provider',
@@ -650,8 +753,17 @@ export const paymentService = {
    * DELETE /payment-providers/:id
    */
   async deletePaymentProvider(id: string): Promise<ApiResponse<void>> {
-    const response = await api.delete<ApiResponse<void>>(`/payment-providers/${id}`);
-    return response;
+    try {
+      const response = await api.delete<ApiResponse<void>>(`/payment-providers/${id}`);
+      return response;
+    } catch (error: any) {
+      console.error('Error deleting payment provider:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to delete provider',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -659,8 +771,17 @@ export const paymentService = {
    * PATCH /payment-providers/:id/health
    */
   async updateProviderHealth(id: string, isHealthy: boolean): Promise<ApiResponse<PaymentProviderStatus>> {
-    const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}/health`, { isHealthy });
-    return response;
+    try {
+      const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}/health`, { isHealthy });
+      return response;
+    } catch (error: any) {
+      console.error('Error updating provider health:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to update provider health',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -669,7 +790,6 @@ export const paymentService = {
    */
   async configurePaymentProvider(id: string, data: ConfigureProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
-      // ✅ FIXED: Validate ID is not a default ID
       if (!id || id.startsWith('default_')) {
         console.warn('⚠️ Cannot configure default provider - provider must be created in database first');
         return {
@@ -700,11 +820,20 @@ export const paymentService = {
    * POST /payment-providers/:id/currencies
    */
   async addProviderCurrency(providerId: string, currency: string, conversionRate?: number): Promise<ApiResponse<any>> {
-    const response = await api.post<ApiResponse<any>>(`/payment-providers/${providerId}/currencies`, { 
-      currency, 
-      conversionRate 
-    });
-    return response;
+    try {
+      const response = await api.post<ApiResponse<any>>(`/payment-providers/${providerId}/currencies`, {
+        currency,
+        conversionRate
+      });
+      return response;
+    } catch (error: any) {
+      console.error('Error adding provider currency:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to add currency',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -712,8 +841,17 @@ export const paymentService = {
    * DELETE /payment-providers/:id/currencies/:currency
    */
   async removeProviderCurrency(providerId: string, currency: string): Promise<ApiResponse<void>> {
-    const response = await api.delete<ApiResponse<void>>(`/payment-providers/${providerId}/currencies/${currency}`);
-    return response;
+    try {
+      const response = await api.delete<ApiResponse<void>>(`/payment-providers/${providerId}/currencies/${currency}`);
+      return response;
+    } catch (error: any) {
+      console.error('Error removing provider currency:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to remove currency',
+        data: undefined as any,
+      };
+    }
   },
 
   // ============================================
@@ -725,8 +863,17 @@ export const paymentService = {
    * GET /payment-providers/:id/methods
    */
   async getProviderPaymentMethods(providerId: string): Promise<ApiResponse<any[]>> {
-    const response = await api.get<ApiResponse<any[]>>(`/payment-providers/${providerId}/methods`);
-    return response;
+    try {
+      const response = await api.get<ApiResponse<any[]>>(`/payment-providers/${providerId}/methods`);
+      return response;
+    } catch (error: any) {
+      console.error('Error fetching provider payment methods:', error);
+      return {
+        success: false,
+        message: error?.message || 'Failed to fetch payment methods',
+        data: [],
+      };
+    }
   },
 
   /**
@@ -734,8 +881,17 @@ export const paymentService = {
    * POST /payment-providers/:id/methods
    */
   async createProviderPaymentMethod(providerId: string, data: any): Promise<ApiResponse<any>> {
-    const response = await api.post<ApiResponse<any>>(`/payment-providers/${providerId}/methods`, data);
-    return response;
+    try {
+      const response = await api.post<ApiResponse<any>>(`/payment-providers/${providerId}/methods`, data);
+      return response;
+    } catch (error: any) {
+      console.error('Error creating provider payment method:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to create payment method',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -743,8 +899,17 @@ export const paymentService = {
    * PATCH /payment-providers/:id/methods/:methodId
    */
   async updateProviderPaymentMethod(providerId: string, methodId: string, data: any): Promise<ApiResponse<any>> {
-    const response = await api.patch<ApiResponse<any>>(`/payment-providers/${providerId}/methods/${methodId}`, data);
-    return response;
+    try {
+      const response = await api.patch<ApiResponse<any>>(`/payment-providers/${providerId}/methods/${methodId}`, data);
+      return response;
+    } catch (error: any) {
+      console.error('Error updating provider payment method:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to update payment method',
+        data: undefined as any,
+      };
+    }
   },
 
   /**
@@ -752,8 +917,17 @@ export const paymentService = {
    * DELETE /payment-providers/:id/methods/:methodId
    */
   async deleteProviderPaymentMethod(providerId: string, methodId: string): Promise<ApiResponse<void>> {
-    const response = await api.delete<ApiResponse<void>>(`/payment-providers/${providerId}/methods/${methodId}`);
-    return response;
+    try {
+      const response = await api.delete<ApiResponse<void>>(`/payment-providers/${providerId}/methods/${methodId}`);
+      return response;
+    } catch (error: any) {
+      console.error('Error deleting provider payment method:', error);
+      return {
+        success: false,
+        message: error?.response?.data?.message || error?.message || 'Failed to delete payment method',
+        data: undefined as any,
+      };
+    }
   },
 
   // ============================================
@@ -825,7 +999,7 @@ export const paymentService = {
   // ============================================
 
   /**
-   * Initiate M-Pesa STK Push payment
+   * Initiate M-Pesa STK Push payment (BASE — no sale/order linkage).
    * POST /payments/mpesa-stk-push
    */
   async initiateMpesaSTKPush(data: MpesaSTKPushRequest): Promise<{
@@ -1115,19 +1289,19 @@ export const paymentService = {
    */
   formatPaymentMethod(method: string, details?: any): string {
     let label = this.getPaymentMethodLabel(method);
-    
+
     if (method === 'MOBILE_MONEY' && details?.provider) {
       label = `${details.provider} ${label}`;
     }
-    
+
     if (method === 'CREDIT_CARD' && details?.last4) {
       label = `${label} •••• ${details.last4}`;
     }
-    
+
     if (method === 'PAYPAL' && details?.email) {
       label = `${label} (${details.email})`;
     }
-    
+
     return label;
   },
 
@@ -1142,7 +1316,7 @@ export const paymentService = {
    * Check if payment method requires redirect
    */
   requiresRedirect(method: string): boolean {
-    return method === 'CREDIT_CARD' || method === 'DEBIT_CARD' || 
+    return method === 'CREDIT_CARD' || method === 'DEBIT_CARD' ||
            method === 'BANK_TRANSFER' || method === 'PAYPAL' ||
            method === 'FLUTTERWAVE' || method === 'PAYSTACK';
   },
@@ -1151,7 +1325,7 @@ export const paymentService = {
    * Check if payment method is instant
    */
   isInstantPayment(method: string): boolean {
-    return method === 'CASH' || method === 'CREDIT_CARD' || method === 'DEBIT_CARD' || 
+    return method === 'CASH' || method === 'CREDIT_CARD' || method === 'DEBIT_CARD' ||
            method === 'MOBILE_MONEY' || method === 'LOYALTY_POINTS' || method === 'GIFT_CARD' ||
            method === 'SQUARE';
   },
@@ -1257,7 +1431,7 @@ export const paymentService = {
    */
   getMostUsedProvider(providers: PaymentProviderStatus[]): PaymentProviderStatus | null {
     if (!providers || providers.length === 0) return null;
-    return providers.reduce((max, p) => 
+    return providers.reduce((max, p) =>
       (p.transactions24h || 0) > (max.transactions24h || 0) ? p : max
     );
   },
@@ -1267,7 +1441,7 @@ export const paymentService = {
    */
   getHighestVolumeProvider(providers: PaymentProviderStatus[]): PaymentProviderStatus | null {
     if (!providers || providers.length === 0) return null;
-    return providers.reduce((max, p) => 
+    return providers.reduce((max, p) =>
       (p.volume24h || 0) > (max.volume24h || 0) ? p : max
     );
   },
@@ -1309,18 +1483,17 @@ export const paymentService = {
   },
 
   /**
- * Add item to cart with proper validation
- */
+   * Add item to cart with proper validation
+   * (Kept here for backwards compatibility — prefer cartService.addItem)
+   */
   async addItem(productId: string, quantity: number = 1, variantId?: string): Promise<any> {
     try {
-      // ✅ FIXED: Validate productId
       if (!productId || productId.trim() === '') {
         throw new Error('Product ID is required');
       }
 
-      // ✅ FIXED: Ensure productId is a valid string
       const sanitizedProductId = productId.trim();
-      
+
       const payload = {
         productId: sanitizedProductId,
         quantity: Math.max(1, quantity),
@@ -1345,7 +1518,108 @@ export const paymentService = {
       }
       throw error;
     }
-  }
+  },
+
+  // ============================================
+  // POS / ORDER FORM HELPERS
+  // ============================================
+  //
+  // Purpose-built wrappers used by OrderForm.tsx and the POS.
+  // They delegate to the existing processPayment() and
+  // initiateMpesaSTKPush() so there's a single code path per
+  // payment method, but they accept the looser "POS" shape the
+  // order form works with (saleId-required, no provider enum,
+  // optional cash register/session ids).
+
+  /**
+   * Records a payment against a completed Sale.
+   *
+   * The backend `POST /payments` endpoint accepts all these fields
+   * via `processPaymentSchema`; this wrapper just shapes the call
+   * so OrderForm doesn't have to know about `ProviderPaymentRequest`.
+   */
+  async processOrderPayment(data: ProcessOrderPaymentInput): Promise<any> {
+    const {
+      saleId,
+      amount,
+      paymentMethod,
+      customerId,
+      cashRegisterId,
+      cashRegisterSessionId,
+      currency = 'USD',
+      description,
+      metadata,
+      tipAmount,
+      source,
+      gatewayId,
+      cardNonce,
+    } = data;
+
+    // Ensure linkage is preserved through metadata as well as the
+    // top-level `saleId` field — some backends read one, some the
+    // other, and the payment service's createPaymentNotification
+    // walks metadata for sale context.
+    const enrichedMetadata = {
+      ...(metadata || {}),
+      saleId,
+      source: metadata?.source ?? 'pos',
+    };
+
+    const payload: Record<string, any> = {
+      amount,
+      paymentMethod,
+      saleId,
+      currency,
+      description:
+        description ?? `Payment for sale ${saleId}`,
+      metadata: enrichedMetadata,
+      idempotencyKey: `pos_${saleId}_${Date.now()}`,
+    };
+
+    if (customerId) payload.customerId = customerId;
+    if (cashRegisterId) payload.cashRegisterId = cashRegisterId;
+    if (cashRegisterSessionId) payload.cashRegisterSessionId = cashRegisterSessionId;
+    if (typeof tipAmount === 'number') payload.tipAmount = tipAmount;
+    if (source) payload.source = source;
+    if (gatewayId) payload.gatewayId = gatewayId;
+    if (cardNonce) payload.cardNonce = cardNonce;
+
+    const response = await api.post<any>('/payments', payload);
+    return (response as any)?.data ?? response;
+  },
+
+  /**
+   * Initiate M-Pesa STK Push for a POS sale.
+   *
+   * The backend `mpesaSTKPushSchema` does NOT accept a top-level
+   * `saleId`, so this wrapper packs the sale/order linkage into
+   * `metadata` — the payment controller's callback handler reads
+   * it back and reconciles the sale.
+   */
+  async initiatePosMpesaSTKPush(data: InitiateMpesaSTKPushInput): Promise<{
+    success: boolean;
+    data: MpesaSTKPushResponse & { paymentId?: string };
+    message: string;
+  }> {
+    const { saleId, orderId, ...stkData } = data;
+
+    const payload = {
+      ...stkData,
+      metadata: {
+        saleId,
+        orderId,
+        source: 'pos',
+      },
+    };
+
+    const response = await api.post<{
+      success: boolean;
+      data: MpesaSTKPushResponse & { paymentId?: string };
+      message: string;
+    }>('/payments/mpesa-stk-push', payload);
+
+    return response;
+  },
 };
 
 export default paymentService;

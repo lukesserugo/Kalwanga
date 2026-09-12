@@ -3,6 +3,7 @@ import { authMiddleware } from '@clerk/nextjs';
 
 export default authMiddleware({
   publicRoutes: [
+    // Marketing / static
     '/',
     '/features',
     '/pricing',
@@ -12,11 +13,15 @@ export default authMiddleware({
     '/docs',
     '/privacy',
     '/terms',
+
+    // Auth
     '/login',
     '/sign-up',
     '/forgot-password',
     '/verify',
     '/reset-password',
+
+    // Storefront (public browsing)
     '/cart',
     '/checkout',
     '/product(.*)',
@@ -24,10 +29,15 @@ export default authMiddleware({
     '/category(.*)',
     '/categories(.*)',
     '/order-confirmation(.*)',
+
+    // Public API surface only
     '/api/webhooks(.*)',
     '/api/public(.*)',
-    '/api/products(.*)',
-    '/api/categories(.*)',
+
+    // ✅ REMOVED: '/api/products(.*)' — this endpoint requires auth
+    // ✅ REMOVED: '/api/categories(.*)' — this endpoint requires auth
+
+    // Next.js internals
     '/_next(.*)',
     '/favicon.ico',
     '/.well-known(.*)',
@@ -42,8 +52,9 @@ export default authMiddleware({
 
 export const config = {
   matcher: [
+    // Match everything except Next.js internals and static files
     '/((?!.+\\.[\\w]+$|_next).*)',
-    '/',
+    // Match API routes
     '/(api|trpc)(.*)',
   ],
 };

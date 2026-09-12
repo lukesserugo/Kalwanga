@@ -1527,49 +1527,44 @@ export class NotificationService extends EventEmitter {
    * Send shift notification
    */
   async sendShiftNotification(
-    businessUnitId: string, 
-    userId: string, 
-    shiftStatus: string, 
-    shiftDetails?: any
-  ): Promise<any[]> {
+    businessUnitId: string,
+    userId: string,
+    action: 'started' | 'ended' | 'discrepancy',
+    shiftId?: string,
+    sessionId?: string
+  ) {
     try {
-      const title = `Shift ${shiftStatus}`;
-      const message = `Shift has been ${shiftStatus.toLowerCase()}${shiftDetails?.cashierName ? ` by ${shiftDetails.cashierName}` : ''}`;
+      const titles: Record<string, string> = {
+        started: 'Shift Started',
+        ended: 'Shift Ended',
+        discrepancy: 'Cash Discrepancy Detected',
+      };
 
-      const result = await this.sendBusinessUnitNotification(
-        businessUnitId,
-        title,
-        message,
-        'SHIFT',
-        undefined,
-        {
-          shiftStatus,
-          shiftId: shiftDetails?.shiftId,
-          cashierName: shiftDetails?.cashierName,
-          timestamp: new Date().toISOString(),
-        }
-      );
+      const messages: Record<string, string> = {
+        started: 'You have successfully started a new shift.',
+        ended: 'Your shift has been closed successfully.',
+        discrepancy: 'A discrepancy was detected when closing the shift. Please review.',
+      };
 
-      // Send specific notification to the cashier
-      if (userId) {
-        await this.createNotification({
+      await prisma.notification.create({
+        data: {
+          title: titles[action],
+          message: messages[action],
+          type: action === 'discrepancy' ? 'ALERT' : 'INFO',
+          priority: action === 'discrepancy' ? 'HIGH' : 'MEDIUM',
           userId,
-          title: `Your Shift ${shiftStatus}`,
-          message: `Your shift has been ${shiftStatus.toLowerCase()}.`,
-          type: 'SHIFT',
           businessUnitId,
-          data: {
-            shiftStatus,
-            shiftDetails,
+          link: shiftId ? `/admin/shifts/${shiftId}` : undefined,   // ✅ clickable
+          data: {                                                    // ✅ metadata
+            action,
+            shiftId,
+            sessionId,
+            timestamp: new Date().toISOString(),
           },
-        });
-      }
-
-      return result;
+        },
+      });
     } catch (error) {
-      console.error('Send shift notification failed:', error);
-      if (error instanceof AppError) throw error;
-      return [];
+      console.error('Failed to send shift notification:', error);
     }
   }
 

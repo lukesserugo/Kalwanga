@@ -35,27 +35,20 @@ export interface PaginatedResponse<T> {
 }
 
 export interface SalesStats {
-  // Core stats
   totalSales: number;
   totalRevenue: number;
   totalSubtotal: number;
   totalTax: number;
   totalDiscount: number;
   averageTicket: number;
-  
-  // Today's stats
-  todayRevenue: number;
-  todaySales: number;
-  
-  // Order status breakdown
-  pendingOrders: number;
-  processingOrders: number;
-  completedOrders: number;
-  cancelledOrders: number;
-  refundedOrders: number;
-  onHoldOrders: number;
-  
-  // Product stats
+  todayRevenue?: number;
+  todaySales?: number;
+  pendingOrders?: number;
+  processingOrders?: number;
+  completedOrders?: number;
+  cancelledOrders?: number;
+  refundedOrders?: number;
+  onHoldOrders?: number;
   topProducts: Array<{
     productId: string;
     productName?: string;
@@ -64,20 +57,15 @@ export interface SalesStats {
     total: number;
   }>;
   totalItemsSold: number;
-  
-  // Customer stats
   totalCustomers: number;
-  newCustomers: number;
-  returningCustomers: number;
-  repeatRate: number;
-  
-  // Additional metrics
+  newCustomers?: number;
+  returningCustomers?: number;
+  repeatRate?: number;
   averageItemsPerSale: number;
-  totalVisitors: number;
-  conversionRate: number;
+  totalVisitors?: number;
+  conversionRate?: number;
 }
 
-// Sales analytics types
 export interface SalesAnalyticsParams {
   startDate?: string;
   endDate?: string;
@@ -123,7 +111,6 @@ export interface SalesAnalyticsResponse {
   totalRevenue: number;
 }
 
-// Sales settings types
 export interface SalesSettings {
   id?: string;
   companyId?: string;
@@ -144,7 +131,6 @@ export interface SalesSettings {
   updatedAt?: string;
 }
 
-// Dashboard stats types - UPDATED to include missing properties
 export interface DashboardStats {
   today: {
     totalSales: number;
@@ -161,7 +147,6 @@ export interface DashboardStats {
   };
   allTime: SalesStats;
   recentSales: Sale[];
-  // Added missing properties
   topProducts: Array<{
     id: string;
     name: string;
@@ -200,7 +185,6 @@ export interface DailySalesSummary {
   sales: Sale[];
 }
 
-// Export params
 export interface ExportSalesParams {
   businessUnitId?: string;
   startDate: string;
@@ -304,161 +288,239 @@ export interface RegisterStatus {
 
 export const saleService = {
   // ============================================
-  // SALES METHODS - GET
+  // SALES STATISTICS
   // ============================================
 
   /**
-   * Get all sales with pagination and filters
-   * GET /sales
+   * Get sales statistics
+   * GET /sales/stats
    */
-  async getAllSales(params?: SaleSearchParams): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>('/sales', { params });
-    return response;
-  },
-
-  /**
-   * Get sale by ID
-   * GET /sales/:id
-   */
-  async getSaleById(id: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/sales/${id}`);
-    return response;
-  },
-
-  /**
-   * Get sale by receipt number
-   * GET /sales/receipt/:receiptNumber
-   */
-  async getSaleByReceiptNumber(receiptNumber: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/sales/receipt/${receiptNumber}`);
-    return response;
-  },
-
-  /**
-   * Get sale by invoice number
-   * GET /sales/invoice/:invoiceNumber
-   */
-  async getSaleByInvoiceNumber(invoiceNumber: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/sales/invoice/${invoiceNumber}`);
-    return response;
-  },
-
-  /**
-   * Get sales by customer
-   * GET /sales/customer/:customerId
-   */
-  async getSalesByCustomer(
-    customerId: string,
-    params?: { page?: number; limit?: number }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/customer/${customerId}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by customer email
-   * GET /sales/customer-email/:email
-   */
-  async getSalesByCustomerEmail(
-    email: string,
-    params?: { page?: number; limit?: number }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/customer-email/${encodeURIComponent(email)}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by customer phone
-   * GET /sales/customer-phone/:phone
-   */
-  async getSalesByCustomerPhone(
-    phone: string,
-    params?: { page?: number; limit?: number }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/customer-phone/${encodeURIComponent(phone)}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by user
-   * GET /sales/user/:userId
-   */
-  async getSalesByUser(
-    userId: string,
-    params?: { page?: number; limit?: number; startDate?: string; endDate?: string }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/user/${userId}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by business unit
-   * GET /sales/business-unit/:businessUnitId
-   */
-  async getSalesByBusinessUnit(
-    businessUnitId: string,
-    params?: { page?: number; limit?: number; startDate?: string; endDate?: string }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/business-unit/${businessUnitId}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by status
-   * GET /sales/status/:status
-   */
-  async getSalesByStatus(
-    status: string,
-    params?: { page?: number; limit?: number }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/status/${status}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by date
-   * GET /sales/date/:date
-   */
-  async getSalesByDate(
-    date: string,
-    params?: { businessUnitId?: string; page?: number; limit?: number }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/date/${date}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by date range
-   * GET /sales/date-range
-   */
-  async getSalesByDateRange(params: {
+  async getSalesStats(params?: {
     businessUnitId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<SalesStats> {
+    try {
+      const response = await api.get<any>('/sales/stats', { params });
+      
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data as SalesStats;
+        }
+        if ('totalSales' in response || 'totalRevenue' in response) {
+          return response as SalesStats;
+        }
+      }
+      
+      return this.getDefaultStats();
+    } catch (error) {
+      console.error('Failed to fetch sales stats:', error);
+      return this.getDefaultStats();
+    }
+  },
+
+  /**
+   * Get today's sales summary
+   * GET /sales/today
+   */
+  async getTodaySalesSummary(params?: { businessUnitId?: string }): Promise<{
+    date: string;
+    totalSales: number;
+    totalRevenue: number;
+    averageTicket: number;
+    totalCustomers: number;
+    paymentBreakdown: Record<string, number>;
+  }> {
+    try {
+      const response = await api.get<any>('/sales/today', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultTodaySummary();
+    } catch (error) {
+      console.error('Failed to fetch today\'s sales summary:', error);
+      return this.getDefaultTodaySummary();
+    }
+  },
+
+  /**
+   * Get daily sales summary
+   * GET /sales/daily-summary
+   */
+  async getDailySalesSummary(params: {
+    businessUnitId?: string;
+    date: string;
+  }): Promise<DailySalesSummary> {
+    try {
+      const response = await api.get<any>('/sales/daily-summary', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultDailySummary();
+    } catch (error) {
+      console.error('Failed to fetch daily sales summary:', error);
+      return this.getDefaultDailySummary();
+    }
+  },
+
+  /**
+   * Get dashboard sales data
+   * GET /sales/dashboard
+   */
+  async getDashboardSalesData(params?: {
+    businessUnitId?: string;
+  }): Promise<DashboardStats> {
+    try {
+      const response = await api.get<any>('/sales/dashboard', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultDashboardStats();
+    } catch (error) {
+      console.error('Failed to fetch dashboard sales data:', error);
+      return this.getDefaultDashboardStats();
+    }
+  },
+
+  /**
+   * Get sales analytics
+   * GET /sales/analytics
+   */
+  async getSalesAnalytics(params?: SalesAnalyticsParams): Promise<SalesAnalyticsResponse> {
+    try {
+      const response = await api.get<any>('/sales/analytics', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultAnalytics();
+    } catch (error) {
+      console.error('Failed to fetch sales analytics:', error);
+      return this.getDefaultAnalytics();
+    }
+  },
+
+  /**
+   * Get sales forecast
+   * GET /sales/forecast
+   */
+  async getSalesForecast(params?: {
+    businessUnitId?: string;
+    days?: number;
+  }): Promise<{
+    forecast: Array<{ date: string; predicted: number; confidence: number; lowerBound?: number; upperBound?: number }>;
+    trend: 'up' | 'down' | 'stable';
+    growthRate: number;
+    averageDailyRevenue?: number;
+    totalHistoricalSales?: number;
+    period?: string;
+  }> {
+    try {
+      const response = await api.get<any>('/sales/forecast', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { forecast: [], trend: 'stable', growthRate: 0 };
+    } catch (error) {
+      console.error('Failed to fetch sales forecast:', error);
+      return { forecast: [], trend: 'stable', growthRate: 0 };
+    }
+  },
+
+  /**
+   * Get sales comparison
+   * GET /sales/compare
+   */
+  async getSalesComparison(params: {
+    businessUnitId?: string;
+    period1Start: string;
+    period1End: string;
+    period2Start: string;
+    period2End: string;
+  }): Promise<{
+    period1: { revenue: number; sales: number; average: number };
+    period2: { revenue: number; sales: number; average: number };
+    difference: { revenue: number; sales: number; average: number };
+    percentageChange: { revenue: number; sales: number; average: number };
+  }> {
+    try {
+      const response = await api.get<any>('/sales/compare', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return {
+        period1: { revenue: 0, sales: 0, average: 0 },
+        period2: { revenue: 0, sales: 0, average: 0 },
+        difference: { revenue: 0, sales: 0, average: 0 },
+        percentageChange: { revenue: 0, sales: 0, average: 0 },
+      };
+    } catch (error) {
+      console.error('Failed to fetch sales comparison:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get sales summary by period
+   * GET /sales/summary
+   */
+  async getSalesSummary(params?: {
+    businessUnitId?: string;
+    period?: 'day' | 'week' | 'month' | 'quarter' | 'year';
+    date?: string;
+  }): Promise<{
+    period: string;
     startDate: string;
     endDate: string;
-  }): Promise<Sale[]> {
-    const response = await api.get<Sale[]>('/sales/date-range', { params });
-    return response;
+    totalRevenue: number;
+    totalSales: number;
+    averageTicket: number;
+    totalItems: number;
+    uniqueCustomers: number;
+    topCategory: string;
+    topProduct: string;
+  }> {
+    try {
+      const response = await api.get<any>('/sales/summary', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return {
+        period: 'month',
+        startDate: '',
+        endDate: '',
+        totalRevenue: 0,
+        totalSales: 0,
+        averageTicket: 0,
+        totalItems: 0,
+        uniqueCustomers: 0,
+        topCategory: '',
+        topProduct: '',
+      };
+    } catch (error) {
+      console.error('Failed to fetch sales summary:', error);
+      throw error;
+    }
   },
 
   /**
@@ -476,8 +538,44 @@ export const saleService = {
     average: number;
     percentage: number;
   }>> {
-    const response = await api.get<any[]>('/sales/payment-methods', { params });
-    return response;
+    try {
+      const response = await api.get<any>('/sales/payment-methods', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        if (Array.isArray(response)) {
+          return response;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch sales by payment method:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Get sales by status
+   * GET /sales/status/:status
+   */
+  async getSalesByStatus(
+    status: string,
+    params?: { page?: number; limit?: number }
+  ): Promise<PaginatedResponse<Sale>> {
+    try {
+      const response = await api.get<any>(`/sales/status/${status}`, { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    } catch (error) {
+      console.error(`Failed to fetch sales by status ${status}:`, error);
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    }
   },
 
   /**
@@ -506,397 +604,19 @@ export const saleService = {
     totalRevenue: number;
     averagePrice: number;
   }> {
-    const response = await api.get<any>(`/sales/product/${productId}`, { params });
-    return response;
-  },
-
-  /**
-   * Get sales by cash register
-   * GET /sales/cash-register/:cashRegisterId
-   */
-  async getSalesByCashRegister(
-    cashRegisterId: string,
-    params?: { page?: number; limit?: number; startDate?: string; endDate?: string }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/cash-register/${cashRegisterId}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by cash register session
-   * GET /sales/cash-register-session/:sessionId
-   */
-  async getSalesByCashRegisterSession(
-    sessionId: string,
-    params?: { page?: number; limit?: number }
-  ): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>(
-      `/sales/cash-register-session/${sessionId}`,
-      { params }
-    );
-    return response;
-  },
-
-  /**
-   * Get sales by order
-   * GET /sales/order/:orderId
-   */
-  async getSalesByOrder(orderId: string): Promise<Sale[]> {
-    const response = await api.get<Sale[]>(`/sales/order/${orderId}`);
-    return response;
-  },
-
-  /**
-   * Get sales by payment
-   * GET /sales/payment/:paymentId
-   */
-  async getSalesByPayment(paymentId: string): Promise<Sale[]> {
-    const response = await api.get<Sale[]>(`/sales/payment/${paymentId}`);
-    return response;
-  },
-
-  /**
-   * Get sales by month
-   * GET /sales/monthly/:year/:month
-   */
-  async getSalesByMonth(
-    year: number,
-    month: number,
-    params?: { businessUnitId?: string }
-  ): Promise<{
-    data: Sale[];
-    total: number;
-    revenue: number;
-    average: number;
-  }> {
-    const response = await api.get<any>(`/sales/monthly/${year}/${month}`, { params });
-    return response;
-  },
-
-  /**
-   * Get sales by year
-   * GET /sales/yearly/:year
-   */
-  async getSalesByYear(
-    year: number,
-    params?: { businessUnitId?: string }
-  ): Promise<{
-    data: Sale[];
-    total: number;
-    revenue: number;
-    average: number;
-    monthlyBreakdown: Array<{ month: number; revenue: number; sales: number }>;
-  }> {
-    const response = await api.get<any>(`/sales/yearly/${year}`, { params });
-    return response;
-  },
-
-  /**
-   * Get sales by week
-   * GET /sales/weekly/:year/:week
-   */
-  async getSalesByWeek(
-    year: number,
-    week: number,
-    params?: { businessUnitId?: string }
-  ): Promise<{
-    data: Sale[];
-    total: number;
-    revenue: number;
-    average: number;
-    dailyBreakdown: Array<{ day: string; revenue: number; sales: number }>;
-  }> {
-    const response = await api.get<any>(`/sales/weekly/${year}/${week}`, { params });
-    return response;
-  },
-
-  /**
-   * Get sales by quarter
-   * GET /sales/quarterly/:year/:quarter
-   */
-  async getSalesByQuarter(
-    year: number,
-    quarter: number,
-    params?: { businessUnitId?: string }
-  ): Promise<{
-    data: Sale[];
-    total: number;
-    revenue: number;
-    average: number;
-    monthlyBreakdown: Array<{ month: number; revenue: number; sales: number }>;
-  }> {
-    const response = await api.get<any>(`/sales/quarterly/${year}/${quarter}`, { params });
-    return response;
-  },
-
-  /**
-   * Get sales by time period
-   * GET /sales/period/:period
-   */
-  async getSalesByPeriod(
-    period: 'today' | 'yesterday' | 'week' | 'month' | 'quarter' | 'year',
-    params?: { businessUnitId?: string; date?: string }
-  ): Promise<{
-    data: Sale[];
-    total: number;
-    revenue: number;
-    average: number;
-    comparison: {
-      previousPeriod: number;
-      percentageChange: number;
-    };
-  }> {
-    const response = await api.get<any>(`/sales/period/${period}`, { params });
-    return response;
-  },
-
-  /**
-   * Get recent sales
-   * GET /sales/recent
-   */
-  async getRecentSales(params?: {
-    businessUnitId?: string;
-    limit?: number;
-  }): Promise<Sale[]> {
-    const response = await api.get<Sale[]>('/sales/recent', { params });
-    return response;
-  },
-
-  /**
-   * Get sales count
-   * GET /sales/count
-   */
-  async getSalesCount(params?: {
-    businessUnitId?: string;
-    startDate?: string;
-    endDate?: string;
-    status?: string;
-  }): Promise<{ total: number }> {
-    const response = await api.get<{ total: number }>('/sales/count', { params });
-    return response;
-  },
-
-  // ============================================
-  // STATISTICS & ANALYTICS
-  // ============================================
-
-  /**
-   * Get sales statistics
-   * GET /sales/stats
-   */
-  async getSalesStats(params?: {
-    businessUnitId?: string;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<SalesStats> {
-    const response = await api.get<SalesStats>('/sales/stats', { params });
-    return response;
-  },
-
-  /**
-   * Get daily sales summary
-   * GET /sales/daily-summary
-   */
-  async getDailySalesSummary(params: {
-    businessUnitId?: string;
-    date: string;
-  }): Promise<DailySalesSummary> {
-    const response = await api.get<DailySalesSummary>('/sales/daily-summary', { params });
-    return response;
-  },
-
-  /**
-   * Get today's sales summary
-   * GET /sales/today
-   */
-  async getTodaySalesSummary(params?: { businessUnitId?: string }): Promise<{
-    date: string;
-    totalSales: number;
-    totalRevenue: number;
-    averageTicket: number;
-    totalCustomers: number;
-    paymentBreakdown: Record<string, number>;
-  }> {
-    const response = await api.get<any>('/sales/today', { params });
-    return response;
-  },
-
-  /**
-   * Get dashboard sales data
-   * GET /sales/dashboard
-   */
-  async getDashboardSalesData(params?: {
-    businessUnitId?: string;
-  }): Promise<DashboardStats> {
-    const response = await api.get<DashboardStats>('/sales/dashboard', { params });
-    return response;
-  },
-
-  /**
-   * Get sales analytics
-   * GET /sales/analytics
-   */
-  async getSalesAnalytics(params?: SalesAnalyticsParams): Promise<SalesAnalyticsResponse> {
-    const response = await api.get<SalesAnalyticsResponse>('/sales/analytics', { params });
-    return response;
-  },
-
-  /**
-   * Get sales forecast
-   * GET /sales/forecast
-   */
-  async getSalesForecast(params?: {
-    businessUnitId?: string;
-    days?: number;
-  }): Promise<{
-    forecast: Array<{ date: string; predicted: number; confidence: number }>;
-    trend: 'up' | 'down' | 'stable';
-    growthRate: number;
-  }> {
-    const response = await api.get<any>('/sales/forecast', { params });
-    return response;
-  },
-
-  /**
-   * Get sales comparison
-   * GET /sales/compare
-   */
-  async getSalesComparison(params: {
-    businessUnitId?: string;
-    period1Start: string;
-    period1End: string;
-    period2Start: string;
-    period2End: string;
-  }): Promise<{
-    period1: { revenue: number; sales: number; average: number };
-    period2: { revenue: number; sales: number; average: number };
-    difference: { revenue: number; sales: number; average: number };
-    percentageChange: { revenue: number; sales: number; average: number };
-  }> {
-    const response = await api.get<any>('/sales/compare', { params });
-    return response;
-  },
-
-  /**
-   * Get sales summary by period
-   * GET /sales/summary
-   */
-  async getSalesSummary(params?: {
-    businessUnitId?: string;
-    period?: 'day' | 'week' | 'month' | 'quarter' | 'year';
-    date?: string;
-  }): Promise<{
-    period: string;
-    startDate: string;
-    endDate: string;
-    totalRevenue: number;
-    totalSales: number;
-    averageTicket: number;
-    totalItems: number;
-    uniqueCustomers: number;
-    topCategory: string;
-    topProduct: string;
-  }> {
-    const response = await api.get<any>('/sales/summary', { params });
-    return response;
-  },
-
-  /**
-   * Get sales summary by date range
-   * GET /sales/summary/range
-   */
-  async getSalesSummaryByDateRange(params: {
-    businessUnitId?: string;
-    startDate: string;
-    endDate: string;
-  }): Promise<{
-    totalRevenue: number;
-    totalSales: number;
-    averageTicket: number;
-    totalItems: number;
-    uniqueCustomers: number;
-    topProducts: Array<{ productId: string; name: string; quantity: number; revenue: number }>;
-    paymentBreakdown: Record<string, { count: number; total: number }>;
-  }> {
-    const response = await api.get<any>('/sales/summary/range', { params });
-    return response;
-  },
-
-  /**
-   * Get sales report by period
-   * GET /sales/reports/period
-   */
-  async getSalesReportByPeriod(params?: {
-    businessUnitId?: string;
-    period?: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-    date?: string;
-  }): Promise<{
-    period: string;
-    startDate: string;
-    endDate: string;
-    totalRevenue: number;
-    totalSales: number;
-    averageTicket: number;
-    growthRate: number;
-    previousRevenue: number;
-    paymentMethods: Record<string, number>;
-    dailyBreakdown: Array<{ date: string; revenue: number; count: number; items: number }>;
-    sales: Sale[];
-  }> {
-    const response = await api.get<any>('/sales/reports/period', { params });
-    return response;
-  },
-
-  /**
-   * Get aggregated sales data
-   * GET /sales/aggregate
-   */
-  async getAggregatedSales(params: {
-    businessUnitId?: string;
-    startDate: string;
-    endDate: string;
-    groupBy?: 'hour' | 'day' | 'week' | 'month';
-  }): Promise<Array<{
-    group: string;
-    date: string;
-    revenue: number;
-    sales: number;
-    average: number;
-    items: number;
-  }>> {
-    const response = await api.get<any[]>('/sales/aggregate', { params });
-    return response;
-  },
-
-  /**
-   * Get abandoned carts
-   * GET /sales/abandoned-carts
-   */
-  async getAbandonedCarts(params?: {
-    businessUnitId?: string;
-    startDate?: string;
-    endDate?: string;
-    minValue?: number;
-    hours?: number;
-  }): Promise<Array<{
-    id: string;
-    items: any[];
-    itemCount: number;
-    total: number;
-    customerId?: string;
-    customerName: string;
-    customerEmail: string;
-    customerPhone: string;
-    createdAt: string;
-    updatedAt: string;
-    status: string;
-    abandonmentAge: number;
-  }>> {
-    const response = await api.get<any[]>('/sales/abandoned-carts', { params });
-    return response;
+    try {
+      const response = await api.get<any>(`/sales/product/${productId}`, { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { items: [], totalQuantity: 0, totalRevenue: 0, averagePrice: 0 };
+    } catch (error) {
+      console.error(`Failed to fetch sales by product ${productId}:`, error);
+      return { items: [], totalQuantity: 0, totalRevenue: 0, averagePrice: 0 };
+    }
   },
 
   /**
@@ -926,8 +646,19 @@ export const saleService = {
       items: number;
     }>;
   }> {
-    const response = await api.get<any>(`/sales/customer-stats/${customerId}`);
-    return response;
+    try {
+      const response = await api.get<any>(`/sales/customer-stats/${customerId}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to fetch customer stats for ${customerId}:`, error);
+      throw error;
+    }
   },
 
   // ============================================
@@ -939,9 +670,20 @@ export const saleService = {
    * GET /sales/settings
    */
   async getSalesSettings(companyId?: string): Promise<SalesSettings> {
-    const params = companyId ? { companyId } : undefined;
-    const response = await api.get<SalesSettings>('/sales/settings', { params });
-    return response;
+    try {
+      const params = companyId ? { companyId } : undefined;
+      const response = await api.get<any>('/sales/settings', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultSettings();
+    } catch (error) {
+      console.error('Failed to fetch sales settings:', error);
+      return this.getDefaultSettings();
+    }
   },
 
   /**
@@ -949,14 +691,159 @@ export const saleService = {
    * PUT /sales/settings
    */
   async updateSalesSettings(settings: Partial<SalesSettings>, companyId?: string): Promise<SalesSettings> {
-    const params = companyId ? { companyId } : undefined;
-    const response = await api.put<SalesSettings>('/sales/settings', settings, { params });
-    return response;
+    try {
+      const params = companyId ? { companyId } : undefined;
+      const response = await api.put<any>('/sales/settings', settings, { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to update sales settings:', error);
+      throw error;
+    }
   },
 
   // ============================================
-  // SALE OPERATIONS - POST
+  // SALE CRUD OPERATIONS
   // ============================================
+
+  /**
+   * Get all sales with pagination and filters
+   * GET /sales
+   */
+  async getAllSales(params?: SaleSearchParams): Promise<PaginatedResponse<Sale>> {
+    try {
+      const response = await api.get<any>('/sales', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    } catch (error) {
+      console.error('Failed to fetch sales:', error);
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    }
+  },
+
+  /**
+   * Get sale by ID
+   * GET /sales/:id
+   */
+  async getSaleById(id: string): Promise<Sale> {
+    try {
+      const response = await api.get<any>(`/sales/${id}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to fetch sale ${id}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get sale by receipt number
+   * GET /sales/receipt/:receiptNumber
+   */
+  async getSaleByReceiptNumber(receiptNumber: string): Promise<Sale> {
+    try {
+      const response = await api.get<any>(`/sales/receipt/${receiptNumber}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to fetch sale by receipt ${receiptNumber}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get sales by customer
+   * GET /sales/customer/:customerId
+   */
+  async getSalesByCustomer(
+    customerId: string,
+    params?: { page?: number; limit?: number }
+  ): Promise<PaginatedResponse<Sale>> {
+    try {
+      const response = await api.get<any>(`/sales/customer/${customerId}`, { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    } catch (error) {
+      console.error(`Failed to fetch sales for customer ${customerId}:`, error);
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    }
+  },
+
+  /**
+   * Get recent sales
+   * GET /sales/recent
+   */
+  async getRecentSales(params?: {
+    businessUnitId?: string;
+    limit?: number;
+  }): Promise<Sale[]> {
+    try {
+      const response = await api.get<any>('/sales/recent', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        if (Array.isArray(response)) {
+          return response;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch recent sales:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Get sales by date range
+   * GET /sales/date-range
+   */
+  async getSalesByDateRange(params: {
+    businessUnitId?: string;
+    startDate: string;
+    endDate: string;
+  }): Promise<Sale[]> {
+    try {
+      const response = await api.get<any>('/sales/date-range', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        if (Array.isArray(response)) {
+          return response;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch sales by date range:', error);
+      return [];
+    }
+  },
 
   /**
    * Create sale
@@ -964,23 +851,35 @@ export const saleService = {
    */
   async createSale(data: {
     customerId?: string;
-    items: Array<{ productId: string; variantId?: string; quantity: number; unitPrice: number }>;
+    items: Array<{ productId: string; variantId?: string; quantity: number; unitPrice: number; discount?: number; notes?: string }>;
     paymentMethod: string;
     paidAmount: number;
     discount?: number;
+    taxRate?: number;
     notes?: string;
-    businessUnitId?: string;
+    businessUnitId: string;
     cashRegisterId?: string;
     cashRegisterSessionId?: string;
     tipAmount?: number;
     loyaltyPointsUsed?: number;
   }): Promise<Sale> {
-    const response = await api.post<Sale>('/sales', data);
-    return response;
+    try {
+      const response = await api.post<any>('/sales', data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to create sale:', error);
+      throw error;
+    }
   },
 
   /**
-   * Create sale from cart
+   * Create sale from cart checkout
    * POST /sales/checkout
    */
   async createSaleFromCart(data: {
@@ -989,360 +888,64 @@ export const saleService = {
     paidAmount: number;
     cashRegisterId?: string;
     cashRegisterSessionId?: string;
-    customerId?: string;
-    discount?: number;
-    notes?: string;
-    applyLoyaltyPoints?: boolean;
-    tipAmount?: number;
   }): Promise<Sale> {
-    const response = await api.post<Sale>('/sales/checkout', data);
-    return response;
+    try {
+      const response = await api.post<any>('/sales/checkout', data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to create sale from cart:', error);
+      throw error;
+    }
   },
-
-  /**
-   * Create sale from POS
-   * POST /sales/pos
-   */
-  async createSaleFromPos(data: {
-    cartId: string;
-    paymentMethod: string;
-    paidAmount: number;
-    cashRegisterId?: string;
-    cashRegisterSessionId?: string;
-    customerId?: string;
-    discount?: number;
-    notes?: string;
-    applyLoyaltyPoints?: boolean;
-    tipAmount?: number;
-  }): Promise<Sale> {
-    const response = await api.post<Sale>('/sales/pos', data);
-    return response;
-  },
-
-  /**
-   * Refund sale
-   * POST /sales/:id/refund
-   */
-  async refundSale(id: string, reason?: string, amount?: number, items?: Array<{
-    productId: string;
-    variantId?: string;
-    quantity: number;
-    reason?: string;
-  }>): Promise<{
-    refund: any;
-    sale: Sale;
-  }> {
-    const response = await api.post<any>(`/sales/${id}/refund`, { reason, amount, items });
-    return response;
-  },
-
-  /**
-   * Process return
-   * POST /sales/:id/return
-   */
-  async processReturn(id: string, data: {
-    reason: string;
-    items?: Array<{
-      productId: string;
-      variantId?: string;
-      quantity: number;
-      reason?: string;
-    }>;
-  }): Promise<{
-    return: any;
-    sale: Sale;
-  }> {
-    const response = await api.post<any>(`/sales/${id}/return`, data);
-    return response;
-  },
-
-  /**
-   * Cancel sale
-   * POST /sales/:id/cancel
-   */
-  async cancelSale(id: string, reason?: string): Promise<Sale> {
-    const response = await api.post<Sale>(`/sales/${id}/cancel`, { reason });
-    return response;
-  },
-
-  /**
-   * Void sale
-   * POST /sales/:id/void
-   */
-  async voidSale(id: string, reason?: string): Promise<Sale> {
-    const response = await api.post<Sale>(`/sales/${id}/void`, { reason });
-    return response;
-  },
-
-  /**
-   * Hold sale
-   * POST /sales/:id/hold
-   */
-  async holdSale(id: string): Promise<Sale> {
-    const response = await api.post<Sale>(`/sales/${id}/hold`);
-    return response;
-  },
-
-  /**
-   * Resume held sale
-   * POST /sales/:id/resume
-   */
-  async resumeSale(id: string): Promise<Sale> {
-    const response = await api.post<Sale>(`/sales/${id}/resume`);
-    return response;
-  },
-
-  /**
-   * Apply discount to sale
-   * POST /sales/:id/discount
-   */
-  async applyDiscount(id: string, discount: number, discountType?: 'PERCENTAGE' | 'FIXED'): Promise<Sale> {
-    const response = await api.post<Sale>(`/sales/${id}/discount`, { discount, discountType });
-    return response;
-  },
-
-  /**
-   * Remove discount from sale
-   * DELETE /sales/:id/discount
-   */
-  async removeDiscount(id: string): Promise<Sale> {
-    const response = await api.delete<Sale>(`/sales/${id}/discount`);
-    return response;
-  },
-
-  /**
-   * Send receipt email
-   * POST /sales/:id/email-receipt
-   */
-  async sendReceiptEmail(id: string, email: string): Promise<{
-    saleId: string;
-    receiptNumber: string;
-    email: string;
-    sent: boolean;
-    timestamp: string;
-  }> {
-    const response = await api.post<any>(`/sales/${id}/email-receipt`, { email });
-    return response;
-  },
-
-  /**
-   * Resend receipt email
-   * POST /sales/:id/resend-receipt
-   */
-  async resendReceiptEmail(id: string): Promise<{
-    saleId: string;
-    receiptNumber: string;
-    email: string;
-    sent: boolean;
-    timestamp: string;
-  }> {
-    const response = await api.post<any>(`/sales/${id}/resend-receipt`);
-    return response;
-  },
-
-  // ============================================
-  // SALE OPERATIONS - PUT/PATCH
-  // ============================================
 
   /**
    * Update sale
    * PUT /sales/:id
    */
   async updateSale(id: string, data: Partial<Sale>): Promise<Sale> {
-    const response = await api.put<Sale>(`/sales/${id}`, data);
-    return response;
+    try {
+      const response = await api.put<any>(`/sales/${id}`, data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to update sale ${id}:`, error);
+      throw error;
+    }
   },
-
-  /**
-   * Update sale status
-   * PATCH /sales/:id/status
-   */
-  async updateSaleStatus(id: string, status: SaleStatus): Promise<Sale> {
-    const response = await api.patch<Sale>(`/sales/${id}/status`, { status });
-    return response;
-  },
-
-  /**
-   * Update sale notes
-   * PATCH /sales/:id/notes
-   */
-  async updateSaleNotes(id: string, notes: string): Promise<Sale> {
-    const response = await api.patch<Sale>(`/sales/${id}/notes`, { notes });
-    return response;
-  },
-
-  /**
-   * Bulk update sales status
-   * PATCH /sales/bulk-status
-   */
-  async bulkUpdateStatus(
-    saleIds: string[],
-    status: string
-  ): Promise<{ updated: number; failed: number }> {
-    const response = await api.patch<{ updated: number; failed: number }>(
-      '/sales/bulk-status',
-      { saleIds, status }
-    );
-    return response;
-  },
-
-  // ============================================
-  // SALE OPERATIONS - DELETE
-  // ============================================
 
   /**
    * Delete sale (soft delete)
    * DELETE /sales/:id
    */
   async deleteSale(id: string): Promise<Sale> {
-    const response = await api.delete<Sale>(`/sales/${id}`);
-    return response;
-  },
-
-  /**
-   * Bulk delete sales
-   * DELETE /sales/bulk
-   */
-  async bulkDeleteSales(saleIds: string[]): Promise<{ deleted: number; failed: number }> {
-    const response = await api.delete<{ deleted: number; failed: number }>('/sales/bulk', {
-      data: { saleIds }
-    });
-    return response;
-  },
-
-  // ============================================
-  // EXPORT METHODS
-  // ============================================
-
-  /**
-   * Export sales
-   * GET /sales/export
-   */
-  async exportSales(params: ExportSalesParams): Promise<{
-    data: any[];
-    total: number;
-    period: { startDate: string; endDate: string };
-    summary: {
-      totalRevenue: number;
-      totalSales: number;
-      averageTicket: number;
-      totalItems: number;
-    };
-    format: string;
-    generatedAt: string;
-  }> {
-    const response = await api.get<any>('/sales/export', { params });
-    return response;
-  },
-
-  /**
-   * Export sales to CSV
-   * GET /sales/export/csv
-   */
-  async exportSalesCsv(params: {
-    businessUnitId?: string;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<Blob> {
-    const response = await api.download('/sales/export/csv', { params });
-    return response;
-  },
-
-  /**
-   * Export sales to Excel
-   * GET /sales/export/excel
-   */
-  async exportSalesExcel(params: {
-    businessUnitId?: string;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<Blob> {
-    const response = await api.download('/sales/export/excel', { params });
-    return response;
-  },
-
-  /**
-   * Export sales to PDF
-   * GET /sales/export/pdf
-   */
-  async exportSalesPdf(params: {
-    businessUnitId?: string;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<Blob> {
-    const response = await api.download('/sales/export/pdf', { params });
-    return response;
-  },
-
-  /**
-   * Get sale receipt for printing
-   * GET /sales/:id/print-receipt
-   */
-  async printReceipt(id: string): Promise<Blob> {
-    const response = await api.download(`/sales/${id}/print-receipt`);
-    return response;
-  },
-
-  /**
-   * Export individual sale
-   * GET /sales/export/:id
-   */
-  async exportSale(id: string, format: 'pdf' | 'csv' = 'pdf'): Promise<Blob> {
-    const response = await api.download(`/sales/export/${id}`, { params: { format } });
-    return response;
+    try {
+      const response = await api.delete<any>(`/sales/${id}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to delete sale ${id}:`, error);
+      throw error;
+    }
   },
 
   // ============================================
-  // RECEIPTS & INVOICES
-  // ============================================
-
-  /**
-   * Get sale receipt
-   * GET /sales/:id/receipt
-   */
-  async getSaleReceipt(id: string): Promise<any> {
-    const response = await api.get<any>(`/sales/${id}/receipt`);
-    return response;
-  },
-
-  /**
-   * Get receipts
-   * GET /sales/receipts
-   */
-  async getReceipts(params?: { page?: number; limit?: number }): Promise<PaginatedResponse<any>> {
-    const response = await api.get<PaginatedResponse<any>>('/sales/receipts', { params });
-    return response;
-  },
-
-  /**
-   * Get invoices
-   * GET /sales/invoices
-   */
-  async getInvoices(params?: { page?: number; limit?: number }): Promise<PaginatedResponse<any>> {
-    const response = await api.get<PaginatedResponse<any>>('/sales/invoices', { params });
-    return response;
-  },
-
-  /**
-   * Get returns
-   * GET /sales/returns
-   */
-  async getReturns(params?: { page?: number; limit?: number }): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>('/sales/returns', { params });
-    return response;
-  },
-
-  /**
-   * Get refunds
-   * GET /sales/refunds
-   */
-  async getRefunds(params?: { page?: number; limit?: number }): Promise<PaginatedResponse<Sale>> {
-    const response = await api.get<PaginatedResponse<Sale>>('/sales/refunds', { params });
-    return response;
-  },
-
-  // ============================================
-  // POS METHODS - Cart Operations
+  // POS ROUTES (via /sales/pos/*)
   // ============================================
 
   /**
@@ -1350,8 +953,19 @@ export const saleService = {
    * GET /sales/pos/cart
    */
   async getPosCart(): Promise<Cart> {
-    const response = await api.get<Cart>('/sales/pos/cart');
-    return response;
+    try {
+      const response = await api.get<any>('/sales/pos/cart');
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to fetch POS cart:', error);
+      throw error;
+    }
   },
 
   /**
@@ -1359,17 +973,19 @@ export const saleService = {
    * GET /sales/pos/cart/details
    */
   async getPosCartDetails(): Promise<Cart> {
-    const response = await api.get<Cart>('/sales/pos/cart/details');
-    return response;
-  },
-
-  /**
-   * Get cart count
-   * GET /sales/pos/cart/count
-   */
-  async getPosCartCount(): Promise<{ count: number }> {
-    const response = await api.get<{ count: number }>('/sales/pos/cart/count');
-    return response;
+    try {
+      const response = await api.get<any>('/sales/pos/cart/details');
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to fetch POS cart details:', error);
+      throw error;
+    }
   },
 
   /**
@@ -1377,8 +993,19 @@ export const saleService = {
    * DELETE /sales/pos/cart
    */
   async clearPosCart(): Promise<{ message: string }> {
-    const response = await api.delete<{ message: string }>('/sales/pos/cart');
-    return response;
+    try {
+      const response = await api.delete<any>('/sales/pos/cart');
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response || { message: 'Cart cleared successfully' };
+      }
+      return { message: 'Cart cleared successfully' };
+    } catch (error) {
+      console.error('Failed to clear POS cart:', error);
+      throw error;
+    }
   },
 
   /**
@@ -1386,8 +1013,19 @@ export const saleService = {
    * POST /sales/pos/items
    */
   async addPosItem(data: { productId: string; quantity: number; variantId?: string; notes?: string }): Promise<Cart> {
-    const response = await api.post<Cart>('/sales/pos/items', data);
-    return response;
+    try {
+      const response = await api.post<any>('/sales/pos/items', data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to add item to POS cart:', error);
+      throw error;
+    }
   },
 
   /**
@@ -1395,8 +1033,19 @@ export const saleService = {
    * POST /sales/pos/items/bulk
    */
   async addPosItems(items: Array<{ productId: string; quantity: number; variantId?: string; notes?: string }>): Promise<Cart> {
-    const response = await api.post<Cart>('/sales/pos/items/bulk', { items });
-    return response;
+    try {
+      const response = await api.post<any>('/sales/pos/items/bulk', { items });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to add items to POS cart:', error);
+      throw error;
+    }
   },
 
   /**
@@ -1404,8 +1053,19 @@ export const saleService = {
    * PUT /sales/pos/items/:itemId
    */
   async updatePosItem(itemId: string, data: { quantity: number; unitPrice?: number; notes?: string }): Promise<Cart> {
-    const response = await api.put<Cart>(`/sales/pos/items/${itemId}`, data);
-    return response;
+    try {
+      const response = await api.put<any>(`/sales/pos/items/${itemId}`, data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to update POS item ${itemId}:`, error);
+      throw error;
+    }
   },
 
   /**
@@ -1413,8 +1073,19 @@ export const saleService = {
    * DELETE /sales/pos/items/:itemId
    */
   async removePosItem(itemId: string): Promise<Cart> {
-    const response = await api.delete<Cart>(`/sales/pos/items/${itemId}`);
-    return response;
+    try {
+      const response = await api.delete<any>(`/sales/pos/items/${itemId}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error(`Failed to remove POS item ${itemId}:`, error);
+      throw error;
+    }
   },
 
   /**
@@ -1422,12 +1093,63 @@ export const saleService = {
    * POST /sales/pos/checkout
    */
   async posCheckout(data: PosCheckoutData): Promise<Sale> {
-    const response = await api.post<Sale>('/sales/pos/checkout', data);
-    return response;
+    try {
+      const response = await api.post<any>('/sales/pos/checkout', data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to process POS checkout:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get POS summary
+   * GET /sales/pos/summary
+   */
+  async getPosSummary(): Promise<PosSummary> {
+    try {
+      const response = await api.get<any>('/sales/pos/summary');
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultPosSummary();
+    } catch (error) {
+      console.error('Failed to fetch POS summary:', error);
+      return this.getDefaultPosSummary();
+    }
+  },
+
+  /**
+   * Get POS register status
+   * GET /sales/pos/register/status
+   */
+  async getPosRegisterStatus(): Promise<RegisterStatus> {
+    try {
+      const response = await api.get<any>('/sales/pos/register/status');
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return this.getDefaultRegisterStatus();
+    } catch (error) {
+      console.error('Failed to fetch register status:', error);
+      return this.getDefaultRegisterStatus();
+    }
   },
 
   // ============================================
-  // POS METHODS - Customer Operations
+  // POS CUSTOMER OPERATIONS
   // ============================================
 
   /**
@@ -1435,8 +1157,21 @@ export const saleService = {
    * GET /sales/pos/customers/search
    */
   async searchPosCustomers(query: string, limit?: number): Promise<any[]> {
-    const response = await api.get<any[]>('/sales/pos/customers/search', { params: { query, limit } });
-    return response;
+    try {
+      const response = await api.get<any>('/sales/pos/customers/search', { params: { query, limit } });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        if (Array.isArray(response)) {
+          return response;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to search customers:', error);
+      return [];
+    }
   },
 
   /**
@@ -1444,8 +1179,19 @@ export const saleService = {
    * GET /sales/pos/customers/:id
    */
   async getPosCustomer(id: string): Promise<any> {
-    const response = await api.get<any>(`/sales/pos/customers/${id}`);
-    return response;
+    try {
+      const response = await api.get<any>(`/sales/pos/customers/${id}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Failed to fetch customer ${id}:`, error);
+      return null;
+    }
   },
 
   /**
@@ -1463,12 +1209,23 @@ export const saleService = {
     zipCode?: string;
     country?: string;
   }): Promise<any> {
-    const response = await api.post<any>('/sales/pos/customers', data);
-    return response;
+    try {
+      const response = await api.post<any>('/sales/pos/customers', data);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to create customer:', error);
+      throw error;
+    }
   },
 
   // ============================================
-  // POS METHODS - Product Operations
+  // POS PRODUCT OPERATIONS
   // ============================================
 
   /**
@@ -1476,10 +1233,23 @@ export const saleService = {
    * GET /sales/pos/products/search
    */
   async searchPosProducts(query: string, category?: string, limit?: number): Promise<any[]> {
-    const response = await api.get<any[]>('/sales/pos/products/search', {
-      params: { query, category, limit }
-    });
-    return response;
+    try {
+      const response = await api.get<any>('/sales/pos/products/search', {
+        params: { query, category, limit }
+      });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        if (Array.isArray(response)) {
+          return response;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to search products:', error);
+      return [];
+    }
   },
 
   /**
@@ -1487,8 +1257,19 @@ export const saleService = {
    * GET /sales/pos/products/barcode/:barcode
    */
   async getPosProductByBarcode(barcode: string): Promise<any> {
-    const response = await api.get<any>(`/sales/pos/products/barcode/${barcode}`);
-    return response;
+    try {
+      const response = await api.get<any>(`/sales/pos/products/barcode/${barcode}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Failed to fetch product by barcode ${barcode}:`, error);
+      return null;
+    }
   },
 
   /**
@@ -1496,30 +1277,162 @@ export const saleService = {
    * GET /sales/pos/products/sku/:sku
    */
   async getPosProductBySku(sku: string): Promise<any> {
-    const response = await api.get<any>(`/sales/pos/products/sku/${sku}`);
-    return response;
+    try {
+      const response = await api.get<any>(`/sales/pos/products/sku/${sku}`);
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Failed to fetch product by SKU ${sku}:`, error);
+      return null;
+    }
   },
 
   // ============================================
-  // POS METHODS - Summary & Status
+  // DEFAULT FALLBACK VALUES
   // ============================================
 
-  /**
-   * Get POS summary
-   * GET /sales/pos/summary
-   */
-  async getPosSummary(): Promise<PosSummary> {
-    const response = await api.get<PosSummary>('/sales/pos/summary');
-    return response;
+  getDefaultStats(): SalesStats {
+    return {
+      totalSales: 0,
+      totalRevenue: 0,
+      totalSubtotal: 0,
+      totalTax: 0,
+      totalDiscount: 0,
+      averageTicket: 0,
+      todayRevenue: 0,
+      todaySales: 0,
+      pendingOrders: 0,
+      processingOrders: 0,
+      completedOrders: 0,
+      cancelledOrders: 0,
+      refundedOrders: 0,
+      onHoldOrders: 0,
+      topProducts: [],
+      totalItemsSold: 0,
+      totalCustomers: 0,
+      newCustomers: 0,
+      returningCustomers: 0,
+      repeatRate: 0,
+      averageItemsPerSale: 0,
+      totalVisitors: 0,
+      conversionRate: 0,
+    };
   },
 
-  /**
-   * Get POS register status
-   * GET /sales/pos/register/status
-   */
-  async getPosRegisterStatus(): Promise<RegisterStatus> {
-    const response = await api.get<RegisterStatus>('/sales/pos/register/status');
-    return response;
+  getDefaultTodaySummary(): {
+    date: string;
+    totalSales: number;
+    totalRevenue: number;
+    averageTicket: number;
+    totalCustomers: number;
+    paymentBreakdown: Record<string, number>;
+  } {
+    return {
+      date: new Date().toISOString().split('T')[0],
+      totalSales: 0,
+      totalRevenue: 0,
+      averageTicket: 0,
+      totalCustomers: 0,
+      paymentBreakdown: {},
+    };
+  },
+
+  getDefaultDailySummary(): DailySalesSummary {
+    return {
+      date: new Date().toISOString().split('T')[0],
+      totalSales: 0,
+      totalRevenue: 0,
+      totalItems: 0,
+      averageTicket: 0,
+      paymentMethods: [],
+      hourlyBreakdown: [],
+      sales: [],
+    };
+  },
+
+  getDefaultDashboardStats(): DashboardStats {
+    return {
+      today: { totalSales: 0, totalRevenue: 0, averageTicket: 0 },
+      week: { totalSales: 0, totalRevenue: 0 },
+      month: { totalSales: 0, totalRevenue: 0 },
+      allTime: this.getDefaultStats(),
+      recentSales: [],
+      topProducts: [],
+      salesByHour: [],
+      salesByDay: [],
+    };
+  },
+
+  getDefaultAnalytics(): SalesAnalyticsResponse {
+    return {
+      revenueTrend: [],
+      distribution: [],
+      peakHours: [],
+      customerInsights: {
+        totalCustomers: 0,
+        newCustomers: 0,
+        returningCustomers: 0,
+        repeatRate: 0,
+      },
+      bestCategory: '',
+      bestCategorySales: 0,
+      averageOrderValue: 0,
+      averageItems: 0,
+      retentionRate: 0,
+      conversionRate: 0,
+      totalVisitors: 0,
+      topProducts: [],
+      totalSales: 0,
+      totalRevenue: 0,
+    };
+  },
+
+  getDefaultSettings(): SalesSettings {
+    return {
+      taxRate: 8,
+      discountEnabled: true,
+      maxDiscount: 20,
+      loyaltyPointsEnabled: true,
+      pointsPerDollar: 10,
+      autoPrintReceipt: true,
+      emailReceipts: true,
+      receiptFooter: 'Thank you for your business!',
+      defaultPaymentMethod: 'CASH',
+      currencySymbol: '$',
+      currencyCode: 'USD',
+      invoicePrefix: 'INV-',
+      receiptPrefix: 'RCP-',
+    };
+  },
+
+  getDefaultPosSummary(): PosSummary {
+    return {
+      cartCount: 0,
+      itemCount: 0,
+      totalValue: 0,
+      averageTicket: 0,
+      todaySales: 0,
+      todayRevenue: 0,
+      activeCarts: 0,
+      abandonedCarts: 0,
+    };
+  },
+
+  getDefaultRegisterStatus(): RegisterStatus {
+    return {
+      id: '',
+      name: '',
+      balance: 0,
+      status: 'CLOSED',
+      transactions: 0,
+      cashIn: 0,
+      cashOut: 0,
+    };
   }
 };
 

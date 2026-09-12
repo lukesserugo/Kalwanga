@@ -1,14 +1,10 @@
-// src/services/shiftService.ts
+// packages/backend/src/services/shiftService.ts
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
-// Fix: Import Prisma from the correct path
-import { Prisma } from '../generated/prisma/index.js';
 import { realtimeService } from './realtimeService.js';
 import { notificationService } from './notificationService.js';
 import { logger } from '../lib/logger.js';
-import * as crypto from 'crypto';
 
-// Enhanced types
 interface StartShiftData {
   cashRegisterId: string;
   startingBalance: number;
@@ -63,57 +59,420 @@ interface ShiftStats {
   }>;
 }
 
+/**
+ * Derive ShiftType from the hour of day
+ */
+function deriveShiftType(date: Date = new Date()): 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'WEEKEND' {
+  const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+  if (day === 0 || day === 6) return 'WEEKEND';
+  const hour = date.getHours();
+  if (hour < 12) return 'MORNING';
+  if (hour < 18) return 'AFTERNOON';
+  return 'NIGHT';
+}
+
 export class ShiftService extends BaseService {
-  /**
-   * Start a new shift
-   */
-  async startShift(data: StartShiftData) {
+  // ============================================
+  // REGISTER MANAGEMENT
+  // ============================================
+
+  async getCurrentShiftForUser(userId: string, businessUnitId: string) {
     try {
-      if (!data.cashRegisterId) {
-        throw new AppError('Cash register ID is required', 400);
-      }
-      if (data.startingBalance < 0) {
-        throw new AppError('Starting balance cannot be negative', 400);
-      }
-      if (!data.userId) {
+      if (!userId) {
         throw new AppError('User ID is required', 400);
       }
+
+      const shift = await this.prisma.cashRegisterSession.findFirst({
+        where: {
+          userId,
+          status: 'OPEN',
+          cashRegister: { businessUnitId },
+        },
+        include: {
+          cashRegister: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          sales: {
+            select: {
+              id: true,
+              receiptNumber: true,
+              total: true,
+              status: true,
+              saleDate: true,
+            },
+          },
+          payments: {
+            select: {
+              id: true,
+              amount: true,
+              paymentMethod: true,
+            },
+          },
+          cashTransactions: {
+            select: {
+              id: true,
+              type: true,
+              amount: true,
+              reason: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { openedAt: 'desc' },
+      });
+
+      if (!shift) return null;
+
+      const totalSales = shift.sales?.length || 0;
+      const totalRevenue = shift.sales?.reduce((sum, sale) => sum + sale.total, 0) || 0;
+
+      const cashPayments = shift.payments?.filter((p) => p.paymentMethod === 'CASH') || [];
+      const cashReceived = cashPayments.reduce((sum, p) => sum + p.amount, 0);
+
+      const cashOut = shift.cashTransactions
+        ?.filter((t) => t.type === 'CASH_OUT')
+        .reduce((sum, t) => sum + t.amount, 0) || 0;
+
+      const cashIn = shift.cashTransactions
+        ?.filter((t) => t.type === 'CASH_IN')
+        .reduce((sum, t) => sum + t.amount, 0) || 0;
+
+      const expectedBalance =
+        shift.startingBalance + cashReceived + cashIn - cashOut;
+
+      return {
+        ...shift,
+        totalSales,
+        totalRevenue,
+        cashReceived,
+        cashOut,
+        cashIn,
+        expectedBalance,
+        summary: {
+          totalSales,
+          totalRevenue,
+          averageTicket: totalSales > 0 ? totalRevenue / totalSales : 0,
+          cashReceived,
+          cashOut,
+          cashIn,
+          expectedBalance,
+        },
+      };
+    } catch (error) {
+      this.handleError(error, 'ShiftService.getCurrentShiftForUser');
+    }
+  }
+
+  async getRegisters(businessUnitId: string, isActive?: boolean) {
+    try {
+      if (!businessUnitId) {
+        throw new AppError('Business unit ID is required', 400);
+      }
+
+      const where: any = { businessUnitId };
+      if (isActive !== undefined) where.isActive = isActive;
+
+      const registers = await this.prisma.cashRegister.findMany({
+        where,
+        include: {
+          sessions: {
+            where: { status: 'OPEN' },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+          _count: {
+            select: {
+              sessions: true,
+              sales: true,
+              payments: true,
+            },
+          },
+        },
+        orderBy: { name: 'asc' },
+      });
+
+      return registers.map((register) => {
+        const openSession = register.sessions[0];
+        return {
+          ...register,
+          currentSession: openSession || null,
+          isOpen: !!openSession,
+          sessionUser: openSession?.user || null,
+        };
+      });
+    } catch (error) {
+      this.handleError(error, 'ShiftService.getRegisters');
+    }
+  }
+
+  async getRegisterById(id: string) {
+    try {
+      if (!id) throw new AppError('Register ID is required', 400);
+
+      const register = await this.prisma.cashRegister.findUnique({
+        where: { id },
+        include: {
+          businessUnit: {
+            select: { id: true, name: true },
+          },
+          sessions: {
+            orderBy: { openedAt: 'desc' },
+            take: 10,
+            include: {
+              user: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+            },
+          },
+          _count: {
+            select: { sessions: true, sales: true, payments: true },
+          },
+        },
+      });
+
+      if (!register) throw new AppError('Register not found', 404);
+      return register;
+    } catch (error) {
+      this.handleError(error, 'ShiftService.getRegisterById');
+    }
+  }
+
+  async getRegisterStatus(id: string) {
+    try {
+      if (!id) throw new AppError('Register ID is required', 400);
+
+      const register = await this.prisma.cashRegister.findUnique({
+        where: { id },
+        include: {
+          sessions: {
+            where: { status: 'OPEN' },
+            include: {
+              user: {
+                select: { id: true, firstName: true, lastName: true },
+              },
+              sales: {
+                select: {
+                  id: true,
+                  total: true,
+                  paidAmount: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!register) throw new AppError('Register not found', 404);
+
+      const openSession = register.sessions[0];
+      const isOpen = !!openSession;
+
+      let summary = {
+        totalSales: 0,
+        totalRevenue: 0,
+        totalPaid: 0,
+        transactionCount: 0,
+      };
+
+      if (openSession) {
+        const sales = openSession.sales || [];
+        summary = {
+          totalSales: sales.length,
+          totalRevenue: sales.reduce((sum, s) => sum + s.total, 0),
+          totalPaid: sales.reduce((sum, s) => sum + s.paidAmount, 0),
+          transactionCount: sales.length,
+        };
+      }
+
+      return {
+        id: register.id,
+        name: register.name,
+        code: register.code,
+        status: register.status,
+        cashBalance: register.cashBalance,
+        isOpen,
+        session: openSession || null,
+        summary,
+      };
+    } catch (error) {
+      this.handleError(error, 'ShiftService.getRegisterStatus');
+    }
+  }
+
+  async createRegister(data: {
+    name: string;
+    code: string;
+    businessUnitId: string;
+    createdBy: string;
+    isActive?: boolean;
+  }) {
+    try {
+      // Auto-resolve duplicate codes by incrementing the sequence
+      let finalCode = data.code.toUpperCase();
+      const match = finalCode.match(/^(.*?)-(\d+)$/);
+
+      if (match) {
+        const prefix = match[1];
+        let sequence = parseInt(match[2], 10);
+
+        let attempts = 0;
+        const maxAttempts = 1000;
+
+        while (attempts < maxAttempts) {
+          const existing = await this.prisma.cashRegister.findUnique({
+            where: { code: finalCode },
+          });
+          if (!existing) break;
+          sequence += 1;
+          finalCode = `${prefix}-${String(sequence).padStart(3, '0')}`;
+          attempts++;
+        }
+
+        if (attempts >= maxAttempts) {
+          throw new AppError(
+            `Unable to generate a unique register code after ${maxAttempts} attempts`,
+            400
+          );
+        }
+      } else {
+        const existing = await this.prisma.cashRegister.findUnique({
+          where: { code: finalCode },
+        });
+        if (existing) {
+          throw new AppError(`Register with code "${finalCode}" already exists`, 400);
+        }
+      }
+
+      const register = await this.prisma.cashRegister.create({
+        data: {
+          name: data.name,
+          code: finalCode,
+          businessUnitId: data.businessUnitId,
+          isActive: data.isActive ?? true,
+          cashBalance: 0,
+          status: 'CLOSED',
+        },
+      });
+
+      await this.createAuditLog({
+        action: 'CREATE',
+        entityType: 'CASH_REGISTER',
+        entityId: register.id,
+        entityName: register.name,
+        userId: data.createdBy,
+        businessUnitId: data.businessUnitId,
+        severity: 'INFO',
+        changes: { data: { ...data, code: finalCode } },
+      });
+
+      return register;
+    } catch (error) {
+      this.handleError(error, 'ShiftService.createRegister');
+    }
+  }
+
+  async updateRegister(
+    id: string,
+    data: { name?: string; code?: string; isActive?: boolean }
+  ) {
+    try {
+      if (!id) throw new AppError('Register ID is required', 400);
+
+      const existing = await this.prisma.cashRegister.findUnique({ where: { id } });
+      if (!existing) throw new AppError('Register not found', 404);
+
+      if (data.code && data.code !== existing.code) {
+        const duplicate = await this.prisma.cashRegister.findUnique({
+          where: { code: data.code },
+        });
+        if (duplicate) {
+          throw new AppError(`Register with code "${data.code}" already exists`, 400);
+        }
+      }
+
+      return await this.prisma.cashRegister.update({
+        where: { id },
+        data: {
+          name: data.name,
+          code: data.code,
+          isActive: data.isActive,
+        },
+      });
+    } catch (error) {
+      this.handleError(error, 'ShiftService.updateRegister');
+    }
+  }
+
+  async deleteRegister(id: string) {
+    try {
+      if (!id) throw new AppError('Register ID is required', 400);
+
+      const openSession = await this.prisma.cashRegisterSession.findFirst({
+        where: { cashRegisterId: id, status: 'OPEN' },
+      });
+
+      if (openSession) {
+        throw new AppError('Cannot delete register with open sessions', 400);
+      }
+
+      await this.prisma.cashRegister.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.handleError(error, 'ShiftService.deleteRegister');
+    }
+  }
+
+  // ============================================
+  // SHIFT MANAGEMENT
+  // ============================================
+
+  async startShift(data: StartShiftData) {
+    try {
+      if (!data.cashRegisterId) throw new AppError('Cash register ID is required', 400);
+      if (data.startingBalance < 0) throw new AppError('Starting balance cannot be negative', 400);
+      if (!data.userId) throw new AppError('User ID is required', 400);
 
       return await this.prisma.$transaction(async (tx: any) => {
         const cashRegister = await tx.cashRegister.findUnique({
           where: { id: data.cashRegisterId },
         });
 
-        if (!cashRegister) {
-          throw new AppError('Cash register not found', 404);
-        }
-
-        if (!cashRegister.isActive) {
-          throw new AppError('Cash register is not active', 400);
-        }
+        if (!cashRegister) throw new AppError('Cash register not found', 404);
+        if (!cashRegister.isActive) throw new AppError('Cash register is not active', 400);
 
         const openShift = await tx.cashRegisterSession.findFirst({
-          where: {
-            cashRegisterId: data.cashRegisterId,
-            status: 'OPEN',
-          },
+          where: { cashRegisterId: data.cashRegisterId, status: 'OPEN' },
         });
-
         if (openShift) {
           throw new AppError('Cash register already has an open shift', 400);
         }
 
         const userOpenShift = await tx.cashRegisterSession.findFirst({
-          where: {
-            userId: data.userId,
-            status: 'OPEN',
-          },
+          where: { userId: data.userId, status: 'OPEN' },
         });
-
         if (userOpenShift) {
           throw new AppError('User already has an open shift', 400);
         }
 
+        // ✅ 1. Create the CashRegisterSession
         const shift = await tx.cashRegisterSession.create({
           data: {
             cashRegisterId: data.cashRegisterId,
@@ -127,59 +486,74 @@ export class ShiftService extends BaseService {
           include: {
             cashRegister: true,
             user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
           },
         });
 
+        // ✅ 2. Update the CashRegister balance + status
         await tx.cashRegister.update({
           where: { id: data.cashRegisterId },
           data: {
             cashBalance: data.startingBalance,
-            currentSessionId: shift.id,
-            lastOpenedAt: new Date(),
+            status: 'OPEN',
           },
         });
 
-        // Create cash transaction
+        // ✅ 3. Create the CashTransaction (FIXED: cashRegisterId required, no businessUnitId)
         await tx.cashTransaction.create({
           data: {
-            cashRegisterSessionId: shift.id,
-            type: 'OPENING_BALANCE',
+            cashRegisterId: data.cashRegisterId,        // ✅ required
+            cashRegisterSessionId: shift.id,            // ✅ optional link
+            type: 'CASH_IN',
             amount: data.startingBalance,
             userId: data.userId,
-            businessUnitId: data.businessUnitId,
-            transactionDate: new Date(),
+            reason: 'Starting balance',
+            createdAt: new Date(),
           },
         });
 
-        // Create audit log
+        // ✅ 4. Create the ShiftLog (audit trail)
+        const shiftLog = await tx.shiftLog.create({
+          data: {
+            userId: data.userId,
+            businessUnitId: data.businessUnitId,
+            shiftStart: new Date(),
+            startingCash: data.startingBalance,
+            status: 'OPEN',
+            type: deriveShiftType(new Date()),
+            notes: data.notes || `Shift started on register ${cashRegister.name}`,
+            entityName: `Shift ${shift.id}`,
+          },
+        });
+
+        // ✅ 5. Create the AuditLog
         await tx.auditLog.create({
           data: {
-            action: 'START_SHIFT',
-            entityType: 'CASH_REGISTER_SESSION',
+            action: 'CREATE',
+            entityType: 'SHIFT',
             entityId: shift.id,
-            userId: data.userId,
             entityName: `Shift ${shift.id}`,
+            userId: data.userId,
+            businessUnitId: data.businessUnitId,
             changes: {
               cashRegisterId: data.cashRegisterId,
               startingBalance: data.startingBalance,
+              shiftLogId: shiftLog.id,
             },
             severity: 'INFO',
             createdAt: new Date(),
           },
         });
 
+        // ✅ 6. Emit realtime event (non-blocking)
         try {
           (realtimeService as any).emitShiftStarted?.(shift, data.businessUnitId);
         } catch (wsError) {
           logger.warn('Failed to emit shift started event:', wsError);
         }
 
+        // ✅ 7. Send notification (non-blocking)
         try {
           await notificationService.sendShiftNotification(
             data.businessUnitId,
@@ -190,77 +564,61 @@ export class ShiftService extends BaseService {
           logger.warn('Failed to send shift notification:', notifError);
         }
 
-        return shift;
+        return {
+          ...shift,
+          shiftLogId: shiftLog.id,
+        };
       });
     } catch (error) {
       this.handleError(error, 'ShiftService.startShift');
     }
   }
 
-  /**
-   * End current shift
-   */
   async endShift(sessionId: string, data: EndShiftData) {
     try {
-      if (!sessionId) {
-        throw new AppError('Session ID is required', 400);
-      }
-      if (data.endingBalance < 0) {
-        throw new AppError('Ending balance cannot be negative', 400);
-      }
+      if (!sessionId) throw new AppError('Session ID is required', 400);
+      if (data.endingBalance < 0) throw new AppError('Ending balance cannot be negative', 400);
 
       return await this.prisma.$transaction(async (tx: any) => {
         const session = await tx.cashRegisterSession.findUnique({
           where: { id: sessionId },
           include: {
             cashRegister: true,
-            sales: {
-              include: {
-                payments: true,
-              },
-            },
+            sales: { include: { payments: true } },
             payments: true,
             cashTransactions: true,
             user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
           },
         });
 
-        if (!session) {
-          throw new AppError('Shift not found', 404);
-        }
+        if (!session) throw new AppError('Shift not found', 404);
+        if (session.status !== 'OPEN') throw new AppError('Shift is already closed', 400);
 
-        if (session.status !== 'OPEN') {
-          throw new AppError('Shift is already closed', 400);
-        }
-
+        // Calculate totals from existing relations
         const cashPayments = session.payments.filter((p: any) => p.paymentMethod === 'CASH');
         const cashReceived = cashPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
-        
-        const cashOutTransactions = session.cashTransactions.filter((t: any) => 
-          t.type === 'CASH_OUT' || t.type === 'EXPENSE' || t.type === 'REFUND'
-        );
-        const cashOut = cashOutTransactions.reduce((sum: number, t: any) => sum + t.amount, 0);
-        
-        const cashInTransactions = session.cashTransactions.filter((t: any) => 
-          t.type === 'CASH_IN' || t.type === 'DEPOSIT'
-        );
-        const cashIn = cashInTransactions.reduce((sum: number, t: any) => sum + t.amount, 0);
+
+        const cashOut = session.cashTransactions
+          .filter((t: any) => t.type === 'CASH_OUT')
+          .reduce((sum: number, t: any) => sum + t.amount, 0);
+
+        const cashIn = session.cashTransactions
+          .filter((t: any) => t.type === 'CASH_IN')
+          .reduce((sum: number, t: any) => sum + t.amount, 0);
 
         const expectedBalance = session.startingBalance + cashReceived + cashIn - cashOut;
         const discrepancy = data.endingBalance - expectedBalance;
 
+        // ✅ 1. Close the CashRegisterSession
         const closedShift = await tx.cashRegisterSession.update({
           where: { id: sessionId },
           data: {
             endingBalance: data.endingBalance,
             expectedEndingBalance: expectedBalance,
             discrepancy,
+            discrepancyReason: data.notes || null,
             notes: data.notes || session.notes,
             status: 'CLOSED',
             closedAt: new Date(),
@@ -268,58 +626,99 @@ export class ShiftService extends BaseService {
           include: {
             cashRegister: true,
             user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
+              select: { id: true, firstName: true, lastName: true },
             },
           },
         });
 
+        // ✅ 2. Update the CashRegister balance + status
         await tx.cashRegister.update({
           where: { id: session.cashRegisterId },
           data: {
             cashBalance: data.endingBalance,
-            currentSessionId: null,
-            lastClosedAt: new Date(),
+            status: 'CLOSED',
           },
         });
 
-        // Create cash transaction
+        // ✅ 3. Create the closing CashTransaction (FIXED)
         await tx.cashTransaction.create({
           data: {
-            cashRegisterSessionId: sessionId,
-            type: 'CLOSING_BALANCE',
+            cashRegisterId: session.cashRegisterId,    // ✅ required
+            cashRegisterSessionId: sessionId,          // ✅ optional
+            type: 'CASH_IN',
             amount: data.endingBalance,
             userId: data.userId,
-            businessUnitId: session.cashRegister.businessUnitId,
-            transactionDate: new Date(),
-          },
-        });
-
-        // Create audit log
-        await tx.auditLog.create({
-          data: {
-            action: 'END_SHIFT',
-            entityType: 'CASH_REGISTER_SESSION',
-            entityId: sessionId,
-            userId: data.userId,
-            entityName: `Shift ${sessionId}`,
-            changes: {
-              endingBalance: data.endingBalance,
-              expectedBalance,
-              discrepancy,
-            },
-            severity: 'INFO',
+            reason: 'Closing balance',
             createdAt: new Date(),
           },
         });
 
+        // ✅ 4. Close the corresponding ShiftLog (find the latest open one for this user)
+        const openShiftLog = await tx.shiftLog.findFirst({
+          where: {
+            userId: session.userId,
+            businessUnitId: session.cashRegister.businessUnitId,
+            status: 'OPEN',
+          },
+          orderBy: { shiftStart: 'desc' },
+        });
+
+        if (openShiftLog) {
+          await tx.shiftLog.update({
+            where: { id: openShiftLog.id },
+            data: {
+              shiftEnd: new Date(),
+              endingCash: data.endingBalance,
+              expectedCash: expectedBalance,
+              discrepancy,
+              discrepancyReason: data.notes || null,
+              status: 'CLOSED',
+              notes: data.notes || openShiftLog.notes,
+            },
+          });
+        }
+
+        // ✅ 5. Create the AuditLog
+        await tx.auditLog.create({
+          data: {
+            action: 'UPDATE',
+            entityType: 'SHIFT',
+            entityId: sessionId,
+            entityName: `Shift ${sessionId}`,
+            userId: data.userId,
+            businessUnitId: session.cashRegister.businessUnitId,
+            changes: {
+              endingBalance: data.endingBalance,
+              expectedBalance,
+              discrepancy,
+              shiftLogId: openShiftLog?.id,
+            },
+            severity: discrepancy !== 0 ? 'HIGH' : 'INFO',
+            createdAt: new Date(),
+          },
+        });
+
+        // ✅ 6. Emit realtime event (non-blocking)
         try {
-          (realtimeService as any).emitShiftEnded?.(closedShift, session.cashRegister.businessUnitId);
+          (realtimeService as any).emitShiftEnded?.(
+            closedShift,
+            session.cashRegister.businessUnitId
+          );
         } catch (wsError) {
           logger.warn('Failed to emit shift ended event:', wsError);
+        }
+
+        // ✅ 7. Notify if there's a discrepancy
+        if (discrepancy !== 0) {
+          try {
+            await notificationService.sendShiftNotification(
+              session.cashRegister.businessUnitId,
+              data.userId,
+              'discrepancy'
+            );
+          } catch (notifError) {
+            logger.warn('Failed to send discrepancy notification:', notifError);
+          }
         }
 
         return {
@@ -336,52 +735,34 @@ export class ShiftService extends BaseService {
     }
   }
 
-  /**
-   * Get current shift status
-   */
   async getCurrentShift(cashRegisterId: string) {
     try {
-      if (!cashRegisterId) {
-        throw new AppError('Cash register ID is required', 400);
-      }
+      if (!cashRegisterId) throw new AppError('Cash register ID is required', 400);
 
       const session = await this.prisma.cashRegisterSession.findFirst({
-        where: {
-          cashRegisterId,
-          status: 'OPEN',
-        },
+        where: { cashRegisterId, status: 'OPEN' },
         include: {
           cashRegister: true,
-          sales: {
-            include: {
-              payments: true,
-            },
-          },
+          sales: { include: { payments: true } },
           payments: true,
           cashTransactions: true,
           user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
+            select: { id: true, firstName: true, lastName: true },
           },
         },
       });
 
-      if (!session) {
-        return null;
-      }
+      if (!session) return null;
 
       const cashPayments = session.payments.filter((p: any) => p.paymentMethod === 'CASH');
       const cashReceived = cashPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      
+
       const cashOut = session.cashTransactions
-        .filter((t: any) => t.type === 'CASH_OUT' || t.type === 'EXPENSE')
+        .filter((t: any) => t.type === 'CASH_OUT')
         .reduce((sum: number, t: any) => sum + t.amount, 0);
-      
+
       const cashIn = session.cashTransactions
-        .filter((t: any) => t.type === 'CASH_IN' || t.type === 'DEPOSIT')
+        .filter((t: any) => t.type === 'CASH_IN')
         .reduce((sum: number, t: any) => sum + t.amount, 0);
 
       const expectedBalance = session.startingBalance + cashReceived + cashIn - cashOut;
@@ -400,9 +781,6 @@ export class ShiftService extends BaseService {
     }
   }
 
-  /**
-   * Get all shifts with filtering
-   */
   async getAllShifts(params: {
     businessUnitId?: string;
     userId?: string;
@@ -433,9 +811,7 @@ export class ShiftService extends BaseService {
         ...(userId && { userId }),
         ...(cashRegisterId && { cashRegisterId }),
         ...(status && { status: status as any }),
-        ...(businessUnitId && {
-          cashRegister: { businessUnitId },
-        }),
+        ...(businessUnitId && { cashRegister: { businessUnitId } }),
         ...(startDate && { openedAt: { gte: startDate } }),
         ...(endDate && {
           openedAt: {
@@ -454,33 +830,17 @@ export class ShiftService extends BaseService {
           include: {
             cashRegister: true,
             user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
+              select: { id: true, firstName: true, lastName: true, email: true },
             },
             sales: {
-              select: {
-                id: true,
-                total: true,
-                saleDate: true,
-              },
+              select: { id: true, total: true, saleDate: true },
             },
             payments: {
-              select: {
-                id: true,
-                amount: true,
-                paymentMethod: true,
-              },
+              select: { id: true, amount: true, paymentMethod: true },
             },
             cashTransactions: true,
             _count: {
-              select: {
-                sales: true,
-                payments: true,
-              },
+              select: { sales: true, payments: true },
             },
           },
         }),
@@ -495,8 +855,8 @@ export class ShiftService extends BaseService {
         cashReceived: shift.payments
           .filter((p: any) => p.paymentMethod === 'CASH')
           .reduce((sum: number, p: any) => sum + p.amount, 0),
-        duration: shift.closedAt 
-          ? (shift.closedAt.getTime() - shift.openedAt.getTime()) / 1000 
+        duration: shift.closedAt
+          ? (shift.closedAt.getTime() - shift.openedAt.getTime()) / 1000
           : (Date.now() - shift.openedAt.getTime()) / 1000,
       }));
 
@@ -513,26 +873,16 @@ export class ShiftService extends BaseService {
     }
   }
 
-  /**
-   * Get shift by ID with full details
-   */
   async getShiftById(sessionId: string) {
     try {
-      if (!sessionId) {
-        throw new AppError('Session ID is required', 400);
-      }
+      if (!sessionId) throw new AppError('Session ID is required', 400);
 
       const shift = await this.prisma.cashRegisterSession.findUnique({
         where: { id: sessionId },
         include: {
           cashRegister: {
             include: {
-              businessUnit: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
+              businessUnit: { select: { id: true, name: true } },
             },
           },
           user: {
@@ -549,21 +899,13 @@ export class ShiftService extends BaseService {
               items: {
                 include: {
                   product: {
-                    select: {
-                      id: true,
-                      name: true,
-                      sku: true,
-                    },
+                    select: { id: true, name: true, sku: true },
                   },
                 },
               },
               payments: true,
               customer: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
+                select: { id: true, firstName: true, lastName: true },
               },
             },
           },
@@ -571,55 +913,46 @@ export class ShiftService extends BaseService {
           cashTransactions: {
             include: {
               user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
+                select: { id: true, firstName: true, lastName: true },
               },
             },
           },
           _count: {
-            select: {
-              sales: true,
-              payments: true,
-              cashTransactions: true,
-            },
+            select: { sales: true, payments: true, cashTransactions: true },
           },
         },
       });
 
-      if (!shift) {
-        throw new AppError('Shift not found', 404);
-      }
+      if (!shift) throw new AppError('Shift not found', 404);
 
       const cashPayments = shift.payments.filter((p: any) => p.paymentMethod === 'CASH');
       const cashReceived = cashPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      
+
       const cardReceived = shift.payments
-        .filter((p: any) => p.paymentMethod === 'CREDIT_CARD' || p.paymentMethod === 'DEBIT_CARD')
+        .filter((p: any) => ['CREDIT_CARD', 'DEBIT_CARD'].includes(p.paymentMethod))
         .reduce((sum: number, p: any) => sum + p.amount, 0);
-      
+
       const mobileReceived = shift.payments
         .filter((p: any) => p.paymentMethod === 'MOBILE_MONEY')
         .reduce((sum: number, p: any) => sum + p.amount, 0);
-      
+
       const otherReceived = shift.payments
-        .filter((p: any) => !['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY'].includes(p.paymentMethod))
+        .filter((p: any) =>
+          !['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY'].includes(p.paymentMethod)
+        )
         .reduce((sum: number, p: any) => sum + p.amount, 0);
 
       const cashOut = shift.cashTransactions
-        .filter((t: any) => t.type === 'CASH_OUT' || t.type === 'EXPENSE')
+        .filter((t: any) => t.type === 'CASH_OUT')
         .reduce((sum: number, t: any) => sum + t.amount, 0);
-      
+
       const cashIn = shift.cashTransactions
-        .filter((t: any) => t.type === 'CASH_IN' || t.type === 'DEPOSIT')
+        .filter((t: any) => t.type === 'CASH_IN')
         .reduce((sum: number, t: any) => sum + t.amount, 0);
 
       const expectedBalance = shift.startingBalance + cashReceived + cashIn - cashOut;
-      const discrepancy = shift.endingBalance !== null 
-        ? shift.endingBalance - expectedBalance 
-        : null;
+      const discrepancy =
+        shift.endingBalance !== null ? shift.endingBalance - expectedBalance : null;
 
       return {
         ...shift,
@@ -634,8 +967,8 @@ export class ShiftService extends BaseService {
           cashIn,
           expectedBalance,
           discrepancy,
-          duration: shift.closedAt 
-            ? (shift.closedAt.getTime() - shift.openedAt.getTime()) / 1000 
+          duration: shift.closedAt
+            ? (shift.closedAt.getTime() - shift.openedAt.getTime()) / 1000
             : (Date.now() - shift.openedAt.getTime()) / 1000,
         },
       };
@@ -645,20 +978,20 @@ export class ShiftService extends BaseService {
   }
 
   /**
-   * Get shift statistics
+   * Get shift statistics with scope support
    */
   async getShiftStats(params: {
     businessUnitId?: string;
+    userId?: string;
     startDate?: Date;
     endDate?: Date;
   }): Promise<ShiftStats> {
     try {
-      const { businessUnitId, startDate, endDate } = params;
+      const { businessUnitId, userId, startDate, endDate } = params;
 
       const where: any = {
-        ...(businessUnitId && {
-          cashRegister: { businessUnitId },
-        }),
+        ...(businessUnitId && { cashRegister: { businessUnitId } }),
+        ...(userId && { userId }),
         ...(startDate && { openedAt: { gte: startDate } }),
         ...(endDate && {
           openedAt: {
@@ -668,43 +1001,47 @@ export class ShiftService extends BaseService {
         }),
       };
 
-      const [totalShifts, openShifts, closedShifts, totalRevenue, shifts] = await Promise.all([
-        this.prisma.cashRegisterSession.count({ where }),
-        this.prisma.cashRegisterSession.count({ where: { ...where, status: 'OPEN' } }),
-        this.prisma.cashRegisterSession.count({ where: { ...where, status: 'CLOSED' } }),
-        this.prisma.sale.aggregate({
-          where: {
-            cashRegisterSession: where,
-          },
-          _sum: { total: true },
-        }),
-        this.prisma.cashRegisterSession.findMany({
-          where: { ...where, status: 'CLOSED' },
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
+      const [totalShifts, openShifts, closedShifts, totalRevenue, shifts] =
+        await Promise.all([
+          this.prisma.cashRegisterSession.count({ where }),
+          this.prisma.cashRegisterSession.count({
+            where: { ...where, status: 'OPEN' },
+          }),
+          this.prisma.cashRegisterSession.count({
+            where: { ...where, status: 'CLOSED' },
+          }),
+          this.prisma.sale.aggregate({
+            where: { cashRegisterSession: where },
+            _sum: { total: true },
+          }),
+          this.prisma.cashRegisterSession.findMany({
+            where: { ...where, status: 'CLOSED' },
+            include: {
+              user: {
+                select: { id: true, firstName: true, lastName: true },
               },
+              sales: { select: { total: true } },
             },
-            sales: {
-              select: {
-                total: true,
-              },
-            },
-          },
-        }),
-      ]);
+          }),
+        ]);
 
       const closedShiftsWithDuration = shifts.filter((s: any) => s.closedAt);
       const totalDuration = closedShiftsWithDuration.reduce(
-        (sum: number, s: any) => sum + (s.closedAt!.getTime() - s.openedAt.getTime()) / 1000,
+        (sum: number, s: any) =>
+          sum + (s.closedAt!.getTime() - s.openedAt.getTime()) / 1000,
         0
       );
 
-      const cashierMap = new Map<string, { userId: string; userName: string; shiftCount: number; totalRevenue: number }>();
-      
+      const cashierMap = new Map<
+        string,
+        {
+          userId: string;
+          userName: string;
+          shiftCount: number;
+          totalRevenue: number;
+        }
+      >();
+
       shifts.forEach((shift: any) => {
         const key = shift.userId;
         const current = cashierMap.get(key) || {
@@ -714,7 +1051,10 @@ export class ShiftService extends BaseService {
           totalRevenue: 0,
         };
         current.shiftCount += 1;
-        current.totalRevenue += shift.sales.reduce((sum: number, s: any) => sum + s.total, 0);
+        current.totalRevenue += shift.sales.reduce(
+          (sum: number, s: any) => sum + s.total,
+          0
+        );
         cashierMap.set(key, current);
       });
 
@@ -727,12 +1067,14 @@ export class ShiftService extends BaseService {
         openShifts,
         closedShifts,
         totalRevenue: totalRevenue._sum.total || 0,
-        averageShiftDuration: closedShiftsWithDuration.length > 0 
-          ? totalDuration / closedShiftsWithDuration.length 
-          : 0,
-        averageShiftRevenue: closedShifts > 0 
-          ? (totalRevenue._sum.total || 0) / closedShifts 
-          : 0,
+        averageShiftDuration:
+          closedShiftsWithDuration.length > 0
+            ? totalDuration / closedShiftsWithDuration.length
+            : 0,
+        averageShiftRevenue:
+          closedShifts > 0
+            ? (totalRevenue._sum.total || 0) / closedShifts
+            : 0,
         topCashiers,
       };
     } catch (error) {
@@ -740,9 +1082,6 @@ export class ShiftService extends BaseService {
     }
   }
 
-  /**
-   * Add cash to register
-   */
   async addCash(sessionId: string, amount: number, userId: string, description?: string) {
     try {
       if (!sessionId) throw new AppError('Session ID is required', 400);
@@ -757,20 +1096,37 @@ export class ShiftService extends BaseService {
         if (!session) throw new AppError('Shift not found', 404);
         if (session.status !== 'OPEN') throw new AppError('Shift is not open', 400);
 
+        // ✅ Create CashTransaction with proper relations
         const transaction = await tx.cashTransaction.create({
           data: {
-            cashRegisterSessionId: sessionId,
+            cashRegisterId: session.cashRegisterId,    // ✅ required
+            cashRegisterSessionId: sessionId,          // ✅ optional
             type: 'CASH_IN',
             amount,
             userId,
-            businessUnitId: session.cashRegister.businessUnitId,
-            transactionDate: new Date(),
+            reason: description || 'Cash added',
+            createdAt: new Date(),
           },
         });
 
+        // ✅ Update register balance
         await tx.cashRegister.update({
           where: { id: session.cashRegisterId },
           data: { cashBalance: { increment: amount } },
+        });
+
+        // ✅ Audit log
+        await tx.auditLog.create({
+          data: {
+            action: 'UPDATE',
+            entityType: 'SHIFT',
+            entityId: sessionId,
+            entityName: `Cash In - Shift ${sessionId}`,
+            userId,
+            businessUnitId: session.cashRegister.businessUnitId,
+            changes: { amount, description },
+            severity: 'INFO',
+          },
         });
 
         return transaction;
@@ -780,9 +1136,6 @@ export class ShiftService extends BaseService {
     }
   }
 
-  /**
-   * Remove cash from register
-   */
   async removeCash(sessionId: string, amount: number, userId: string, description?: string) {
     try {
       if (!sessionId) throw new AppError('Session ID is required', 400);
@@ -796,22 +1149,38 @@ export class ShiftService extends BaseService {
 
         if (!session) throw new AppError('Shift not found', 404);
         if (session.status !== 'OPEN') throw new AppError('Shift is not open', 400);
-        if (session.cashRegister.cashBalance < amount) throw new AppError('Insufficient cash in register', 400);
+        if (session.cashRegister.cashBalance < amount) {
+          throw new AppError('Insufficient cash in register', 400);
+        }
 
         const transaction = await tx.cashTransaction.create({
           data: {
-            cashRegisterSessionId: sessionId,
+            cashRegisterId: session.cashRegisterId,    // ✅ required
+            cashRegisterSessionId: sessionId,          // ✅ optional
             type: 'CASH_OUT',
             amount,
             userId,
-            businessUnitId: session.cashRegister.businessUnitId,
-            transactionDate: new Date(),
+            reason: description || 'Cash removed',
+            createdAt: new Date(),
           },
         });
 
         await tx.cashRegister.update({
           where: { id: session.cashRegisterId },
           data: { cashBalance: { decrement: amount } },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            action: 'UPDATE',
+            entityType: 'SHIFT',
+            entityId: sessionId,
+            entityName: `Cash Out - Shift ${sessionId}`,
+            userId,
+            businessUnitId: session.cashRegister.businessUnitId,
+            changes: { amount, description },
+            severity: 'INFO',
+          },
         });
 
         return transaction;
@@ -821,13 +1190,10 @@ export class ShiftService extends BaseService {
     }
   }
 
-  /**
-   * Get shift summary
-   */
   async getShiftSummary(sessionId: string): Promise<ShiftSummary> {
     try {
       const shift = await this.getShiftById(sessionId);
-      
+
       return {
         sessionId: shift.id,
         cashRegisterId: shift.cashRegisterId,
