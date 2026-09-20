@@ -1,4 +1,4 @@
-﻿node_modules
+node_modules
 .pnpm-store
 dist
 build
@@ -16,25 +16,24 @@ coverage
 tmp
 docker-data
 packages/mobile/.expo
-packages/backend/prisma/migrations/*.sql
 
 
 # Expo local state
 .expo/
 
-# ── Database dumps ─────────────────────────────────────────────
+# -- Database dumps ---------------------------------------------
 *.dump
 *.sql.bak
 
-# ── User uploads ───────────────────────────────────────────────
+# -- User uploads -----------------------------------------------
 packages/backend/uploads/*
 !packages/backend/uploads/.gitkeep
 
-# ── Lockfile collision ─────────────────────────────────────────
+# -- Lockfile collision -----------------------------------------
 package-lock.json
 yarn.lock
 
-# ── Stale migration backups ────────────────────────────────────
+# -- Stale migration backups ------------------------------------
 migrations_backup_*/
 packages/backend/prisma/migrations_old/
 redundant_migrations/
