@@ -191,7 +191,7 @@ const ProductSalesAnalytics: React.FC<ProductSalesAnalyticsProps> = ({
   if (loading) {
     return (
       <div className="flex justify-center py-8">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -208,25 +208,25 @@ const ProductSalesAnalytics: React.FC<ProductSalesAnalyticsProps> = ({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 text-center">
+        <div className="bg-success-50 dark:bg-success-900/20 rounded-xl p-4 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Total Revenue
           </p>
-          <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+          <p className="text-2xl font-bold tabular-nums text-success-600 dark:text-success-400">
             {formatCurrency(data.totalRevenue || 0)}
           </p>
         </div>
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 text-center">
+        <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">Units Sold</p>
-          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+          <p className="text-2xl font-bold tabular-nums text-primary-600 dark:text-primary-400">
             {data.totalQuantity || 0}
           </p>
         </div>
-        <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 text-center">
+        <div className="bg-secondary-50 dark:bg-secondary-900/20 rounded-xl p-4 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Average Price
           </p>
-          <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+          <p className="text-2xl font-bold tabular-nums text-secondary-600 dark:text-secondary-400">
             {formatCurrency(data.averagePrice || 0)}
           </p>
         </div>
@@ -237,7 +237,7 @@ const ProductSalesAnalytics: React.FC<ProductSalesAnalyticsProps> = ({
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
             Recent Sales
           </h4>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
             {data.items.slice(0, 10).map((item: any, index: number) => (
               <div
                 key={index}
@@ -249,7 +249,7 @@ const ProductSalesAnalytics: React.FC<ProductSalesAnalyticsProps> = ({
                 <span className="text-gray-600 dark:text-gray-400">
                   {item.customerName}
                 </span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium tabular-nums text-gray-900 dark:text-white">
                   {formatCurrency(item.revenue)}
                 </span>
               </div>
@@ -900,7 +900,7 @@ export function ProductDetail({
       return {
         status: 'Out of Stock',
         color:
-          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+          'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
         icon: XCircle,
       };
     }
@@ -908,14 +908,14 @@ export function ProductDetail({
       return {
         status: 'Low Stock',
         color:
-          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+          'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
         icon: AlertCircle,
       };
     }
     return {
       status: 'In Stock',
       color:
-        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+        'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
       icon: CheckCircle,
     };
   }, [inventory, available, product?.minStock]);
@@ -940,16 +940,17 @@ export function ProductDetail({
     return (
       <div className="flex items-center gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
-          <Star            key={star}
+          <Star
+            key={star}
             className={`w-4 h-4 ${
               star <= Math.round(rating)
-                ? 'text-yellow-400 fill-current'
+                ? 'text-warning-400 fill-current'
                 : 'text-gray-300 dark:text-gray-600'
             }`}
           />
         ))}
         {rating > 0 && (
-          <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">
+          <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400 ml-1">
             ({rating.toFixed(1)})
           </span>
         )}
@@ -965,13 +966,13 @@ export function ProductDetail({
             key={star}
             className={`w-5 h-5 ${
               star <= Math.round(rating)
-                ? 'text-yellow-400 fill-current'
+                ? 'text-warning-400 fill-current'
                 : 'text-gray-300 dark:text-gray-600'
             }`}
           />
         ))}
         {rating > 0 && (
-          <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
+          <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400 ml-2">
             {rating.toFixed(1)} ({product?.reviewCount || 0} reviews)
           </span>
         )}
@@ -987,7 +988,7 @@ export function ProductDetail({
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 bg-gray-50 dark:bg-gray-900">
-        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+        <Loader2 className="w-12 h-12 animate-spin text-brand-600 dark:text-brand-400" />
         <p className="mt-4 text-gray-500 dark:text-gray-400">
           Loading product...
         </p>
@@ -998,14 +999,14 @@ export function ProductDetail({
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 bg-gray-50 dark:bg-gray-900">
-        <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+        <AlertCircle className="w-16 h-16 text-danger-500 mb-4" />
         <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
           Error Loading Product
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">{error}</p>
         <button
           onClick={() => router.push(isAdmin ? '/admin/catalog' : '/shop')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           {isAdmin ? 'Back to Catalog' : 'Back to Shop'}
         </button>
@@ -1025,7 +1026,7 @@ export function ProductDetail({
         </p>
         <button
           onClick={() => router.push(isAdmin ? '/admin/catalog' : '/shop')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           {isAdmin ? 'Back to Catalog' : 'Back to Shop'}
         </button>
@@ -1038,20 +1039,20 @@ export function ProductDetail({
   // ============================================
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-      <div className="max-w-7xl mx-auto p-4 sm:p-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 animate-fade-in">
+      <div className="max-w-container mx-auto p-4 sm:p-6 lg:px-8 xl:px-10 2xl:px-12">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-6 flex-wrap">
           <Link
             href="/"
-            className="hover:text-gray-700 dark:hover:text-gray-300"
+            className="hover:text-gray-700 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
           >
             Home
           </Link>
           <span>/</span>
           <Link
             href={isAdmin ? '/admin/catalog' : '/shop'}
-            className="hover:text-gray-700 dark:hover:text-gray-300"
+            className="hover:text-gray-700 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
           >
             {isAdmin ? 'Catalog' : 'Shop'}
           </Link>
@@ -1060,7 +1061,7 @@ export function ProductDetail({
             <>
               <Link
                 href={`/shop?category=${product.category.id}`}
-                className="hover:text-gray-700 dark:hover:text-gray-300"
+                className="hover:text-gray-700 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
               >
                 {product.category.name}
               </Link>
@@ -1077,13 +1078,13 @@ export function ProductDetail({
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push(isAdmin ? '/admin/catalog' : '/shop')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
               aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
+              <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
                 {hasImages ? (
                   <img
                     src={getValidImage(images[0])}
@@ -1102,49 +1103,49 @@ export function ProductDetail({
                 <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1">
                     <Hash className="w-4 h-4" />
-                    SKU: {product.sku}
+                    SKU: <span className="tabular-nums">{product.sku}</span>
                   </span>
                   <button
                     onClick={handleCopySKU}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                     title="Copy SKU"
                     aria-label="Copy SKU"
                   >
                     {copied ? (
-                      <Check className="w-4 h-4 text-green-600" />
+                      <Check className="w-4 h-4 text-success-600 dark:text-success-400" />
                     ) : (
                       <Copy className="w-4 h-4" />
                     )}
                   </button>
                   {hasBarcode && isAdmin && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 tabular-nums">
                       <Barcode className="w-4 h-4" />
                       Barcode: {barcodeInfo?.barcode || product.barcode}
                     </span>
                   )}
                   <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                    className={`px-2 py-0.5 rounded-full text-2xs font-medium ${
                       product.isActive
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                        : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                     }`}
                   >
                     {product.isActive ? 'Active' : 'Inactive'}
                   </span>
                   {product.featured && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 flex items-center gap-1">
+                    <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300 flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
                       Featured
                     </span>
                   )}
                   {product.inventoryId && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 flex items-center gap-1">
+                    <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 flex items-center gap-1">
                       <Link2 className="w-3 h-3" />
                       Inventory Linked
                     </span>
                   )}
                   {totalVariants > 0 && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                    <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300">
                       {totalVariants} variants
                     </span>
                   )}
@@ -1162,7 +1163,7 @@ export function ProductDetail({
                 />
                 <button
                   onClick={handleShare}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                  className="btn-secondary"
                 >
                   <Share2 className="w-4 h-4" />
                   Share
@@ -1172,7 +1173,7 @@ export function ProductDetail({
             {isAdmin && canEditProduct && (
               <Link
                 href={`/admin/catalog/edit/${product.id}`}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                className="btn-brand"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -1181,7 +1182,7 @@ export function ProductDetail({
             {isAdmin && canDeleteProduct && (
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl flex items-center gap-2 transition duration-250 focus-ring shadow-brand"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -1192,25 +1193,25 @@ export function ProductDetail({
 
         {/* Status alerts */}
         {isAdmin && !product.isActive && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">
+          <div className="mb-6 p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl flex items-center gap-3 animate-slide-down">
+            <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+            <span className="text-danger-700 dark:text-danger-300">
               This product is currently inactive and not visible to customers.
             </span>
           </div>
         )}
         {available <= 0 && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">
+          <div className="mb-6 p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl flex items-center gap-3 animate-slide-down">
+            <AlertTriangle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+            <span className="text-danger-700 dark:text-danger-300">
               This product is out of stock.
             </span>
           </div>
         )}
         {isAdmin && available <= (product.minStock || 5) && available > 0 && (
-          <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
-            <span className="text-yellow-700 dark:text-yellow-300">
+          <div className="mb-6 p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl flex items-center gap-3 animate-slide-down">
+            <AlertTriangle className="w-5 h-5 text-warning-500 flex-shrink-0" />
+            <span className="text-warning-700 dark:text-warning-300">
               Low stock alert. Only {available} units remaining.
             </span>
           </div>
@@ -1220,7 +1221,7 @@ export function ProductDetail({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Image gallery */}
           <div className="space-y-4">
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden aspect-square">
+            <div className="relative card-brand shadow-soft overflow-hidden aspect-square p-0">
               {hasImages ? (
                 <img
                   src={getValidImage(images[selectedImage])}
@@ -1244,14 +1245,14 @@ export function ProductDetail({
                   setLightboxIndex(selectedImage);
                   setShowLightbox(true);
                 }}
-                className="absolute bottom-4 right-4 p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                className="absolute bottom-4 right-4 p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition duration-250 focus-ring"
                 title="Zoom in"
                 aria-label="Zoom in"
               >
                 <ZoomIn className="w-5 h-5" />
               </button>
               {product.featured && (
-                <div className="absolute top-4 left-4 px-3 py-1 bg-yellow-500 text-white text-xs rounded-full flex items-center gap-1">
+                <div className="absolute top-4 left-4 px-3 py-1 bg-warning-500 text-white text-2xs rounded-full flex items-center gap-1">
                   <Sparkles className="w-3 h-3" />
                   Featured
                 </div>
@@ -1259,14 +1260,14 @@ export function ProductDetail({
             </div>
 
             {hasImages && images.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+              <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                 {images.map((image, index) => (
                   <button
                     key={`${image.slice(0, 24)}-${index}`}
                     onClick={() => setSelectedImage(index)}
-                    className={`w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
+                    className={`w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 transition duration-250 focus-ring ${
                       selectedImage === index
-                        ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50'
+                        ? 'border-brand-500 ring-2 ring-brand-500/50'
                         : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
                     }`}
                     aria-label={`Image ${index + 1}`}
@@ -1303,12 +1304,12 @@ export function ProductDetail({
             {/* Price */}
             <div>
               <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                <span className="text-3xl font-bold tabular-nums text-brand-600 dark:text-brand-400">
                   {formatCurrency(displayPrice)}
                 </span>
                 {selectedVariantData &&
                   selectedVariantData.price !== product.unitPrice && (
-                    <span className="text-sm text-gray-400 line-through">
+                    <span className="text-sm tabular-nums text-gray-400 dark:text-gray-500 line-through">
                       {formatCurrency(product.unitPrice)}
                     </span>
                   )}
@@ -1329,7 +1330,7 @@ export function ProductDetail({
                 {stockStatus.status}
               </span>
               {available > 0 && available <= 10 && (
-                <span className="text-sm text-yellow-600 dark:text-yellow-400">
+                <span className="text-sm tabular-nums text-warning-600 dark:text-warning-400">
                   Only {available} left in stock
                 </span>
               )}
@@ -1340,15 +1341,15 @@ export function ProductDetail({
               <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                      <Barcode className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+                      <Barcode className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                         Barcode / QR Code
                       </p>
                       {hasBarcode ? (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-mono tabular-nums">
                           {barcodeInfo?.barcode || product.barcode}
                         </p>
                       ) : (
@@ -1363,7 +1364,7 @@ export function ProductDetail({
                       <button
                         onClick={handleGenerateBarcode}
                         disabled={loadingBarcode}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm flex items-center gap-1 disabled:opacity-50 transition-colors"
+                        className="btn-brand disabled:opacity-50"
                       >
                         {loadingBarcode ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1377,21 +1378,21 @@ export function ProductDetail({
                       <>
                         <button
                           onClick={() => setShowBarcode(!showBarcode)}
-                          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                          className="btn-secondary"
                         >
                           <QrCode className="w-4 h-4" />
                           {showBarcode ? 'Hide' : 'Show'}
                         </button>
                         <button
                           onClick={handlePrintBarcodeLabel}
-                          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                          className="btn-secondary"
                         >
                           <Printer className="w-4 h-4" />
                           Print
                         </button>
                         <button
                           onClick={handleDownloadBarcode}
-                          className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                          className="btn-secondary"
                           aria-label="Download barcode"
                         >
                           <Download className="w-4 h-4" />
@@ -1400,7 +1401,7 @@ export function ProductDetail({
                     )}
                     <button
                       onClick={handleScanBarcode}
-                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm flex items-center gap-1 transition-colors"
+                      className="btn-success"
                     >
                       <Scan className="w-4 h-4" />
                       Scan
@@ -1414,7 +1415,7 @@ export function ProductDetail({
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="mt-3 border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 overflow-hidden"
+                      className="mt-3 border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50 dark:bg-gray-700/30 overflow-hidden"
                     >
                       <div className="flex flex-wrap items-center justify-center gap-6">
                         <div className="text-center">
@@ -1436,15 +1437,15 @@ export function ProductDetail({
                               No barcode
                             </div>
                           )}
-                          <p className="text-xs font-mono text-gray-600 dark:text-gray-400 mt-1 text-center">
+                          <p className="text-xs font-mono tabular-nums text-gray-600 dark:text-gray-400 mt-1 text-center">
                             {barcodeInfo.barcode}
                           </p>
                           <button
                             onClick={handleCopyBarcode}
-                            className="mt-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 mx-auto"
+                            className="mt-1 text-xs text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 flex items-center gap-1 mx-auto transition duration-250 focus-ring rounded"
                           >
                             {barcodeCopied ? (
-                              <Check className="w-3 h-3 text-green-500" />
+                              <Check className="w-3 h-3 text-success-500" />
                             ) : (
                               <Copy className="w-3 h-3" />
                             )}
@@ -1488,7 +1489,7 @@ export function ProductDetail({
                 {product.description.length > 300 && (
                   <button
                     onClick={() => setActiveTab('overview')}
-                    className="text-blue-600 dark:text-blue-400 text-sm hover:underline"
+                    className="text-brand-600 dark:text-brand-400 text-sm hover:underline transition duration-250 focus-ring rounded"
                   >
                     Read more
                   </button>
@@ -1500,22 +1501,22 @@ export function ProductDetail({
             <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
               {product.isDigital && (
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <CreditCard className="w-4 h-4 text-blue-500" />
+                  <CreditCard className="w-4 h-4 text-brand-500" />
                   <span>Digital Product</span>
                 </div>
               )}
               {product.weight && (
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <Weight className="w-4 h-4 text-purple-500" />
-                  <span>{product.weight} kg</span>
+                  <Weight className="w-4 h-4 text-secondary-500" />
+                  <span className="tabular-nums">{product.weight} kg</span>
                 </div>
               )}
               <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <Truck className="w-4 h-4 text-green-500" />
+                <Truck className="w-4 h-4 text-success-500" />
                 <span>Free Shipping</span>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <RotateCcw className="w-4 h-4 text-orange-500" />
+                <RotateCcw className="w-4 h-4 text-brand-500" />
                 <span>30 Day Returns</span>
               </div>
             </div>
@@ -1537,10 +1538,10 @@ export function ProductDetail({
                             selectedVariant === variant.id ? null : variant.id,
                           )
                         }
-                        className={`px-3 py-1.5 rounded-lg border text-sm transition-colors flex items-center gap-2 ${
+                        className={`px-3 py-1.5 rounded-lg border text-sm transition duration-250 flex items-center gap-2 focus-ring ${
                           selectedVariant === variant.id
-                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                            : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-400'
+                            ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                            : 'border-gray-300 dark:border-gray-600 hover:border-brand-400 dark:hover:border-brand-400'
                         }`}
                       >
                         {variant.images && variant.images.length > 0 && (
@@ -1563,12 +1564,12 @@ export function ProductDetail({
                         )}
                         {variant.name}
                         {variant.price !== product.unitPrice && (
-                          <span className="ml-1 text-xs">
+                          <span className="ml-1 text-xs tabular-nums">
                             ({formatCurrency(variant.price)})
                           </span>
                         )}
                         {variant.stock <= 0 && (
-                          <span className="ml-1 text-xs text-red-500">
+                          <span className="ml-1 text-xs text-danger-500">
                             (Out of stock)
                           </span>
                         )}
@@ -1610,7 +1611,7 @@ export function ProductDetail({
                     <Link
                       key={tag}
                       href={`/shop?search=${tag}`}
-                      className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-xs hover:bg-gray-200 dark:hover:bg-gray-600 transition duration-250 focus-ring"
                     >
                       #{tag}
                     </Link>
@@ -1627,18 +1628,18 @@ export function ProductDetail({
                     <button
                       onClick={() => handleQuantityChange(-1)}
                       disabled={quantity <= 1}
-                      className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                      className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition duration-250 focus-ring"
                       aria-label="Decrease quantity"
                     >
                       <Minus className="w-4 h-4" />
                     </button>
-                    <span className="w-12 text-center text-gray-900 dark:text-white">
+                    <span className="w-12 text-center tabular-nums text-gray-900 dark:text-white">
                       {quantity}
                     </span>
                     <button
                       onClick={() => handleQuantityChange(1)}
                       disabled={quantity >= 99}
-                      className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                      className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition duration-250 focus-ring"
                       aria-label="Increase quantity"
                     >
                       <Plus className="w-4 h-4" />
@@ -1647,7 +1648,7 @@ export function ProductDetail({
                   <button
                     onClick={handleAddToCart}
                     disabled={available <= 0 || addingToCart}
-                    className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {addingToCart ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -1671,7 +1672,7 @@ export function ProductDetail({
                     if (!addingToCart) router.push('/checkout');
                   }}
                   disabled={available <= 0}
-                  className="w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full btn-success disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ShoppingBag className="w-5 h-5" />
                   Buy Now
@@ -1682,30 +1683,30 @@ export function ProductDetail({
         </div>
 
         {/* Tabs */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto">
+        <div className="card-brand shadow-soft p-0 overflow-hidden">
+          <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto custom-scrollbar">
             <nav className="flex gap-4">
               {visibleTabs.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
                   onClick={() => setActiveTab(id as TabId)}
-                  className={`flex items-center gap-1.5 px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-4 py-3 border-b-2 font-medium text-sm transition duration-250 capitalize whitespace-nowrap focus-ring ${
                     activeTab === id
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                      ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                       : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
                   {label}
                   {id === 'variants' && totalVariants > 0 && (
-                    <span className="ml-1 text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                    <span className="ml-1 text-2xs tabular-nums bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
                       {totalVariants}
                     </span>
                   )}
                   {id === 'reviews' &&
                     product.reviewCount &&
                     product.reviewCount > 0 && (
-                      <span className="ml-1 text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                      <span className="ml-1 text-2xs tabular-nums bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
                         {product.reviewCount}
                       </span>
                     )}
@@ -1718,7 +1719,7 @@ export function ProductDetail({
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 eyebrow">
                     Description
                   </h3>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -1730,7 +1731,7 @@ export function ProductDetail({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 eyebrow">
                       Product Details
                     </h3>
                     <div className="space-y-2">
@@ -1763,7 +1764,7 @@ export function ProductDetail({
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 eyebrow">
                       Pricing & Inventory
                     </h3>
                     <div className="space-y-2">
@@ -1807,11 +1808,11 @@ export function ProductDetail({
                 {product.attributes &&
                   Object.keys(product.attributes).length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 eyebrow">
                         Attributes
                       </h3>
-                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto">
-                        <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all font-mono">
+                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 overflow-x-auto custom-scrollbar">
+                        <pre className="text-sm font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
                           {JSON.stringify(product.attributes, null, 2)}
                         </pre>
                       </div>
@@ -1822,7 +1823,7 @@ export function ProductDetail({
 
             {activeTab === 'specifications' && (
               <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4 eyebrow">
                   Specifications
                 </h3>
                 {product.attributes &&
@@ -1859,7 +1860,7 @@ export function ProductDetail({
                     {product.variants.map((variant) => (
                       <div
                         key={variant.id}
-                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250"
                       >
                         <div className="flex items-center gap-4">
                           {variant.images && variant.images.length > 0 && (
@@ -1884,19 +1885,19 @@ export function ProductDetail({
                             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                               <span className="flex items-center gap-1">
                                 <Hash className="w-3 h-3" />
-                                SKU: {variant.sku}
+                                SKU: <span className="tabular-nums">{variant.sku}</span>
                               </span>
-                              <span className="font-medium text-gray-900 dark:text-white">
+                              <span className="font-medium tabular-nums text-gray-900 dark:text-white">
                                 {formatCurrency(variant.price)}
                               </span>
-                              <span>Stock: {variant.stock}</span>
+                              <span className="tabular-nums">Stock: {variant.stock}</span>
                               {variant.barcode && isAdmin && (
-                                <span className="text-xs">
+                                <span className="text-xs tabular-nums">
                                   Barcode: {variant.barcode}
                                 </span>
                               )}
                               {variant.inventoryId && (
-                                <span className="text-xs text-blue-500 flex items-center gap-1">
+                                <span className="text-xs text-brand-500 dark:text-brand-400 flex items-center gap-1">
                                   <Link2 className="w-3 h-3" />
                                   Inventory Linked
                                 </span>
@@ -1934,7 +1935,7 @@ export function ProductDetail({
                                     </div>
                                   ))}
                                 {variant.images.length > 4 && (
-                                  <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-500">
+                                  <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs tabular-nums text-gray-500">
                                     +{variant.images.length - 4}
                                   </div>
                                 )}
@@ -1943,10 +1944,10 @@ export function ProductDetail({
                           </div>
                         </div>
                         <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          className={`px-2 py-0.5 rounded-full text-2xs font-medium ${
                             variant.isActive
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                              : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                           }`}
                         >
                           {variant.isActive ? 'Active' : 'Inactive'}
@@ -1992,8 +1993,8 @@ export function ProductDetail({
                 </div>
 
                 {totalVariants > 0 && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+                  <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-xl p-4">
+                    <h4 className="text-sm font-medium text-primary-800 dark:text-primary-300 mb-2">
                       Variant Stock Summary
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
@@ -2001,7 +2002,7 @@ export function ProductDetail({
                         <span className="text-gray-600 dark:text-gray-400">
                           Total Variants
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
                           {totalVariants}
                         </p>
                       </div>
@@ -2009,7 +2010,7 @@ export function ProductDetail({
                         <span className="text-gray-600 dark:text-gray-400">
                           Active Variants
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
                           {activeVariants}
                         </p>
                       </div>
@@ -2017,7 +2018,7 @@ export function ProductDetail({
                         <span className="text-gray-600 dark:text-gray-400">
                           Combined Stock
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
                           {(inventory?.quantity || 0) + totalVariantStock}
                         </p>
                       </div>
@@ -2025,16 +2026,16 @@ export function ProductDetail({
                   </div>
                 )}
 
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-                  <div className="flex flex-wrap gap-4 text-sm text-yellow-700 dark:text-yellow-300">
+                <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-4">
+                  <div className="flex flex-wrap gap-4 text-sm text-warning-700 dark:text-warning-300">
                     <span>
                       Location: {inventory?.location || 'Warehouse'}
                     </span>
-                    <span>SKU: {product.sku}</span>
+                    <span className="tabular-nums">SKU: {product.sku}</span>
                     {product.barcode && isAdmin && (
-                      <span>Barcode: {product.barcode}</span>
+                      <span className="tabular-nums">Barcode: {product.barcode}</span>
                     )}
-                    <span className="text-xs">
+                    <span className="text-xs tabular-nums">
                       Low stock threshold: {product.minStock || 5} units
                     </span>
                   </div>
@@ -2042,38 +2043,38 @@ export function ProductDetail({
 
                 {isAdmin && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2 eyebrow">
                       <ClockIcon className="w-4 h-4" />
                       Inventory History
                     </h4>
                     {loadingHistory ? (
                       <div className="flex justify-center py-4">
-                        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                        <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
                       </div>
                     ) : inventoryHistory.length > 0 ? (
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 dark:bg-gray-700/50">
                             <tr>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400 eyebrow">
                                 Date
                               </th>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400 eyebrow">
                                 Type
                               </th>
-                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400 eyebrow">
                                 Quantity
                               </th>
-                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400 eyebrow">
                                 Previous
                               </th>
-                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400 eyebrow">
                                 Current
                               </th>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400 eyebrow">
                                 Reason
                               </th>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400 eyebrow">
                                 User
                               </th>
                             </tr>
@@ -2082,35 +2083,35 @@ export function ProductDetail({
                             {inventoryHistory.map((entry, index) => (
                               <tr
                                 key={index}
-                                className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                                className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250"
                               >
-                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                                <td className="px-3 py-2 tabular-nums text-gray-700 dark:text-gray-300">
                                   {formatDate(entry.date)}
                                 </td>
                                 <td className="px-3 py-2">
                                   <span
-                                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    className={`px-2 py-0.5 rounded-full text-2xs font-medium ${
                                       entry.type === 'in'
-                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                                         : entry.type === 'out'
-                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                                        ? 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                                         : entry.type === 'adjust'
-                                        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
-                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                        ? 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300'
+                                        : 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                                     }`}
                                   >
                                     {entry.type}
                                   </span>
                                 </td>
-                                <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">
+                                <td className="px-3 py-2 text-right font-medium tabular-nums text-gray-900 dark:text-white">
                                   {entry.quantity > 0
                                     ? `+${entry.quantity}`
                                     : entry.quantity}
                                 </td>
-                                <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                                <td className="px-3 py-2 text-right tabular-nums text-gray-500 dark:text-gray-400">
                                   {entry.previous}
                                 </td>
-                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">
+                                <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-white">
                                   {entry.current}
                                 </td>
                                 <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
@@ -2185,12 +2186,12 @@ export function ProductDetail({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+              className="fixed inset-0 z-modal bg-black/90 flex items-center justify-center"
               onClick={() => setShowLightbox(false)}
             >
               <button
                 onClick={() => setShowLightbox(false)}
-                className="absolute top-4 right-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                className="absolute top-4 right-4 p-2 text-white hover:bg-white/20 rounded-lg transition duration-250 focus-ring"
                 aria-label="Close lightbox"
               >
                 <X className="w-6 h-6" />
@@ -2202,7 +2203,7 @@ export function ProductDetail({
                     prev > 0 ? prev - 1 : lightboxImages.length - 1,
                   );
                 }}
-                className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-lg transition duration-250 focus-ring"
                 aria-label="Previous image"
               >
                 <ChevronLeft className="w-6 h-6" />
@@ -2223,7 +2224,7 @@ export function ProductDetail({
                     prev < lightboxImages.length - 1 ? prev + 1 : 0,
                   );
                 }}
-                className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-lg transition duration-250 focus-ring"
                 aria-label="Next image"
               >
                 <ChevronRight className="w-6 h-6" />
@@ -2236,7 +2237,7 @@ export function ProductDetail({
                       e.stopPropagation();
                       setLightboxIndex(index);
                     }}
-                    className={`w-2 h-2 rounded-full transition-all ${
+                    className={`w-2 h-2 rounded-full transition-all duration-250 ${
                       lightboxIndex === index ? 'bg-white w-4' : 'bg-white/50'
                     }`}
                     aria-label={`Go to image ${index + 1}`}
@@ -2254,7 +2255,7 @@ export function ProductDetail({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              className="fixed inset-0 z-modal flex items-center justify-center p-4"
             >
               <div
                 className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
@@ -2264,18 +2265,18 @@ export function ProductDetail({
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6"
+                className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
               >
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                  className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                   aria-label="Close modal"
                 >
                   <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                 </button>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                    <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                  <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                    <AlertTriangle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -2298,14 +2299,14 @@ export function ProductDetail({
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => setShowDeleteModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="btn-secondary"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors"
+                    className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl flex items-center gap-2 disabled:opacity-50 transition duration-250 focus-ring shadow-brand"
                   >
                     {deleting ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -2345,17 +2346,17 @@ function DetailRow({
 }: DetailRowProps) {
   const toneClass =
     tone === 'positive'
-      ? 'text-green-600 dark:text-green-400'
+      ? 'text-success-600 dark:text-success-400'
       : tone === 'negative'
-      ? 'text-red-600 dark:text-red-400'
+      ? 'text-danger-600 dark:text-danger-400'
       : tone === 'warning'
-      ? 'text-yellow-600 dark:text-yellow-400'
+      ? 'text-warning-600 dark:text-warning-400'
       : 'text-gray-900 dark:text-white';
 
   return (
     <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
       <span className="text-gray-600 dark:text-gray-400">{label}</span>
-      <span className={`${emphasize ? 'font-medium' : ''} ${toneClass}`}>
+      <span className={`${emphasize ? 'font-medium' : ''} ${toneClass} tabular-nums`}>
         {value}
       </span>
     </div>
@@ -2371,17 +2372,17 @@ interface StatBlockProps {
 function StatBlock({ label, value, tone = 'neutral' }: StatBlockProps) {
   const toneClass =
     tone === 'positive'
-      ? 'text-green-600 dark:text-green-400'
+      ? 'text-success-600 dark:text-success-400'
       : tone === 'negative'
-      ? 'text-red-600 dark:text-red-400'
+      ? 'text-danger-600 dark:text-danger-400'
       : tone === 'warning'
-      ? 'text-yellow-600 dark:text-yellow-400'
+      ? 'text-warning-600 dark:text-warning-400'
       : 'text-gray-900 dark:text-white';
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
+    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 text-center">
       <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-      <p className={`text-2xl font-bold ${toneClass}`}>{value}</p>
+      <p className={`text-2xl font-bold tabular-nums ${toneClass}`}>{value}</p>
     </div>
   );
 }

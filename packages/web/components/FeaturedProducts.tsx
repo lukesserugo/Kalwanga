@@ -26,7 +26,7 @@ export default function FeaturedProducts() {
       const response = await apiService.get('/products', {
         params: { limit: 4, isActive: true, featured: true }
       });
-      
+
       if (response.data.success) {
         setProducts(response.data.data || []);
       }
@@ -50,17 +50,22 @@ export default function FeaturedProducts() {
 
   if (loading) {
     return (
-      <section className="py-16 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4">
-          <h2 className="text-3xl font-bold text-center mb-12">Featured Products</h2>
+      <section className="py-16 bg-gray-50 dark:bg-gray-900">
+        <div className="max-w-container mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
+            Featured Products
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="bg-white rounded-lg shadow-md h-80 animate-pulse">
-                <div className="h-48 bg-gray-200 rounded-t-lg"></div>
+              <div
+                key={i}
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700 h-80 animate-pulse"
+              >
+                <div className="h-48 bg-gray-200 dark:bg-gray-700 rounded-t-xl"></div>
                 <div className="p-4 space-y-2">
-                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                  <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                  <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
                 </div>
               </div>
             ))}
@@ -73,37 +78,39 @@ export default function FeaturedProducts() {
   if (products.length === 0) return null;
 
   return (
-    <section className="py-16 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4">
-        <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
+    <section className="py-16 bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-container mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
           Featured Products
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {products.map((product) => (
             <div
               key={product.id}
-              className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 overflow-hidden"
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-soft hover:shadow-card-hover border border-gray-200 dark:border-gray-700 transition-shadow duration-350 overflow-hidden"
             >
               <Link href={`/product/${product.id}`}>
-                <div className="aspect-square bg-gray-100">
+                <div className="aspect-square bg-gray-100 dark:bg-gray-700">
                   {product.images?.[0] ? (
                     <img
                       src={product.images[0]}
                       alt={product.name}
-                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-350"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                    <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
                       No image
                     </div>
                   )}
                 </div>
                 <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 truncate">{product.name}</h3>
-                  <p className="text-lg font-bold text-blue-600 mt-1">
+                  <h3 className="font-semibold text-gray-900 dark:text-white truncate">
+                    {product.name}
+                  </h3>
+                  <p className="text-lg font-bold text-brand-600 dark:text-brand-400 mt-1 tabular-nums">
                     {formatCurrency(product.unitPrice)}
                   </p>
-                  <span className="mt-2 inline-block text-blue-600 hover:text-blue-800 text-sm font-medium">
+                  <span className="mt-2 inline-block text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 text-sm font-medium transition-colors duration-350">
                     View Details →
                   </span>
                 </div>

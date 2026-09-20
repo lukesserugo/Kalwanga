@@ -1,5 +1,3 @@
-// packages/web/components/categories/AdminCategoryManager.tsx
-
 'use client';
 
 import React, {
@@ -23,28 +21,20 @@ import {
   Eye,
   Star,
   StarOff,
-  CheckCircle2,
-  XCircle,
   Loader2,
   AlertTriangle,
   X,
   Package,
   Layers,
-  Info,
 } from 'lucide-react';
 
 import { toast } from '../../utils/toast-manager';
 import { formatDate } from '../../utils/formatters';
-import { formatCurrency } from '../../utils/formatters';
 import { categoryService } from '../../services/categoryService';
 import { Category } from '../../types/category';
 import { CategoryForm } from './CategoryForm';
 import { CategoryGrid } from './CategoryGrid';
 import { CategoryAvatar } from './CategoryAvatar';
-
-// ============================================
-// TYPES
-// ============================================
 
 interface Permission {
   canView: boolean;
@@ -63,10 +53,6 @@ interface AdminCategoryManagerProps {
   onCategoryUpdate: () => void;
 }
 
-// ============================================
-// HELPERS
-// ============================================
-
 function productCountOf(c: Category): number {
   return c.productCount ?? c._count?.products ?? 0;
 }
@@ -79,10 +65,6 @@ function isFeatured(c: Category): boolean {
   return (c as any).featured === true;
 }
 
-// ============================================
-// COMPONENT
-// ============================================
-
 export default function AdminCategoryManager({
   categories,
   setCategories,
@@ -90,7 +72,6 @@ export default function AdminCategoryManager({
   businessUnitId,
   onCategoryUpdate,
 }: AdminCategoryManagerProps) {
-  // ---- Local UI state ----
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'tree'>('grid');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -113,7 +94,6 @@ export default function AdminCategoryManager({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // ---- Keyboard shortcuts ----
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -138,7 +118,6 @@ export default function AdminCategoryManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Derived list ----
   const visibleCategories = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     const filtered = q
@@ -161,7 +140,6 @@ export default function AdminCategoryManager({
     [visibleCategories],
   );
 
-  // ---- Modal close ----
   const handleCloseModal = useCallback(() => {
     setShowCreateModal(false);
     setShowEditModal(false);
@@ -170,7 +148,6 @@ export default function AdminCategoryManager({
     setSelectedCategory(null);
   }, []);
 
-  // ---- CRUD ----
   const handleDeleteCategory = async (id: string) => {
     setDeleting(true);
     try {
@@ -244,7 +221,6 @@ export default function AdminCategoryManager({
     }
   };
 
-  // ---- Selection ----
   const toggleCategorySelection = (id: string) => {
     setSelectedCategories((prev) => {
       const next = new Set(prev);
@@ -257,7 +233,8 @@ export default function AdminCategoryManager({
   const toggleAllSelection = () => {
     const visibleIds = visibleCategories.map((c) => c.id);
     const allSelected =
-      visibleIds.length > 0 && visibleIds.every((id) => selectedCategories.has(id));
+      visibleIds.length > 0 &&
+      visibleIds.every((id) => selectedCategories.has(id));
     setSelectedCategories(allSelected ? new Set() : new Set(visibleIds));
   };
 
@@ -270,7 +247,6 @@ export default function AdminCategoryManager({
     });
   };
 
-  // ---- Openers ----
   const openEdit = (cat: Category) => {
     setSelectedCategory(cat);
     setShowEditModal(true);
@@ -288,18 +264,10 @@ export default function AdminCategoryManager({
     visibleCategories.length > 0 &&
     visibleCategories.every((c) => selectedCategories.has(c.id));
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="space-y-4">
-      {/* ============================================
-          TOOLBAR
-          ============================================ */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
+      <div className="card-brand !p-3 sm:!p-4">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Search */}
           <div className="flex-1 min-w-[200px] relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -308,12 +276,12 @@ export default function AdminCategoryManager({
               placeholder="Search categories…  (press / to focus)"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring rounded-full p-0.5"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4" />
@@ -321,15 +289,14 @@ export default function AdminCategoryManager({
             )}
           </div>
 
-          {/* View mode */}
           <div className="flex gap-1 bg-gray-100 dark:bg-gray-700/50 rounded-xl p-1">
             {(['grid', 'list', 'tree'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 focus-ring ${
                   viewMode === mode
-                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-800 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
                 aria-label={`${mode} view`}
@@ -344,21 +311,19 @@ export default function AdminCategoryManager({
             ))}
           </div>
 
-          {/* Sort */}
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title={`Sort ${sortOrder === 'asc' ? 'Z-A' : 'A-Z'}`}
             aria-label="Toggle sort order"
           >
             <ArrowUpDown className="w-4 h-4" />
           </button>
 
-          {/* Add */}
           {permissions.canCreate && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center gap-2 text-sm font-medium shadow-sm hover:shadow"
+              className="px-4 py-2.5 bg-brand-gradient text-white rounded-xl hover:shadow-brand-lg transition-all flex items-center gap-2 text-sm font-medium shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Category
@@ -366,7 +331,6 @@ export default function AdminCategoryManager({
           )}
         </div>
 
-        {/* Selection bar */}
         <AnimatePresence>
           {selectedCategories.size > 0 && (
             <motion.div
@@ -375,14 +339,14 @@ export default function AdminCategoryManager({
               exit={{ opacity: 0, height: 0 }}
               className="mt-3 overflow-hidden"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40">
-                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-900/40">
+                <span className="text-sm font-medium text-brand-800 dark:text-brand-200 tabular-nums">
                   {selectedCategories.size} selected
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSelectedCategories(new Set())}
-                    className="text-xs font-medium text-blue-700 dark:text-blue-300 hover:underline"
+                    className="text-xs font-medium text-brand-700 dark:text-brand-300 hover:underline focus-ring rounded"
                   >
                     Clear
                   </button>
@@ -390,7 +354,7 @@ export default function AdminCategoryManager({
                     <button
                       onClick={handleBulkDelete}
                       disabled={bulkDeleting}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-danger-600 text-white rounded-lg text-xs font-medium hover:bg-danger-700 transition-colors disabled:opacity-50 focus-ring"
                     >
                       {bulkDeleting ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -407,9 +371,6 @@ export default function AdminCategoryManager({
         </AnimatePresence>
       </div>
 
-      {/* ============================================
-          DISPLAY
-          ============================================ */}
       <div className="min-h-[400px]">
         {visibleCategories.length === 0 ? (
           <EmptyState
@@ -420,7 +381,7 @@ export default function AdminCategoryManager({
             onClear={() => setSearchTerm('')}
           />
         ) : viewMode === 'tree' ? (
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4 space-y-1">
+          <div className="card-brand !p-3 sm:!p-4 space-y-1">
             {rootCategories.map((cat) => (
               <TreeRow
                 key={cat.id}
@@ -468,11 +429,6 @@ export default function AdminCategoryManager({
         )}
       </div>
 
-      {/* ============================================
-          MODALS
-          ============================================ */}
-
-      {/* Create */}
       <AnimatePresence>
         {showCreateModal && (
           <ModalShell onClose={handleCloseModal} size="lg">
@@ -493,7 +449,6 @@ export default function AdminCategoryManager({
         )}
       </AnimatePresence>
 
-      {/* Edit */}
       <AnimatePresence>
         {showEditModal && selectedCategory && (
           <ModalShell onClose={handleCloseModal} size="lg">
@@ -516,7 +471,6 @@ export default function AdminCategoryManager({
         )}
       </AnimatePresence>
 
-      {/* Details */}
       <AnimatePresence>
         {showDetailsModal && selectedCategory && (
           <ModalShell onClose={handleCloseModal} size="lg">
@@ -538,7 +492,6 @@ export default function AdminCategoryManager({
         )}
       </AnimatePresence>
 
-      {/* Delete */}
       <AnimatePresence>
         {showDeleteModal && selectedCategory && (
           <ModalShell onClose={handleCloseModal} size="sm">
@@ -556,10 +509,6 @@ export default function AdminCategoryManager({
     </div>
   );
 }
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 interface TreeRowProps {
   category: Category;
@@ -606,16 +555,15 @@ function TreeRow({
       <div
         className={`group flex items-center gap-2 p-2 rounded-lg transition-colors ${
           isSelected
-            ? 'bg-blue-50 dark:bg-blue-900/20'
-            : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+            ? 'bg-brand-50 dark:bg-brand-900/20'
+            : 'hover:bg-orange-50 dark:hover:bg-gray-700/50'
         }`}
         style={{ paddingLeft: 8 + depth * 20 }}
       >
-        {/* Expand toggle */}
         <button
           onClick={() => hasChildren && onToggleExpand(category.id)}
           disabled={!hasChildren}
-          className={`p-1 rounded transition-transform ${
+          className={`p-1 rounded transition-transform focus-ring ${
             hasChildren
               ? 'hover:bg-gray-200 dark:hover:bg-gray-600'
               : 'opacity-0 pointer-events-none'
@@ -629,19 +577,17 @@ function TreeRow({
           />
         </button>
 
-        {/* Checkbox */}
         <input
           type="checkbox"
           checked={isSelected}
           onChange={() => onToggleSelect(category.id)}
-          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 focus:outline-none"
           aria-label={`Select ${category.name}`}
         />
 
-        {/* Avatar + name */}
         <button
           onClick={() => onView(category)}
-          className="flex-1 flex items-center gap-2.5 min-w-0 text-left"
+          className="flex-1 flex items-center gap-2.5 min-w-0 text-left focus-ring rounded"
         >
           <CategoryAvatar category={category} size="sm" rounded="lg" />
           <div className="min-w-0 flex-1">
@@ -656,7 +602,7 @@ function TreeRow({
                 {category.name}
               </span>
               {featured && (
-                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500 shrink-0" />
               )}
             </div>
             {category.description && (
@@ -667,39 +613,36 @@ function TreeRow({
           </div>
         </button>
 
-        {/* Product count */}
         <span className="hidden sm:inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 tabular-nums shrink-0">
           <Package className="w-3 h-3" />
           {productCount}
         </span>
 
-        {/* Featured toggle */}
         {permissions.canFeature && (
           <button
             onClick={() => !isToggling && onToggleFeatured(category)}
             disabled={isToggling}
-            className="p-1 rounded transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
+            className="p-1 rounded transition-colors hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 focus-ring"
             title={featured ? 'Unfeature' : 'Feature'}
             aria-label={featured ? 'Unfeature' : 'Feature'}
           >
             {isToggling ? (
               <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
             ) : featured ? (
-              <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+              <Star className="w-4 h-4 text-warning-500 fill-warning-500" />
             ) : (
               <StarOff className="w-4 h-4 text-gray-400" />
             )}
           </button>
         )}
 
-        {/* Status toggle */}
         {permissions.canChangeStatus && (
           <button
             onClick={() => !isToggling && onToggleStatus(category)}
             disabled={isToggling}
-            className={`px-2 py-1 rounded-full text-[11px] font-medium transition-colors shrink-0 ${
+            className={`px-2 py-1 rounded-full text-2xs font-medium transition-colors shrink-0 focus-ring ${
               category.isActive
-                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200'
+                ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300 hover:bg-success-200'
                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200'
             } disabled:opacity-50`}
             title={category.isActive ? 'Deactivate' : 'Activate'}
@@ -708,11 +651,10 @@ function TreeRow({
           </button>
         )}
 
-        {/* Row actions */}
         <div className="flex items-center gap-0.5 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => onView(category)}
-            className="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors focus-ring"
             title="View"
           >
             <Eye className="w-4 h-4 text-gray-500" />
@@ -720,25 +662,24 @@ function TreeRow({
           {permissions.canEdit && (
             <button
               onClick={() => onEdit(category)}
-              className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/30 transition-colors focus-ring"
               title="Edit"
             >
-              <Edit className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
             </button>
           )}
           {permissions.canDelete && (
             <button
               onClick={() => onDelete(category)}
-              className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/30 transition-colors focus-ring"
               title="Delete"
             >
-              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Children */}
       {hasChildren && isOpen && category.children && (
         <div>
           {category.children.map((child) => (
@@ -764,8 +705,6 @@ function TreeRow({
     </div>
   );
 }
-
-// ---------- List view ----------
 
 interface ListViewProps {
   categories: Category[];
@@ -797,8 +736,8 @@ function ListView({
   onToggleFeatured,
 }: ListViewProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand !p-0 overflow-hidden">
+      <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -807,29 +746,29 @@ function ListView({
                   type="checkbox"
                   checked={allSelected}
                   onChange={onToggleAll}
-                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 focus:outline-none"
                   aria-label="Select all"
                 />
               </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-3 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Category
               </th>
-              <th className="hidden md:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="hidden md:table-cell px-3 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Slug
               </th>
-              <th className="hidden lg:table-cell px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="hidden lg:table-cell px-3 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Description
               </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-3 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Products
               </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-3 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-3 py-3 text-center text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Featured
               </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-3 py-3 text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
@@ -846,14 +785,14 @@ function ListView({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: Math.min(index * 0.015, 0.25) }}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors group"
+                  className="hover:bg-orange-50 dark:hover:bg-gray-700/40 transition-colors group"
                 >
                   <td className="px-3 py-3">
                     <input
                       type="checkbox"
                       checked={selected.has(category.id)}
                       onChange={() => onToggleSelect(category.id)}
-                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 focus:outline-none"
                       aria-label={`Select ${category.name}`}
                     />
                   </td>
@@ -861,7 +800,7 @@ function ListView({
                   <td className="px-3 py-3">
                     <button
                       onClick={() => onView(category)}
-                      className="flex items-center gap-3 text-left w-full"
+                      className="flex items-center gap-3 text-left w-full focus-ring rounded"
                     >
                       <CategoryAvatar
                         category={category}
@@ -874,7 +813,7 @@ function ListView({
                             {category.name}
                           </span>
                           {featured && (
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                            <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500 shrink-0" />
                           )}
                         </div>
                         <span className="text-xs text-gray-400 dark:text-gray-500 font-mono md:hidden">
@@ -902,7 +841,7 @@ function ListView({
 
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                      <span className="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300 tabular-nums">
                         <Package className="w-3.5 h-3.5 text-gray-400" />
                         {productCount}
                       </span>
@@ -917,9 +856,9 @@ function ListView({
                         onToggleStatus(category)
                       }
                       disabled={!permissions.canChangeStatus || isToggling}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-2xs font-medium transition-colors focus-ring ${
                         category.isActive
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                           : 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400'
                       } ${
                         permissions.canChangeStatus
@@ -933,7 +872,7 @@ function ListView({
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
                             category.isActive
-                              ? 'bg-emerald-500'
+                              ? 'bg-success-500'
                               : 'bg-gray-400'
                           }`}
                         />
@@ -950,11 +889,11 @@ function ListView({
                         onToggleFeatured(category)
                       }
                       disabled={!permissions.canFeature || isToggling}
-                      className="p-1 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                      className="p-1 rounded transition-colors hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 focus-ring"
                       title={featured ? 'Unfeature' : 'Feature'}
                     >
                       {featured ? (
-                        <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                        <Star className="w-4 h-4 text-warning-500 fill-warning-500" />
                       ) : (
                         <StarOff className="w-4 h-4 text-gray-300 dark:text-gray-600" />
                       )}
@@ -965,7 +904,7 @@ function ListView({
                     <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => onView(category)}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
                         title="View"
                       >
                         <Eye className="w-4 h-4 text-gray-500" />
@@ -973,19 +912,19 @@ function ListView({
                       {permissions.canEdit && (
                         <button
                           onClick={() => onEdit(category)}
-                          className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/30 transition-colors focus-ring"
                           title="Edit"
                         >
-                          <Edit className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                         </button>
                       )}
                       {permissions.canDelete && (
                         <button
                           onClick={() => onDelete(category)}
-                          className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/30 transition-colors focus-ring"
                           title="Delete"
                         >
-                          <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                          <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
                         </button>
                       )}
                     </div>
@@ -999,8 +938,6 @@ function ListView({
     </div>
   );
 }
-
-// ---------- Modal shell ----------
 
 interface ModalShellProps {
   onClose: () => void;
@@ -1016,7 +953,7 @@ function ModalShell({ onClose, size = 'md', children }: ModalShellProps) {
         ? 'max-w-3xl'
         : 'max-w-xl';
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-modal overflow-y-auto animate-fade-in">
       <div className="flex items-center justify-center min-h-screen p-4">
         <motion.div
           initial={{ opacity: 0 }}
@@ -1029,7 +966,7 @@ function ModalShell({ onClose, size = 'md', children }: ModalShellProps) {
           initial={{ opacity: 0, scale: 0.95, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 12 }}
-          className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full ${width} max-h-[90vh] overflow-y-auto p-6`}
+          className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover w-full ${width} max-h-[90vh] overflow-y-auto p-6 custom-scrollbar`}
         >
           {children}
         </motion.div>
@@ -1059,7 +996,7 @@ function ModalHeader({ title, subtitle, onClose }: ModalHeaderProps) {
       </div>
       <button
         onClick={onClose}
-        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0"
+        className="p-2 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors shrink-0 focus-ring"
         aria-label="Close"
       >
         <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
@@ -1067,8 +1004,6 @@ function ModalHeader({ title, subtitle, onClose }: ModalHeaderProps) {
     </div>
   );
 }
-
-// ---------- Details panel ----------
 
 interface DetailsPanelProps {
   category: Category;
@@ -1100,16 +1035,16 @@ function DetailsPanel({
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium ${
                 category.isActive
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                  ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                   : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
               }`}
             >
               {category.isActive ? 'Active' : 'Inactive'}
             </span>
             {featured && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                 <Star className="w-3 h-3 fill-current" />
                 Featured
               </span>
@@ -1179,14 +1114,14 @@ function DetailsPanel({
       <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
         <button
           onClick={onClose}
-          className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="btn-secondary focus-ring"
         >
           Close
         </button>
         {permissions.canEdit && (
           <button
             onClick={onEdit}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 rounded-lg bg-brand-gradient text-white text-sm font-medium shadow-brand hover:shadow-brand-lg transition-all focus-ring"
           >
             Edit Category
           </button>
@@ -1215,8 +1150,6 @@ function StatBox({ label, value, icon }: StatBoxProps) {
     </div>
   );
 }
-
-// ---------- Delete confirm ----------
 
 interface DeleteConfirmProps {
   category: Category;
@@ -1267,9 +1200,9 @@ function DeleteConfirm({
       </div>
 
       {hasChildren && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mb-4 flex items-start gap-2">
-          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-700 dark:text-red-300">
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl p-3 mb-4 flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-danger-600 dark:text-danger-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-danger-700 dark:text-danger-300">
             <strong>Cannot delete.</strong> This category has {childCount}{' '}
             subcategor{childCount === 1 ? 'y' : 'ies'}. Move or delete them
             first.
@@ -1278,9 +1211,9 @@ function DeleteConfirm({
       )}
 
       {willArchive && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 mb-4 flex items-start gap-2">
-          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-700 dark:text-amber-300">
+        <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-3 mb-4 flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-warning-600 dark:text-warning-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-warning-700 dark:text-warning-300">
             This category has {productCount} product
             {productCount === 1 ? '' : 's'}. It will be{' '}
             <strong>archived (soft-deleted)</strong> instead of removed.
@@ -1292,14 +1225,14 @@ function DeleteConfirm({
         <button
           onClick={onCancel}
           disabled={deleting}
-          className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="btn-secondary focus-ring disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
           disabled={deleting || hasChildren}
-          className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="px-4 py-2 rounded-lg bg-danger-600 text-white text-sm font-medium hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
         >
           {deleting ? (
             <>
@@ -1317,8 +1250,6 @@ function DeleteConfirm({
     </div>
   );
 }
-
-// ---------- Empty state ----------
 
 interface EmptyStateProps {
   hasSearch: boolean;
@@ -1339,10 +1270,10 @@ function EmptyState({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center"
+      className="card-brand !p-12 text-center"
     >
-      <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 mb-4">
-        <FolderTree className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+      <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-100 to-secondary-100 dark:from-brand-900/30 dark:to-secondary-900/30 mb-4">
+        <FolderTree className="w-10 h-10 text-brand-600 dark:text-brand-400" />
       </div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
         {hasSearch
@@ -1360,7 +1291,7 @@ function EmptyState({
         {hasSearch && (
           <button
             onClick={onClear}
-            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="btn-secondary focus-ring"
           >
             Clear search
           </button>
@@ -1368,7 +1299,7 @@ function EmptyState({
         {canCreate && !hasSearch && (
           <button
             onClick={onCreate}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-gradient text-white text-sm font-medium shadow-brand hover:shadow-brand-lg transition-all focus-ring"
           >
             <Plus className="w-4 h-4" />
             Add Category

@@ -73,12 +73,12 @@ interface UserListItem {
 
 // Stats Card Component
 const StatsCard = ({ title, value, icon, color, subtitle }: any) => (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+  <div className="card-brand p-4 hover:shadow-card-hover transition-shadow">
     <div className="flex items-center justify-between">
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{title}</p>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
-        {subtitle && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtitle}</p>}
+        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{value}</p>
+        {subtitle && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 tabular-nums">{subtitle}</p>}
       </div>
       <div className={`p-3 rounded-lg ${color} flex-shrink-0`}>
         {icon}
@@ -553,13 +553,13 @@ export default function UsersManagementPage() {
   // Get role badge color
   const getRoleBadgeColor = (role: string) => {
     const colors: Record<string, string> = {
-      SUPER_ADMIN: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-700',
-      ADMIN: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-700',
-      MANAGER: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-700',
-      EDITOR: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-700',
+      SUPER_ADMIN: 'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400 border-secondary-200 dark:border-secondary-700',
+      ADMIN: 'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400 border-danger-200 dark:border-danger-700',
+      MANAGER: 'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400 border-brand-200 dark:border-brand-700',
+      EDITOR: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400 border-success-200 dark:border-success-700',
       VIEWER: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400 border-gray-200 dark:border-gray-600',
-      EMPLOYEE: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400 border-cyan-200 dark:border-cyan-700',
-      CASHIER: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700',
+      EMPLOYEE: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-900/30 dark:text-brand-accent-400 border-brand-accent-200 dark:border-brand-accent-700',
+      CASHIER: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400 border-warning-200 dark:border-warning-700',
       USER: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400 border-gray-200 dark:border-gray-600',
     };
     return colors[role] || colors.USER;
@@ -569,14 +569,14 @@ export default function UsersManagementPage() {
   const getStatusBadge = (isActive: boolean) => {
     if (isActive) {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-700">
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400 border border-success-200 dark:border-success-700">
           <CheckCircle className="w-3 h-3" />
           Active
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-700">
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400 border border-danger-200 dark:border-danger-700">
         <XCircle className="w-3 h-3" />
         Inactive
       </span>
@@ -612,7 +612,7 @@ export default function UsersManagementPage() {
         </p>
         <button
           onClick={() => router.push('/dashboard')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
         >
           Go to Dashboard
         </button>
@@ -625,7 +625,7 @@ export default function UsersManagementPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
+          <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
           <p className="mt-4 text-gray-500 dark:text-gray-400">Loading users...</p>
         </div>
       </div>
@@ -638,9 +638,9 @@ export default function UsersManagementPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="w-full sm:w-auto">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
-            <UserCog className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500 flex-shrink-0" />
+            <UserCog className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500 flex-shrink-0" />
             <span>User Management</span>
-            <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+            <span className="text-sm font-normal text-gray-500 dark:text-gray-400 tabular-nums">
               ({pagination.total} users)
             </span>
           </h1>
@@ -648,7 +648,7 @@ export default function UsersManagementPage() {
             Manage user accounts, roles, permissions, and groups
           </p>
           {lastUpdated && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 flex items-center gap-1">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 flex items-center gap-1 tabular-nums">
               <Clock className="w-3 h-3" />
               Last updated: {lastUpdated.toLocaleTimeString()}
             </p>
@@ -661,14 +661,14 @@ export default function UsersManagementPage() {
           <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode('table')}
-              className={`p-2 transition-colors ${viewMode === 'table' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+              className={`p-2 transition-colors focus-ring ${viewMode === 'table' ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               aria-label="Table view"
             >
               <List className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+              className={`p-2 transition-colors focus-ring ${viewMode === 'grid' ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               aria-label="Grid view"
             >
               <Grid className="w-4 h-4" />
@@ -680,7 +680,7 @@ export default function UsersManagementPage() {
             <button
               onClick={() => handleExport('csv')}
               disabled={exporting}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
               title="Export users"
             >
               {exporting ? (
@@ -689,7 +689,7 @@ export default function UsersManagementPage() {
                 <Download className="w-4 h-4" />
               )}
             </button>
-            <div className="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 hidden group-hover:block z-10">
+            <div className="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 hidden group-hover:block z-header">
               <button
                 onClick={() => handleExport('csv')}
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors flex items-center gap-2"
@@ -709,7 +709,7 @@ export default function UsersManagementPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh users"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -719,7 +719,7 @@ export default function UsersManagementPage() {
           {canManageGroups && (
             <button
               onClick={handleManageGroups}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
             >
               <UsersRound className="w-4 h-4" />
               <span className="hidden sm:inline">Groups</span>
@@ -730,7 +730,7 @@ export default function UsersManagementPage() {
           {canManageGroups && (
             <button
               onClick={handleManageRoles}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
             >
               <Shield className="w-4 h-4" />
               <span className="hidden sm:inline">Roles</span>
@@ -741,7 +741,7 @@ export default function UsersManagementPage() {
           {canManageGroups && (
             <button
               onClick={handleSettings}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
             >
               <Settings2 className="w-4 h-4" />
               <span className="hidden sm:inline">Settings</span>
@@ -752,7 +752,7 @@ export default function UsersManagementPage() {
           {canCreateUsers && (
             <button
               onClick={handleInviteUsers}
-              className="px-3 py-2 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors flex items-center gap-2 text-sm"
+              className="px-3 py-2 border border-secondary-300 dark:border-secondary-700 text-secondary-700 dark:text-secondary-400 rounded-lg hover:bg-secondary-50 dark:hover:bg-secondary-900/20 transition-colors flex items-center gap-2 text-sm focus-ring"
             >
               <Send className="w-4 h-4" />
               <span className="hidden sm:inline">Invite</span>
@@ -763,7 +763,7 @@ export default function UsersManagementPage() {
           {canCreateUsers && (
             <button
               onClick={handleImportUsers}
-              className="px-3 py-2 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors flex items-center gap-2 text-sm"
+              className="px-3 py-2 border border-success-300 dark:border-success-700 text-success-700 dark:text-success-400 rounded-lg hover:bg-success-50 dark:hover:bg-success-900/20 transition-colors flex items-center gap-2 text-sm focus-ring"
             >
               <FileUp className="w-4 h-4" />
               <span className="hidden sm:inline">Import</span>
@@ -774,7 +774,7 @@ export default function UsersManagementPage() {
           {canCreateUsers && (
             <button
               onClick={handleAddUser}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 text-sm focus-ring"
             >
               <UserPlus className="w-4 h-4" />
               <span className="hidden sm:inline">Add User</span>
@@ -785,30 +785,30 @@ export default function UsersManagementPage() {
 
       {/* Success Message */}
       {successMessage && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex items-center gap-2 animate-slideIn">
-          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-          <span className="text-green-700 dark:text-green-300 text-sm flex-1">{successMessage}</span>
+        <div className="bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 rounded-lg p-3 flex items-center gap-2 animate-slideIn">
+          <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
+          <span className="text-success-700 dark:text-success-300 text-sm flex-1">{successMessage}</span>
           <button
             onClick={() => setSuccessMessage(null)}
-            className="p-1 hover:bg-green-100 dark:hover:bg-green-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-success-100 dark:hover:bg-success-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss"
           >
-            <XCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <XCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
           </button>
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300 text-sm flex-1">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
+          <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0" />
+          <span className="text-danger-700 dark:text-danger-300 text-sm flex-1">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-danger-100 dark:hover:bg-danger-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss error"
           >
-            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <XCircle className="w-5 h-5 text-danger-600 dark:text-danger-400" />
           </button>
         </div>
       )}
@@ -819,62 +819,62 @@ export default function UsersManagementPage() {
           title="Total Users"
           value={pagination.total}
           icon={<UsersIcon className="w-5 h-5" />}
-          color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+          color="bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400"
         />
         <StatsCard
           title="Active"
           value={users.filter(u => u.isActive).length}
           icon={<UserCheck className="w-5 h-5" />}
-          color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+          color="bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400"
           subtitle={`${users.length > 0 ? Math.round((users.filter(u => u.isActive).length / users.length) * 100) : 0}%`}
         />
         <StatsCard
           title="Inactive"
           value={users.filter(u => !u.isActive).length}
           icon={<UserX className="w-5 h-5" />}
-          color="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+          color="bg-danger-100 text-danger-600 dark:bg-danger-900/30 dark:text-danger-400"
         />
         <StatsCard
           title="Roles"
           value={new Set(users.map(u => u.role)).size}
           icon={<Shield className="w-5 h-5" />}
-          color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+          color="bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400"
         />
         <StatsCard
           title="Groups"
           value={availableGroups.length}
           icon={<UsersRound className="w-5 h-5" />}
-          color="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
+          color="bg-warning-100 text-warning-600 dark:bg-warning-900/30 dark:text-warning-400"
         />
         <StatsCard
           title="New Today"
           value={users.filter(u => new Date(u.createdAt).toDateString() === new Date().toDateString()).length}
           icon={<Calendar className="w-5 h-5" />}
-          color="bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400"
+          color="bg-brand-accent-100 text-brand-accent-600 dark:bg-brand-accent-900/30 dark:text-brand-accent-400"
         />
       </div>
 
       {/* User Role Badge */}
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-sm bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800/30">
-        <Shield className="w-4 h-4 text-blue-500 flex-shrink-0" />
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-sm bg-brand-50 dark:bg-brand-900/20 p-3 rounded-lg border border-brand-100 dark:border-brand-800/30">
+        <Shield className="w-4 h-4 text-brand-500 flex-shrink-0" />
         <span className="text-gray-600 dark:text-gray-400">Your role:</span>
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(userRole)}`}>
           {userRole.replace('_', ' ')}
         </span>
         {isSuperAdmin && (
-          <span className="text-xs bg-purple-200 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span className="text-xs bg-secondary-200 dark:bg-secondary-900/40 text-secondary-800 dark:text-secondary-300 px-2 py-0.5 rounded-full flex items-center gap-1">
             <ShieldCheck className="w-3 h-3" /> Full Access
           </span>
         )}
         {isAdmin && !isSuperAdmin && (
-          <span className="text-xs bg-red-200 dark:bg-red-900/40 text-red-800 dark:text-red-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <span className="text-xs bg-danger-200 dark:bg-danger-900/40 text-danger-800 dark:text-danger-300 px-2 py-0.5 rounded-full flex items-center gap-1">
             <ShieldAlert className="w-3 h-3" /> Admin Access
           </span>
         )}
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand p-4">
         <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
           <div className="flex-1 min-w-[200px] w-full sm:w-auto relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -883,12 +883,12 @@ export default function UsersManagementPage() {
               placeholder="Search users by name, email, phone..."
               value={searchQuery}
               onChange={handleSearch}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4 text-gray-400" />
@@ -900,7 +900,7 @@ export default function UsersManagementPage() {
             <select
               value={filters.role}
               onChange={(e) => handleFilterChange('role', e.target.value)}
-              className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             >
               <option value="">All Roles</option>
               {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin</option>}
@@ -916,7 +916,7 @@ export default function UsersManagementPage() {
             <select
               value={filters.status}
               onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -928,7 +928,7 @@ export default function UsersManagementPage() {
               <select
                 value={filters.groupId}
                 onChange={(e) => handleFilterChange('groupId', e.target.value)}
-                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 sm:flex-none px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               >
                 <option value="">All Groups</option>
                 {availableGroups.map((group) => (
@@ -941,14 +941,14 @@ export default function UsersManagementPage() {
             <div className="relative" ref={sortMenuRef}>
               <button
                 onClick={() => setShowSortMenu(!showSortMenu)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2 transition-colors"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2 transition-colors focus-ring"
               >
                 <ArrowUpDown className="w-4 h-4" />
                 <span className="hidden sm:inline">Sort</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
               {showSortMenu && (
-                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-header">
                   <button
                     onClick={() => handleSortChange('firstName')}
                     className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors"
@@ -990,7 +990,7 @@ export default function UsersManagementPage() {
                   setFilters({ role: '', status: 'all', businessUnitId: '', groupId: '' });
                   setPagination(prev => ({ ...prev, page: 1 }));
                 }}
-                className="px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center gap-1"
+                className="px-3 py-2 text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-colors flex items-center gap-1 focus-ring"
               >
                 <X className="w-4 h-4" />
                 <span className="hidden sm:inline">Clear</span>
@@ -1002,27 +1002,27 @@ export default function UsersManagementPage() {
 
       {/* Bulk Actions */}
       {selectedUsers.size > 0 && (canManageUsers || isSuperAdmin || isAdmin) && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 animate-slideIn">
-          <span className="text-sm text-blue-700 dark:text-blue-300 font-medium">
+        <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 animate-slideIn">
+          <span className="text-sm text-brand-700 dark:text-brand-300 font-medium tabular-nums">
             {selectedUsers.size} user{selectedUsers.size !== 1 ? 's' : ''} selected
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleBulkActivate}
-              className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors flex items-center gap-1"
+              className="px-3 py-1.5 bg-success-600 text-white rounded-lg text-sm hover:bg-success-700 transition-colors flex items-center gap-1 focus-ring"
             >
               <UserCheck className="w-4 h-4" /> Activate
             </button>
             <button
               onClick={handleBulkDeactivate}
-              className="px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-sm hover:bg-yellow-700 transition-colors flex items-center gap-1"
+              className="px-3 py-1.5 bg-warning-600 text-white rounded-lg text-sm hover:bg-warning-700 transition-colors flex items-center gap-1 focus-ring"
             >
               <UserX className="w-4 h-4" /> Deactivate
             </button>
             {canManageGroups && (
               <button
                 onClick={() => setShowGroupAssignModal(true)}
-                className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors flex items-center gap-1"
+                className="px-3 py-1.5 bg-secondary-600 text-white rounded-lg text-sm hover:bg-secondary-700 transition-colors flex items-center gap-1 focus-ring"
               >
                 <UsersRound className="w-4 h-4" /> Assign to Group
               </button>
@@ -1030,14 +1030,14 @@ export default function UsersManagementPage() {
             {(canDeleteUsers || isSuperAdmin || isAdmin) && (
               <button
                 onClick={handleBulkDelete}
-                className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
+                className="px-3 py-1.5 bg-danger-600 text-white rounded-lg text-sm hover:bg-danger-700 transition-colors flex items-center gap-1 focus-ring"
               >
                 <Trash2 className="w-4 h-4" /> Delete
               </button>
             )}
             <button
               onClick={() => setSelectedUsers(new Set())}
-              className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors focus-ring"
             >
               Cancel
             </button>
@@ -1046,10 +1046,10 @@ export default function UsersManagementPage() {
       )}
 
       {/* Users Table/Grid */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="card-brand p-0 overflow-hidden">
         {viewMode === 'table' ? (
           // Table View
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto sidebar-scroll">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
                 <tr>
@@ -1058,7 +1058,7 @@ export default function UsersManagementPage() {
                       type="checkbox"
                       checked={selectedUsers.size === users.length && users.length > 0}
                       onChange={handleSelectAll}
-                      className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
                     />
                   </th>
                   <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -1111,12 +1111,12 @@ export default function UsersManagementPage() {
                           type="checkbox"
                           checked={selectedUsers.has(user.id)}
                           onChange={() => handleSelectUser(user.id)}
-                          className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
                         />
                       </td>
                       <td className="px-3 sm:px-4 py-3">
                         <div className="flex items-center gap-2 sm:gap-3">
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs sm:text-sm font-semibold flex-shrink-0">
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs sm:text-sm font-semibold flex-shrink-0">
                             {getUserInitials(user.firstName, user.lastName)}
                           </div>
                           <div className="min-w-0">
@@ -1138,13 +1138,13 @@ export default function UsersManagementPage() {
                         {getStatusBadge(user.isActive)}
                       </td>
                       <td className="px-3 sm:px-4 py-3 hidden lg:table-cell">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                        <span className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                           {user.businessUnits?.length || 0}
                         </span>
                       </td>
                       {canManageGroups && (
                         <td className="px-3 sm:px-4 py-3 hidden xl:table-cell">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                          <span className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                             {user.groupMemberships?.length || 0}
                           </span>
                         </td>
@@ -1160,7 +1160,7 @@ export default function UsersManagementPage() {
                         <div className="flex items-center justify-end gap-1 sm:gap-2">
                           <button
                             onClick={() => handleUserEdit(user)}
-                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                             title="Edit user"
                           >
                             <UserCog className="w-4 h-4 text-gray-500" />
@@ -1170,10 +1170,10 @@ export default function UsersManagementPage() {
                               setUserToDelete(user);
                               setShowDeleteModal(true);
                             }}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded-lg transition-colors focus-ring"
                             title="Delete user"
                           >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4 text-danger-500" />
                           </button>
                         </div>
                       </td>
@@ -1200,12 +1200,12 @@ export default function UsersManagementPage() {
               users.map((user) => (
                 <div
                   key={user.id}
-                  className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer border border-gray-200 dark:border-gray-600"
+                  className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 hover:shadow-card-hover transition-shadow cursor-pointer border border-gray-200 dark:border-gray-600"
                   onClick={() => handleUserSelect(user)}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
                         {getUserInitials(user.firstName, user.lastName)}
                       </div>
                       <div className="min-w-0">
@@ -1222,7 +1222,7 @@ export default function UsersManagementPage() {
                         e.stopPropagation();
                         handleSelectUser(user.id);
                       }}
-                      className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                      className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 flex-shrink-0"
                     />
                   </div>
 
@@ -1234,12 +1234,12 @@ export default function UsersManagementPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 tabular-nums">
                       <Building className="w-3 h-3" />
                       {user.businessUnits?.length || 0} units
                     </span>
                     {canManageGroups && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 tabular-nums">
                         <UsersRound className="w-3 h-3" />
                         {user.groupMemberships?.length || 0} groups
                       </span>
@@ -1256,7 +1256,7 @@ export default function UsersManagementPage() {
                         e.stopPropagation();
                         handleUserEdit(user);
                       }}
-                      className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                      className="px-3 py-1 text-sm text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors focus-ring"
                     >
                       Edit
                     </button>
@@ -1266,7 +1266,7 @@ export default function UsersManagementPage() {
                         setUserToDelete(user);
                         setShowDeleteModal(true);
                       }}
-                      className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      className="px-3 py-1 text-sm text-danger-600 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-colors focus-ring"
                     >
                       Delete
                     </button>
@@ -1281,14 +1281,14 @@ export default function UsersManagementPage() {
       {/* Pagination */}
       {pagination.totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span className="text-sm text-gray-500 dark:text-gray-400 text-center sm:text-left">
+          <span className="text-sm text-gray-500 dark:text-gray-400 text-center sm:text-left tabular-nums">
             Showing {((pagination.page - 1) * pagination.limit) + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} users
           </span>
           <div className="flex items-center gap-2 flex-wrap justify-center">
             <button
               onClick={() => handlePageChange(pagination.page - 1)}
               disabled={pagination.page === 1}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
               aria-label="Previous page"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -1307,9 +1307,9 @@ export default function UsersManagementPage() {
                     )}
                     <button
                       onClick={() => handlePageChange(page)}
-                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
                         pagination.page === page
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-brand-500 text-white'
                           : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }`}
                     >
@@ -1321,7 +1321,7 @@ export default function UsersManagementPage() {
             <button
               onClick={() => handlePageChange(pagination.page + 1)}
               disabled={pagination.page === pagination.totalPages}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
               aria-label="Next page"
             >
               <ChevronRight className="w-4 h-4" />
@@ -1332,20 +1332,20 @@ export default function UsersManagementPage() {
 
       {/* Group Assignment Modal */}
       {showGroupAssignModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="fixed inset-0 z-modal overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
             <div className="fixed inset-0 bg-black/50" onClick={() => setShowGroupAssignModal(false)} />
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowGroupAssignModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10 focus-ring"
                 aria-label="Close modal"
               >
                 <XCircle className="w-6 h-6 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="text-center">
-                <div className="w-16 h-16 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <UsersRound className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+                <div className="w-16 h-16 bg-secondary-100 dark:bg-secondary-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <UsersRound className="w-8 h-8 text-secondary-600 dark:text-secondary-400" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Assign to Group</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
@@ -1364,14 +1364,14 @@ export default function UsersManagementPage() {
                 <div className="flex flex-col sm:flex-row justify-center gap-3">
                   <button
                     onClick={() => setShowGroupAssignModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleBulkAssignToGroup}
                     disabled={!selectedGroupForAssign || assigningToGroup}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="px-4 py-2 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 focus-ring"
                   >
                     {assigningToGroup ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1389,38 +1389,38 @@ export default function UsersManagementPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && userToDelete && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="fixed inset-0 z-modal overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
             <div className="fixed inset-0 bg-black/50" onClick={() => setShowDeleteModal(false)} />
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10 focus-ring"
                 aria-label="Close modal"
               >
                 <XCircle className="w-6 h-6 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Trash2 className="w-8 h-8 text-red-600 dark:text-red-400" />
+                <div className="w-16 h-16 bg-danger-100 dark:bg-danger-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 className="w-8 h-8 text-danger-600 dark:text-danger-400" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete User</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{userToDelete.firstName} {userToDelete.lastName}</strong>?
                   <br />
-                  <span className="text-sm text-red-600 dark:text-red-400">This action cannot be undone.</span>
+                  <span className="text-sm text-danger-600 dark:text-danger-400">This action cannot be undone.</span>
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center gap-3">
                   <button
                     onClick={() => setShowDeleteModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={() => handleDeleteUser(userToDelete.id)}
                     disabled={refreshing}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 focus-ring"
                   >
                     {refreshing ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

@@ -21,9 +21,9 @@ const sizes = {
 };
 
 const badgeSizes = {
-  sm: 'w-4 h-4 text-[10px] -top-1 -right-1',
-  md: 'w-5 h-5 text-[10px] -top-1 -right-1',
-  lg: 'w-6 h-6 text-xs -top-1.5 -right-1.5',
+  sm: 'min-w-4 h-4 px-1 text-2xs -top-1 -right-1',
+  md: 'min-w-5 h-5 px-1 text-2xs -top-1 -right-1',
+  lg: 'min-w-6 h-6 px-1.5 text-2xs -top-1.5 -right-1.5',
 };
 
 export function NotificationBadge({
@@ -55,11 +55,13 @@ export function NotificationBadge({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`
         relative flex items-center justify-center
         rounded-full hover:bg-gray-100 dark:hover:bg-gray-800
-        transition-colors
+        transition-colors duration-250
+        focus-ring
         ${sizes[size]}
         ${className}
       `}
@@ -70,7 +72,8 @@ export function NotificationBadge({
         <span
           className={`
             absolute flex items-center justify-center
-            bg-red-500 text-white font-bold rounded-full
+            bg-danger-500 text-white font-bold rounded-full
+            tabular-nums animate-badge-pop
             ${badgeSizes[size]}
           `}
         >

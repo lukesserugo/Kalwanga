@@ -71,7 +71,7 @@ export default function ReceiptPrintPage() {
   const handleEmailReceipt = async () => {
     const email = prompt('Enter email address to send receipt:');
     if (!email) return;
-    
+
     // Simple email validation
     if (!email.includes('@') || !email.includes('.')) {
       toast.error('Please enter a valid email address');
@@ -92,7 +92,7 @@ export default function ReceiptPrintPage() {
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
-        <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full"></div>
+        <div className="animate-spin h-8 w-8 border-b-2 border-brand-600 rounded-full"></div>
       </div>
     );
   }
@@ -100,10 +100,10 @@ export default function ReceiptPrintPage() {
   if (!receipt) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">Receipt not found</p>
+        <p className="text-gray-500 dark:text-gray-400">Receipt not found</p>
         <button
           onClick={() => router.back()}
-          className="mt-4 text-blue-600 hover:text-blue-800"
+          className="mt-4 text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 transition duration-250 focus-ring rounded"
         >
           Go Back
         </button>
@@ -112,19 +112,19 @@ export default function ReceiptPrintPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
       {/* Action Buttons - Hidden when printing */}
       <div className="flex flex-wrap gap-3 mb-6 no-print">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition-colors"
+          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition duration-250 focus-ring rounded-lg px-2 py-1"
         >
           <ArrowLeftIcon className="w-5 h-5" />
           Back
         </button>
         <button
           onClick={handlePrint}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          className="btn-brand"
         >
           <PrinterIcon className="w-5 h-5" />
           Print
@@ -132,7 +132,7 @@ export default function ReceiptPrintPage() {
         <button
           onClick={handleEmailReceipt}
           disabled={emailSending}
-          className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+          className="btn-success"
         >
           <EnvelopeIcon className="w-5 h-5" />
           {emailSending ? 'Sending...' : 'Email'}
@@ -140,44 +140,55 @@ export default function ReceiptPrintPage() {
       </div>
 
       {/* Receipt */}
-      <div ref={printRef} className="bg-white rounded-xl shadow-lg max-w-md mx-auto p-8 border border-gray-100">
+      <div
+        ref={printRef}
+        className="card-brand shadow-soft max-w-md mx-auto p-8"
+      >
         {/* Header */}
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">{receipt.businessName || 'Store'}</h1>
-          <p className="text-sm text-gray-500">{receipt.businessUnit || ''}</p>
-          <div className="w-16 h-0.5 bg-blue-600 mx-auto my-3"></div>
-          <p className="font-mono font-bold text-blue-600 text-lg">#{receipt.receiptNumber}</p>
-          <p className="text-sm text-gray-500">{new Date(receipt.date).toLocaleString()}</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {receipt.businessName || 'Store'}
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{receipt.businessUnit || ''}</p>
+          <div className="w-16 h-0.5 bg-brand-gradient mx-auto my-3"></div>
+          <p className="font-mono font-bold tabular-nums text-brand-600 dark:text-brand-400 text-lg">
+            #{receipt.receiptNumber}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {new Date(receipt.date).toLocaleString()}
+          </p>
         </div>
 
         {/* Cashier & Customer */}
-        <div className="flex justify-between text-sm mb-4 pb-4 border-b border-gray-100">
+        <div className="flex justify-between text-sm mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
           <div>
-            <p className="text-gray-500 text-xs uppercase tracking-wider">Cashier</p>
-            <p className="font-medium text-gray-900">{receipt.cashier || 'N/A'}</p>
+            <p className="text-gray-500 dark:text-gray-400 text-2xs uppercase tracking-wider eyebrow">Cashier</p>
+            <p className="font-medium text-gray-900 dark:text-white">{receipt.cashier || 'N/A'}</p>
           </div>
           <div className="text-right">
-            <p className="text-gray-500 text-xs uppercase tracking-wider">Customer</p>
-            <p className="font-medium text-gray-900">{receipt.customer || 'Guest'}</p>
+            <p className="text-gray-500 dark:text-gray-400 text-2xs uppercase tracking-wider eyebrow">Customer</p>
+            <p className="font-medium text-gray-900 dark:text-white">{receipt.customer || 'Guest'}</p>
           </div>
         </div>
 
         {/* Items */}
         <div className="py-4 mb-4">
-          <div className="flex justify-between text-xs text-gray-500 uppercase tracking-wider pb-2 border-b border-gray-100">
+          <div className="flex justify-between text-2xs text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow pb-2 border-b border-gray-100 dark:border-gray-700">
             <span>Item</span>
             <span>Qty</span>
             <span>Price</span>
           </div>
           {receipt.items.map((item, index) => (
-            <div key={index} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
+            <div key={index} className="flex justify-between items-center py-2 border-b border-gray-50 dark:border-gray-700/50 last:border-0">
               <div className="flex-1">
-                <p className="font-medium text-gray-900 text-sm">{item.name}</p>
-                <p className="text-xs text-gray-400">{item.sku || ''}</p>
+                <p className="font-medium text-gray-900 dark:text-white text-sm">{item.name}</p>
+                <p className="text-2xs font-mono text-gray-400 dark:text-gray-500">{item.sku || ''}</p>
               </div>
               <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-500 w-8 text-center">×{item.quantity}</span>
-                <span className="font-medium text-gray-900 text-sm w-20 text-right">
+                <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400 w-8 text-center">
+                  ×{item.quantity}
+                </span>
+                <span className="font-medium tabular-nums text-gray-900 dark:text-white text-sm w-20 text-right">
                   {formatCurrency(item.total)}
                 </span>
               </div>
@@ -186,59 +197,68 @@ export default function ReceiptPrintPage() {
         </div>
 
         {/* Totals */}
-        <div className="space-y-2 pt-4 border-t border-gray-200">
+        <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Subtotal</span>
-            <span className="text-gray-900">{formatCurrency(receipt.subtotal)}</span>
+            <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
+            <span className="tabular-nums text-gray-900 dark:text-white">{formatCurrency(receipt.subtotal)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Tax</span>
-            <span className="text-gray-900">{formatCurrency(receipt.tax)}</span>
+            <span className="text-gray-600 dark:text-gray-400">Tax</span>
+            <span className="tabular-nums text-gray-900 dark:text-white">{formatCurrency(receipt.tax)}</span>
           </div>
           {receipt.discount > 0 && (
-            <div className="flex justify-between text-sm text-green-600">
+            <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
               <span>Discount</span>
-              <span>-{formatCurrency(receipt.discount)}</span>
+              <span className="tabular-nums">-{formatCurrency(receipt.discount)}</span>
             </div>
           )}
-          <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200">
-            <span className="text-gray-900">Total</span>
-            <span className="text-blue-600">{formatCurrency(receipt.total)}</span>
+          <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
+            <span className="text-gray-900 dark:text-white">Total</span>
+            <span className="tabular-nums text-brand-600 dark:text-brand-400">
+              {formatCurrency(receipt.total)}
+            </span>
           </div>
           <div className="flex justify-between text-sm pt-1">
-            <span className="text-gray-600">Paid ({receipt.paymentMethod || 'N/A'})</span>
-            <span className="text-gray-900">{formatCurrency(receipt.paidAmount)}</span>
+            <span className="text-gray-600 dark:text-gray-400">
+              Paid ({receipt.paymentMethod || 'N/A'})
+            </span>
+            <span className="tabular-nums text-gray-900 dark:text-white">
+              {formatCurrency(receipt.paidAmount)}
+            </span>
           </div>
           {receipt.changeAmount > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Change</span>
-              <span className="text-green-600">{formatCurrency(receipt.changeAmount)}</span>
+              <span className="text-gray-600 dark:text-gray-400">Change</span>
+              <span className="tabular-nums text-success-600 dark:text-success-400">
+                {formatCurrency(receipt.changeAmount)}
+              </span>
             </div>
           )}
         </div>
 
         {/* QR Code */}
         {receipt.qrCode && (
-          <div className="text-center mt-6 pt-4 border-t border-gray-100">
-            <img 
-              src={receipt.qrCode} 
-              alt="Receipt QR" 
+          <div className="text-center mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+            <img
+              src={receipt.qrCode}
+              alt="Receipt QR"
               className="mx-auto w-24 h-24"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
             />
-            <p className="text-xs text-gray-400 mt-2">Scan to verify receipt</p>
+            <p className="text-2xs text-gray-400 dark:text-gray-500 mt-2">Scan to verify receipt</p>
           </div>
         )}
 
         {/* Footer */}
-        <div className="text-center mt-6 pt-4 border-t border-gray-100">
-          <p className="text-sm text-gray-500">Thank you for your business!</p>
-          <p className="text-xs text-gray-400 mt-1">Please keep this receipt for your records</p>
+        <div className="text-center mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">Thank you for your business!</p>
+          <p className="text-2xs text-gray-400 dark:text-gray-500 mt-1">
+            Please keep this receipt for your records
+          </p>
         </div>
       </div>
     </div>
   );
 }
-

@@ -95,12 +95,12 @@ export function LocationReportsPanel({
       header: 'Location',
       render: (r) => (
         <div className="flex items-center gap-2">
-          <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
           <div>
             <div className="font-medium text-gray-900 dark:text-white">
               {r.locationName}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="text-2xs text-gray-500 dark:text-gray-400">
               {r.type}
               {r.code ? ` • ${r.code}` : ''}
             </div>
@@ -113,7 +113,7 @@ export function LocationReportsPanel({
       header: 'Items',
       align: 'right',
       render: (r) => (
-        <span className="text-gray-600 dark:text-gray-400">
+        <span className="tabular-nums text-gray-600 dark:text-gray-400">
           {formatNumber(r.itemCount)}
         </span>
       ),
@@ -124,7 +124,7 @@ export function LocationReportsPanel({
       align: 'right',
       hideBelow: 'sm',
       render: (r) => (
-        <span className="text-gray-600 dark:text-gray-400">
+        <span className="tabular-nums text-gray-600 dark:text-gray-400">
           {formatNumber(r.totalQuantity)}
         </span>
       ),
@@ -134,7 +134,7 @@ export function LocationReportsPanel({
       header: 'Value',
       align: 'right',
       render: (r) => (
-        <span className="font-medium text-green-600 dark:text-green-400">
+        <span className="font-medium tabular-nums text-success-600 dark:text-success-400">
           {formatCurrency(r.totalValue)}
         </span>
       ),
@@ -146,7 +146,7 @@ export function LocationReportsPanel({
       hideBelow: 'md',
       render: (r) =>
         r.lowStockCount > 0 ? (
-          <span className="inline-flex px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
+          <span className="inline-flex px-2 py-0.5 rounded-full text-2xs tabular-nums bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
             {r.lowStockCount}
           </span>
         ) : (
@@ -156,7 +156,7 @@ export function LocationReportsPanel({
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <LocationBUSelector value={businessUnitId} onChange={setBusinessUnitId} />
@@ -164,8 +164,9 @@ export function LocationReportsPanel({
           type="button"
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 disabled:opacity-50 focus-ring"
           title="Refresh"
+          aria-label="Refresh reports"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
@@ -173,48 +174,48 @@ export function LocationReportsPanel({
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+        <div className="bg-brand-50 dark:bg-brand-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Locations</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+              <p className="text-2xl font-bold tabular-nums text-brand-600 dark:text-brand-400 mt-1">
                 {totals.locations}
               </p>
             </div>
-            <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <Building2 className="w-5 h-5 text-brand-600 dark:text-brand-400" />
           </div>
         </div>
-        <div className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+        <div className="bg-secondary-50 dark:bg-secondary-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Items</p>
-              <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mt-1">
+              <p className="text-2xl font-bold tabular-nums text-secondary-600 dark:text-secondary-400 mt-1">
                 {formatNumber(totals.items)}
               </p>
             </div>
-            <Package className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <Package className="w-5 h-5 text-secondary-600 dark:text-secondary-400" />
           </div>
         </div>
-        <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+        <div className="bg-success-50 dark:bg-success-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Value</p>
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
+              <p className="text-2xl font-bold tabular-nums text-success-600 dark:text-success-400 mt-1">
                 {formatCurrency(totals.value)}
               </p>
             </div>
-            <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <TrendingUp className="w-5 h-5 text-success-600 dark:text-success-400" />
           </div>
         </div>
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+        <div className="bg-warning-50 dark:bg-warning-900/20 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Low Stock</p>
-              <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
+              <p className="text-2xl font-bold tabular-nums text-warning-600 dark:text-warning-400 mt-1">
                 {totals.lowStock}
               </p>
             </div>
-            <Layers className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <Layers className="w-5 h-5 text-warning-600 dark:text-warning-400" />
           </div>
         </div>
       </div>

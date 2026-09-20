@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartLoyaltyPoints.tsx
-
 'use client';
 
 import React, {
@@ -20,10 +18,6 @@ interface CartLoyaltyPointsProps {
   onPointsApplied?: (result: unknown) => void;
   disabled?: boolean;
   className?: string;
-  /**
-   * Points already applied to the cart. When > 0, the widget shows
-   * the current redemption amount.
-   */
   appliedPoints?: number;
 }
 
@@ -34,8 +28,8 @@ interface LoyaltyResponse {
   totalEarned?: number;
 }
 
-const POINTS_PER_CURRENCY_UNIT = 10; // 10 points = $1
-const MAX_REDEMPTION_RATIO = 0.5; // cap at 50% of cart subtotal
+const POINTS_PER_CURRENCY_UNIT = 10;
+const MAX_REDEMPTION_RATIO = 0.5;
 
 export function CartLoyaltyPoints({
   customerId,
@@ -52,10 +46,6 @@ export function CartLoyaltyPoints({
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ============================================
-  // DATA FETCHING
-  // ============================================
-
   const fetchCustomerPoints = useCallback(async () => {
     if (!customerId || !isAuthenticated) return;
 
@@ -64,7 +54,6 @@ export function CartLoyaltyPoints({
       const response = await api.get<LoyaltyResponse>(
         `/customers/${customerId}/loyalty`,
       );
-      // Backend may return the payload directly or under `.data`.
       const payload =
         response && typeof response === 'object' && 'points' in response
           ? (response as LoyaltyResponse)
@@ -76,8 +65,6 @@ export function CartLoyaltyPoints({
         setAvailablePoints(0);
       }
     } catch (err) {
-      // Loyalty lookup is best-effort. The widget simply doesn't show
-      // a balance when the endpoint fails.
       console.warn('Failed to fetch loyalty points:', err);
       setAvailablePoints(0);
     } finally {
@@ -88,10 +75,6 @@ export function CartLoyaltyPoints({
   useEffect(() => {
     void fetchCustomerPoints();
   }, [fetchCustomerPoints]);
-
-  // ============================================
-  // HANDLERS
-  // ============================================
 
   const handleApplyPoints = useCallback(
     async (e: React.FormEvent) => {
@@ -126,9 +109,7 @@ export function CartLoyaltyPoints({
           customerId,
           pointsToRedeem,
         );
-        toast.success(
-          `${pointsToRedeem} loyalty points applied`,
-        );
+        toast.success(`${pointsToRedeem} loyalty points applied`);
         setPointsInput('');
         await fetchCustomerPoints();
         window.dispatchEvent(new CustomEvent('cart:updated'));
@@ -154,10 +135,6 @@ export function CartLoyaltyPoints({
     ],
   );
 
-  // ============================================
-  // DERIVED
-  // ============================================
-
   const estimatedDiscount = useMemo(() => {
     const value = parseInt(pointsInput, 10);
     if (isNaN(value) || value <= 0) return 0;
@@ -170,21 +147,15 @@ export function CartLoyaltyPoints({
     availablePoints > 0 &&
     !disabled;
 
-  // ============================================
-  // RENDER
-  // ============================================
-
-  // Guests and carts without a customer never see this widget.
   if (!isAuthenticated || !customerId) {
     return null;
   }
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Gift className="w-5 h-5 text-indigo-500 shrink-0" />
+          <Gift className="w-5 h-5 text-secondary-500 shrink-0" />
           <span className="font-medium text-gray-900 dark:text-white">
             Loyalty Points
           </span>
@@ -194,29 +165,27 @@ export function CartLoyaltyPoints({
             Available:
           </span>
           {isFetching ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-secondary-500" />
           ) : (
-            <span className="font-medium text-indigo-600 dark:text-indigo-400 tabular-nums">
+            <span className="font-medium text-secondary-600 dark:text-secondary-400 tabular-nums">
               {availablePoints}
             </span>
           )}
         </div>
       </div>
 
-      {/* Already applied */}
       {appliedPoints > 0 && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800">
-          <span className="text-sm text-indigo-700 dark:text-indigo-300">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-secondary-50 dark:bg-secondary-900/20 border border-secondary-200 dark:border-secondary-800">
+          <span className="text-sm text-secondary-700 dark:text-secondary-300">
             <strong className="tabular-nums">{appliedPoints}</strong>{' '}
             points applied
           </span>
-          <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300 tabular-nums">
+          <span className="text-sm font-medium text-secondary-700 dark:text-secondary-300 tabular-nums">
             −{formatCurrency(appliedPoints / POINTS_PER_CURRENCY_UNIT)}
           </span>
         </div>
       )}
 
-      {/* Form */}
       {canRedeem ? (
         <>
           <form
@@ -237,10 +206,10 @@ export function CartLoyaltyPoints({
                 placeholder="Points to redeem"
                 disabled={disabled || isLoading || isFetching}
                 inputMode="numeric"
-                className={`w-full px-3 py-2 bg-white dark:bg-gray-700 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors ${
+                className={`w-full px-3 py-2 bg-white dark:bg-gray-700 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors tabular-nums ${
                   error
-                    ? 'border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 dark:border-gray-600 focus:ring-indigo-500'
+                    ? 'border-danger-500 focus:ring-danger-500'
+                    : 'border-gray-300 dark:border-gray-600 focus:ring-secondary-500'
                 }`}
                 aria-invalid={error ? 'true' : 'false'}
                 aria-describedby={error ? 'loyalty-error' : undefined}
@@ -255,7 +224,7 @@ export function CartLoyaltyPoints({
                 !pointsInput ||
                 isFetching
               }
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px] shadow-sm"
+              className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px] shadow-soft focus-ring"
             >
               {isLoading ? (
                 <>
@@ -273,7 +242,7 @@ export function CartLoyaltyPoints({
               <Info className="w-4 h-4 shrink-0" />
               <span>
                 Estimated discount:{' '}
-                <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">
+                <strong className="text-success-600 dark:text-success-400 tabular-nums">
                   {formatCurrency(estimatedDiscount)}
                 </strong>
               </span>
@@ -283,7 +252,7 @@ export function CartLoyaltyPoints({
           {error && (
             <p
               id="loyalty-error"
-              className="text-sm text-red-600 dark:text-red-400"
+              className="text-sm text-danger-600 dark:text-danger-400"
             >
               {error}
             </p>

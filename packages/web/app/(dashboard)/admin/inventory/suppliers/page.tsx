@@ -80,13 +80,13 @@ const StarRating: React.FC<{ rating: number; size?: 'sm' | 'md' | 'lg' }> = ({ r
   return (
     <div className="flex items-center gap-0.5">
       {[...Array(fullStars)].map((_, i) => (
-        <Star key={`full-${i}`} className={`${starClass} text-yellow-400 fill-yellow-400`} />
+        <Star key={`full-${i}`} className={`${starClass} text-brand-400 fill-brand-400`} />
       ))}
-      {hasHalfStar && <StarHalf className={`${starClass} text-yellow-400 fill-yellow-400`} />}
+      {hasHalfStar && <StarHalf className={`${starClass} text-brand-400 fill-brand-400`} />}
       {[...Array(emptyStars)].map((_, i) => (
         <Star key={`empty-${i}`} className={`${starClass} text-gray-300 dark:text-gray-600`} />
       ))}
-      <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">{rating.toFixed(1)}</span>
+      <span className="text-xs text-gray-500 dark:text-gray-400 ml-1 tabular-nums">{rating.toFixed(1)}</span>
     </div>
   );
 };
@@ -95,7 +95,7 @@ const StatusBadge: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   return (
     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
       isActive
-        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+        ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
         : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
     }`}>
       {isActive ? 'Active' : 'Inactive'}
@@ -111,67 +111,35 @@ const StatCard: React.FC<{
   subtext?: string;
 }> = ({ label, value, icon: Icon, color, subtext }) => {
   const colorClasses: Record<string, { bg: string; text: string }> = {
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' },
-    green: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400' },
-    yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-600 dark:text-yellow-400' },
-    red: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' },
-    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-600 dark:text-indigo-400' },
-    teal: { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-600 dark:text-teal-400' },
-    orange: { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400' },
+    brand: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
+    success: { bg: 'bg-success-50 dark:bg-success-950/20', text: 'text-success-600 dark:text-success-400' },
+    warning: { bg: 'bg-warning-50 dark:bg-warning-950/20', text: 'text-warning-600 dark:text-warning-400' },
+    danger: { bg: 'bg-brand-accent-50 dark:bg-brand-accent-950/20', text: 'text-brand-accent-600 dark:text-brand-accent-400' },
+    secondary: { bg: 'bg-secondary-50 dark:bg-secondary-950/20', text: 'text-secondary-600 dark:text-secondary-400' },
+    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/20', text: 'text-indigo-600 dark:text-indigo-400' },
+    teal: { bg: 'bg-teal-50 dark:bg-teal-950/20', text: 'text-teal-600 dark:text-teal-400' },
+    orange: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`${colorClasses[color]?.bg || colorClasses.blue.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
+      className={`${colorClasses[color]?.bg || colorClasses.brand.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
     >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.blue.text} mt-1`}>
+          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.brand.text} mt-1 tabular-nums`}>
             {value}
           </p>
           {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
         </div>
         <div className={`p-2 rounded-lg bg-white dark:bg-gray-700/50`}>
-          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.blue.text}`} />
+          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.brand.text}`} />
         </div>
       </div>
     </motion.div>
-  );
-};
-
-const LoadingSkeleton: React.FC<{ count?: number }> = ({ count = 6 }) => {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[...Array(count)].map((_, i) => (
-        <div key={i} className="animate-pulse bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-lg" />
-              <div>
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-24 mb-2" />
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-16" />
-              </div>
-            </div>
-            <div className="flex gap-1">
-              <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded" />
-              <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded" />
-            </div>
-          </div>
-          <div className="mt-3 space-y-2">
-            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-3/4" />
-            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
-          </div>
-          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between">
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-20" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-16" />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 };
 
@@ -184,18 +152,11 @@ export default function SuppliersPage() {
   const { user, isAuthenticated } = useAuth();
   const { canView, canCreate, canEdit, canDelete, canManage } = usePermission();
   
-  // ============================================
-  // ✅ FIXED: Move permission checks AFTER all hooks
-  // All hooks must be called unconditionally
-  // ============================================
-
-  // Permission checks - computed after hooks
   const canViewSuppliers = canView(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
   const canCreateSuppliers = canCreate(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
   const canEditSuppliers = canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
   const canDeleteSuppliers = canDelete(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
 
-  // Refs - MUST be called before any conditional returns
   const initialLoadRef = useRef(false);
   const loadDataRef = useRef(false);
   
@@ -226,10 +187,6 @@ export default function SuppliersPage() {
   const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || 
                           (user?.businessUnits?.[0] as any)?.id || 
                           localStorage.getItem('businessUnitId') || '';
-
-  // ============================================
-  // DATA LOADING - useCallback hooks
-  // ============================================
 
   const loadSuppliers = useCallback(async (showLoading = true) => {
     if (loadDataRef.current) {
@@ -325,10 +282,6 @@ export default function SuppliersPage() {
     toast.success('Suppliers refreshed');
   };
 
-  // ============================================
-  // FILTERING & SORTING
-  // ============================================
-
   const applyFilters = useCallback(() => {
     let filtered = [...suppliers];
 
@@ -390,10 +343,6 @@ export default function SuppliersPage() {
     applyFilters();
   }, [applyFilters]);
 
-  // ============================================
-  // CRUD OPERATIONS
-  // ============================================
-
   const handleDelete = async () => {
     if (!supplierToDelete) return;
     
@@ -424,22 +373,12 @@ export default function SuppliersPage() {
     setShowDetailModal(true);
   };
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     if (isAuthenticated && canViewSuppliers) {
       loadSuppliers();
     }
   }, [isAuthenticated, canViewSuppliers, loadSuppliers]);
 
-  // ============================================
-  // RENDER - All hooks have been called above
-  // Now we can use conditional returns
-  // ============================================
-
-  // ✅ FIXED: Permission guards AFTER all hooks are called
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
@@ -470,7 +409,7 @@ export default function SuppliersPage() {
           </p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Back to Inventory
           </button>
@@ -479,21 +418,13 @@ export default function SuppliersPage() {
     );
   }
 
-  // ============================================
-  // LOADING STATE
-  // ============================================
-
   if (loading && suppliers.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
-
-  // ============================================
-  // STATS COMPUTATION
-  // ============================================
 
   const stats = {
     total: suppliers.length,
@@ -508,18 +439,17 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -528,20 +458,20 @@ export default function SuppliersPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <Truck className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+            <Truck className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
             Suppliers
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
             {stats.total} suppliers • {stats.active} active • {formatCurrency(stats.totalValue)} total value
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
               showFilters || hasActiveFilters
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -549,7 +479,7 @@ export default function SuppliersPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -557,9 +487,9 @@ export default function SuppliersPage() {
           <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded transition-colors ${
+              className={`p-1.5 rounded transition-colors focus-ring ${
                 viewMode === 'grid' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-brand-600 text-white' 
                   : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
@@ -567,9 +497,9 @@ export default function SuppliersPage() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded transition-colors ${
+              className={`p-1.5 rounded transition-colors focus-ring ${
                 viewMode === 'list' 
-                  ? 'bg-blue-600 text-white' 
+                  ? 'bg-brand-600 text-white' 
                   : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
@@ -578,7 +508,7 @@ export default function SuppliersPage() {
           </div>
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
             title="Toggle sort order"
           >
             <ArrowUpDown className="w-4 h-4" />
@@ -586,7 +516,7 @@ export default function SuppliersPage() {
           {canCreateSuppliers && (
             <Link
               href="/admin/suppliers/create"
-              className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
+              className="px-3 sm:px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add Supplier</span>
@@ -597,29 +527,14 @@ export default function SuppliersPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Suppliers"
-          value={stats.total}
-          icon={Truck}
-          color="blue"
-        />
-        <StatCard
-          label="Active"
-          value={stats.active}
-          icon={CheckCircle}
-          color="green"
-        />
-        <StatCard
-          label="Inactive"
-          value={stats.inactive}
-          icon={AlertCircle}
-          color="red"
-        />
+        <StatCard label="Total Suppliers" value={stats.total} icon={Truck} color="brand" />
+        <StatCard label="Active" value={stats.active} icon={CheckCircle} color="success" />
+        <StatCard label="Inactive" value={stats.inactive} icon={AlertCircle} color="danger" />
         <StatCard
           label="Avg Rating"
           value={stats.avgRating.toFixed(1) + ' ★'}
           icon={Star}
-          color="yellow"
+          color="warning"
           subtext={`${stats.totalProducts} products total`}
         />
       </div>
@@ -634,13 +549,13 @@ export default function SuppliersPage() {
               placeholder="Search suppliers..."
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
             />
           </div>
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value as any)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
           >
             <option value="name">Sort by Name</option>
             <option value="rating">Sort by Rating</option>
@@ -658,7 +573,7 @@ export default function SuppliersPage() {
                   minRating: 0,
                 });
               }}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1"
+              className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 flex items-center gap-1 focus-ring transition-colors"
             >
               <X className="w-4 h-4" />
               Clear
@@ -666,7 +581,6 @@ export default function SuppliersPage() {
           )}
         </div>
 
-        {/* Filters Panel */}
         <AnimatePresence>
           {showFilters && (
             <motion.div
@@ -682,7 +596,7 @@ export default function SuppliersPage() {
                   <select
                     value={filters.status}
                     onChange={(e) => setFilters({ ...filters, status: e.target.value as 'all' | 'active' | 'inactive' })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   >
                     <option value="all">All Status</option>
                     <option value="active">Active</option>
@@ -694,7 +608,7 @@ export default function SuppliersPage() {
                   <select
                     value={filters.minRating}
                     onChange={(e) => setFilters({ ...filters, minRating: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   >
                     {RATING_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -708,7 +622,7 @@ export default function SuppliersPage() {
                     value={filters.category}
                     onChange={(e) => setFilters({ ...filters, category: e.target.value })}
                     placeholder="Filter by category..."
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <div>
@@ -718,7 +632,7 @@ export default function SuppliersPage() {
                     value={filters.location}
                     onChange={(e) => setFilters({ ...filters, location: e.target.value })}
                     placeholder="Filter by location..."
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
               </div>
@@ -740,7 +654,7 @@ export default function SuppliersPage() {
           {suppliers.length === 0 && canCreateSuppliers && (
             <Link
               href="/admin/suppliers/create"
-              className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="mt-4 inline-block px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4 inline mr-2" />
               Add Supplier
@@ -754,15 +668,15 @@ export default function SuppliersPage() {
               key={supplier.id}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow"
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800 transition-all"
             >
               <div className="flex items-start justify-between">
                 <button
                   onClick={() => handleView(supplier)}
-                  className="flex items-center gap-3 min-w-0 flex-1"
+                  className="flex items-center gap-3 min-w-0 flex-1 text-left"
                 >
-                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex-shrink-0">
-                    <Truck className="w-5 h-5 text-blue-500" />
+                  <div className="p-2 bg-brand-50 dark:bg-brand-950/20 rounded-lg flex-shrink-0">
+                    <Truck className="w-5 h-5 text-brand-500" />
                   </div>
                   <div className="min-w-0">
                     <h4 className="font-medium text-gray-900 dark:text-white truncate">{supplier.name}</h4>
@@ -777,7 +691,7 @@ export default function SuppliersPage() {
                 <div className="flex gap-1 flex-shrink-0 ml-2">
                   <button
                     onClick={() => handleView(supplier)}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     title="View"
                   >
                     <Eye className="w-4 h-4 text-gray-500" />
@@ -785,10 +699,10 @@ export default function SuppliersPage() {
                   {canEditSuppliers && (
                     <button
                       onClick={() => handleEdit(supplier)}
-                      className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                      className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                       title="Edit"
                     >
-                      <Edit className="w-4 h-4 text-blue-500" />
+                      <Edit className="w-4 h-4 text-brand-500" />
                     </button>
                   )}
                   {canDeleteSuppliers && (
@@ -797,10 +711,10 @@ export default function SuppliersPage() {
                         setSupplierToDelete(supplier);
                         setShowDeleteModal(true);
                       }}
-                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                      className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                       title="Delete"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                      <Trash2 className="w-4 h-4 text-brand-accent-500" />
                     </button>
                   )}
                 </div>
@@ -827,13 +741,13 @@ export default function SuppliersPage() {
                 <StarRating rating={supplier.rating || 0} size="sm" />
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   {supplier.productCount !== undefined && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 tabular-nums">
                       <Package className="w-3 h-3" />
                       {supplier.productCount}
                     </span>
                   )}
                   {supplier.totalValue !== undefined && supplier.totalValue > 0 && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 tabular-nums">
                       <DollarSign className="w-3 h-3" />
                       {formatCurrency(supplier.totalValue)}
                     </span>
@@ -846,7 +760,7 @@ export default function SuppliersPage() {
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -861,13 +775,13 @@ export default function SuppliersPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <tr key={supplier.id} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
                     <td className="px-4 py-3">
                       <button
                         onClick={() => handleView(supplier)}
-                        className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400"
+                        className="flex items-center gap-2 hover:text-brand-600 dark:hover:text-brand-400 transition-colors focus-ring"
                       >
-                        <Truck className="w-4 h-4 text-blue-500" />
+                        <Truck className="w-4 h-4 text-brand-500" />
                         <span className="font-medium text-gray-900 dark:text-white">{supplier.name}</span>
                       </button>
                     </td>
@@ -890,7 +804,7 @@ export default function SuppliersPage() {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleView(supplier)}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                           title="View"
                         >
                           <Eye className="w-4 h-4 text-gray-500" />
@@ -898,10 +812,10 @@ export default function SuppliersPage() {
                         {canEditSuppliers && (
                           <button
                             onClick={() => handleEdit(supplier)}
-                            className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                            className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                             title="Edit"
                           >
-                            <Edit className="w-4 h-4 text-blue-500" />
+                            <Edit className="w-4 h-4 text-brand-500" />
                           </button>
                         )}
                         {canDeleteSuppliers && (
@@ -910,10 +824,10 @@ export default function SuppliersPage() {
                               setSupplierToDelete(supplier);
                               setShowDeleteModal(true);
                             }}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                            className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                             title="Delete"
                           >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4 text-brand-accent-500" />
                           </button>
                         )}
                       </div>
@@ -939,21 +853,21 @@ export default function SuppliersPage() {
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
 
               <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                <div className="w-16 h-16 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete Supplier</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{supplierToDelete.name}</strong>?
                 </p>
                 {supplierToDelete.productCount && supplierToDelete.productCount > 0 && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg mb-4 text-sm text-yellow-700 dark:text-yellow-300">
+                  <div className="p-3 bg-warning-50 dark:bg-warning-950/20 border border-warning-200 dark:border-warning-800 rounded-lg mb-4 text-sm text-warning-700 dark:text-warning-300">
                     <Package className="w-4 h-4 inline mr-1" />
                     This supplier has {supplierToDelete.productCount} product(s) associated with it.
                     Deleting it will remove the supplier from all products.
@@ -964,14 +878,14 @@ export default function SuppliersPage() {
               <div className="flex justify-center gap-3 mt-6">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-brand focus-ring"
                 >
                   {deleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -995,18 +909,18 @@ export default function SuppliersPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 custom-scrollbar"
             >
               <button
                 onClick={() => setShowDetailModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
 
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <Truck className="w-6 h-6 text-blue-500" />
+                <div className="p-3 bg-brand-50 dark:bg-brand-950/20 rounded-lg">
+                  <Truck className="w-6 h-6 text-brand-500" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -1055,11 +969,11 @@ export default function SuppliersPage() {
                 )}
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Products</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">{selectedSupplier.productCount || 0}</p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">{selectedSupplier.productCount || 0}</p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Total Value</p>
-                  <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                  <p className="text-lg font-bold text-success-600 dark:text-success-400 tabular-nums">
                     {formatCurrency(selectedSupplier.totalValue || 0)}
                   </p>
                 </div>
@@ -1076,7 +990,7 @@ export default function SuppliersPage() {
               <div className="flex flex-wrap justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Close
                 </button>
@@ -1086,7 +1000,7 @@ export default function SuppliersPage() {
                       setShowDetailModal(false);
                       handleEdit(selectedSupplier);
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+                    className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
                   >
                     <Edit className="w-4 h-4" />
                     Edit Supplier
@@ -1097,7 +1011,7 @@ export default function SuppliersPage() {
                     setShowDetailModal(false);
                     router.push(`/admin/inventory?supplier=${selectedSupplier.id}`);
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors focus-ring"
                 >
                   <Package className="w-4 h-4" />
                   View Products

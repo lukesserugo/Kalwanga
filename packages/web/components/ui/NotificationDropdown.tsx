@@ -85,13 +85,14 @@ export function NotificationDropdown() {
     <div className="relative" ref={dropdownRef}>
       {/* Trigger Button */}
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-250 focus-ring"
         aria-label="Notifications"
       >
         <BellIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
+          <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 flex items-center justify-center bg-danger-500 text-white text-2xs font-bold rounded-full tabular-nums animate-badge-pop">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -99,22 +100,23 @@ export function NotificationDropdown() {
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-96 bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700 overflow-hidden z-modal">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
             <div className="flex gap-2">
               {unreadCount > 0 && (
                 <button
+                  type="button"
                   onClick={markAllAsRead}
-                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  className="text-2xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:underline transition-colors duration-250 focus-ring rounded"
                 >
                   Mark all as read
                 </button>
               )}
               <Link
                 href="/notifications"
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                className="text-2xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:underline transition-colors duration-250 focus-ring rounded"
               >
                 View all
               </Link>
@@ -125,12 +127,12 @@ export function NotificationDropdown() {
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="animate-spin h-6 w-6 border-2 border-blue-600 dark:border-blue-400 border-t-transparent rounded-full"></div>
+                <div className="animate-spin h-6 w-6 border-2 border-brand-500 dark:border-brand-400 border-t-transparent rounded-full"></div>
               </div>
             ) : notifications.length === 0 ? (
               <div className="text-center py-8">
                 <BellIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                <p className="text-gray-500 dark:text-gray-400">No notifications</p>
+                <p className="text-2xs text-gray-500 dark:text-gray-400">No notifications</p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -160,7 +162,7 @@ export function NotificationDropdown() {
             <div className="p-3 border-t border-gray-200 dark:border-gray-700 text-center">
               <Link
                 href="/notifications"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:underline transition-colors duration-250 focus-ring rounded"
               >
                 View all notifications
               </Link>

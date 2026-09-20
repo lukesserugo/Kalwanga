@@ -113,7 +113,7 @@ const exportService = {
     if (params.endDate) queryParams.append('endDate', params.endDate);
     if (params.businessUnitId) queryParams.append('businessUnitId', params.businessUnitId);
     if (params.fileName) queryParams.append('fileName', params.fileName);
-    
+
     const url = `/api/export/sales?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -139,7 +139,7 @@ const exportService = {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append('page', String(params.page));
     if (params?.limit) queryParams.append('limit', String(params.limit));
-    
+
     const url = `/api/export/history?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -230,10 +230,10 @@ const getFormatLabel = (format: string): string => {
 
 const getStatusColor = (status: string): string => {
   const colors: Record<string, string> = {
-    completed: 'text-green-500 bg-green-100 dark:bg-green-900/20',
-    processing: 'text-blue-500 bg-blue-100 dark:bg-blue-900/20',
-    failed: 'text-red-500 bg-red-100 dark:bg-red-900/20',
-    scheduled: 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/20',
+    completed: 'text-success-500 bg-success-100 dark:bg-success-900/20',
+    processing: 'text-brand-500 bg-brand-100 dark:bg-brand-900/20',
+    failed: 'text-danger-500 bg-danger-100 dark:bg-danger-900/20',
+    scheduled: 'text-warning-500 bg-warning-100 dark:bg-warning-900/20',
   };
   return colors[status] || 'text-gray-500 bg-gray-100 dark:bg-gray-700/50';
 };
@@ -264,7 +264,7 @@ export default function SalesExportPage() {
   const { isLoaded, isSignedIn } = useUser();
   const { user: authUser } = useAuth();
   const router = useRouter();
-  
+
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [history, setHistory] = useState<ExportHistory[]>([]);
@@ -278,7 +278,7 @@ export default function SalesExportPage() {
   const [emailAddress, setEmailAddress] = useState('');
   const [processing, setProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'export' | 'history'>('export');
-  
+
   const [filters, setFilters] = useState<ExportFilter>({
     dateRange: 'this_month',
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -404,22 +404,22 @@ export default function SalesExportPage() {
     try {
       setExporting(true);
       const blob = await exportService.exportSales(filters);
-      
-      const extension = filters.format === 'csv' ? 'csv' : 
-                        filters.format === 'excel' ? 'xlsx' : 
+
+      const extension = filters.format === 'csv' ? 'csv' :
+                        filters.format === 'excel' ? 'xlsx' :
                         filters.format === 'pdf' ? 'pdf' :
                         filters.format === 'json' ? 'json' : 'xml';
-      
-      const fileName = filters.fileName || 
+
+      const fileName = filters.fileName ||
         `sales-export-${new Date().toISOString().split('T')[0]}.${extension}`;
-      
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
       a.click();
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Sales data exported successfully');
       loadData();
     } catch (error: any) {
@@ -445,7 +445,7 @@ export default function SalesExportPage() {
 
   const handleSendEmail = async () => {
     if (!selectedExport || !emailAddress) return;
-    
+
     try {
       setProcessing(true);
       const result = await exportService.sendExportEmail(selectedExport.id, emailAddress);
@@ -461,7 +461,7 @@ export default function SalesExportPage() {
 
   const handleDeleteExport = async (id: string) => {
     if (!confirm('Are you sure you want to delete this export?')) return;
-    
+
     try {
       await exportService.deleteExport(id);
       toast.success('Export deleted successfully');
@@ -479,7 +479,7 @@ export default function SalesExportPage() {
         toast.success('Download started');
         return;
       }
-      
+
       toast.info('Regenerating export...');
       loadData();
     } catch (error: any) {
@@ -508,7 +508,7 @@ export default function SalesExportPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/sales')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-500" />
               </button>
@@ -525,7 +525,7 @@ export default function SalesExportPage() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={loadData}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               <RefreshCw className="w-4 h-4" />
               Refresh
@@ -540,25 +540,25 @@ export default function SalesExportPage() {
               title="Total Exports"
               value={stats.totalExports}
               icon={FileText}
-              color="blue"
+              color="brand"
             />
             <StatCard
               title="Total Size"
               value={formatFileSize(stats.totalSize)}
               icon={Package}
-              color="green"
+              color="success"
             />
             <StatCard
               title="Last Export"
               value={stats.lastExportDate ? formatDate(stats.lastExportDate) : 'Never'}
               icon={Calendar}
-              color="purple"
+              color="secondary"
             />
             <StatCard
               title="Popular Format"
               value={stats.popularFormat.toUpperCase()}
               icon={getFormatIcon(stats.popularFormat)}
-              color="orange"
+              color="brand-accent"
             />
           </div>
         )}
@@ -573,9 +573,9 @@ export default function SalesExportPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 focus-ring ${
                   activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                     : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               >
@@ -652,17 +652,19 @@ export default function SalesExportPage() {
 
 function StatCard({ title, value, icon: Icon, color }: any) {
   const colors: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    orange: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
+    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
+    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-600 dark:text-secondary-400',
+    success: 'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
+    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
+    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400',
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700"
+      className="card-brand p-4"
     >
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
@@ -670,7 +672,7 @@ function StatCard({ title, value, icon: Icon, color }: any) {
           <Icon className="w-4 h-4" />
         </div>
       </div>
-      <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{value}</p>
     </motion.div>
   );
 }
@@ -697,7 +699,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
 
   return (
     <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+      <div className="card-brand p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Export Configuration
         </h3>
@@ -711,7 +713,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
             <select
               value={filters.dateRange}
               onChange={(e) => handleDateRangeChange(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="today">Today</option>
               <option value="yesterday">Yesterday</option>
@@ -734,7 +736,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
             <select
               value={filters.exportType}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, exportType: e.target.value as any }))}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               {exportTypes.map((type) => (
                 <option key={type.value} value={type.value}>
@@ -752,7 +754,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
             <select
               value={filters.format}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, format: e.target.value as any }))}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               {formats.map((format) => (
                 <option key={format.value} value={format.value}>
@@ -772,7 +774,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
               placeholder="sales-export"
               value={filters.fileName || ''}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, fileName: e.target.value }))}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Leave blank for auto-generated name
@@ -791,7 +793,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
                 type="date"
                 value={filters.startDate}
                 onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, startDate: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
             <div>
@@ -802,7 +804,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
                 type="date"
                 value={filters.endDate}
                 onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, endDate: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
           </div>
@@ -815,7 +817,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
               type="checkbox"
               checked={filters.includeHeaders}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, includeHeaders: e.target.checked }))}
-              className="w-4 h-4 text-blue-600 rounded"
+              className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
             />
             <span className="text-sm text-gray-700 dark:text-gray-300">Include Headers</span>
           </label>
@@ -824,7 +826,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
               type="checkbox"
               checked={filters.includeSummary}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, includeSummary: e.target.checked }))}
-              className="w-4 h-4 text-blue-600 rounded"
+              className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
             />
             <span className="text-sm text-gray-700 dark:text-gray-300">Include Summary</span>
           </label>
@@ -833,7 +835,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
               type="checkbox"
               checked={filters.includeCharts}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, includeCharts: e.target.checked }))}
-              className="w-4 h-4 text-blue-600 rounded"
+              className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
             />
             <span className="text-sm text-gray-700 dark:text-gray-300">Include Charts (PDF only)</span>
           </label>
@@ -845,7 +847,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
         <button
           onClick={handleExport}
           disabled={exporting}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-lg font-medium"
+          className="flex items-center gap-2 px-6 py-3 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 text-lg font-medium focus-ring"
         >
           {exporting ? (
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -856,7 +858,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
         </button>
         <button
           onClick={handleSchedule}
-          className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-lg font-medium"
+          className="flex items-center gap-2 px-6 py-3 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors text-lg font-medium focus-ring"
         >
           <Clock className="w-5 h-5" />
           Schedule Export
@@ -869,7 +871,7 @@ function ExportForm({ filters, setFilters, handleDateRangeChange, handleExport, 
 function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onDownload, onEmail, onDelete }: any) {
   if (history.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-12 text-center border border-gray-200 dark:border-gray-700">
+      <div className="card-brand p-12 text-center">
         <div className="text-6xl mb-4">📂</div>
         <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Export History</h2>
         <p className="text-gray-500 dark:text-gray-400">
@@ -880,8 +882,8 @@ function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onD
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand p-0 overflow-hidden">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50">
             <tr>
@@ -920,7 +922,7 @@ function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onD
                       {item.format.toUpperCase()}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                     {formatFileSize(item.size || 0)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -938,14 +940,14 @@ function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onD
                         <>
                           <button
                             onClick={() => onDownload(item)}
-                            className="p-1 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors text-blue-600 dark:text-blue-400"
+                            className="p-1 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded transition-colors text-brand-600 dark:text-brand-400 focus-ring"
                             title="Download"
                           >
                             <Download className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => onEmail(item)}
-                            className="p-1 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors text-purple-600 dark:text-purple-400"
+                            className="p-1 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-900/20 rounded transition-colors text-brand-accent-600 dark:text-brand-accent-400 focus-ring"
                             title="Email"
                           >
                             <Mail className="w-4 h-4" />
@@ -954,7 +956,7 @@ function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onD
                       )}
                       <button
                         onClick={() => onDelete(item.id)}
-                        className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors text-red-600 dark:text-red-400"
+                        className="p-1 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded transition-colors text-danger-600 dark:text-danger-400 focus-ring"
                         title="Delete"
                       >
                         <XCircle className="w-4 h-4" />
@@ -974,17 +976,17 @@ function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onD
           <button
             onClick={() => onPageChange(Math.max(1, historyPage - 1))}
             disabled={historyPage === 1}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
           >
             Previous
           </button>
-          <span className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
             Page {historyPage} of {historyTotalPages}
           </span>
           <button
             onClick={() => onPageChange(Math.min(historyTotalPages, historyPage + 1))}
             disabled={historyPage === historyTotalPages}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
           >
             Next
           </button>
@@ -994,7 +996,7 @@ function HistoryTab({ history, historyPage, historyTotalPages, onPageChange, onD
   );
 }
 
-function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: { 
+function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: {
   filters: ExportFilter;
   setFilters: React.Dispatch<React.SetStateAction<ExportFilter>>;
   onClose: () => void;
@@ -1011,7 +1013,7 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Schedule Export
@@ -1024,7 +1026,7 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
             <select
               value={filters.schedule}
               onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, schedule: e.target.value as any }))}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               {scheduleOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -1044,7 +1046,7 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
                   <select
                     value={filters.scheduleDay || 'Monday'}
                     onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, scheduleDay: e.target.value }))}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     {daysOfWeek.map((day) => (
                       <option key={day} value={day}>{day}</option>
@@ -1061,7 +1063,7 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
                   type="time"
                   value={filters.scheduleTime || '09:00'}
                   onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, scheduleTime: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
 
@@ -1074,7 +1076,7 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
                   placeholder="email@example.com"
                   value={filters.emailTo || ''}
                   onChange={(e) => setFilters((prev: ExportFilter) => ({ ...prev, emailTo: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Receive notifications when export is ready
@@ -1086,14 +1088,14 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               Cancel
             </button>
             <button
               onClick={onConfirm}
               disabled={processing}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}
               {processing ? 'Scheduling...' : 'Schedule Export'}
@@ -1105,7 +1107,7 @@ function ScheduleModal({ filters, setFilters, onClose, onConfirm, processing }: 
   );
 }
 
-function EmailModal({ exportItem, emailAddress, setEmailAddress, onClose, onConfirm, processing }: { 
+function EmailModal({ exportItem, emailAddress, setEmailAddress, onClose, onConfirm, processing }: {
   exportItem: ExportHistory;
   emailAddress: string;
   setEmailAddress: React.Dispatch<React.SetStateAction<string>>;
@@ -1114,7 +1116,7 @@ function EmailModal({ exportItem, emailAddress, setEmailAddress, onClose, onConf
   processing: boolean;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           Send Export via Email
@@ -1124,13 +1126,13 @@ function EmailModal({ exportItem, emailAddress, setEmailAddress, onClose, onConf
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Email Address <span className="text-red-500">*</span>
+            Email Address <span className="text-danger-500">*</span>
           </label>
           <input
             type="email"
             value={emailAddress}
             onChange={(e) => setEmailAddress(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             placeholder="Enter email address..."
             required
           />
@@ -1138,14 +1140,14 @@ function EmailModal({ exportItem, emailAddress, setEmailAddress, onClose, onConf
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={processing || !emailAddress.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             {processing ? 'Sending...' : 'Send Email'}

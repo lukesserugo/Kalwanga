@@ -11,10 +11,10 @@ try {
   // Fallback functions if date-fns is not installed
   format = (date: Date | string, formatStr: string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
     });
   };
   formatDistanceToNow = (date: Date | string) => {
@@ -49,8 +49,8 @@ export default function RecentSales({ sales, onViewAll, maxItems = 5 }: RecentSa
   const formatDate = (dateStr: string) => {
     try {
       const date = new Date(dateStr);
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
         day: 'numeric',
         year: 'numeric',
         hour: '2-digit',
@@ -89,14 +89,14 @@ export default function RecentSales({ sales, onViewAll, maxItems = 5 }: RecentSa
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      COMPLETED: 'bg-green-100 text-green-800',
-      PENDING: 'bg-yellow-100 text-yellow-800',
-      CANCELLED: 'bg-red-100 text-red-800',
-      REFUNDED: 'bg-gray-100 text-gray-800',
-      PROCESSING: 'bg-blue-100 text-blue-800',
-      ON_HOLD: 'bg-purple-100 text-purple-800',
+      COMPLETED: 'bg-success-100 text-success-700 dark:bg-success-950/40 dark:text-success-300',
+      PENDING: 'bg-warning-100 text-warning-700 dark:bg-warning-950/40 dark:text-warning-300',
+      CANCELLED: 'bg-danger-100 text-danger-700 dark:bg-danger-950/40 dark:text-danger-300',
+      REFUNDED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-400',
+      PROCESSING: 'bg-primary-100 text-primary-700 dark:bg-primary-950/40 dark:text-primary-300',
+      ON_HOLD: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-950/40 dark:text-secondary-300',
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-400';
   };
 
   const getStatusIcon = (status: string) => {
@@ -115,8 +115,8 @@ export default function RecentSales({ sales, onViewAll, maxItems = 5 }: RecentSa
   const formattedSales = sales?.map(s => ({
     id: s.id || '',
     receiptNumber: s.receiptNumber || 'N/A',
-    customerName: s.customerName || s.customer?.firstName ? 
-      `${s.customer?.firstName || ''} ${s.customer?.lastName || ''}`.trim() || 'Guest' : 
+    customerName: s.customerName || s.customer?.firstName ?
+      `${s.customer?.firstName || ''} ${s.customer?.lastName || ''}`.trim() || 'Guest' :
       'Guest',
     total: s.total || 0,
     createdAt: s.createdAt || new Date().toISOString(),
@@ -127,17 +127,21 @@ export default function RecentSales({ sales, onViewAll, maxItems = 5 }: RecentSa
 
   if (displaySales.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow">
-        <div className="flex items-center justify-between p-6 border-b">
-          <h3 className="text-lg font-semibold text-gray-900">Recent Sales</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Sales</h3>
           {onViewAll && (
-            <button onClick={onViewAll} className="text-sm text-blue-600 hover:text-blue-800">
+            <button
+              type="button"
+              onClick={onViewAll}
+              className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 transition-colors duration-250 focus-ring rounded"
+            >
               View All
             </button>
           )}
         </div>
-        <div className="p-6 text-center text-gray-500">
-          <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+          <svg className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <p className="text-sm">No recent sales</p>
@@ -147,69 +151,73 @@ export default function RecentSales({ sales, onViewAll, maxItems = 5 }: RecentSa
   }
 
   return (
-    <div className="bg-white rounded-lg shadow">
-      <div className="flex items-center justify-between p-6 border-b">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Recent Sales</h3>
-          <p className="text-sm text-gray-500">Last {displaySales.length} transactions</p>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Sales</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Last {displaySales.length} transactions</p>
         </div>
         {onViewAll && (
-          <button onClick={onViewAll} className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 font-medium transition-colors duration-250 focus-ring rounded"
+          >
             View All →
           </button>
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-700/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Receipt
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Customer
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Date
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Total
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Status
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {displaySales.map((sale) => (
-              <tr key={sale.id} className="hover:bg-gray-50 transition-colors">
+              <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-250">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm font-medium text-gray-900">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                     #{sale.receiptNumber}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-600 dark:text-gray-300">
                     {sale.customerName || 'Guest'}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex flex-col">
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-300 tabular-nums">
                       {formatDate(sale.createdAt)}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-2xs text-gray-400 dark:text-gray-500 tabular-nums">
                       {getRelativeTime(sale.createdAt)}
                     </span>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm font-medium text-gray-900">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(sale.total)}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2.5 py-1 inline-flex items-center gap-1 text-xs font-medium rounded-full ${getStatusColor(sale.status)}`}>
+                  <span className={`px-2.5 py-1 inline-flex items-center gap-1 text-2xs font-medium rounded-full ${getStatusColor(sale.status)}`}>
                     <span>{getStatusIcon(sale.status)}</span>
                     {sale.status}
                   </span>
@@ -220,8 +228,8 @@ export default function RecentSales({ sales, onViewAll, maxItems = 5 }: RecentSa
         </table>
       </div>
       {displaySales.length > 0 && (
-        <div className="px-6 py-3 border-t bg-gray-50">
-          <p className="text-xs text-gray-500">
+        <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+          <p className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
             Showing {displaySales.length} of {formattedSales.length} sales
           </p>
         </div>

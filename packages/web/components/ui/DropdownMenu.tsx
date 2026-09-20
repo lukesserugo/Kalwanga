@@ -53,17 +53,21 @@ interface DropdownMenuTriggerProps {
 
 export function DropdownMenuTrigger({ children, asChild }: DropdownMenuTriggerProps) {
   const { setOpen } = useDropdownMenu();
-  
+
   if (asChild) {
     return (
-      <div onClick={() => setOpen(true)}>
+      <div className="contents" onClick={() => setOpen(true)}>
         {children}
       </div>
     );
   }
-  
+
   return (
-    <button type="button" onClick={() => setOpen(true)}>
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="focus-ring"
+    >
       {children}
     </button>
   );
@@ -81,9 +85,9 @@ export function DropdownMenuContent({ children, align = 'end', className = '' }:
   if (!open) return null;
 
   return (
-    <div 
+    <div
       className={cn(
-        'absolute z-50 mt-1 bg-white border rounded-lg shadow-lg min-w-[160px] py-1',
+        'absolute z-modal mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-soft min-w-[160px] py-1',
         align === 'end' ? 'right-0' : 'left-0',
         className
       )}
@@ -108,7 +112,7 @@ export function DropdownMenuItem({ children, onClick, className = '', disabled =
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'w-full px-4 py-2 text-sm text-left hover:bg-gray-50 transition-colors',
+        'w-full px-4 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-brand-50 dark:hover:bg-gray-700/60 transition-colors duration-250 focus-ring',
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}

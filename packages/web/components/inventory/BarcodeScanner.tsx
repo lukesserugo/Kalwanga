@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\inventory\BarcodeScanner.tsx
-
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -10,17 +8,13 @@ import {
   Copy, Printer, Download, RefreshCw, ZoomIn,
   ZoomOut, RotateCw, Focus, Sun, Moon,
   ShoppingCart, Plus, Minus, Eye, Edit,
-  Lock,  // ✅ ADDED: Missing import
+  Lock,
 } from 'lucide-react';
 import { toast } from '../../utils/toast-manager';
 import { inventoryService } from '../../services/inventoryService';
 import { barcodeService } from '../../services/barcodeService';
 import { useAuth } from '../../hooks/useAuth';
 import { formatCurrency, formatDate } from '../../utils/formatters';
-
-// ============================================
-// TYPES
-// ============================================
 
 interface ProductResult {
   id: string;
@@ -51,16 +45,8 @@ interface BarcodeScannerProps {
   className?: string;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
-
 const HISTORY_KEY = 'barcode_scanner_history';
 const MAX_HISTORY = 20;
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export function BarcodeScanner({
   onScan,
@@ -88,7 +74,6 @@ export function BarcodeScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Load scan history from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem(HISTORY_KEY);
@@ -103,7 +88,6 @@ export function BarcodeScanner({
     }
   }, []);
 
-  // Focus input on open
   useEffect(() => {
     if (isOpen && autoFocus) {
       setTimeout(() => {
@@ -112,7 +96,6 @@ export function BarcodeScanner({
     }
   }, [isOpen, autoFocus]);
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (scanTimeoutRef.current) {
@@ -123,7 +106,7 @@ export function BarcodeScanner({
 
   const saveToHistory = (product: ProductResult) => {
     try {
-      const existing = scanHistory.filter(p => p.barcode !== product.barcode);
+      const existing = scanHistory.filter((p) => p.barcode !== product.barcode);
       const newHistory = [product, ...existing].slice(0, MAX_HISTORY);
       setScanHistory(newHistory);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
@@ -145,11 +128,9 @@ export function BarcodeScanner({
     setProduct(null);
 
     try {
-      // Try to find product by barcode
       const result = await inventoryService.getInventoryByBarcode(barcodeValue);
-      
+
       if (result) {
-        // Map the result to ProductResult
         const productResult: ProductResult = {
           id: result.id || '',
           name: result.name || result.product?.name || 'Unknown Product',
@@ -158,7 +139,8 @@ export function BarcodeScanner({
           price: result.unitPrice || result.price || result.product?.unitPrice || 0,
           stock: result.quantity || result.stock || 0,
           reserved: result.reserved || 0,
-          available: (result.quantity || result.stock || 0) - (result.reserved || 0),
+          available:
+            (result.quantity || result.stock || 0) - (result.reserved || 0),
           unit: result.unit || 'each',
           category: result.category || result.product?.category?.name,
           location: result.location || 'Warehouse',
@@ -168,12 +150,11 @@ export function BarcodeScanner({
           createdAt: result.createdAt,
           updatedAt: result.updatedAt,
         };
-        
+
         setProduct(productResult);
         saveToHistory(productResult);
         toast.success(`Product found: ${productResult.name}`);
-        
-        // Auto-select after a delay if in scanning mode
+
         if (isScanningMode) {
           scanTimeoutRef.current = setTimeout(() => {
             handleSelect();
@@ -194,14 +175,17 @@ export function BarcodeScanner({
     }
   }, [barcode, isScanningMode, scanTimeout, onError]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleScan();
-    } else if (e.key === 'Escape') {
-      onClose();
-    }
-  }, [handleScan, onClose]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleScan();
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    },
+    [handleScan, onClose]
+  );
 
   const handleSelect = useCallback(() => {
     if (product) {
@@ -241,35 +225,51 @@ export function BarcodeScanner({
   const getStockStatus = (product: ProductResult) => {
     const available = product.available || product.stock || 0;
     if (available <= 0) {
-      return { label: 'Out of Stock', color: 'text-red-600 dark:text-red-400' };
+      return {
+        label: 'Out of Stock',
+        color: 'text-danger-600 dark:text-danger-400',
+      };
     }
     if (available <= 5) {
-      return { label: 'Low Stock', color: 'text-yellow-600 dark:text-yellow-400' };
+      return {
+        label: 'Low Stock',
+        color: 'text-warning-600 dark:text-warning-400',
+      };
     }
-    return { label: 'In Stock', color: 'text-green-600 dark:text-green-400' };
+    return {
+      label: 'In Stock',
+      color: 'text-success-600 dark:text-success-400',
+    };
   };
 
   if (!isOpen) return null;
 
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in">
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+          onClick={onClose}
+        />
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 ${className}`}
+          className={`relative card-brand shadow-card-hover max-w-md w-full ${className}`}
         >
           <div className="text-center py-8">
             <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
               <Lock className="w-8 h-8 text-gray-400" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Please Login</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">You need to be logged in to scan items</p>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Please Login
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              You need to be logged in to scan items
+            </p>
             <button
               onClick={onClose}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="mt-4 px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all focus-ring"
             >
               Close
             </button>
@@ -280,67 +280,74 @@ export function BarcodeScanner({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      
+    <div className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in">
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto ${className}`}
+        className={`relative card-brand shadow-card-hover max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar ${className}`}
       >
-        {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          className="absolute top-4 right-4 p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           aria-label="Close scanner"
         >
           <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
         </button>
 
-        {/* Header */}
         <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-            <Scan className="w-8 h-8 text-blue-500 dark:text-blue-400" />
+          <div className="w-16 h-16 bg-brand-100 dark:bg-brand-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <Scan className="w-8 h-8 text-brand-500 dark:text-brand-400" />
           </div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Barcode Scanner</h3>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            Barcode Scanner
+          </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {isScanningMode ? 'Scanning mode active - auto-select on scan' : 'Enter or scan a barcode to find a product'}
+            {isScanningMode
+              ? 'Scanning mode active - auto-select on scan'
+              : 'Enter or scan a barcode to find a product'}
           </p>
         </div>
 
-        {/* Scanner Mode Toggle */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsScanningMode(!isScanningMode)}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors focus-ring ${
                 isScanningMode
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  ? 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-600'
               }`}
             >
               {isScanningMode ? '✓ Scanning Mode' : 'Scanning Mode'}
             </button>
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
-              {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {isDarkMode ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
             </button>
           </div>
-          
+
           {scanHistory.length > 0 && (
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+              className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 transition-colors focus-ring rounded"
             >
               {showHistory ? 'Hide History' : `History (${scanHistory.length})`}
             </button>
           )}
         </div>
 
-        {/* Scan History */}
         <AnimatePresence>
           {showHistory && scanHistory.length > 0 && (
             <motion.div
@@ -349,12 +356,14 @@ export function BarcodeScanner({
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden mb-4"
             >
-              <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700 p-2 max-h-40 overflow-y-auto">
+              <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700 p-2 max-h-40 overflow-y-auto custom-scrollbar">
                 <div className="flex items-center justify-between mb-2 px-2">
-                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Recent Scans</span>
+                  <span className="text-2xs font-medium text-gray-500 dark:text-gray-400">
+                    Recent Scans
+                  </span>
                   <button
                     onClick={handleClearHistory}
-                    className="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                    className="text-2xs text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 focus-ring rounded"
                   >
                     Clear
                   </button>
@@ -363,10 +372,14 @@ export function BarcodeScanner({
                   <button
                     key={`${item.barcode}-${index}`}
                     onClick={() => handleHistoryItemClick(item)}
-                    className="w-full text-left px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm flex items-center justify-between"
+                    className="w-full text-left px-2 py-1.5 hover:bg-orange-50 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm flex items-center justify-between focus-ring"
                   >
-                    <span className="text-gray-700 dark:text-gray-300 truncate">{item.name}</span>
-                    <span className="text-xs text-gray-400 font-mono">{item.barcode}</span>
+                    <span className="text-gray-700 dark:text-gray-300 truncate">
+                      {item.name}
+                    </span>
+                    <span className="text-2xs text-gray-400 font-mono">
+                      {item.barcode}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -374,7 +387,6 @@ export function BarcodeScanner({
           )}
         </AnimatePresence>
 
-        {/* Input Area */}
         <div className="space-y-4">
           <div className="flex gap-2">
             <div className="flex-1 relative">
@@ -388,21 +400,21 @@ export function BarcodeScanner({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Enter barcode or scan..."
-                className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:outline-none dark:bg-gray-700 dark:text-white transition-colors ${
+                className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:outline-none bg-white dark:bg-gray-700 dark:text-white transition-colors ${
                   error
-                    ? 'border-red-500 dark:border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 dark:border-gray-600 focus:ring-blue-500'
+                    ? 'border-danger-500 dark:border-danger-500 focus:ring-danger-500'
+                    : 'border-gray-300 dark:border-gray-600 focus:ring-brand-500'
                 }`}
                 autoFocus={autoFocus}
                 disabled={loading}
               />
               {loading && (
-                <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin text-blue-500" />
+                <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin text-brand-500" />
               )}
               {barcode && !loading && (
                 <button
                   onClick={handleClear}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-orange-50 dark:hover:bg-gray-600 rounded-lg transition-colors focus-ring"
                 >
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
@@ -411,32 +423,36 @@ export function BarcodeScanner({
             <button
               onClick={handleScan}
               disabled={loading || !barcode.trim()}
-              className="px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+              className="px-4 py-3 bg-brand-gradient text-white rounded-xl shadow-brand hover:shadow-brand-lg disabled:opacity-50 transition-all flex items-center gap-2 focus-ring"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Scan className="w-5 h-5" />}
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Scan className="w-5 h-5" />
+              )}
             </button>
           </div>
 
-          {/* Error Message */}
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-start gap-2"
+              className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-3 flex items-start gap-2 animate-slide-down"
             >
-              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              <AlertCircle className="w-4 h-4 text-danger-500 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-danger-700 dark:text-danger-300">
+                {error}
+              </p>
             </motion.div>
           )}
 
-          {/* Product Result */}
           <AnimatePresence>
             {product && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4"
+                className="bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 rounded-xl p-4"
               >
                 <div className="flex items-start gap-3">
                   {product.image ? (
@@ -460,34 +476,42 @@ export function BarcodeScanner({
                     <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <span className="font-mono">SKU: {product.sku}</span>
                       {product.category && (
-                        <span className="text-gray-400">• {product.category}</span>
+                        <span className="text-gray-400">
+                          • {product.category}
+                        </span>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 mt-1 text-sm">
-                      <span className="font-semibold text-gray-900 dark:text-white">
+                      <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(product.price)}
                       </span>
                       <span className={getStockStatus(product).color}>
                         {getStockStatus(product).label}
                       </span>
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {product.available !== undefined ? product.available : product.stock} {product.unit || 'units'}
+                      <span className="text-gray-500 dark:text-gray-400 tabular-nums">
+                        {product.available !== undefined
+                          ? product.available
+                          : product.stock}{' '}
+                        {product.unit || 'units'}
                       </span>
                     </div>
                     {product.location && (
-                      <p className="text-xs text-gray-400 mt-1">Location: {product.location}</p>
+                      <p className="text-2xs text-gray-400 mt-1">
+                        Location: {product.location}
+                      </p>
                     )}
                     {product.description && (
-                      <p className="text-xs text-gray-400 mt-1 truncate">{product.description}</p>
+                      <p className="text-2xs text-gray-400 mt-1 truncate">
+                        {product.description}
+                      </p>
                     )}
                   </div>
                 </div>
 
-                {/* Product Actions */}
-                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-green-200 dark:border-green-800">
+                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-success-200 dark:border-success-800">
                   <button
                     onClick={handleSelect}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                    className="flex-1 px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center justify-center gap-2 text-sm focus-ring"
                   >
                     <Check className="w-4 h-4" />
                     Select Product
@@ -496,7 +520,7 @@ export function BarcodeScanner({
                     onClick={() => {
                       onScan(product);
                     }}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                    className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors flex items-center justify-center gap-2 text-sm focus-ring"
                   >
                     <ShoppingCart className="w-4 h-4" />
                     Add to Order
@@ -507,7 +531,7 @@ export function BarcodeScanner({
                         window.open(`/admin/inventory/${product.id}`, '_blank');
                       }
                     }}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                     title="View Product"
                   >
                     <Eye className="w-4 h-4 text-gray-500" />
@@ -517,15 +541,17 @@ export function BarcodeScanner({
             )}
           </AnimatePresence>
 
-          {/* Quick Actions */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 dark:text-gray-500">Quick actions:</span>
+              <span className="text-2xs text-gray-400 dark:text-gray-500">
+                Quick actions:
+              </span>
               <button
                 onClick={() => {
                   if (navigator.clipboard) {
-                    navigator.clipboard.readText()
-                      .then(text => {
+                    navigator.clipboard
+                      .readText()
+                      .then((text) => {
                         if (text) {
                           setBarcode(text);
                           toast.success('Barcode pasted');
@@ -534,42 +560,40 @@ export function BarcodeScanner({
                       .catch(() => toast.error('Failed to read clipboard'));
                   }
                 }}
-                className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="px-2 py-1 text-2xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               >
                 Paste
               </button>
               <button
                 onClick={() => {
-                  // Simulate barcode generation for demo
                   const demoBarcode = `INV${Date.now().toString().slice(-8)}`;
                   setBarcode(demoBarcode);
                   toast.info('Demo barcode generated');
                 }}
-                className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="px-2 py-1 text-2xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               >
                 Demo
               </button>
             </div>
             <button
               onClick={handleClear}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors focus-ring rounded"
             >
               Clear
             </button>
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3 mt-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="btn-secondary focus-ring"
             >
               Cancel
             </button>
             {product && (
               <button
                 onClick={handleSelect}
-                className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2"
+                className="px-6 py-2 bg-brand-gradient text-white rounded-xl shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 focus-ring"
               >
                 <Check className="w-4 h-4" />
                 Select Product
@@ -581,10 +605,6 @@ export function BarcodeScanner({
     </div>
   );
 }
-
-// ============================================
-// HOOKS
-// ============================================
 
 export function useBarcodeScanner() {
   const [isOpen, setIsOpen] = useState(false);
@@ -612,9 +632,5 @@ export function useBarcodeScanner() {
     handleScan,
   };
 }
-
-// ============================================
-// EXPORT
-// ============================================
 
 export default BarcodeScanner;

@@ -61,27 +61,27 @@ export function RegisterList({
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
-      <div className="overflow-x-auto">
+    <div className="card-brand shadow-soft overflow-hidden p-0 animate-fade-in">
+      <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                 Name
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                 Code
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                 Balance
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                 Status
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                 Cashier
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                 Actions
               </th>
             </tr>
@@ -113,7 +113,7 @@ export function RegisterList({
               return (
                 <tr
                   key={register.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150"
+                  className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250"
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -121,18 +121,18 @@ export function RegisterList({
                         {register.name}
                       </span>
                       {!register.isActive && (
-                        <Badge variant="destructive" className="text-xs">
+                        <Badge variant="destructive" className="text-2xs">
                           Inactive
                         </Badge>
                       )}
                     </div>
                   </td>
 
-                  <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 font-mono">
+                  <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 font-mono tabular-nums">
                     {register.code}
                   </td>
 
-                  <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 font-medium tabular-nums text-gray-900 dark:text-white">
                     {formatCurrency(register.cashBalance || 0)}
                   </td>
 
@@ -147,7 +147,7 @@ export function RegisterList({
                       ? `${sessionUser.firstName} ${sessionUser.lastName}`
                       : '-'}
                     {isOpen && openedAt && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500 block">
+                      <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500 block">
                         since {formatDateTime(openedAt)}
                       </span>
                     )}
@@ -161,7 +161,7 @@ export function RegisterList({
                           variant="outline"
                           onClick={() => onStartShift(register)}
                           disabled={!register.isActive}
-                          className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          className="btn-secondary"
                         >
                           <Clock className="w-3 h-3 mr-1" />
                           Start
@@ -175,7 +175,7 @@ export function RegisterList({
                               endingBalance: register.cashBalance,
                             })
                           }
-                          className="border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          className="border-danger-300 dark:border-danger-700 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-xl transition duration-250 focus-ring"
                         >
                           End
                         </Button>
@@ -188,24 +188,24 @@ export function RegisterList({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 focus-ring"
                           >
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
                           align="end"
-                          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                          className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl shadow-card"
                         >
                           <DropdownMenuItem
                             onClick={() => onEdit(register)}
-                            className="text-gray-700 dark:text-gray-300 focus:bg-gray-100 dark:focus:bg-gray-700"
+                            className="text-gray-700 dark:text-gray-300 focus:bg-gray-100 dark:focus:bg-gray-700 focus-ring"
                           >
                             <Edit className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            className="text-red-600 dark:text-red-400 focus:bg-red-50 dark:focus:bg-red-900/20"
+                            className="text-danger-600 dark:text-danger-400 focus:bg-danger-50 dark:focus:bg-danger-900/20 focus-ring"
                             onClick={() => onDelete(register.id)}
                             disabled={isOpen}
                           >
@@ -224,8 +224,8 @@ export function RegisterList({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-slide-down">
+          <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
             Showing {(safePage - 1) * itemsPerPage + 1} to{' '}
             {Math.min(safePage * itemsPerPage, registers.length)} of{' '}
             {registers.length} results
@@ -236,11 +236,12 @@ export function RegisterList({
               size="sm"
               onClick={() => handlePageChange(Math.max(1, safePage - 1))}
               disabled={safePage === 1}
-              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="btn-secondary disabled:opacity-50"
+              aria-label="Previous page"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
               Page {safePage} of {totalPages}
             </span>
             <Button
@@ -250,7 +251,8 @@ export function RegisterList({
                 handlePageChange(Math.min(totalPages, safePage + 1))
               }
               disabled={safePage === totalPages}
-              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="btn-secondary disabled:opacity-50"
+              aria-label="Next page"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

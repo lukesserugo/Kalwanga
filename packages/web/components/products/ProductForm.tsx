@@ -1370,7 +1370,7 @@ export function ProductForm({
   const renderImageGallery = () => {
     if (formData.images.length === 0) {
       return (
-        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-12 text-center">
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-12 text-center">
           <ImageIcon className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">
             No images uploaded yet
@@ -1378,7 +1378,7 @@ export function ProductForm({
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
             Upload images to see them here
           </p>
-          <label className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg cursor-pointer transition-colors">
+          <label className="mt-4 inline-block btn-brand cursor-pointer">
             <Upload className="w-4 h-4 inline mr-2" />
             Upload Images
             <input
@@ -1397,7 +1397,7 @@ export function ProductForm({
     return (
       <div className="space-y-6">
         {previewImage && (
-          <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 aspect-video max-w-2xl mx-auto">
+          <div className="relative rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700 aspect-video max-w-2xl mx-auto">
             <img
               src={getValidImage(previewImage)}
               alt="Product preview"
@@ -1405,7 +1405,7 @@ export function ProductForm({
               onError={() => handleImageError(previewImage)}
             />
             <div className="absolute bottom-2 right-2">
-              <span className="text-xs bg-black/50 text-white px-2 py-1 rounded">
+              <span className="text-2xs bg-black/50 text-white px-2 py-1 rounded">
                 Main Image
               </span>
             </div>
@@ -1416,11 +1416,11 @@ export function ProductForm({
           {formData.images.map((image, index) => (
             <div
               key={`${image.slice(0, 32)}-${index}`}
-              className={`relative w-24 h-24 rounded-lg overflow-hidden border-2 ${
+              className={`relative w-24 h-24 rounded-lg overflow-hidden border-2 group transition duration-250 ${
                 previewImage === image
-                  ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50'
-                  : 'border-gray-200 dark:border-gray-600'
-              } group hover:border-blue-400 transition-all`}
+                  ? 'border-brand-500 ring-2 ring-brand-500/50'
+                  : 'border-gray-200 dark:border-gray-600 hover:border-brand-400'
+              }`}
             >
               <img
                 src={getValidImage(image)}
@@ -1432,7 +1432,7 @@ export function ProductForm({
                 <button
                   type="button"
                   onClick={() => setMainImage(index)}
-                  className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  className="p-1 btn-brand transition duration-250 focus-ring"
                   title="Set as main image"
                   aria-label={`Set image ${index + 1} as main`}
                 >
@@ -1441,7 +1441,7 @@ export function ProductForm({
                 <button
                   type="button"
                   onClick={() => removeImage(index)}
-                  className="p-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  className="p-1 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded transition duration-250 focus-ring"
                   title="Remove image"
                   aria-label={`Remove image ${index + 1}`}
                 >
@@ -1449,24 +1449,24 @@ export function ProductForm({
                 </button>
               </div>
               {previewImage === image && (
-                <div className="absolute top-1 left-1 bg-blue-500 text-white text-[8px] px-1 py-0.5 rounded">
+                <div className="absolute top-1 left-1 bg-brand-500 text-white text-2xs px-1 py-0.5 rounded">
                   MAIN
                 </div>
               )}
-              <div className="absolute bottom-1 right-1 bg-black/50 text-white text-[8px] px-1 py-0.5 rounded">
+              <div className="absolute bottom-1 right-1 bg-black/50 text-white text-2xs px-1 py-0.5 rounded tabular-nums">
                 #{index + 1}
               </div>
             </div>
           ))}
 
           {formData.images.length < MAX_IMAGES && (
-            <label className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400">
+            <label className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 dark:hover:border-brand-400 transition duration-250 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-brand-500 dark:hover:text-brand-400 focus-ring">
               {uploadingImages ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
               ) : (
                 <>
                   <Upload className="w-6 h-6" />
-                  <span className="text-[10px] mt-1">Upload</span>
+                  <span className="text-2xs mt-1">Upload</span>
                 </>
               )}
               <input
@@ -1483,11 +1483,11 @@ export function ProductForm({
         </div>
 
         <div className="text-xs text-gray-500 dark:text-gray-400">
-          <p>
+          <p className="tabular-nums">
             {formData.images.length} of {MAX_IMAGES} images uploaded
           </p>
           {uploadingImages && (
-            <p className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+            <p className="text-brand-600 dark:text-brand-400 flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
               Processing images...
             </p>
@@ -1504,8 +1504,8 @@ export function ProductForm({
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+        <div className="text-center animate-fade-in">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading product...
           </p>
@@ -1528,7 +1528,7 @@ export function ProductForm({
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           Back to Catalog
         </button>
@@ -1541,15 +1541,15 @@ export function ProductForm({
   // ============================================
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+    <div className="max-w-container mx-auto p-4 sm:p-6 lg:px-8 xl:px-10 2xl:px-12 bg-gray-50 dark:bg-gray-900 min-h-screen animate-fade-in">
+      <div className="card-brand shadow-soft p-0 overflow-hidden">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => router.back()}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
               aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -1568,7 +1568,7 @@ export function ProductForm({
           <button
             type="button"
             onClick={() => router.back()}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
             aria-label="Close"
           >
             <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
@@ -1576,16 +1576,16 @@ export function ProductForm({
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto">
+        <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto custom-scrollbar">
           <nav className="flex gap-2 sm:gap-4">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setActiveTab(id)}
-                className={`flex items-center gap-1.5 px-3 sm:px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize whitespace-nowrap ${
+                className={`flex items-center gap-1.5 px-3 sm:px-4 py-3 border-b-2 font-medium text-sm transition duration-250 capitalize whitespace-nowrap focus-ring ${
                   activeTab === id
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                     : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
               >
@@ -1598,9 +1598,9 @@ export function ProductForm({
 
         {/* BU warning */}
         {!resolvedBusinessUnitId && (
-          <div className="m-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300 text-sm">
+          <div className="m-4 p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl flex items-center gap-3 animate-slide-down">
+            <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+            <span className="text-danger-700 dark:text-danger-300 text-sm">
               No valid business unit is selected. Refresh the page before
               saving.
             </span>
@@ -1613,23 +1613,23 @@ export function ProductForm({
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Product Name <span className="text-red-500">*</span>
+                  Product Name <span className="text-danger-500">*</span>
                 </label>
                 <input
                   type="text"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white ${
+                  className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white ${
                     errors.name
-                      ? 'border-red-500'
+                      ? 'border-danger-500'
                       : 'border-gray-300 dark:border-gray-600'
                   }`}
                   disabled={saving}
                   placeholder="Enter product name"
                 />
                 {errors.name && (
-                  <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                  <p className="mt-1 text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1">
                     <AlertCircle className="w-4 h-4" />
                     {errors.name}
                   </p>
@@ -1645,7 +1645,7 @@ export function ProductForm({
                   value={formData.description}
                   onChange={handleChange}
                   rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white resize-none"
                   disabled={saving}
                   placeholder="Enter product description"
                 />
@@ -1654,7 +1654,7 @@ export function ProductForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    SKU <span className="text-red-500">*</span>
+                    SKU <span className="text-danger-500">*</span>
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -1674,9 +1674,9 @@ export function ProductForm({
                           return next;
                         });
                       }}
-                      className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white ${
+                      className={`flex-1 px-4 py-2 border rounded-lg font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white ${
                         errors.sku
-                          ? 'border-red-500'
+                          ? 'border-danger-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       disabled={saving}
@@ -1690,7 +1690,7 @@ export function ProductForm({
                         setAutoGenerateSKU(true);
                         toast.success('SKU generated');
                       }}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+                      className="btn-brand focus-ring"
                       title="Generate SKU"
                     >
                       <Wand2 className="w-4 h-4" />
@@ -1705,7 +1705,7 @@ export function ProductForm({
                         onChange={(e) =>
                           setAutoGenerateSKU(e.target.checked)
                         }
-                        className="w-4 h-4 text-blue-600 rounded"
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition duration-250"
                       />
                       <label
                         htmlFor="autoGenerateSKU"
@@ -1716,7 +1716,7 @@ export function ProductForm({
                     </div>
                   )}
                   {errors.sku && (
-                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.sku}
                     </p>
@@ -1733,11 +1733,11 @@ export function ProductForm({
                         type="text"
                         value={formData.barcode}
                         onChange={(e) => handleBarcodeChange(e.target.value)}
-                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono ${
+                        className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white font-mono tabular-nums ${
                           errors.barcode
-                            ? 'border-red-500'
+                            ? 'border-danger-500'
                             : isBarcodeValid === true
-                            ? 'border-green-500'
+                            ? 'border-success-500'
                             : 'border-gray-300 dark:border-gray-600'
                         }`}
                         placeholder="Enter barcode or generate"
@@ -1745,12 +1745,12 @@ export function ProductForm({
                       />
                       {checkingBarcode && (
                         <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                         </div>
                       )}
                       {isBarcodeValid === true && formData.barcode && (
                         <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <CheckCircle className="w-4 h-4 text-success-500" />
                         </div>
                       )}
                     </div>
@@ -1758,7 +1758,7 @@ export function ProductForm({
                       type="button"
                       onClick={handleGenerateBarcode}
                       disabled={generatingBarcode || saving}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1 text-sm"
+                      className="btn-brand disabled:opacity-50"
                       title="Generate barcode"
                     >
                       {generatingBarcode ? (
@@ -1773,11 +1773,11 @@ export function ProductForm({
                         <button
                           type="button"
                           onClick={handleCopyBarcode}
-                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="btn-secondary"
                           title="Copy barcode"
                         >
                           {copied ? (
-                            <CheckCircle className="w-4 h-4 text-green-500" />
+                            <CheckCircle className="w-4 h-4 text-success-500" />
                           ) : (
                             <Copy className="w-4 h-4" />
                           )}
@@ -1785,7 +1785,7 @@ export function ProductForm({
                         <button
                           type="button"
                           onClick={() => setShowBarcode(!showBarcode)}
-                          className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1 text-sm"
+                          className="btn-secondary"
                           title="Show QR code"
                         >
                           <QrCode className="w-4 h-4" />
@@ -1795,26 +1795,26 @@ export function ProductForm({
                     )}
                   </div>
                   {errors.barcode && (
-                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.barcode}
                     </p>
                   )}
                   {barcodeError && (
-                    <p className="mt-1 text-sm text-yellow-600 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-warning-600 dark:text-warning-400 flex items-center gap-1">
                       <AlertTriangle className="w-4 h-4" />
                       {barcodeError}
                     </p>
                   )}
                   {isBarcodeValid === true && formData.barcode && (
-                    <p className="mt-1 text-sm text-green-600 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-success-600 dark:text-success-400 flex items-center gap-1">
                       <CheckCircle className="w-4 h-4" />
                       Barcode is available
                     </p>
                   )}
 
                   {formData.barcode && showBarcode && barcodeInfo && (
-                    <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
+                    <div className="mt-3 border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50 dark:bg-gray-700/30 animate-slide-down">
                       <div className="flex flex-col items-center">
                         <div className="flex flex-wrap items-center justify-center gap-6">
                           <div className="text-center">
@@ -1836,7 +1836,7 @@ export function ProductForm({
                                 No barcode
                               </div>
                             )}
-                            <p className="text-xs font-mono text-gray-600 dark:text-gray-400 mt-1 text-center">
+                            <p className="text-xs font-mono tabular-nums text-gray-600 dark:text-gray-400 mt-1 text-center">
                               {formData.barcode}
                             </p>
                           </div>
@@ -1861,7 +1861,7 @@ export function ProductForm({
                           <button
                             type="button"
                             onClick={handleDownloadBarcode}
-                            className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                            className="btn-secondary text-xs"
                           >
                             <Download className="w-3 h-3" />
                             Download
@@ -1869,7 +1869,7 @@ export function ProductForm({
                           <button
                             type="button"
                             onClick={handlePrintBarcode}
-                            className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                            className="btn-secondary text-xs"
                           >
                             <Printer className="w-3 h-3" />
                             Print
@@ -1877,7 +1877,7 @@ export function ProductForm({
                           <button
                             type="button"
                             onClick={() => setShowBarcode(false)}
-                            className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                            className="px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
                           >
                             Hide
                           </button>
@@ -1897,7 +1897,7 @@ export function ProductForm({
                     name="categoryId"
                     value={formData.categoryId}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                   >
                     <option value="">Select Category</option>
@@ -1916,7 +1916,7 @@ export function ProductForm({
                     name="supplierId"
                     value={formData.supplierId}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                   >
                     <option value="">Select Supplier</option>
@@ -1940,14 +1940,14 @@ export function ProductForm({
                     value={newTag}
                     onChange={(e) => setNewTag(e.target.value)}
                     onKeyDown={handleTagKeyDown}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     placeholder="Add a tag"
                     disabled={saving}
                   />
                   <button
                     type="button"
                     onClick={addTag}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    className="btn-brand disabled:opacity-50"
                     disabled={!newTag.trim() || saving}
                   >
                     Add
@@ -1962,13 +1962,13 @@ export function ProductForm({
                     formData.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm"
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-full text-sm"
                       >
                         {tag}
                         <button
                           type="button"
                           onClick={() => removeTag(tag)}
-                          className="hover:text-blue-900 dark:hover:text-blue-100"
+                          className="hover:text-brand-900 dark:hover:text-brand-100 transition duration-250 focus-ring rounded"
                           disabled={saving}
                           aria-label={`Remove tag ${tag}`}
                         >
@@ -1987,7 +1987,7 @@ export function ProductForm({
                     name="isActive"
                     checked={formData.isActive}
                     onChange={handleCheckboxChange}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition duration-250"
                     disabled={saving}
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -2000,7 +2000,7 @@ export function ProductForm({
                     name="isDigital"
                     checked={formData.isDigital}
                     onChange={handleCheckboxChange}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition duration-250"
                     disabled={saving}
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300">
@@ -2013,7 +2013,7 @@ export function ProductForm({
                     name="featured"
                     checked={formData.featured}
                     onChange={handleCheckboxChange}
-                    className="w-4 h-4 text-yellow-500 rounded focus:ring-yellow-500"
+                    className="w-4 h-4 text-warning-500 rounded focus:ring-warning-500 transition duration-250"
                     disabled={saving}
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1">
@@ -2032,7 +2032,7 @@ export function ProductForm({
                   value={formData.notes}
                   onChange={handleChange}
                   rows={2}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white resize-none"
                   disabled={saving}
                   placeholder="Internal notes about this product"
                 />
@@ -2046,10 +2046,10 @@ export function ProductForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Unit Price <span className="text-red-500">*</span>
+                    Unit Price <span className="text-danger-500">*</span>
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
                     <input
                       type="number"
                       name="unitPrice"
@@ -2057,9 +2057,9 @@ export function ProductForm({
                       onChange={handleChange}
                       step="0.01"
                       min="0"
-                      className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white ${
+                      className={`w-full pl-10 pr-4 py-2 border rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white ${
                         errors.unitPrice
-                          ? 'border-red-500'
+                          ? 'border-danger-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       disabled={saving}
@@ -2067,7 +2067,7 @@ export function ProductForm({
                     />
                   </div>
                   {errors.unitPrice && (
-                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.unitPrice}
                     </p>
@@ -2078,7 +2078,7 @@ export function ProductForm({
                     Cost Price
                   </label>
                   <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
                     <input
                       type="number"
                       name="costPrice"
@@ -2086,7 +2086,7 @@ export function ProductForm({
                       onChange={handleChange}
                       step="0.01"
                       min="0"
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                       disabled={saving}
                       placeholder="0.00"
                     />
@@ -2106,14 +2106,14 @@ export function ProductForm({
                   step="0.01"
                   min="0"
                   max="100"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                   disabled={saving}
                   placeholder="0.00"
                 />
               </div>
 
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+              <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                <h4 className="text-sm font-medium text-primary-800 dark:text-primary-300 mb-2 eyebrow">
                   Price Summary
                 </h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
@@ -2121,7 +2121,7 @@ export function ProductForm({
                     <span className="text-gray-600 dark:text-gray-400">
                       Unit Price:
                     </span>
-                    <span className="font-medium text-gray-900 dark:text-white ml-2">
+                    <span className="font-medium tabular-nums text-gray-900 dark:text-white ml-2">
                       {formatCurrency(formData.unitPrice || 0)}
                     </span>
                   </div>
@@ -2129,7 +2129,7 @@ export function ProductForm({
                     <span className="text-gray-600 dark:text-gray-400">
                       Cost Price:
                     </span>
-                    <span className="font-medium text-gray-900 dark:text-white ml-2">
+                    <span className="font-medium tabular-nums text-gray-900 dark:text-white ml-2">
                       {formatCurrency(formData.costPrice || 0)}
                     </span>
                   </div>
@@ -2138,10 +2138,10 @@ export function ProductForm({
                       Profit Margin:
                     </span>
                     <span
-                      className={`font-medium ml-2 ${
+                      className={`font-medium tabular-nums ml-2 ${
                         profitMargin !== null && profitMargin >= 0
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
+                          ? 'text-success-600 dark:text-success-400'
+                          : 'text-danger-600 dark:text-danger-400'
                       }`}
                     >
                       {profitMargin !== null
@@ -2153,7 +2153,7 @@ export function ProductForm({
                     <span className="text-gray-600 dark:text-gray-400">
                       Tax Rate:
                     </span>
-                    <span className="font-medium text-gray-900 dark:text-white ml-2">
+                    <span className="font-medium tabular-nums text-gray-900 dark:text-white ml-2">
                       {formData.taxRate || 0}%
                     </span>
                   </div>
@@ -2176,7 +2176,7 @@ export function ProductForm({
                     value={formData.minStock}
                     onChange={handleChange}
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                   />
                 </div>
@@ -2190,7 +2190,7 @@ export function ProductForm({
                     value={formData.maxStock}
                     onChange={handleChange}
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                   />
                 </div>
@@ -2207,7 +2207,7 @@ export function ProductForm({
                   onChange={handleChange}
                   step="0.01"
                   min="0"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                   disabled={saving}
                   placeholder="0.00"
                 />
@@ -2232,7 +2232,7 @@ export function ProductForm({
                     }
                     step="0.01"
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                     placeholder="0.00"
                   />
@@ -2255,7 +2255,7 @@ export function ProductForm({
                     }
                     step="0.01"
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                     placeholder="0.00"
                   />
@@ -2278,21 +2278,21 @@ export function ProductForm({
                     }
                     step="0.01"
                     min="0"
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     disabled={saving}
                     placeholder="0.00"
                   />
                 </div>
               </div>
 
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
-                <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">
+              <div className="bg-warning-50 dark:bg-warning-900/20 rounded-xl p-4 border border-warning-200 dark:border-warning-800">
+                <h4 className="text-sm font-medium text-warning-800 dark:text-warning-300 mb-2 eyebrow">
                   Inventory Settings
                 </h4>
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                <p className="text-sm text-warning-700 dark:text-warning-300">
                   Low stock alert when below{' '}
-                  <strong>{formData.minStock || 5}</strong> units. Maximum
-                  capacity is <strong>{formData.maxStock || 100}</strong> units.
+                  <strong className="tabular-nums">{formData.minStock || 5}</strong> units. Maximum
+                  capacity is <strong className="tabular-nums">{formData.maxStock || 100}</strong> units.
                 </p>
               </div>
             </div>
@@ -2311,7 +2311,7 @@ export function ProductForm({
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                     Product Variants
                   </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                     {variants.length} of {MAX_VARIANTS} variants configured
                   </p>
                 </div>
@@ -2319,10 +2319,10 @@ export function ProductForm({
                   type="button"
                   onClick={() => setShowVariantForm(true)}
                   disabled={variants.length >= MAX_VARIANTS || saving}
-                  className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl transition duration-250 focus-ring ${
                     variants.length >= MAX_VARIANTS || saving
                       ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'btn-brand'
                   }`}
                 >
                   <Plus className="w-4 h-4" />
@@ -2331,7 +2331,7 @@ export function ProductForm({
               </div>
 
               {variants.length === 0 ? (
-                <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="text-center py-8 card-brand shadow-soft">
                   <Layers className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
                   <p className="text-gray-500 dark:text-gray-400">
                     No variants added yet
@@ -2345,7 +2345,7 @@ export function ProductForm({
                   {variants.map((variant, index) => (
                     <div
                       key={variant.id || index}
-                      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
@@ -2360,7 +2360,7 @@ export function ProductForm({
                                 }
                               />
                             ) : (
-                              <Layers className="w-full h-full p-2 text-gray-400" />
+                              <Layers className="w-full h-full p-2 text-gray-400 dark:text-gray-500" />
                             )}
                           </div>
                           <div>
@@ -2368,13 +2368,13 @@ export function ProductForm({
                               {variant.name}
                             </p>
                             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
-                              <span>SKU: {variant.sku}</span>
-                              <span>
+                              <span className="tabular-nums">SKU: {variant.sku}</span>
+                              <span className="tabular-nums">
                                 Price: {formatCurrency(variant.price ?? 0)}
                               </span>
-                              <span>Stock: {variant.stock ?? 0}</span>
+                              <span className="tabular-nums">Stock: {variant.stock ?? 0}</span>
                               {variant.images && variant.images.length > 1 && (
-                                <span className="text-xs text-purple-500">
+                                <span className="text-xs text-secondary-500 dark:text-secondary-400 tabular-nums">
                                   +{variant.images.length - 1} more image(s)
                                 </span>
                               )}
@@ -2384,12 +2384,12 @@ export function ProductForm({
                         <button
                           type="button"
                           onClick={() => handleRemoveVariant(index)}
-                          className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                          className="p-2 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded-lg transition duration-250 focus-ring"
                           aria-label={`Remove variant ${
                             variant.name || 'unnamed'
                           }`}
                         >
-                          <Trash2 className="w-4 h-4 text-red-600" />
+                          <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
                         </button>
                       </div>
                     </div>
@@ -2403,7 +2403,7 @@ export function ProductForm({
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30 overflow-hidden"
+                    className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50 dark:bg-gray-700/30 overflow-hidden"
                   >
                     <h4 className="font-medium text-gray-900 dark:text-white mb-4">
                       New Variant
@@ -2411,7 +2411,7 @@ export function ProductForm({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Name <span className="text-red-500">*</span>
+                          Name <span className="text-danger-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -2419,13 +2419,13 @@ export function ProductForm({
                           onChange={(e) =>
                             handleVariantNameChange(e.target.value)
                           }
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                           placeholder="e.g., Large, Red"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          SKU <span className="text-red-500">*</span>
+                          SKU <span className="text-danger-500">*</span>
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -2437,7 +2437,7 @@ export function ProductForm({
                                 sku: e.target.value.toUpperCase(),
                               }))
                             }
-                            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                             placeholder="Auto-generated"
                           />
                           <button
@@ -2451,7 +2451,7 @@ export function ProductForm({
                                 sku: newSKU,
                               }));
                             }}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="btn-brand"
                             title="Generate SKU"
                           >
                             <Wand2 className="w-4 h-4" />
@@ -2460,10 +2460,10 @@ export function ProductForm({
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Price <span className="text-red-500">*</span>
+                          Price <span className="text-danger-500">*</span>
                         </label>
                         <div className="relative">
-                          <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                          <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                           <input
                             type="number"
                             value={newVariant.price ?? 0}
@@ -2475,7 +2475,7 @@ export function ProductForm({
                             }
                             step="0.01"
                             min="0"
-                            className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                            className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                             placeholder="0.00"
                           />
                         </div>
@@ -2494,7 +2494,7 @@ export function ProductForm({
                             }))
                           }
                           min="0"
-                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                          className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                           placeholder="0"
                         />
                       </div>
@@ -2509,7 +2509,7 @@ export function ProductForm({
                           newVariant.images.map((img, index) => (
                             <div
                               key={`${img.slice(0, 24)}-${index}`}
-                              className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200"
+                              className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600"
                             >
                               <img
                                 src={getValidVariantImage(img)}
@@ -2520,7 +2520,7 @@ export function ProductForm({
                               <button
                                 type="button"
                                 onClick={() => removeVariantImage(index)}
-                                className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5"
+                                className="absolute top-1 right-1 bg-gradient-to-r from-danger-600 to-brand-accent-500 text-white rounded-full p-0.5 focus-ring"
                                 aria-label={`Remove variant image ${
                                   index + 1
                                 }`}
@@ -2531,9 +2531,9 @@ export function ProductForm({
                           ))}
                         {(newVariant.images?.length || 0) <
                           MAX_VARIANT_IMAGES && (
-                          <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-500 cursor-pointer flex flex-col items-center justify-center text-gray-400">
+                          <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-brand-500 transition duration-250 focus-ring">
                             <Upload className="w-5 h-5" />
-                            <span className="text-[10px] mt-1">Upload</span>
+                            <span className="text-2xs mt-1">Upload</span>
                             <input
                               type="file"
                               ref={variantFileInputRef}
@@ -2551,14 +2551,14 @@ export function ProductForm({
                       <button
                         type="button"
                         onClick={() => setShowVariantForm(false)}
-                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        className="btn-secondary"
                       >
                         Cancel
                       </button>
                       <button
                         type="button"
                         onClick={handleAddVariant}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="btn-brand"
                       >
                         Add Variant
                       </button>
@@ -2581,7 +2581,7 @@ export function ProductForm({
                   value={formData.notes}
                   onChange={handleChange}
                   rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white resize-none"
                   disabled={saving}
                   placeholder="Internal notes about this product"
                 />
@@ -2605,7 +2605,7 @@ export function ProductForm({
                     }
                   }}
                   rows={6}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-sm"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white font-mono text-sm resize-none"
                   disabled={saving}
                   placeholder='{"color": "red", "size": "large"}'
                 />
@@ -2632,11 +2632,11 @@ export function ProductForm({
                       seo: { ...prev.seo, title: e.target.value },
                     }))
                   }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                   placeholder="SEO title (max 60 characters)"
                   disabled={saving}
                 />
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                   {formData.seo.title.length}/60 characters
                 </p>
               </div>
@@ -2653,11 +2653,11 @@ export function ProductForm({
                     }))
                   }
                   rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white resize-none"
                   placeholder="SEO description (max 160 characters)"
                   disabled={saving}
                 />
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                   {formData.seo.description.length}/160 characters
                 </p>
               </div>
@@ -2674,11 +2674,11 @@ export function ProductForm({
                       seo: { ...prev.seo, slug: e.target.value },
                     }))
                   }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                   placeholder="custom-url-slug"
                   disabled={saving}
                 />
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   Leave blank to auto-generate from product name
                 </p>
               </div>
@@ -2693,14 +2693,14 @@ export function ProductForm({
                     value={newSeoKeyword}
                     onChange={(e) => setNewSeoKeyword(e.target.value)}
                     onKeyDown={handleSeoKeyDown}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 dark:bg-gray-700 dark:text-white"
                     placeholder="Add a keyword"
                     disabled={saving}
                   />
                   <button
                     type="button"
                     onClick={addSeoKeyword}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    className="btn-brand disabled:opacity-50"
                     disabled={!newSeoKeyword.trim() || saving}
                   >
                     Add
@@ -2715,13 +2715,13 @@ export function ProductForm({
                     formData.seo.keywords.map((keyword) => (
                       <span
                         key={keyword}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm"
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-success-50 dark:bg-success-900/30 text-success-700 dark:text-success-300 rounded-full text-sm"
                       >
                         {keyword}
                         <button
                           type="button"
                           onClick={() => removeSeoKeyword(keyword)}
-                          className="hover:text-red-600 dark:hover:text-red-400"
+                          className="hover:text-danger-600 dark:hover:text-danger-400 transition duration-250 focus-ring rounded"
                           disabled={saving}
                           aria-label={`Remove keyword ${keyword}`}
                         >
@@ -2733,17 +2733,17 @@ export function ProductForm({
                 </div>
               </div>
 
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+              <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 border border-primary-200 dark:border-primary-800">
+                <h4 className="text-sm font-medium text-primary-800 dark:text-primary-300 mb-2 eyebrow">
                   Search Engine Preview
                 </h4>
                 <div className="space-y-1">
-                  <p className="text-lg text-blue-600 hover:underline cursor-pointer">
+                  <p className="text-lg text-brand-600 hover:underline cursor-pointer">
                     {formData.seo.title ||
                       formData.name ||
                       'Product Title'}
                   </p>
-                  <p className="text-sm text-green-700 dark:text-green-400">
+                  <p className="text-sm text-success-700 dark:text-success-400 tabular-nums">
                     {formData.seo.slug
                       ? `https://example.com/products/${formData.seo.slug}`
                       : 'https://example.com/products/...'}
@@ -2763,7 +2763,7 @@ export function ProductForm({
             <button
               type="button"
               onClick={() => router.back()}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors w-full sm:w-auto text-center"
+              className="btn-secondary w-full sm:w-auto justify-center"
               disabled={saving}
             >
               Cancel
@@ -2771,7 +2771,7 @@ export function ProductForm({
             <button
               type="submit"
               disabled={saving || !resolvedBusinessUnitId}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 w-full sm:w-auto justify-center"
+              className="btn-brand w-full sm:w-auto justify-center disabled:opacity-50"
             >
               {saving ? (
                 <>

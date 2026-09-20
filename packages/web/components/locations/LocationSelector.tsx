@@ -137,13 +137,13 @@ export function LocationSelector({
           placeholder="Enter custom location name"
           disabled={disabled}
           autoFocus
-          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 disabled:opacity-50"
         />
         <button
           type="button"
           onClick={commitCustom}
           disabled={disabled || !customValue.trim()}
-          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Set
         </button>
@@ -151,7 +151,7 @@ export function LocationSelector({
           type="button"
           onClick={cancelCustom}
           disabled={disabled}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="btn-secondary disabled:opacity-50"
         >
           Back
         </button>
@@ -169,7 +169,7 @@ export function LocationSelector({
           onChange={handleSelectChange}
           disabled={disabled || loading}
           required={required}
-          className="w-full px-3 py-2 pr-9 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 appearance-none"
+          className="w-full px-3 py-2 pr-9 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 disabled:opacity-50 appearance-none"
         >
           <option value="">
             {loading ? 'Loading locations...' : 'Select a location'}
@@ -192,29 +192,29 @@ export function LocationSelector({
 
         <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
           {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+            <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronDown className="w-4 h-4 text-gray-400 dark:text-gray-500" />
           )}
         </div>
       </div>
 
       {/* Hint line — shows type/code when the value matches a known location. */}
       {currentSelected && (
-        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+        <p className="mt-1 text-2xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
           <MapPin className="w-3 h-3 flex-shrink-0" />
           {currentSelected.type
             ? LOCATION_TYPE_LABELS[currentSelected.type] ?? currentSelected.type
             : 'Other'}
           {currentSelected.code && (
-            <span className="font-mono">• {currentSelected.code}</span>
+            <span className="font-mono tabular-nums">• {currentSelected.code}</span>
           )}
         </p>
       )}
 
       {/* ✅ Hint line — reassures the user when a free-form value is in play. */}
       {isCustomValue && (
-        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
+        <p className="mt-1 text-2xs text-gray-400 dark:text-gray-500 flex items-center gap-1">
           <MapPin className="w-3 h-3 flex-shrink-0" />
           Custom location: <span className="font-mono">{value}</span>
         </p>

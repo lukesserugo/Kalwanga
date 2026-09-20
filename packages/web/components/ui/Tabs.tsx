@@ -41,7 +41,12 @@ interface TabsListProps {
 
 export function TabsList({ children, className = '' }: TabsListProps) {
   return (
-    <div className={cn('inline-flex p-1 bg-gray-100 rounded-lg', className)}>
+    <div
+      className={cn(
+        'inline-flex p-1 bg-gray-100 dark:bg-gray-800 rounded-lg transition-colors duration-250',
+        className
+      )}
+    >
       {children}
     </div>
   );
@@ -59,12 +64,13 @@ export function TabsTrigger({ value, children, className = '' }: TabsTriggerProp
 
   return (
     <button
+      type="button"
       onClick={() => onValueChange(value)}
       className={cn(
-        'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-        isActive 
-          ? 'bg-white text-gray-900 shadow-sm' 
-          : 'text-gray-500 hover:text-gray-700',
+        'px-3 py-1.5 text-sm font-medium rounded-md transition-colors duration-250 focus-ring',
+        isActive
+          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-soft'
+          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
         className
       )}
     >

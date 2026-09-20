@@ -94,7 +94,7 @@ export default function EditSupplierPage() {
   const id = params?.id as string;
   const { user } = useAuth();
   const { canEdit, canManage, isLoading: permissionLoading } = usePermission();
-  
+
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [isClient, setIsClient] = useState(false);
@@ -109,7 +109,7 @@ export default function EditSupplierPage() {
     business: true,
     additional: false,
   });
-  
+
   const [formData, setFormData] = useState<FormData>({
     name: '',
     contactPerson: '',
@@ -127,7 +127,7 @@ export default function EditSupplierPage() {
   });
 
   const companyId = useMemo(() => user?.companyId || 'default', [user]);
-  const canEditSupplier = useMemo(() => 
+  const canEditSupplier = useMemo(() =>
     canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
     [canEdit, canManage]
   );
@@ -151,7 +151,7 @@ export default function EditSupplierPage() {
       setLoadingData(true);
       setError(null);
       const data = await supplierService.getSupplierById(id, companyId);
-      
+
       setFormData({
         name: data.name || '',
         contactPerson: data.contactPerson || '',
@@ -286,7 +286,7 @@ export default function EditSupplierPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    
+
     let parsedValue: any = value;
     if (type === 'number') {
       parsedValue = value === '' ? 0 : parseFloat(value);
@@ -294,9 +294,9 @@ export default function EditSupplierPage() {
     if (type === 'checkbox') {
       parsedValue = (e.target as HTMLInputElement).checked;
     }
-    
+
     setFormData(prev => ({ ...prev, [name]: parsedValue }));
-    
+
     if (errors[name as keyof FormErrors]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -304,14 +304,14 @@ export default function EditSupplierPage() {
         return newErrors;
       });
     }
-    
+
     setTouched(prev => ({ ...prev, [name]: true }));
   };
 
   const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setTouched(prev => ({ ...prev, [name]: true }));
-    
+
     const error = validateField(name as keyof FormData, value);
     if (error) {
       setErrors(prev => ({ ...prev, [name]: error }));
@@ -368,7 +368,7 @@ export default function EditSupplierPage() {
       await supplierService.updateSupplier(id, data);
       setSuccess(true);
       toast.success('Supplier updated successfully');
-      
+
       setTimeout(() => {
         router.push(`/admin/suppliers/${id}`);
         router.refresh();
@@ -376,7 +376,7 @@ export default function EditSupplierPage() {
     } catch (error: any) {
       console.error('Failed to update supplier:', error);
       const errorMessage = error?.response?.data?.message || error?.message || 'Failed to update supplier';
-      
+
       if (errorMessage.toLowerCase().includes('email')) {
         setErrors(prev => ({ ...prev, email: errorMessage }));
       } else if (errorMessage.toLowerCase().includes('name')) {
@@ -402,20 +402,20 @@ export default function EditSupplierPage() {
   };
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
-    const baseClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+    const baseClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
     const error = getFieldError(fieldName);
-    if (error) return `${baseClass} border-red-500 dark:border-red-500`;
+    if (error) return `${baseClass} border-danger-500 dark:border-danger-500`;
     return `${baseClass} border-gray-300 dark:border-gray-600`;
   };
 
   const renderStars = (rating: number) => {
     const fullStars = Math.floor(rating);
     const emptyStars = 5 - fullStars;
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <span key={`full-${i}`} className="text-yellow-400">★</span>
+          <span key={`full-${i}`} className="text-warning-400">★</span>
         ))}
         {[...Array(emptyStars)].map((_, i) => (
           <span key={`empty-${i}`} className="text-gray-300 dark:text-gray-600">★</span>
@@ -440,7 +440,7 @@ export default function EditSupplierPage() {
         </p>
         <button
           onClick={() => router.push(`/admin/suppliers/${id}`)}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Supplier
@@ -457,7 +457,7 @@ export default function EditSupplierPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading supplier...</p>
         </div>
       </div>
@@ -480,7 +480,7 @@ export default function EditSupplierPage() {
         </p>
         <Link
           href="/admin/catalog/suppliers"
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Suppliers
@@ -501,13 +501,13 @@ export default function EditSupplierPage() {
           <div className="flex items-center gap-4">
             <Link
               href={`/admin/suppliers/${id}`}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </Link>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Truck className="w-6 h-6 text-blue-500" />
+                <Truck className="w-6 h-6 text-brand-500" />
                 Edit Supplier
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -517,14 +517,14 @@ export default function EditSupplierPage() {
           </div>
           <div className="flex items-center gap-2">
             {companyId && companyId !== 'default' && (
-              <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded-full flex items-center gap-1">
+              <span className="text-xs bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300 px-2 py-1 rounded-full flex items-center gap-1">
                 <Building className="w-3 h-3" />
                 BU: {companyId.slice(0, 8)}...
               </span>
             )}
             <Link
               href={`/admin/suppliers/${id}`}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
             >
               Cancel
             </Link>
@@ -538,12 +538,12 @@ export default function EditSupplierPage() {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex items-center gap-3"
+              className="mb-6 bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 rounded-lg p-4 flex items-center gap-3"
             >
-              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+              <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-green-800 dark:text-green-200">Success!</p>
-                <p className="text-sm text-green-700 dark:text-green-300">Supplier updated successfully.</p>
+                <p className="text-sm font-medium text-success-800 dark:text-success-200">Success!</p>
+                <p className="text-sm text-success-700 dark:text-success-300">Supplier updated successfully.</p>
               </div>
             </motion.div>
           )}
@@ -551,11 +551,11 @@ export default function EditSupplierPage() {
 
         {/* ERROR DISPLAY */}
         {errors.general && !success && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">Error</p>
-              <p className="text-sm text-red-700 dark:text-red-300">{errors.general}</p>
+              <p className="text-sm font-medium text-danger-800 dark:text-danger-200">Error</p>
+              <p className="text-sm text-danger-700 dark:text-danger-300">{errors.general}</p>
             </div>
             <button
               onClick={() => setErrors(prev => {
@@ -563,7 +563,7 @@ export default function EditSupplierPage() {
                 delete newErrors.general;
                 return newErrors;
               })}
-              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              className="text-danger-600 hover:text-danger-800 dark:text-danger-400 p-1 focus-ring"
             >
               <X className="w-4 h-4" />
             </button>
@@ -571,16 +571,16 @@ export default function EditSupplierPage() {
         )}
 
         {/* INFO BANNER */}
-        <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-700 dark:text-blue-300">
+        <div className="mb-6 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-4 flex items-start gap-3">
+          <Info className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-brand-700 dark:text-brand-300">
             <p className="font-medium">Required Fields</p>
-            <p className="mt-1">Fields marked with <span className="text-red-500">*</span> are required. All other fields are optional.</p>
+            <p className="mt-1">Fields marked with <span className="text-danger-500">*</span> are required. All other fields are optional.</p>
           </div>
         </div>
 
         {/* FORM */}
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 space-y-6 transition-colors duration-200">
+        <form onSubmit={handleSubmit} className="card-brand p-4 sm:p-6 space-y-6 transition-colors duration-200">
           {/* ============================================ */}
           {/* BASIC INFORMATION SECTION */}
           {/* ============================================ */}
@@ -588,12 +588,12 @@ export default function EditSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('basic')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Info className="w-5 h-5 text-blue-500" />
+                <Info className="w-5 h-5 text-brand-500" />
                 Basic Information
-                <span className="text-sm text-red-500">*</span>
+                <span className="text-sm text-danger-500">*</span>
               </div>
               {expandedSections.basic ? (
                 <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -614,7 +614,7 @@ export default function EditSupplierPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Supplier Name <span className="text-red-500">*</span>
+                        Supplier Name <span className="text-danger-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -628,7 +628,7 @@ export default function EditSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('name') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('name')}
                         </p>
@@ -650,7 +650,7 @@ export default function EditSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('contactPerson') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('contactPerson')}
                         </p>
@@ -680,7 +680,7 @@ export default function EditSupplierPage() {
                         </div>
                       </div>
                       {getFieldError('rating') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('rating')}
                         </p>
@@ -700,10 +700,10 @@ export default function EditSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('contact')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-blue-500" />
+                <Mail className="w-5 h-5 text-brand-500" />
                 Contact Information
               </div>
               {expandedSections.contact ? (
@@ -741,7 +741,7 @@ export default function EditSupplierPage() {
                         />
                       </div>
                       {getFieldError('email') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('email')}
                         </p>
@@ -766,7 +766,7 @@ export default function EditSupplierPage() {
                         />
                       </div>
                       {getFieldError('phone') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('phone')}
                         </p>
@@ -791,7 +791,7 @@ export default function EditSupplierPage() {
                         />
                       </div>
                       {getFieldError('address') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('address')}
                         </p>
@@ -816,7 +816,7 @@ export default function EditSupplierPage() {
                         />
                       </div>
                       {getFieldError('website') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('website')}
                         </p>
@@ -836,10 +836,10 @@ export default function EditSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('business')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Building className="w-5 h-5 text-blue-500" />
+                <Building className="w-5 h-5 text-brand-500" />
                 Business Information
               </div>
               {expandedSections.business ? (
@@ -874,7 +874,7 @@ export default function EditSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('taxId') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('taxId')}
                         </p>
@@ -895,13 +895,13 @@ export default function EditSupplierPage() {
                           value={formData.creditLimit}
                           onChange={handleChange}
                           onBlur={handleBlur}
-                          className={`${getInputClassName('creditLimit')} pl-10`}
+                          className={`${getInputClassName('creditLimit')} pl-10 tabular-nums`}
                           placeholder="0.00"
                           disabled={loading || success}
                         />
                       </div>
                       {getFieldError('creditLimit') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('creditLimit')}
                         </p>
@@ -925,7 +925,7 @@ export default function EditSupplierPage() {
                         ))}
                       </select>
                       {getFieldError('paymentTerms') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('paymentTerms')}
                         </p>
@@ -949,7 +949,7 @@ export default function EditSupplierPage() {
                         ))}
                       </select>
                       {getFieldError('deliveryTerms') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('deliveryTerms')}
                         </p>
@@ -971,12 +971,12 @@ export default function EditSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('notes') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('notes')}
                         </p>
                       )}
-                      <p className="mt-1 text-xs text-gray-400">
+                      <p className="mt-1 text-xs text-gray-400 tabular-nums">
                         {formData.notes.length}/1000 characters
                       </p>
                     </div>
@@ -993,10 +993,10 @@ export default function EditSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('additional')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-blue-500" />
+                <Shield className="w-5 h-5 text-brand-500" />
                 Status & Configuration
               </div>
               {expandedSections.additional ? (
@@ -1022,12 +1022,12 @@ export default function EditSupplierPage() {
                         name="isActive"
                         checked={formData.isActive}
                         onChange={handleChange}
-                        className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 transition-colors duration-200"
+                        className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 dark:focus:ring-brand-400 bg-white dark:bg-gray-700 transition-colors duration-200"
                         disabled={loading || success}
                       />
                       <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1">
                         {formData.isActive ? (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <CheckCircle className="w-4 h-4 text-success-500" />
                         ) : (
                           <XCircle className="w-4 h-4 text-gray-400" />
                         )}
@@ -1039,13 +1039,13 @@ export default function EditSupplierPage() {
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${companyId && companyId !== 'default' ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                          {companyId && companyId !== 'default' 
+                          <span className={`w-1.5 h-1.5 rounded-full ${companyId && companyId !== 'default' ? 'bg-success-500' : 'bg-warning-500'}`} />
+                          {companyId && companyId !== 'default'
                             ? `Business Unit: ${companyId.slice(0, 8)}...`
                             : '⚠️ Using default business unit'}
                         </span>
                         <span className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
                           {user?.id ? `User: ${user.id.slice(0, 8)}...` : '⚠️ No user ID'}
                         </span>
                       </div>
@@ -1062,14 +1062,14 @@ export default function EditSupplierPage() {
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6 flex flex-col sm:flex-row items-center justify-end gap-3">
             <Link
               href={`/admin/suppliers/${id}`}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50 focus-ring"
             >
               Cancel
             </Link>
             <button
               type="submit"
               disabled={loading || success}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
+              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center focus-ring"
             >
               {loading ? (
                 <>
@@ -1093,15 +1093,15 @@ export default function EditSupplierPage() {
           {/* FORM FOOTER */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
             <span className="flex items-center gap-1">
-              <span className="text-red-500">*</span> Required fields
+              <span className="text-danger-500">*</span> Required fields
             </span>
             <div className="flex items-center gap-4 flex-wrap">
               <span className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${companyId && companyId !== 'default' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${companyId && companyId !== 'default' ? 'bg-success-500' : 'bg-warning-500'}`} />
                 {companyId && companyId !== 'default' ? 'Business unit resolved' : '⚠️ Business unit required'}
               </span>
               <span className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${Object.keys(formData).filter(k => k !== 'isActive').some(k => formData[k as keyof FormData]) ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${Object.keys(formData).filter(k => k !== 'isActive').some(k => formData[k as keyof FormData]) ? 'bg-brand-500' : 'bg-gray-400'}`} />
                 {Object.keys(formData).filter(k => k !== 'isActive').some(k => formData[k as keyof FormData]) ? 'Form filled' : 'Empty form'}
               </span>
             </div>
@@ -1114,3 +1114,4 @@ export default function EditSupplierPage() {
 
 // Add missing import
 import { X } from 'lucide-react';
+

@@ -1,3 +1,4 @@
+// D:\Projects\Kalwanga\packages\web\components\ui\Card.tsx
 import { ReactNode } from 'react';
 
 interface CardProps {
@@ -8,8 +9,12 @@ interface CardProps {
 
 export default function Card({ children, title, className = '' }: CardProps) {
   return (
-    <div className={`bg-white rounded-lg shadow p-6 ${className}`}>
-      {title && <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>}
+    <div className={`card-brand shadow-soft ${className}`}>
+      {title && (
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {title}
+        </h3>
+      )}
       {children}
     </div>
   );

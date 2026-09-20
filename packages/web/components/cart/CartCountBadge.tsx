@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartCountBadge.tsx
-
 'use client';
 
 import React, {
@@ -17,18 +15,8 @@ import { useAuth } from '../../hooks/useAuth';
 interface CartCountBadgeProps {
   className?: string;
   showIcon?: boolean;
-  /**
-   * Optional class overrides for the badge dot. Defaults to the
-   * storefront orange/red gradient.
-   */
   badgeClassName?: string;
-  /**
-   * Overrides the default `/cart` link destination.
-   */
   href?: string;
-  /**
-   * Optional icon size override. Defaults to `w-5 h-5`.
-   */
   iconClassName?: string;
 }
 
@@ -44,13 +32,6 @@ export function CartCountBadge({
   const [loading, setLoading] = useState(true);
 
   const isMountedRef = useRef(true);
-  /**
-   * Monotonic request id. Each `fetchCount` call captures the current
-   * value before awaiting; if a newer call has incremented the id by
-   * the time the response arrives, the older response is discarded.
-   * This prevents a slow request for the guest cart from overwriting
-   * the user cart's count after a sign-in.
-   */
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -64,10 +45,6 @@ export function CartCountBadge({
     const requestId = ++requestIdRef.current;
 
     try {
-      // ✅ Branch per-service. `cartService.getCartCount()` returns
-      //    `{ count: number }`; `guestCartService.getCount()` returns
-      //    a bare `number`. Neither method exists on the other, so
-      //    calling through the union triggers TS2339.
       let resolvedCount = 0;
 
       if (isAuthenticated) {
@@ -75,12 +52,9 @@ export function CartCountBadge({
         resolvedCount = response?.count ?? 0;
       } else {
         const response = await guestCartService.getCount();
-        resolvedCount =
-          typeof response === 'number' ? response : 0;
+        resolvedCount = typeof response === 'number' ? response : 0;
       }
 
-      // Discard if a newer request has already been issued or the
-      // component unmounted.
       if (!isMountedRef.current) return;
       if (requestId !== requestIdRef.current) return;
 
@@ -88,7 +62,6 @@ export function CartCountBadge({
     } catch {
       if (!isMountedRef.current) return;
       if (requestId !== requestIdRef.current) return;
-      // Silent — the badge is best-effort.
       setCount(0);
     } finally {
       if (isMountedRef.current && requestId === requestIdRef.current) {
@@ -97,7 +70,6 @@ export function CartCountBadge({
     }
   }, [isAuthenticated]);
 
-  // Fetch on mount, on auth change, and on cross-component update.
   useEffect(() => {
     void fetchCount();
   }, [fetchCount]);
@@ -114,10 +86,10 @@ export function CartCountBadge({
 
   const badgeClasses = [
     'absolute -top-1 -right-1 min-w-[18px] h-[18px]',
-    'text-[10px] font-bold rounded-full',
-    'flex items-center justify-center px-1 shadow-sm',
+    'text-2xs font-bold rounded-full tabular-nums',
+    'flex items-center justify-center px-1 shadow-brand',
     badgeClassName ??
-      'bg-gradient-to-r from-orange-500 to-red-500 text-white',
+      'bg-brand-gradient text-white',
   ].join(' ');
 
   const ariaLabel =
@@ -125,21 +97,14 @@ export function CartCountBadge({
       ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}`
       : 'Cart';
 
-  // Without an icon and with no items, the component has nothing to
-  // render. Bail out entirely rather than emit an invisible clickable
-  // anchor.
   if (!showIcon && !loading && count === 0) {
     return null;
   }
 
-  // Always render the Link wrapper. The icon is present from the
-  // first frame, and the badge pops in once the count resolves. This
-  // keeps the DOM structure stable and gives parents a consistent
-  // element to style with `a:hover`, `a:focus`, etc.
   return (
     <Link
       href={href}
-      className={`relative inline-flex items-center ${className}`}
+      className={`relative inline-flex items-center focus-ring rounded ${className}`}
       aria-label={ariaLabel}
     >
       {showIcon && (

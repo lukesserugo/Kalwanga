@@ -170,14 +170,14 @@ export function LocationImportWizard({
   const invalidCount = preview.length - validCount;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <LocationBUSelector value={businessUnitId} onChange={setBusinessUnitId} />
         <button
           type="button"
           onClick={downloadTemplate}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors inline-flex items-center gap-1.5"
+          className="btn-secondary"
         >
           <Download className="w-4 h-4" />
           Download template
@@ -186,7 +186,7 @@ export function LocationImportWizard({
           <button
             type="button"
             onClick={reset}
-            className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 flex items-center gap-1"
+            className="text-sm text-danger-600 hover:text-danger-700 dark:text-danger-400 flex items-center gap-1 transition duration-250 focus-ring rounded"
           >
             <X className="w-4 h-4" />
             Clear
@@ -197,7 +197,7 @@ export function LocationImportWizard({
       {/* Drop zone */}
       {!file && (
         <label
-          className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-blue-500 dark:hover:border-blue-500 transition-colors"
+          className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl cursor-pointer hover:border-brand-500 dark:hover:border-brand-500 transition duration-250 focus-ring"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -227,33 +227,33 @@ export function LocationImportWizard({
 
       {/* Preview */}
       {file && !parsing && preview.length > 0 && !result && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="card-brand shadow-soft p-0 overflow-hidden animate-slide-down">
           <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <FileSpreadsheet className="w-4 h-4 text-blue-500" />
+              <FileSpreadsheet className="w-4 h-4 text-brand-500 dark:text-brand-400" />
               <span className="text-sm font-medium text-gray-900 dark:text-white">
                 {file.name}
               </span>
             </div>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
               {validCount} valid · {invalidCount} invalid
             </span>
           </div>
 
-          <div className="overflow-x-auto max-h-96">
+          <div className="overflow-x-auto max-h-96 custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 eyebrow">
                     Name
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 eyebrow">
                     Code
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 eyebrow">
                     Type
                   </th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 eyebrow">
                     Status
                   </th>
                 </tr>
@@ -263,13 +263,13 @@ export function LocationImportWizard({
                   <tr
                     key={idx}
                     className={
-                      row.__error ? 'bg-red-50/40 dark:bg-red-900/10' : ''
+                      row.__error ? 'bg-danger-50/40 dark:bg-danger-900/10' : ''
                     }
                   >
                     <td className="px-3 py-2 text-sm text-gray-900 dark:text-white">
-                      {row.name || <em className="text-gray-400">—</em>}
+                      {row.name || <em className="text-gray-400 dark:text-gray-500">—</em>}
                     </td>
-                    <td className="px-3 py-2 text-sm font-mono text-gray-500 dark:text-gray-400">
+                    <td className="px-3 py-2 text-sm font-mono tabular-nums text-gray-500 dark:text-gray-400">
                       {row.code || '—'}
                     </td>
                     <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
@@ -277,12 +277,12 @@ export function LocationImportWizard({
                     </td>
                     <td className="px-3 py-2 text-sm">
                       {row.__error ? (
-                        <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                        <span className="inline-flex items-center gap-1 text-danger-600 dark:text-danger-400">
                           <AlertCircle className="w-3.5 h-3.5" />
                           {row.__error}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                        <span className="inline-flex items-center gap-1 text-success-600 dark:text-success-400">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           Ready
                         </span>
@@ -299,7 +299,7 @@ export function LocationImportWizard({
               type="button"
               onClick={reset}
               disabled={uploading}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="btn-secondary disabled:opacity-50"
             >
               Cancel
             </button>
@@ -307,7 +307,7 @@ export function LocationImportWizard({
               type="button"
               onClick={handleUpload}
               disabled={uploading || validCount === 0 || !businessUnitId}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors"
+              className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {uploading ? (
                 <>
@@ -317,7 +317,7 @@ export function LocationImportWizard({
               ) : (
                 <>
                   <Upload className="w-4 h-4" />
-                  Import {validCount} row{validCount !== 1 ? 's' : ''}
+                  Import <span className="tabular-nums">{validCount}</span> row{validCount !== 1 ? 's' : ''}
                 </>
               )}
             </button>
@@ -327,20 +327,20 @@ export function LocationImportWizard({
 
       {/* Result */}
       {result && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand shadow-soft p-6 animate-slide-down">
           <div className="text-center">
-            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 className="w-8 h-8 text-green-600 dark:text-green-400" />
+            <div className="w-16 h-16 bg-success-100 dark:bg-success-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-8 h-8 text-success-600 dark:text-success-400" />
             </div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">
               Import complete
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
               {result.created} created
               {result.failed > 0 && `, ${result.failed} failed`}
             </p>
             {result.errors.length > 0 && (
-              <ul className="mt-4 text-left text-xs text-red-600 dark:text-red-400 space-y-1 max-h-48 overflow-y-auto">
+              <ul className="mt-4 text-left text-xs text-danger-600 dark:text-danger-400 space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
                 {result.errors.map((e, i) => (
                   <li key={i} className="flex items-start gap-1">
                     <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
@@ -352,7 +352,7 @@ export function LocationImportWizard({
             <button
               type="button"
               onClick={reset}
-              className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="mt-6 btn-brand"
             >
               Import another file
             </button>

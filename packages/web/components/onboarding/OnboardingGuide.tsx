@@ -314,19 +314,19 @@ export default function OnboardingGuide() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 40 }}
           className={[
-            'fixed z-50 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl',
-            'border border-emerald-200 dark:border-emerald-800 overflow-hidden',
+            'fixed z-fab bg-white dark:bg-gray-900 rounded-2xl shadow-card',
+            'border border-success-200 dark:border-success-800 overflow-hidden',
             layout === 'mobile'
               ? 'inset-x-3 bottom-3'
               : 'bottom-6 right-6 w-[400px] max-w-[calc(100vw-2rem)]',
           ].join(' ')}
         >
-          <div className="bg-gradient-to-r from-emerald-500 to-teal-500 p-5 text-white">
+          <div className="bg-gradient-to-r from-success-500 to-emerald-600 p-5 text-white">
             <div className="flex items-center gap-3">
               <SparklesIcon className="w-8 h-8 flex-shrink-0" />
               <div>
                 <h2 className="text-lg font-bold">You’re all set!</h2>
-                <p className="text-sm text-emerald-50">
+                <p className="text-sm text-success-50">
                   Onboarding is complete. Every gate is met.
                 </p>
               </div>
@@ -336,14 +336,14 @@ export default function OnboardingGuide() {
             <button
               type="button"
               onClick={() => router.push('/admin')}
-              className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-sm"
+              className="flex-1 btn-brand"
             >
               Go to Dashboard
             </button>
             <button
               type="button"
               onClick={() => setDismissed(true)}
-              className="px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300"
+              className="btn-secondary"
             >
               Close
             </button>
@@ -363,15 +363,15 @@ export default function OnboardingGuide() {
         animate={{ opacity: 1, scale: 1 }}
         onClick={() => setExpanded(true)}
         className={[
-          'fixed z-50 flex items-center gap-2 px-4 py-2.5',
-          'bg-gradient-to-r from-blue-600 to-indigo-600 text-white',
-          'rounded-full shadow-xl hover:shadow-2xl transition-shadow',
+          'fixed z-fab flex items-center gap-2 px-4 py-2.5',
+          'bg-brand-gradient text-white',
+          'rounded-full shadow-brand-lg hover:shadow-brand-lg transition duration-250 focus-ring',
           layout === 'mobile' ? 'bottom-3 right-3' : 'bottom-6 right-6',
         ].join(' ')}
         title="Open onboarding guide"
       >
         <PlayCircleIcon className="w-5 h-5" />
-        <span className="text-sm font-medium">
+        <span className="text-sm font-medium tabular-nums">
           {current}/{total}
         </span>
         <ChevronUpIcon className="w-3.5 h-3.5 opacity-80" />
@@ -390,7 +390,7 @@ export default function OnboardingGuide() {
   const shownTotal = step.displayTotal;
 
   const cardClasses = [
-    'fixed z-50 bg-white dark:bg-gray-900 shadow-2xl',
+    'fixed z-fab bg-white dark:bg-gray-900 shadow-card',
     'border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col',
     layout === 'mobile'
       ? 'inset-x-3 bottom-3 rounded-2xl max-h-[75vh]'
@@ -410,14 +410,14 @@ export default function OnboardingGuide() {
         className={cardClasses}
       >
         {/* ── Header ─────────────────────────────────── */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 flex-shrink-0">
+        <div className="bg-brand-gradient flex-shrink-0">
           <div className="p-4 pb-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <PlayCircleIcon className="w-7 h-7 text-white flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[10px] text-blue-100 uppercase tracking-wider font-semibold">
-                    Step {shownPosition} of {shownTotal}
+                  <p className="text-2xs text-white/80 uppercase tracking-wider font-semibold eyebrow">
+                    Step <span className="tabular-nums">{shownPosition}</span> of <span className="tabular-nums">{shownTotal}</span>
                     {isOptional && (
                       <span className="ml-2 text-white/70 normal-case tracking-normal">
                         · optional
@@ -433,7 +433,7 @@ export default function OnboardingGuide() {
                 <button
                   type="button"
                   onClick={() => setExpanded(false)}
-                  className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+                  className="p-1.5 hover:bg-white/10 rounded-full transition duration-250 focus-ring"
                   title="Minimize — reopen anytime"
                   aria-label="Minimize guide"
                 >
@@ -442,7 +442,7 @@ export default function OnboardingGuide() {
                 <button
                   type="button"
                   onClick={() => setDismissed(true)}
-                  className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+                  className="p-1.5 hover:bg-white/10 rounded-full transition duration-250 focus-ring"
                   title="Dismiss for this session"
                   aria-label="Dismiss guide"
                 >
@@ -457,7 +457,7 @@ export default function OnboardingGuide() {
                 style={{ width: `${status.progress}%` }}
               />
             </div>
-            <p className="text-[10px] text-blue-100 mt-1.5">
+            <p className="text-2xs text-white/80 mt-1.5 tabular-nums">
               {status.completedCount} of {status.totalCount} gates met ·{' '}
               {status.progress}% complete
             </p>
@@ -470,7 +470,7 @@ export default function OnboardingGuide() {
                 type="button"
                 onClick={goPrev}
                 disabled={isFirstPage}
-                className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+                className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white transition duration-250 focus-ring"
                 aria-label="Previous step"
                 title="Previous step"
               >
@@ -487,11 +487,11 @@ export default function OnboardingGuide() {
                       type="button"
                       onClick={() => jumpTo(i)}
                       className={[
-                        'rounded-full transition-all flex-shrink-0',
+                        'rounded-full transition-all duration-250 flex-shrink-0 focus-ring',
                         isCurrent
                           ? 'w-6 h-2 bg-white'
                           : isDone
-                          ? 'w-2 h-2 bg-emerald-300 hover:bg-emerald-200'
+                          ? 'w-2 h-2 bg-success-300 hover:bg-success-200'
                           : 'w-2 h-2 bg-white/40 hover:bg-white/70',
                       ].join(' ')}
                       title={`${s.displayPosition}. ${s.name}${
@@ -508,7 +508,7 @@ export default function OnboardingGuide() {
                 type="button"
                 onClick={goNext}
                 disabled={isLastPage}
-                className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+                className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white transition duration-250 focus-ring"
                 aria-label="Next step"
                 title="Next step"
               >
@@ -519,7 +519,7 @@ export default function OnboardingGuide() {
         </div>
 
         {/* ── Scrollable body ───────────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {/* Just-advanced celebration banner */}
           <AnimatePresence>
             {justAdvancedFrom !== null && (
@@ -530,11 +530,11 @@ export default function OnboardingGuide() {
                 exit={{ opacity: 0, y: -8, height: 0 }}
                 className="overflow-hidden"
               >
-                <div className="flex items-start gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+                <div className="flex items-start gap-2 rounded-lg bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 p-3 text-xs text-success-800 dark:text-success-300">
                   <CheckCircleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold">Step complete!</p>
-                    <p className="mt-0.5 text-emerald-700 dark:text-emerald-400">
+                    <p className="mt-0.5 text-success-700 dark:text-success-400">
                       We advanced you to the next step automatically.
                     </p>
                   </div>
@@ -544,10 +544,10 @@ export default function OnboardingGuide() {
           </AnimatePresence>
 
           {redirectNotice !== null && (
-            <div className="flex items-start gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 text-xs text-blue-800 dark:text-blue-300">
+            <div className="flex items-start gap-2 rounded-lg bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 p-3 text-xs text-primary-800 dark:text-primary-300">
               <InformationCircleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <p>
-                Step {redirectNotice} is already done. We brought you to your
+                Step <span className="tabular-nums">{redirectNotice}</span> is already done. We brought you to your
                 current step instead.
               </p>
             </div>
@@ -565,7 +565,7 @@ export default function OnboardingGuide() {
                   <button
                     type="button"
                     onClick={() => jumpTo(status.currentIndex)}
-                    className="mt-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                    className="mt-1 text-brand-600 dark:text-brand-400 hover:underline font-medium transition duration-250 focus-ring rounded"
                   >
                     Jump back to your current step →
                   </button>
@@ -578,11 +578,11 @@ export default function OnboardingGuide() {
           </p>
 
           {step.blocks.length > 0 && (
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-start gap-2">
-              <span className="text-amber-600 font-bold leading-none mt-0.5">
+            <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg p-3 flex items-start gap-2">
+              <span className="text-warning-600 font-bold leading-none mt-0.5">
                 ⛔
               </span>
-              <div className="text-xs text-amber-800 dark:text-amber-300">
+              <div className="text-xs text-warning-800 dark:text-warning-300">
                 <p className="font-semibold mb-1">Locked until this is done:</p>
                 <ul className="list-disc list-inside space-y-0.5">
                   {step.blocks.map((b) => (
@@ -597,10 +597,10 @@ export default function OnboardingGuide() {
             <button
               type="button"
               onClick={() => speak(step.narration || step.reason, step.id)}
-              className={`flex items-center gap-1.5 text-xs ${
+              className={`flex items-center gap-1.5 text-xs transition duration-250 focus-ring rounded ${
                 speaking
-                  ? 'text-blue-700 dark:text-blue-300 font-semibold'
-                  : 'text-blue-600 dark:text-blue-400 hover:underline'
+                  ? 'text-brand-700 dark:text-brand-300 font-semibold'
+                  : 'text-brand-600 dark:text-brand-400 hover:underline'
               }`}
             >
               <SpeakerWaveIcon
@@ -612,7 +612,7 @@ export default function OnboardingGuide() {
             <button
               type="button"
               onClick={() => setShowChecklist((s) => !s)}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              className="text-xs text-brand-600 dark:text-brand-400 hover:underline transition duration-250 focus-ring rounded"
             >
               {showChecklist ? 'Hide all steps' : 'Show all steps'}
             </button>
@@ -644,7 +644,7 @@ export default function OnboardingGuide() {
               stopSpeaking();
               router.push(step.route);
             }}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors"
+            className="flex-1 btn-brand"
           >
             Go to {step.name}
             <ArrowRightIcon className="w-4 h-4" />
@@ -665,7 +665,7 @@ export default function OnboardingGuide() {
                   setBusyStep(null);
                 }
               }}
-              className="px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              className="btn-secondary disabled:opacity-50"
             >
               {busyStep === step.id ? 'Skipping…' : 'Skip'}
             </button>
@@ -677,7 +677,7 @@ export default function OnboardingGuide() {
               stopSpeaking();
               setDismissed(true);
             }}
-            className="px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="btn-secondary"
             title="Hide until next session"
           >
             Later

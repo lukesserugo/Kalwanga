@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\companies\CompanyCurrencyBreakdown.tsx
-
 'use client';
 
 interface Props {
@@ -7,12 +5,12 @@ interface Props {
 }
 
 const COLORS = [
-  'bg-blue-500',
-  'bg-purple-500',
-  'bg-emerald-500',
-  'bg-amber-500',
-  'bg-pink-500',
-  'bg-indigo-500',
+  'bg-brand-500',
+  'bg-secondary-500',
+  'bg-success-500',
+  'bg-warning-500',
+  'bg-brand-accent-500',
+  'bg-secondary-500',
 ];
 
 export default function CompanyCurrencyBreakdown({ data }: Props) {
@@ -49,15 +47,17 @@ export default function CompanyCurrencyBreakdown({ data }: Props) {
           >
             <span className="flex items-center gap-2">
               <span
-                className={`w-2.5 h-2.5 rounded-full ${COLORS[i % COLORS.length]}`}
+                className={`w-2.5 h-2.5 rounded-full ${
+                  COLORS[i % COLORS.length]
+                }`}
               />
               <span className="text-gray-700 dark:text-gray-300 font-mono text-xs">
                 {row.currency}
               </span>
             </span>
-            <span className="text-gray-900 dark:text-white font-medium">
+            <span className="text-gray-900 dark:text-white font-medium tabular-nums">
               {row.count}
-              <span className="text-gray-400 dark:text-gray-500 ml-1 text-xs">
+              <span className="text-gray-400 dark:text-gray-500 ml-1 text-xs tabular-nums">
                 ({Math.round((row.count / total) * 100)}%)
               </span>
             </span>
@@ -67,3 +67,5 @@ export default function CompanyCurrencyBreakdown({ data }: Props) {
     </div>
   );
 }
+
+export default CompanyCurrencyBreakdown;

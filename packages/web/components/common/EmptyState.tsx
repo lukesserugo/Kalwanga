@@ -10,13 +10,25 @@ interface EmptyStateProps {
   className?: string;
 }
 
-export function EmptyState({ icon, title, description, action, className = '' }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  className = '',
+}: EmptyStateProps) {
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm p-12 text-center border border-gray-200 dark:border-gray-700 ${className}`}>
+    <div className={`card-brand !p-12 text-center ${className}`}>
       {icon && <div className="text-6xl mb-4">{icon}</div>}
-      <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">{title}</h2>
-      {description && <p className="text-gray-500 dark:text-gray-400">{description}</p>}
+      <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
+        {title}
+      </h2>
+      {description && (
+        <p className="text-gray-500 dark:text-gray-400">{description}</p>
+      )}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
+
+export default EmptyState;

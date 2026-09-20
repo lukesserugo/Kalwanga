@@ -30,90 +30,90 @@ export function ShiftStats({ stats, currentShift }: ShiftStatsProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Total Revenue */}
-      <Card className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <Card className="card-brand p-4 shadow-soft transition-colors duration-200">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-2">
-            <DollarSign className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <div className="bg-brand-100 dark:bg-brand-950/40 rounded-lg p-2">
+            <DollarSign className="h-5 w-5 text-brand-600 dark:text-brand-400" />
           </div>
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-2xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Total Revenue
             </p>
-            <p className="text-xl font-bold text-gray-900 dark:text-white">
+            <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(stats?.totalRevenue || 0)}
             </p>
           </div>
         </div>
-        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-2 text-2xs text-gray-500 dark:text-gray-400">
           {stats?.totalShifts || 0} shifts completed
         </div>
       </Card>
 
       {/* Active Shifts */}
-      <Card className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <Card className="card-brand p-4 shadow-soft transition-colors duration-200">
         <div className="flex items-center gap-3">
           <div
             className={`rounded-lg p-2 transition-colors duration-200 ${
               hasOpenShifts
-                ? 'bg-green-50 dark:bg-green-900/30'
-                : 'bg-gray-50 dark:bg-gray-700/50'
+                ? 'bg-success-100 dark:bg-success-950/40'
+                : 'bg-gray-100 dark:bg-gray-700/50'
             }`}
           >
             <Clock
               className={`h-5 w-5 ${
                 hasOpenShifts
-                  ? 'text-green-600 dark:text-green-400'
+                  ? 'text-success-600 dark:text-success-400'
                   : 'text-gray-400 dark:text-gray-500'
               }`}
             />
           </div>
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-2xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Active Shifts
             </p>
-            <p className="text-xl font-bold text-gray-900 dark:text-white flex items-center flex-wrap gap-2">
+            <p className="text-xl font-bold text-gray-900 dark:text-white flex items-center flex-wrap gap-2 tabular-nums">
               {stats?.openShifts || 0}
               {currentShift && (
-                <Badge variant="success" className="text-xs">
+                <Badge variant="success" className="text-2xs">
                   Your shift active
                 </Badge>
               )}
             </p>
           </div>
         </div>
-        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-2 text-2xs text-gray-500 dark:text-gray-400">
           {stats?.closedShifts || 0} shifts closed
         </div>
       </Card>
 
       {/* Avg Shift Revenue */}
-      <Card className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <Card className="card-brand p-4 shadow-soft transition-colors duration-200">
         <div className="flex items-center gap-3">
-          <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-2">
-            <BarChart3 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+          <div className="bg-secondary-100 dark:bg-secondary-950/40 rounded-lg p-2">
+            <BarChart3 className="h-5 w-5 text-secondary-600 dark:text-secondary-400" />
           </div>
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-2xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Avg Shift Revenue
             </p>
-            <p className="text-xl font-bold text-gray-900 dark:text-white">
+            <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(stats?.averageShiftRevenue || 0)}
             </p>
           </div>
         </div>
-        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-2 text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
           Avg duration: {formatDuration(stats?.averageShiftDuration || 0)}
         </div>
       </Card>
 
       {/* Top Cashiers */}
-      <Card className="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <Card className="card-brand p-4 shadow-soft transition-colors duration-200">
         <div className="flex items-center gap-3">
-          <div className="bg-orange-50 dark:bg-orange-900/30 rounded-lg p-2">
-            <Users className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+          <div className="bg-brand-accent-100 dark:bg-brand-accent-950/40 rounded-lg p-2">
+            <Users className="h-5 w-5 text-brand-accent-600 dark:text-brand-accent-400" />
           </div>
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-2xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Top Cashiers
             </p>
             <p className="text-xl font-bold text-gray-900 dark:text-white">
@@ -121,7 +121,7 @@ export function ShiftStats({ stats, currentShift }: ShiftStatsProps) {
             </p>
           </div>
         </div>
-        <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <div className="mt-2 text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
           {stats?.topCashiers?.length || 0} active cashiers
         </div>
       </Card>

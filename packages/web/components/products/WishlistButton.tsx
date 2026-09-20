@@ -302,16 +302,16 @@ export const WishlistButton = memo(function WishlistButton({
     : 'Add to wishlist';
 
   const activeClasses =
-    'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 focus:ring-red-500';
+    'bg-danger-50 dark:bg-danger-900/30 text-danger-600 dark:text-danger-400 hover:bg-danger-100 dark:hover:bg-danger-900/50 focus:ring-danger-500';
   const inactiveClasses =
     'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 focus:ring-gray-400';
-  const minimalActive = 'text-red-600 dark:text-red-400';
+  const minimalActive = 'text-danger-600 dark:text-danger-400';
   const minimalInactive =
-    'text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400';
+    'text-gray-500 dark:text-gray-400 hover:text-danger-500 dark:hover:text-danger-400';
 
   const heartIcon = (
     <Heart
-      className={`${iconSizes[size]} transition-all duration-200 ${
+      className={`${iconSizes[size]} transition-all duration-250 ${
         isInWishlist ? 'fill-current' : ''
       }`}
       strokeWidth={2}
@@ -327,7 +327,7 @@ export const WishlistButton = memo(function WishlistButton({
       <motion.span
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
-        className="absolute -top-1 -right-1 text-[10px] font-medium bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-sm"
+        className="absolute -top-1 -right-1 text-2xs font-medium bg-danger-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-soft tabular-nums"
       >
         {count > 99 ? '99+' : count}
       </motion.span>
@@ -351,7 +351,7 @@ export const WishlistButton = memo(function WishlistButton({
         type="button"
         onClick={handleToggle}
         disabled={disabled || loading}
-        className={`relative inline-flex items-center justify-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+        className={`relative inline-flex items-center justify-center rounded-full transition duration-250 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
         } ${sizeClasses[size]} ${
           isInWishlist ? activeClasses : inactiveClasses
@@ -380,7 +380,7 @@ export const WishlistButton = memo(function WishlistButton({
         type="button"
         onClick={handleToggle}
         disabled={disabled || loading}
-        className={`relative inline-flex items-center justify-center gap-1.5 transition-colors focus:outline-none ${
+        className={`relative inline-flex items-center justify-center gap-1.5 transition duration-250 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500 ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
         } ${sizeClasses[size]} ${
           isInWishlist ? minimalActive : minimalInactive
@@ -405,7 +405,7 @@ export const WishlistButton = memo(function WishlistButton({
         type="button"
         onClick={handleToggle}
         disabled={disabled || loading}
-        className={`relative inline-flex items-center gap-1.5 font-medium transition-colors focus:outline-none ${
+        className={`relative inline-flex items-center gap-1.5 font-medium transition duration-250 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500 ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
         } ${textSizes[size]} ${
           isInWishlist ? minimalActive : minimalInactive
@@ -431,11 +431,11 @@ export const WishlistButton = memo(function WishlistButton({
       type="button"
       onClick={handleToggle}
       disabled={disabled || loading}
-      className={`relative inline-flex items-center justify-center gap-2 rounded-lg border font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 px-4 py-2 ${
+      className={`relative inline-flex items-center justify-center gap-2 rounded-xl border font-medium transition duration-250 focus:outline-none focus:ring-2 focus:ring-offset-2 px-4 py-2 ${
         disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
       } ${textSizes[size]} ${
         isInWishlist
-          ? 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 focus:ring-red-500'
+          ? 'border-danger-200 dark:border-danger-900 bg-danger-50 dark:bg-danger-900/30 text-danger-600 dark:text-danger-400 hover:bg-danger-100 dark:hover:bg-danger-900/50 focus:ring-danger-500'
           : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-gray-400'
       } ${className}`}
       aria-label={title}

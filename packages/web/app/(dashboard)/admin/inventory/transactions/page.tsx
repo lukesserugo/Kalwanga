@@ -16,8 +16,7 @@ import {
   List, LayoutGrid, ChevronDown, ChevronUp,
   Info, HelpCircle, DollarSign, Tag, Hash,
   Link2, Globe, Star, Award, Archive,
-  Plus,  // ✅ ADDED
-  Minus, // ✅ ADDED
+  Plus, Minus,
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
@@ -111,17 +110,17 @@ const TRANSACTION_TYPES = [
 ];
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; icon: React.ElementType }> = {
-  PURCHASE: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', icon: TrendingUp },
-  RESTOCK: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300', icon: Package },
-  SALE: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: TrendingDown },
-  ISSUE: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-800 dark:text-orange-300', icon: ArrowUp },
-  RETURN: { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-800 dark:text-teal-300', icon: RefreshCw },
-  ADJUSTMENT_IN: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', icon: Plus },
-  ADJUSTMENT_OUT: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: Minus },
-  TRANSFER_IN: { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-800 dark:text-indigo-300', icon: ArrowDown },
-  TRANSFER_OUT: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-800 dark:text-purple-300', icon: ArrowUp },
+  PURCHASE: { bg: 'bg-success-100 dark:bg-success-950/30', text: 'text-success-800 dark:text-success-300', icon: TrendingUp },
+  RESTOCK: { bg: 'bg-brand-100 dark:bg-brand-950/30', text: 'text-brand-800 dark:text-brand-300', icon: Package },
+  SALE: { bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30', text: 'text-brand-accent-800 dark:text-brand-accent-300', icon: TrendingDown },
+  ISSUE: { bg: 'bg-warning-100 dark:bg-warning-950/30', text: 'text-warning-800 dark:text-warning-300', icon: ArrowUp },
+  RETURN: { bg: 'bg-teal-100 dark:bg-teal-950/30', text: 'text-teal-800 dark:text-teal-300', icon: RefreshCw },
+  ADJUSTMENT_IN: { bg: 'bg-success-100 dark:bg-success-950/30', text: 'text-success-800 dark:text-success-300', icon: Plus },
+  ADJUSTMENT_OUT: { bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30', text: 'text-brand-accent-800 dark:text-brand-accent-300', icon: Minus },
+  TRANSFER_IN: { bg: 'bg-indigo-100 dark:bg-indigo-950/30', text: 'text-indigo-800 dark:text-indigo-300', icon: ArrowDown },
+  TRANSFER_OUT: { bg: 'bg-secondary-100 dark:bg-secondary-950/30', text: 'text-secondary-800 dark:text-secondary-300', icon: ArrowUp },
   INITIAL: { bg: 'bg-gray-100 dark:bg-gray-700/50', text: 'text-gray-800 dark:text-gray-300', icon: Package },
-  DAMAGED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: AlertCircle },
+  DAMAGED: { bg: 'bg-brand-accent-100 dark:bg-brand-accent-950/30', text: 'text-brand-accent-800 dark:text-brand-accent-300', icon: AlertCircle },
   LOST: { bg: 'bg-gray-100 dark:bg-gray-700/50', text: 'text-gray-800 dark:text-gray-300', icon: AlertCircle },
 };
 
@@ -148,32 +147,32 @@ const StatCard: React.FC<{
   subtext?: string;
 }> = ({ label, value, icon: Icon, color, subtext }) => {
   const colorClasses: Record<string, { bg: string; text: string }> = {
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' },
-    green: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400' },
-    yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-600 dark:text-yellow-400' },
-    red: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' },
-    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-600 dark:text-indigo-400' },
-    teal: { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-600 dark:text-teal-400' },
-    orange: { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400' },
+    brand: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
+    success: { bg: 'bg-success-50 dark:bg-success-950/20', text: 'text-success-600 dark:text-success-400' },
+    warning: { bg: 'bg-warning-50 dark:bg-warning-950/20', text: 'text-warning-600 dark:text-warning-400' },
+    danger: { bg: 'bg-brand-accent-50 dark:bg-brand-accent-950/20', text: 'text-brand-accent-600 dark:text-brand-accent-400' },
+    secondary: { bg: 'bg-secondary-50 dark:bg-secondary-950/20', text: 'text-secondary-600 dark:text-secondary-400' },
+    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/20', text: 'text-indigo-600 dark:text-indigo-400' },
+    teal: { bg: 'bg-teal-50 dark:bg-teal-950/20', text: 'text-teal-600 dark:text-teal-400' },
+    orange: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`${colorClasses[color]?.bg || colorClasses.blue.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
+      className={`${colorClasses[color]?.bg || colorClasses.brand.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
     >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.blue.text} mt-1`}>
+          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.brand.text} mt-1 tabular-nums`}>
             {value}
           </p>
           {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
         </div>
         <div className={`p-2 rounded-lg bg-white dark:bg-gray-700/50`}>
-          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.blue.text}`} />
+          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.brand.text}`} />
         </div>
       </div>
     </motion.div>
@@ -254,10 +253,6 @@ export default function TransactionsPage() {
   const canViewTransactions = hasPermission(`${PermissionResource.INVENTORY}:view`) || user?.role === 'SUPER_ADMIN';
   const canExport = hasPermission(`${PermissionResource.INVENTORY}:export`) || user?.role === 'SUPER_ADMIN';
 
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
-
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
@@ -282,17 +277,13 @@ export default function TransactionsPage() {
         </p>
         <button
           onClick={() => router.push('/admin/inventory')}
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
         >
           Back to Inventory
         </button>
       </div>
     );
   }
-
-  // ============================================
-  // DATA LOADING
-  // ============================================
 
   const loadTransactions = useCallback(async () => {
     if (!businessUnitId) {
@@ -361,7 +352,6 @@ export default function TransactionsPage() {
       setTransactions(mappedTransactions);
       setFilteredTransactions(mappedTransactions);
       
-      // Calculate stats
       const totalIn = mappedTransactions.filter(t => t.quantity > 0).reduce((sum, t) => sum + t.quantity, 0);
       const totalOut = mappedTransactions.filter(t => t.quantity < 0).reduce((sum, t) => sum + Math.abs(t.quantity), 0);
       const uniqueProducts = new Set(mappedTransactions.map(t => t.productId)).size;
@@ -400,10 +390,6 @@ export default function TransactionsPage() {
     await loadTransactions();
     toast.success('Transactions refreshed');
   };
-
-  // ============================================
-  // BARCODE HANDLERS
-  // ============================================
 
   const handleBarcodeSearch = async () => {
     if (!barcodeSearch || barcodeSearch.length < 3) {
@@ -489,14 +475,9 @@ export default function TransactionsPage() {
     setFilters(prev => ({ ...prev, productId: '' }));
   };
 
-  // ============================================
-  // FILTERING
-  // ============================================
-
   const applyFilters = useCallback(() => {
     let filtered = [...transactions];
 
-    // Search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(tx =>
@@ -507,14 +488,12 @@ export default function TransactionsPage() {
       );
     }
 
-    // Barcode filter
     if (filters.hasBarcode === 'yes') {
       filtered = filtered.filter(tx => !!tx.product?.barcode);
     } else if (filters.hasBarcode === 'no') {
       filtered = filtered.filter(tx => !tx.product?.barcode);
     }
 
-    // Quantity range
     if (filters.minQuantity > 0) {
       filtered = filtered.filter(tx => Math.abs(tx.quantity) >= filters.minQuantity);
     }
@@ -522,7 +501,6 @@ export default function TransactionsPage() {
       filtered = filtered.filter(tx => Math.abs(tx.quantity) <= filters.maxQuantity);
     }
 
-    // Location
     if (filters.location) {
       filtered = filtered.filter(tx =>
         tx.inventory?.location?.toLowerCase().includes(filters.location.toLowerCase())
@@ -535,10 +513,6 @@ export default function TransactionsPage() {
   useEffect(() => {
     applyFilters();
   }, [applyFilters]);
-
-  // ============================================
-  // EXPORT HANDLERS
-  // ============================================
 
   const handleExport = async () => {
     if (!canExport) {
@@ -561,19 +535,11 @@ export default function TransactionsPage() {
     }
   };
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     if (isAuthenticated && businessUnitId) {
       loadTransactions();
     }
   }, [isAuthenticated, businessUnitId, loadTransactions]);
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (loading && !refreshing) {
     return <LoadingSkeleton />;
@@ -585,18 +551,17 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -605,20 +570,20 @@ export default function TransactionsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <History className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+            <History className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
             Transaction History
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
             {stats.total} transactions • {stats.uniqueProducts} products • {stats.uniqueUsers} users
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
               showFilters || hasActiveFilters
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -626,7 +591,7 @@ export default function TransactionsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -634,7 +599,7 @@ export default function TransactionsPage() {
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1 sm:gap-2 transition-colors disabled:opacity-50 text-sm"
+              className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-1 sm:gap-2 transition-colors disabled:opacity-50 text-sm focus-ring"
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export'}</span>
@@ -649,19 +614,19 @@ export default function TransactionsPage() {
           label="Total Transactions"
           value={formatNumber(stats.total)}
           icon={History}
-          color="blue"
+          color="brand"
         />
         <StatCard
           label="Total In"
           value={formatNumber(stats.totalIn)}
           icon={TrendingUp}
-          color="green"
+          color="success"
         />
         <StatCard
           label="Total Out"
           value={formatNumber(stats.totalOut)}
           icon={TrendingDown}
-          color="red"
+          color="danger"
         />
         <StatCard
           label="Net Change"
@@ -684,13 +649,13 @@ export default function TransactionsPage() {
               value={barcodeSearch}
               onChange={(e) => setBarcodeSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleBarcodeSearch()}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 font-mono transition-colors"
             />
           </div>
           <button
             onClick={handleBarcodeSearch}
             disabled={lookingUpBarcode || !barcodeSearch}
-            className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
+            className="px-3 sm:px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center gap-1 sm:gap-2 transition-colors text-sm shadow-brand focus-ring"
           >
             {lookingUpBarcode ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -702,7 +667,7 @@ export default function TransactionsPage() {
           {barcodeLookupResult && (
             <button
               onClick={clearBarcodeSearch}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm flex items-center gap-1 focus-ring"
             >
               <X className="w-4 h-4" />
               Clear
@@ -710,18 +675,17 @@ export default function TransactionsPage() {
           )}
         </div>
 
-        {/* Barcode Lookup Result */}
         <AnimatePresence>
           {barcodeLookupResult && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg"
+              className="mt-3 p-3 bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800 rounded-lg"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <div className="w-10 h-10 bg-success-100 dark:bg-success-950/30 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                     {barcodeLookupResult.image ? (
                       <img 
                         src={barcodeLookupResult.image} 
@@ -732,7 +696,7 @@ export default function TransactionsPage() {
                         }}
                       />
                     ) : (
-                      <Package className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      <Package className="w-5 h-5 text-success-600 dark:text-success-400" />
                     )}
                   </div>
                   <div className="min-w-0">
@@ -745,20 +709,20 @@ export default function TransactionsPage() {
                         Barcode: <span className="font-mono">{barcodeLookupResult.barcode}</span>
                         <button
                           onClick={handleCopyBarcode}
-                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                          className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                         >
-                          {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                          {copied ? <Check className="w-3 h-3 text-success-500" /> : <Copy className="w-3 h-3" />}
                         </button>
                       </span>
                       {barcodeLookupResult.unitPrice && (
-                        <span>{formatCurrency(barcodeLookupResult.unitPrice)}</span>
+                        <span className="tabular-nums">{formatCurrency(barcodeLookupResult.unitPrice)}</span>
                       )}
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={() => router.push(`/admin/inventory?search=${barcodeLookupResult.sku}`)}
-                  className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1 flex-shrink-0"
+                  className="px-3 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-1 flex-shrink-0 shadow-brand focus-ring"
                 >
                   <Eye className="w-3 h-3" />
                   View in Inventory
@@ -788,13 +752,13 @@ export default function TransactionsPage() {
                     placeholder="Search by product, SKU, or barcode..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <select
                   value={filters.type}
                   onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 >
                   {TRANSACTION_TYPES.map(type => (
                     <option key={type.value} value={type.value}>{type.label}</option>
@@ -803,7 +767,7 @@ export default function TransactionsPage() {
                 <select
                   value={filters.hasBarcode}
                   onChange={(e) => setFilters({ ...filters, hasBarcode: e.target.value as 'all' | 'yes' | 'no' })}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 >
                   <option value="all">All Barcodes</option>
                   <option value="yes">Has Barcode</option>
@@ -814,7 +778,7 @@ export default function TransactionsPage() {
                   placeholder="Filter by location..."
                   value={filters.location}
                   onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
@@ -824,14 +788,14 @@ export default function TransactionsPage() {
                     type="date"
                     value={filters.startDate}
                     onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                   <span className="text-sm text-gray-500">to</span>
                   <input
                     type="date"
                     value={filters.endDate}
                     onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -841,7 +805,7 @@ export default function TransactionsPage() {
                     value={filters.minQuantity || ''}
                     onChange={(e) => setFilters({ ...filters, minQuantity: parseInt(e.target.value) || 0 })}
                     min="0"
-                    className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 tabular-nums transition-colors"
                   />
                   <span className="text-sm text-gray-500">Max:</span>
                   <input
@@ -849,7 +813,7 @@ export default function TransactionsPage() {
                     value={filters.maxQuantity || ''}
                     onChange={(e) => setFilters({ ...filters, maxQuantity: parseInt(e.target.value) || 0 })}
                     min="0"
-                    className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 tabular-nums transition-colors"
                   />
                 </div>
                 <div className="flex items-center justify-end gap-2">
@@ -870,7 +834,7 @@ export default function TransactionsPage() {
                         setSearchQuery('');
                         clearBarcodeSearch();
                       }}
-                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1"
+                      className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 flex items-center gap-1 focus-ring transition-colors"
                     >
                       <X className="w-4 h-4" />
                       Clear All
@@ -885,7 +849,7 @@ export default function TransactionsPage() {
 
       {/* Transactions Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
               <tr>
@@ -917,7 +881,7 @@ export default function TransactionsPage() {
                       key={tx.id}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                      className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors cursor-pointer"
                       onClick={() => {
                         setSelectedTransaction(tx);
                         setShowDetailModal(true);
@@ -955,7 +919,7 @@ export default function TransactionsPage() {
                       <td className="px-4 py-3 hidden lg:table-cell">
                         {hasBarcode ? (
                           <div className="flex items-center gap-1">
-                            <Barcode className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                            <Barcode className="w-3.5 h-3.5 text-success-500 flex-shrink-0" />
                             <span className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate max-w-[100px]">
                               {tx.product?.barcode}
                             </span>
@@ -965,7 +929,7 @@ export default function TransactionsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className={`font-semibold ${isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        <span className={`font-semibold tabular-nums ${isPositive ? 'text-success-600 dark:text-success-400' : 'text-brand-accent-600 dark:text-brand-accent-400'}`}>
                           {isPositive ? '+' : ''}{tx.quantity}
                         </span>
                       </td>
@@ -991,57 +955,55 @@ export default function TransactionsPage() {
           </table>
         </div>
 
-        {/* Summary Stats */}
         {filteredTransactions.length > 0 && (
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 flex flex-wrap items-center justify-between gap-2 text-sm">
             <div className="flex flex-wrap items-center gap-4">
-              <span className="text-gray-600 dark:text-gray-400">
+              <span className="text-gray-600 dark:text-gray-400 tabular-nums">
                 Total: <strong className="text-gray-900 dark:text-white">{formatNumber(filteredTransactions.length)}</strong>
               </span>
-              <span className="text-gray-600 dark:text-gray-400">
-                Net: <strong className={`${stats.netChange >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              <span className="text-gray-600 dark:text-gray-400 tabular-nums">
+                Net: <strong className={`${stats.netChange >= 0 ? 'text-success-600 dark:text-success-400' : 'text-brand-accent-600 dark:text-brand-accent-400'}`}>
                   {stats.netChange >= 0 ? '+' : ''}{stats.netChange}
                 </strong>
               </span>
-              <span className="text-gray-600 dark:text-gray-400">
-                In: <strong className="text-green-600 dark:text-green-400">{formatNumber(stats.totalIn)}</strong>
+              <span className="text-gray-600 dark:text-gray-400 tabular-nums">
+                In: <strong className="text-success-600 dark:text-success-400">{formatNumber(stats.totalIn)}</strong>
               </span>
-              <span className="text-gray-600 dark:text-gray-400">
-                Out: <strong className="text-red-600 dark:text-red-400">{formatNumber(stats.totalOut)}</strong>
+              <span className="text-gray-600 dark:text-gray-400 tabular-nums">
+                Out: <strong className="text-brand-accent-600 dark:text-brand-accent-400">{formatNumber(stats.totalOut)}</strong>
               </span>
               {barcodeLookupResult && (
                 <span className="text-gray-600 dark:text-gray-400">
-                  Filtered by: <strong className="text-blue-600 dark:text-blue-400">{barcodeLookupResult.productName}</strong>
+                  Filtered by: <strong className="text-brand-600 dark:text-brand-400">{barcodeLookupResult.productName}</strong>
                 </span>
               )}
             </div>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-400 tabular-nums">
               Value: {formatCurrency(stats.totalValue)}
             </span>
           </div>
         )}
 
-        {/* Pagination */}
         {pagination.totalPages > 1 && (
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
               Showing {filteredTransactions.length} of {pagination.total} transactions
             </span>
             <div className="flex gap-2">
               <button
                 onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                 disabled={pagination.page <= 1}
-                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
               >
                 Previous
               </button>
-              <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300">
+              <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
                 Page {pagination.page} of {pagination.totalPages}
               </span>
               <button
                 onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
                 disabled={pagination.page >= pagination.totalPages}
-                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
               >
                 Next
               </button>
@@ -1059,18 +1021,18 @@ export default function TransactionsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 custom-scrollbar"
             >
               <button
                 onClick={() => setShowDetailModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
 
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <History className="w-6 h-6 text-blue-500" />
+                <div className="p-3 bg-brand-50 dark:bg-brand-950/20 rounded-lg">
+                  <History className="w-6 h-6 text-brand-500" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white">Transaction Details</h3>
@@ -1085,7 +1047,7 @@ export default function TransactionsPage() {
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Quantity</p>
-                  <p className={`text-lg font-bold ${selectedTransaction.quantity > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  <p className={`text-lg font-bold tabular-nums ${selectedTransaction.quantity > 0 ? 'text-success-600 dark:text-success-400' : 'text-brand-accent-600 dark:text-brand-accent-400'}`}>
                     {selectedTransaction.quantity > 0 ? '+' : ''}{selectedTransaction.quantity}
                   </p>
                 </div>
@@ -1097,7 +1059,7 @@ export default function TransactionsPage() {
                   <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {selectedTransaction.product?.sku || 'N/A'}</p>
                   {selectedTransaction.product?.barcode && (
                     <div className="flex items-center gap-2 mt-1">
-                      <Barcode className="w-4 h-4 text-green-500" />
+                      <Barcode className="w-4 h-4 text-success-500" />
                       <span className="font-mono text-sm text-gray-600 dark:text-gray-300">{selectedTransaction.product.barcode}</span>
                     </div>
                   )}
@@ -1141,7 +1103,7 @@ export default function TransactionsPage() {
               <div className="flex flex-wrap justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Close
                 </button>
@@ -1151,7 +1113,7 @@ export default function TransactionsPage() {
                       setShowDetailModal(false);
                       router.push(`/admin/inventory/${selectedTransaction.productId}`);
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+                    className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
                   >
                     <Eye className="w-4 h-4" />
                     View Product

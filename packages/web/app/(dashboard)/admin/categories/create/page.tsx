@@ -68,7 +68,7 @@ export default function CreateCategoryPage() {
           </p>
           <button
             onClick={handleNavigateBack}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             Back to Categories
           </button>
@@ -84,7 +84,7 @@ export default function CreateCategoryPage() {
         <button
           onClick={handleNavigateBack}
           disabled={isSubmitting}
-          className="mt-1 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-1 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           aria-label="Go back"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -92,7 +92,7 @@ export default function CreateCategoryPage() {
 
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg">
+            <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-brand-gradient text-white shadow-lg">
               <FolderTree className="w-5 h-5" />
             </span>
             Create Category
@@ -103,9 +103,9 @@ export default function CreateCategoryPage() {
           </p>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40">
-          <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
+        <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-900/40">
+          <Sparkles className="w-4 h-4 text-brand-600 dark:text-brand-400" />
+          <span className="text-xs font-medium text-brand-700 dark:text-brand-300">
             Modern fields supported
           </span>
         </div>
@@ -116,7 +116,7 @@ export default function CreateCategoryPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 sm:p-8"
+        className="card-brand p-5 sm:p-8"
       >
         <CategoryForm
           businessUnitId={businessUnitId}

@@ -96,7 +96,7 @@ export function LocationExportPanel({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       <LocationBUSelector value={businessUnitId} onChange={setBusinessUnitId} />
 
       {/* Format picker */}
@@ -113,23 +113,23 @@ export function LocationExportPanel({
                 key={f.value}
                 type="button"
                 onClick={() => setFormat(f.value)}
-                className={`p-4 rounded-xl border text-left transition-colors ${
+                className={`p-4 rounded-xl border text-left transition duration-250 focus-ring ${
                   selected
-                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
+                    ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-brand'
+                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-card'
                 }`}
               >
                 <Icon
                   className={`w-5 h-5 mb-2 ${
                     selected
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-gray-400'
+                      ? 'text-brand-600 dark:text-brand-400'
+                      : 'text-gray-400 dark:text-gray-500'
                   }`}
                 />
                 <p
                   className={`text-sm font-medium ${
                     selected
-                      ? 'text-blue-700 dark:text-blue-300'
+                      ? 'text-brand-700 dark:text-brand-300'
                       : 'text-gray-900 dark:text-white'
                   }`}
                 >
@@ -145,7 +145,7 @@ export function LocationExportPanel({
       </div>
 
       {/* Options */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+      <div className="card-brand shadow-soft p-4 space-y-3">
         <label className="flex items-center justify-between gap-3 cursor-pointer">
           <div>
             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -159,7 +159,7 @@ export function LocationExportPanel({
             type="checkbox"
             checked={includeInactive}
             onChange={(e) => setIncludeInactive(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition duration-250"
           />
         </label>
         <label className="flex items-center justify-between gap-3 cursor-pointer">
@@ -175,7 +175,7 @@ export function LocationExportPanel({
             type="checkbox"
             checked={includeInventory}
             onChange={(e) => setIncludeInventory(e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition duration-250"
           />
         </label>
       </div>
@@ -186,7 +186,7 @@ export function LocationExportPanel({
           type="button"
           onClick={handleExport}
           disabled={exporting || !businessUnitId}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors"
+          className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {exporting ? (
             <>
@@ -196,7 +196,7 @@ export function LocationExportPanel({
           ) : (
             <>
               <Download className="w-4 h-4" />
-              Download {format.toUpperCase()}
+              Download <span className="tabular-nums">{format.toUpperCase()}</span>
             </>
           )}
         </button>

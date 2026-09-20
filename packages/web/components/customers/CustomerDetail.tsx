@@ -2,15 +2,27 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Edit, Trash2, Mail, Phone, MapPin,
-  Award, TrendingUp, ShoppingBag, Calendar, Clock,
-  Star, Users, DollarSign, Loader2, Gift
+  ArrowLeft,
+  Edit,
+  Trash2,
+  Mail,
+  Phone,
+  MapPin,
+  Award,
+  TrendingUp,
+  ShoppingBag,
+  Calendar,
+  Clock,
+  Star,
+  Users,
+  DollarSign,
+  Loader2,
+  Gift,
 } from 'lucide-react';
 import { customerService } from '../../services/customerService';
 import { saleService } from '../../services/saleService';
 import { toast } from '../../utils/toast-manager';
 
-// Define types
 interface Customer {
   id: string;
   firstName: string;
@@ -98,16 +110,19 @@ export function CustomerDetail() {
   };
 
   const getLoyaltyTier = (points: number) => {
-    if (points >= 1000) return { label: 'Platinum', color: 'purple', icon: Star };
-    if (points >= 500) return { label: 'Gold', color: 'yellow', icon: Award };
-    if (points >= 200) return { label: 'Silver', color: 'gray', icon: Award };
-    return { label: 'Bronze', color: 'orange', icon: Award };
+    if (points >= 1000)
+      return { label: 'Platinum', color: 'secondary', icon: Star };
+    if (points >= 500)
+      return { label: 'Gold', color: 'warning', icon: Award };
+    if (points >= 200)
+      return { label: 'Silver', color: 'gray', icon: Award };
+    return { label: 'Bronze', color: 'brand', icon: Award };
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -115,7 +130,7 @@ export function CustomerDetail() {
   if (!customer) {
     return (
       <div className="p-6 text-center">
-        <p className="text-gray-500">Customer not found</p>
+        <p className="text-gray-500 dark:text-gray-400">Customer not found</p>
       </div>
     );
   }
@@ -124,25 +139,27 @@ export function CustomerDetail() {
   const TierIcon = tier.icon;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/customers')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+            aria-label="Back to customers"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-2xl font-bold">
-              {customer.firstName[0]}{customer.lastName[0]}
+            <div className="w-16 h-16 rounded-full bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 text-2xl font-bold">
+              {customer.firstName[0]}
+              {customer.lastName[0]}
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                 {customer.firstName} {customer.lastName}
               </h1>
-              <div className="flex items-center gap-3 text-sm text-gray-500">
+              <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                 <span className="flex items-center gap-1">
                   <Mail className="w-4 h-4" />
                   {customer.email}
@@ -158,14 +175,14 @@ export function CustomerDetail() {
         <div className="flex gap-2">
           <Link
             to={`/customers/${customer.id}/edit`}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 focus-ring"
           >
             <Edit className="w-4 h-4" />
             Edit
           </Link>
           <button
             onClick={handleDelete}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+            className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
           >
             <Trash2 className="w-4 h-4" />
             Delete
@@ -174,66 +191,84 @@ export function CustomerDetail() {
       </div>
 
       {/* Loyalty Card */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg p-6 mb-6 text-white">
+      <div className="bg-brand-gradient rounded-2xl shadow-brand p-6 mb-6 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-blue-100">Loyalty Status</p>
+            <p className="text-white/85">Loyalty Status</p>
             <div className="flex items-center gap-3 mt-1">
               <TierIcon className="w-8 h-8" />
               <h2 className="text-2xl font-bold">{tier.label}</h2>
             </div>
-            <p className="text-blue-100 mt-1">{customer.loyaltyPoints || 0} points</p>
+            <p className="text-white/85 mt-1 tabular-nums">
+              {customer.loyaltyPoints || 0} points
+            </p>
           </div>
           <div className="text-right">
-            <p className="text-blue-100">Total Spent</p>
-            <p className="text-2xl font-bold">${customer.totalSpent?.toFixed(2) || '0.00'}</p>
+            <p className="text-white/85">Total Spent</p>
+            <p className="text-2xl font-bold tabular-nums">
+              ${customer.totalSpent?.toFixed(2) || '0.00'}
+            </p>
           </div>
         </div>
-        <div className="mt-4 w-full bg-blue-500/30 rounded-full h-2">
+        <div className="mt-4 w-full bg-white/25 rounded-full h-2">
           <div
             className="bg-white h-2 rounded-full transition-all"
-            style={{ width: `${Math.min((customer.loyaltyPoints || 0) / 10, 100)}%` }}
+            style={{
+              width: `${Math.min((customer.loyaltyPoints || 0) / 10, 100)}%`,
+            }}
           />
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="card-brand !p-4">
           <div className="flex items-center gap-3">
-            <ShoppingBag className="w-5 h-5 text-blue-600" />
+            <ShoppingBag className="w-5 h-5 text-brand-600 dark:text-brand-400" />
             <div>
-              <p className="text-sm text-gray-500">Orders</p>
-              <p className="text-xl font-bold">{stats?.totalOrders || 0}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center gap-3">
-            <DollarSign className="w-5 h-5 text-green-600" />
-            <div>
-              <p className="text-sm text-gray-500">Average Order</p>
-              <p className="text-xl font-bold">${stats?.averageOrder?.toFixed(2) || '0.00'}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center gap-3">
-            <Calendar className="w-5 h-5 text-purple-600" />
-            <div>
-              <p className="text-sm text-gray-500">Last Purchase</p>
-              <p className="text-xl font-bold">
-                {stats?.lastPurchase ? new Date(stats.lastPurchase).toLocaleDateString() : 'Never'}
+              <p className="text-sm text-gray-500 dark:text-gray-400">Orders</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                {stats?.totalOrders || 0}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="card-brand !p-4">
           <div className="flex items-center gap-3">
-            <Clock className="w-5 h-5 text-yellow-600" />
+            <DollarSign className="w-5 h-5 text-success-600 dark:text-success-400" />
             <div>
-              <p className="text-sm text-gray-500">Member Since</p>
-              <p className="text-xl font-bold">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Average Order
+              </p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                ${stats?.averageOrder?.toFixed(2) || '0.00'}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="card-brand !p-4">
+          <div className="flex items-center gap-3">
+            <Calendar className="w-5 h-5 text-secondary-600 dark:text-secondary-400" />
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Last Purchase
+              </p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+                {stats?.lastPurchase
+                  ? new Date(stats.lastPurchase).toLocaleDateString()
+                  : 'Never'}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="card-brand !p-4">
+          <div className="flex items-center gap-3">
+            <Clock className="w-5 h-5 text-warning-600 dark:text-warning-400" />
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Member Since
+              </p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
                 {new Date(customer.createdAt).toLocaleDateString()}
               </p>
             </div>
@@ -242,17 +277,17 @@ export function CustomerDetail() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="border-b border-gray-200 px-6">
+      <div className="card-brand !p-0 overflow-hidden">
+        <div className="border-b border-gray-200 dark:border-gray-700 px-6">
           <nav className="flex gap-4">
             {['overview', 'purchases', 'loyalty', 'notes'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize ${
+                className={`px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize focus-ring rounded-t ${
                   activeTab === tab
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                 }`}
               >
                 {tab}
@@ -264,11 +299,12 @@ export function CustomerDetail() {
         <div className="p-6">
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* Address */}
               {customer.address && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Address</h3>
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                    Address
+                  </h3>
+                  <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
                     <MapPin className="w-4 h-4" />
                     {customer.address}
                     {customer.city && `, ${customer.city}`}
@@ -279,11 +315,14 @@ export function CustomerDetail() {
                 </div>
               )}
 
-              {/* Notes */}
               {customer.notes && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
-                  <p className="text-gray-700">{customer.notes}</p>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                    Notes
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300">
+                    {customer.notes}
+                  </p>
                 </div>
               )}
             </div>
@@ -294,22 +333,33 @@ export function CustomerDetail() {
               {sales.length > 0 ? (
                 <div className="space-y-3">
                   {sales.map((sale) => (
-                    <div key={sale.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                    <div
+                      key={sale.id}
+                      className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700/50 transition-colors"
+                    >
                       <div>
-                        <p className="font-medium">#{sale.receiptNumber}</p>
-                        <p className="text-sm text-gray-500">
+                        <p className="font-medium text-gray-900 dark:text-white font-mono tabular-nums">
+                          #{sale.receiptNumber}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                           {new Date(sale.saleDate).toLocaleString()}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">${sale.total.toFixed(2)}</p>
-                        <p className="text-sm text-gray-500">{sale.items?.length || 0} items</p>
+                        <p className="font-bold text-gray-900 dark:text-white tabular-nums">
+                          ${sale.total.toFixed(2)}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                          {sale.items?.length || 0} items
+                        </p>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-500 py-8">No purchase history</p>
+                <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  No purchase history
+                </p>
               )}
             </div>
           )}
@@ -318,23 +368,33 @@ export function CustomerDetail() {
             <div>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Current Points</p>
-                    <p className="text-2xl font-bold">{customer.loyaltyPoints || 0}</p>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Current Points
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                      {customer.loyaltyPoints || 0}
+                    </p>
                   </div>
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-500">Points to Next Tier</p>
-                    <p className="text-2xl font-bold">
-                      {customer.loyaltyPoints < 200 ? 200 - (customer.loyaltyPoints || 0) :
-                       customer.loyaltyPoints < 500 ? 500 - (customer.loyaltyPoints || 0) :
-                       customer.loyaltyPoints < 1000 ? 1000 - (customer.loyaltyPoints || 0) :
-                       0}
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Points to Next Tier
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                      {customer.loyaltyPoints < 200
+                        ? 200 - (customer.loyaltyPoints || 0)
+                        : customer.loyaltyPoints < 500
+                        ? 500 - (customer.loyaltyPoints || 0)
+                        : customer.loyaltyPoints < 1000
+                        ? 1000 - (customer.loyaltyPoints || 0)
+                        : 0}
                     </p>
                   </div>
                 </div>
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-sm text-yellow-700">
-                    💡 Earn 1 point for every $1 spent. Redeem 100 points for $1 off.
+                <div className="p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
+                  <p className="text-sm text-warning-700 dark:text-warning-300">
+                    💡 Earn 1 point for every $1 spent. Redeem 100 points for
+                    $1 off.
                   </p>
                 </div>
               </div>
@@ -344,12 +404,14 @@ export function CustomerDetail() {
           {activeTab === 'notes' && (
             <div>
               <textarea
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent focus:outline-none transition-shadow"
                 rows={4}
                 placeholder="Add a note about this customer..."
                 defaultValue={customer.notes || ''}
                 onBlur={(e) => {
-                  customerService.updateCustomer(customer.id, { notes: e.target.value });
+                  customerService.updateCustomer(customer.id, {
+                    notes: e.target.value,
+                  });
                 }}
               />
             </div>
@@ -359,3 +421,5 @@ export function CustomerDetail() {
     </div>
   );
 }
+
+export default CustomerDetail;

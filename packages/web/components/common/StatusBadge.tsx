@@ -9,12 +9,20 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-export function StatusBadge({ status, children, className = '' }: StatusBadgeProps) {
+export function StatusBadge({
+  status,
+  children,
+  className = '',
+}: StatusBadgeProps) {
   const colorClass = getStatusColor(status);
-  
+
   return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${colorClass} ${className}`}>
+    <span
+      className={`px-2.5 py-1 rounded-full text-2xs font-medium ${colorClass} ${className}`}
+    >
       {children || status}
     </span>
   );
 }
+
+export default StatusBadge;

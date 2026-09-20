@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\inventory\InventoryNavigation.tsx
-
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -13,16 +11,12 @@ import {
   FileText, Download, Scan, QrCode, Barcode,
   Layers, Grid, List, Filter, Search, Bell,
   RefreshCw, ChevronDown, ChevronUp, X,
-  ArrowLeft, ArrowRight, Menu, Maximize2
+  ArrowLeft, ArrowRight, Menu, Maximize2,
 } from 'lucide-react';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuth } from '../../hooks/useAuth';
 import { PermissionResource } from '../../types/enums';
 import { ROUTES } from '../../utils/routeMapping';
-
-// ============================================
-// TYPES
-// ============================================
 
 export interface NavItem {
   label: string;
@@ -45,113 +39,113 @@ export interface InventoryNavigationProps {
   maxVisibleItems?: number;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
-
 const NAV_ITEMS: NavItem[] = [
-  { 
-    label: 'Dashboard', 
-    path: ROUTES.INVENTORY.DASHBOARD || '/admin/inventory', 
+  {
+    label: 'Dashboard',
+    path: ROUTES.INVENTORY.DASHBOARD || '/admin/inventory',
     icon: <Home className="w-4 h-4" />,
     exact: true,
-    description: 'Overview and insights'
+    description: 'Overview and insights',
   },
-  { 
-    label: 'Add Item', 
-    path: ROUTES.INVENTORY.ADD || '/admin/inventory/add', 
-    icon: <Plus className="w-4 h-4" />, 
+  {
+    label: 'Add Item',
+    path: ROUTES.INVENTORY.ADD || '/admin/inventory/add',
+    icon: <Plus className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:create`,
-    description: 'Create new inventory item'
+    description: 'Create new inventory item',
   },
-  { 
-    label: 'Scan', 
-    path: '/admin/inventory/scan', 
+  {
+    label: 'Scan',
+    path: '/admin/inventory/scan',
     icon: <Scan className="w-4 h-4" />,
-    description: 'Scan barcode or QR code'
+    description: 'Scan barcode or QR code',
   },
-  { 
-    label: 'Transfer', 
-    path: ROUTES.INVENTORY.TRANSFER || '/admin/inventory/transfer', 
-    icon: <Truck className="w-4 h-4" />, 
+  {
+    label: 'Transfer',
+    path: ROUTES.INVENTORY.TRANSFER || '/admin/inventory/transfer',
+    icon: <Truck className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:transfer`,
-    description: 'Move items between locations'
+    description: 'Move items between locations',
   },
-  { 
-    label: 'Transactions', 
-    path: ROUTES.INVENTORY.TRANSACTIONS || '/admin/inventory/transactions', 
-    icon: <History className="w-4 h-4" />, 
+  {
+    label: 'Transactions',
+    path: ROUTES.INVENTORY.TRANSACTIONS || '/admin/inventory/transactions',
+    icon: <History className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:audit`,
-    description: 'View transaction history'
+    description: 'View transaction history',
   },
-  { 
-    label: 'Suppliers', 
-    path: ROUTES.INVENTORY.SUPPLIERS || '/admin/inventory/suppliers', 
-    icon: <Building className="w-4 h-4" />, 
+  {
+    label: 'Suppliers',
+    path: ROUTES.INVENTORY.SUPPLIERS || '/admin/inventory/suppliers',
+    icon: <Building className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:edit`,
-    description: 'Manage suppliers'
+    description: 'Manage suppliers',
   },
-  { 
-    label: 'Stock Count', 
-    path: ROUTES.INVENTORY.STOCK_COUNT || '/admin/inventory/stock-count', 
-    icon: <ClipboardList className="w-4 h-4" />, 
+  {
+    label: 'Stock Count',
+    path: ROUTES.INVENTORY.STOCK_COUNT || '/admin/inventory/stock-count',
+    icon: <ClipboardList className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:adjust`,
-    description: 'Count inventory items'
+    description: 'Count inventory items',
   },
-  { 
-    label: 'Categories', 
-    path: ROUTES.INVENTORY.CATEGORIES || '/admin/inventory/categories', 
-    icon: <FolderTree className="w-4 h-4" />, 
+  {
+    label: 'Categories',
+    path: ROUTES.INVENTORY.CATEGORIES || '/admin/inventory/categories',
+    icon: <FolderTree className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:edit`,
-    description: 'Manage categories'
+    description: 'Manage categories',
   },
-  { 
-    label: 'Low Stock', 
-    path: ROUTES.INVENTORY.LOW_STOCK || '/admin/inventory/low-stock', 
+  {
+    label: 'Low Stock',
+    path: ROUTES.INVENTORY.LOW_STOCK || '/admin/inventory/low-stock',
     icon: <AlertTriangle className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:view`,
-    description: 'Items needing restock'
+    description: 'Items needing restock',
   },
-  { 
-    label: 'Reports', 
-    path: ROUTES.INVENTORY.REPORTS || '/admin/inventory/reports', 
-    icon: <BarChart3 className="w-4 h-4" />, 
+  {
+    label: 'Reports',
+    path: ROUTES.INVENTORY.REPORTS || '/admin/inventory/reports',
+    icon: <BarChart3 className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:view`,
-    description: 'Analytics and reports'
+    description: 'Analytics and reports',
   },
-  { 
-    label: 'Audit', 
-    path: ROUTES.INVENTORY.AUDIT || '/admin/inventory/audit', 
-    icon: <Shield className="w-4 h-4" />, 
+  {
+    label: 'Audit',
+    path: ROUTES.INVENTORY.AUDIT || '/admin/inventory/audit',
+    icon: <Shield className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:audit`,
-    description: 'Audit trail'
+    description: 'Audit trail',
   },
-  { 
-    label: 'Valuation', 
-    path: ROUTES.INVENTORY.VALUATION || '/admin/inventory/valuation', 
-    icon: <DollarSign className="w-4 h-4" />, 
+  {
+    label: 'Valuation',
+    path: ROUTES.INVENTORY.VALUATION || '/admin/inventory/valuation',
+    icon: <DollarSign className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:view`,
-    description: 'Inventory value analysis'
+    description: 'Inventory value analysis',
   },
-  { 
-    label: 'Import', 
-    path: ROUTES.INVENTORY.IMPORT || '/admin/inventory/import', 
-    icon: <Upload className="w-4 h-4" />, 
+  {
+    label: 'Import',
+    path: ROUTES.INVENTORY.IMPORT || '/admin/inventory/import',
+    icon: <Upload className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:create`,
-    description: 'Bulk import items'
+    description: 'Bulk import items',
   },
-  { 
-    label: 'Settings', 
-    path: ROUTES.INVENTORY.SETTINGS || '/admin/inventory/settings', 
-    icon: <Settings className="w-4 h-4" />, 
+  {
+    label: 'Settings',
+    path: ROUTES.INVENTORY.SETTINGS || '/admin/inventory/settings',
+    icon: <Settings className="w-4 h-4" />,
     permission: `${PermissionResource.INVENTORY}:manage`,
-    description: 'Configure inventory settings'
+    description: 'Configure inventory settings',
   },
 ];
 
-// ============================================
-// SUB-COMPONENTS
-// ============================================
+function isPathActive(item: NavItem, pathname: string | null): boolean {
+  if (!pathname) return false;
+  if (item.exact) {
+    return pathname === item.path;
+  }
+  return pathname === item.path || pathname.startsWith(`${item.path}/`);
+}
 
 const NavLink: React.FC<{
   item: NavItem;
@@ -164,14 +158,16 @@ const NavLink: React.FC<{
     <Link
       href={item.path}
       onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all duration-200 ${
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all duration-200 focus-ring ${
         isActive
-          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shadow-sm'
-          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
+          ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 shadow-sm'
+          : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
       } ${compact ? 'px-2 py-1.5' : ''}`}
       title={item.description}
     >
-      <span className={`${isActive ? 'text-blue-600 dark:text-blue-400' : ''}`}>
+      <span
+        className={`${isActive ? 'text-brand-600 dark:text-brand-400' : ''}`}
+      >
         {item.icon}
       </span>
       {showLabels && (
@@ -180,11 +176,13 @@ const NavLink: React.FC<{
         </span>
       )}
       {item.badge && (
-        <span className={`ml-auto px-1.5 py-0.5 text-xs rounded-full ${
-          isActive 
-            ? 'bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300' 
-            : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-        }`}>
+        <span
+          className={`ml-auto px-1.5 py-0.5 text-2xs rounded-full tabular-nums ${
+            isActive
+              ? 'bg-brand-200 dark:bg-brand-800 text-brand-700 dark:text-brand-300'
+              : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+          }`}
+        >
           {item.badge}
         </span>
       )}
@@ -196,27 +194,26 @@ const BreadcrumbNav: React.FC<{
   items: NavItem[];
   pathname: string;
 }> = ({ items, pathname }) => {
-  const activeItem = items.find(item => isPathActive(item, pathname));
+  const activeItem = items.find((item) => isPathActive(item, pathname));
   const pathSegments = pathname?.split('/').filter(Boolean) || [];
-  
+
   if (!activeItem) return null;
-  
-  // Build breadcrumb trail
+
   const breadcrumbs: NavItem[] = [];
   let currentPath = '';
-  
+
   for (const segment of pathSegments) {
     currentPath += `/${segment}`;
-    const match = items.find(item => item.path === currentPath);
+    const match = items.find((item) => item.path === currentPath);
     if (match) {
       breadcrumbs.push(match);
     }
   }
-  
+
   if (breadcrumbs.length === 0 && activeItem) {
     breadcrumbs.push(activeItem);
   }
-  
+
   return (
     <nav className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
       {breadcrumbs.map((item, index) => (
@@ -226,9 +223,9 @@ const BreadcrumbNav: React.FC<{
           )}
           <Link
             href={item.path}
-            className={`hover:text-gray-700 dark:hover:text-gray-300 transition-colors ${
-              index === breadcrumbs.length - 1 
-                ? 'text-gray-900 dark:text-white font-medium' 
+            className={`hover:text-gray-700 dark:hover:text-gray-300 transition-colors focus-ring rounded ${
+              index === breadcrumbs.length - 1
+                ? 'text-gray-900 dark:text-white font-medium'
                 : ''
             }`}
           >
@@ -240,23 +237,7 @@ const BreadcrumbNav: React.FC<{
   );
 };
 
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-function isPathActive(item: NavItem, pathname: string | null): boolean {
-  if (!pathname) return false;
-  if (item.exact) {
-    return pathname === item.path;
-  }
-  return pathname === item.path || pathname.startsWith(`${item.path}/`);
-}
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
-
-export function InventoryNavigation({ 
+export function InventoryNavigation({
   className = '',
   showLabels = true,
   compact = false,
@@ -271,18 +252,14 @@ export function InventoryNavigation({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  // Filter items based on permissions
   const visibleItems = useMemo(() => {
-    return NAV_ITEMS.filter(item => {
+    return NAV_ITEMS.filter((item) => {
       if (!item.permission) return true;
-      // Super admin bypass
       if (user?.role === 'SUPER_ADMIN') return true;
-      // Check permission using hasPermission
       return hasPermission(item.permission);
     });
   }, [user, hasPermission]);
 
-  // Limit visible items if maxVisibleItems is set
   const displayItems = useMemo(() => {
     if (!maxVisibleItems) return visibleItems;
     if (showAll) return visibleItems;
@@ -291,21 +268,16 @@ export function InventoryNavigation({
 
   const hasMoreItems = maxVisibleItems && visibleItems.length > maxVisibleItems;
 
-  // Handle navigation
   const handleNavigate = (path: string) => {
     if (onNavigate) {
       onNavigate(path);
     }
   };
 
-  // Breadcrumb render
   if (renderAs === 'breadcrumb') {
-    return (
-      <BreadcrumbNav items={visibleItems} pathname={pathname || ''} />
-    );
+    return <BreadcrumbNav items={visibleItems} pathname={pathname || ''} />;
   }
 
-  // Sidebar render
   if (renderAs === 'sidebar') {
     return (
       <nav className={`${className} ${vertical ? 'flex-col' : ''}`}>
@@ -323,17 +295,23 @@ export function InventoryNavigation({
               />
             );
           })}
-          
-          {/* Show More / Show Less */}
+
           {hasMoreItems && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors w-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors w-full text-gray-500 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700 focus-ring ${
+                vertical ? '' : 'justify-center'
+              }`}
             >
               {showAll ? (
-                <> <ChevronUp className="w-4 h-4" /> Show Less</>
+                <>
+                  <ChevronUp className="w-4 h-4" /> Show Less
+                </>
               ) : (
-                <> <ChevronDown className="w-4 h-4" /> Show More ({visibleItems.length - (maxVisibleItems || 0)})</>
+                <>
+                  <ChevronDown className="w-4 h-4" /> Show More (
+                  {visibleItems.length - (maxVisibleItems || 0)})
+                </>
               )}
             </button>
           )}
@@ -342,10 +320,13 @@ export function InventoryNavigation({
     );
   }
 
-  // Tabs render (default)
   return (
     <div className={`${className}`}>
-      <nav className={`flex flex-wrap gap-1 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 ${vertical ? 'flex-col' : ''}`}>
+      <nav
+        className={`flex flex-wrap gap-1 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 ${
+          vertical ? 'flex-col' : ''
+        }`}
+      >
         {displayItems.map((item) => {
           const active = isPathActive(item, pathname);
           return (
@@ -359,15 +340,14 @@ export function InventoryNavigation({
             />
           );
         })}
-        
-        {/* Show More / Show Less */}
+
         {hasMoreItems && (
           <button
             onClick={() => setShowAll(!showAll)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors focus-ring ${
               showAll
                 ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700'
             }`}
           >
             {showAll ? (
@@ -376,19 +356,24 @@ export function InventoryNavigation({
               <ChevronDown className="w-4 h-4" />
             )}
             <span className="hidden sm:inline">
-              {showAll ? 'Show Less' : `+${visibleItems.length - (maxVisibleItems || 0)}`}
+              {showAll
+                ? 'Show Less'
+                : `+${visibleItems.length - (maxVisibleItems || 0)}`}
             </span>
           </button>
         )}
       </nav>
 
-      {/* Mobile Expand/Collapse */}
       {compact && (
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="mt-2 p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors w-full flex items-center justify-center gap-2 text-sm"
+          className="mt-2 p-2 text-gray-500 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors w-full flex items-center justify-center gap-2 text-sm focus-ring"
         >
-          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
           {isExpanded ? 'Hide Navigation' : 'Expand Navigation'}
         </button>
       )}
@@ -396,28 +381,28 @@ export function InventoryNavigation({
   );
 }
 
-// ============================================
-// PRESET COMPONENTS
-// ============================================
-
-export function CompactInventoryNav(props: Omit<InventoryNavigationProps, 'compact'>) {
+export function CompactInventoryNav(
+  props: Omit<InventoryNavigationProps, 'compact'>
+) {
   return <InventoryNavigation {...props} compact={true} showLabels={true} />;
 }
 
-export function IconOnlyNav(props: Omit<InventoryNavigationProps, 'compact' | 'showLabels'>) {
+export function IconOnlyNav(
+  props: Omit<InventoryNavigationProps, 'compact' | 'showLabels'>
+) {
   return <InventoryNavigation {...props} compact={true} showLabels={false} />;
 }
 
-export function SidebarInventoryNav(props: Omit<InventoryNavigationProps, 'renderAs'>) {
+export function SidebarInventoryNav(
+  props: Omit<InventoryNavigationProps, 'renderAs'>
+) {
   return <InventoryNavigation {...props} renderAs="sidebar" vertical={true} />;
 }
 
-export function BreadcrumbInventoryNav(props: Omit<InventoryNavigationProps, 'renderAs'>) {
+export function BreadcrumbInventoryNav(
+  props: Omit<InventoryNavigationProps, 'renderAs'>
+) {
   return <InventoryNavigation {...props} renderAs="breadcrumb" />;
 }
-
-// ============================================
-// EXPORT
-// ============================================
 
 export default InventoryNavigation;

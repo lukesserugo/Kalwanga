@@ -59,7 +59,7 @@ export default function SalesSettings() {
           <button
             onClick={handleSave}
             disabled={loading}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -82,7 +82,7 @@ export default function SalesSettings() {
                   type="text"
                   value={settings.currencySymbol}
                   onChange={(e) => setSettings({ ...settings, currencySymbol: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
               <div>
@@ -93,7 +93,7 @@ export default function SalesSettings() {
                   type="text"
                   value={settings.currencyCode}
                   onChange={(e) => setSettings({ ...settings, currencyCode: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                 />
               </div>
               <div>
@@ -104,7 +104,7 @@ export default function SalesSettings() {
                   type="text"
                   value={settings.invoicePrefix}
                   onChange={(e) => setSettings({ ...settings, invoicePrefix: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono"
                 />
               </div>
               <div>
@@ -115,7 +115,7 @@ export default function SalesSettings() {
                   type="text"
                   value={settings.receiptPrefix}
                   onChange={(e) => setSettings({ ...settings, receiptPrefix: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none font-mono"
                 />
               </div>
             </div>
@@ -132,7 +132,7 @@ export default function SalesSettings() {
                   type="number"
                   value={settings.taxRate}
                   onChange={(e) => setSettings({ ...settings, taxRate: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none tabular-nums"
                 />
               </div>
               <div>
@@ -143,7 +143,7 @@ export default function SalesSettings() {
                   type="number"
                   value={settings.maxDiscount}
                   onChange={(e) => setSettings({ ...settings, maxDiscount: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none tabular-nums"
                 />
               </div>
               <div className="flex items-end">
@@ -152,7 +152,7 @@ export default function SalesSettings() {
                     type="checkbox"
                     checked={settings.discountEnabled}
                     onChange={(e) => setSettings({ ...settings, discountEnabled: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
                   />
                   <span className="text-gray-700 dark:text-gray-300">Enable Discounts</span>
                 </label>
@@ -168,7 +168,7 @@ export default function SalesSettings() {
                   type="checkbox"
                   checked={settings.loyaltyPointsEnabled}
                   onChange={(e) => setSettings({ ...settings, loyaltyPointsEnabled: e.target.checked })}
-                  className="w-4 h-4 text-blue-600 rounded"
+                  className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
                 />
                 <span className="text-gray-700 dark:text-gray-300">Enable Loyalty Points</span>
               </div>
@@ -180,7 +180,7 @@ export default function SalesSettings() {
                   type="number"
                   value={settings.pointsPerDollar}
                   onChange={(e) => setSettings({ ...settings, pointsPerDollar: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none tabular-nums"
                 />
               </div>
             </div>
@@ -195,7 +195,7 @@ export default function SalesSettings() {
                     type="checkbox"
                     checked={settings.autoPrintReceipt}
                     onChange={(e) => setSettings({ ...settings, autoPrintReceipt: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
                   />
                   <span className="text-gray-700 dark:text-gray-300">Auto-print receipt after sale</span>
                 </label>
@@ -204,7 +204,7 @@ export default function SalesSettings() {
                     type="checkbox"
                     checked={settings.emailReceipts}
                     onChange={(e) => setSettings({ ...settings, emailReceipts: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
                   />
                   <span className="text-gray-700 dark:text-gray-300">Send email receipts</span>
                 </label>
@@ -217,7 +217,7 @@ export default function SalesSettings() {
                   value={settings.receiptFooter}
                   onChange={(e) => setSettings({ ...settings, receiptFooter: e.target.value })}
                   rows={2}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   placeholder="Thank you for your business!"
                 />
               </div>
@@ -234,10 +234,10 @@ function SettingsSection({ title, icon: Icon, children }: any) {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700"
+      className="card-brand p-6"
     >
       <div className="flex items-center gap-2 mb-6">
-        <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        <Icon className="w-5 h-5 text-brand-600 dark:text-brand-400" />
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
       </div>
       {children}

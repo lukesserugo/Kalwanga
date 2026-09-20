@@ -6,8 +6,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { UserGroupManager } from '../../../../../components/users/UserGroupManager';
-import { 
-  ArrowLeft, Lock, UsersRound, Plus, Search, 
+import {
+  ArrowLeft, Lock, UsersRound, Plus, Search,
   RefreshCw, Loader2, AlertCircle, Filter,
   ChevronDown, ChevronUp, Grid, List,
   Download, Upload, Settings, Trash2
@@ -43,7 +43,7 @@ export default function GroupsManagementPage() {
         </p>
         <button
           onClick={() => router.push('/admin/users')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Users
@@ -55,7 +55,7 @@ export default function GroupsManagementPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
         <p className="mt-4 text-gray-500 dark:text-gray-400">Loading groups...</p>
       </div>
     );
@@ -68,14 +68,14 @@ export default function GroupsManagementPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/admin/users')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Back to users"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <UsersRound className="w-6 h-6 text-blue-500" />
+              <UsersRound className="w-6 h-6 text-brand-500" />
               User Groups
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -83,23 +83,23 @@ export default function GroupsManagementPage() {
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title={viewMode === 'grid' ? 'List view' : 'Grid view'}
           >
             {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
           </button>
           <button
             onClick={() => toast.success('Groups refreshed')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             <Download className="w-4 h-4" />
           </button>
@@ -108,54 +108,54 @@ export default function GroupsManagementPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <UsersRound className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+              <UsersRound className="w-5 h-5 text-brand-600 dark:text-brand-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Groups</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">0</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">0</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <UsersRound className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div className="p-2 bg-success-100 dark:bg-success-900/30 rounded-lg">
+              <UsersRound className="w-5 h-5 text-success-600 dark:text-success-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Members</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">0</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">0</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div className="p-2 bg-success-100 dark:bg-success-900/30 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Active Groups</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">0</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">0</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-              <Shield className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <div className="p-2 bg-warning-100 dark:bg-warning-900/30 rounded-lg">
+              <Shield className="w-5 h-5 text-warning-600 dark:text-warning-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Permissions</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">0</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">0</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Search and Filter */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px] relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -164,10 +164,10 @@ export default function GroupsManagementPage() {
               placeholder="Search groups..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
             />
           </div>
-          <button className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+          <button className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring">
             <Filter className="w-4 h-4" />
           </button>
         </div>

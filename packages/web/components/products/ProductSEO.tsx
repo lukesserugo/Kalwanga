@@ -232,12 +232,12 @@ export function ProductSEO({
   // ============================================
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Globe className="w-5 h-5 text-blue-500" />
+            <Globe className="w-5 h-5 text-brand-500 dark:text-brand-400" />
             SEO &amp; Metadata
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -252,7 +252,7 @@ export function ProductSEO({
                   type="button"
                   onClick={handleCancel}
                   disabled={saving}
-                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                  className="btn-secondary disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -260,7 +260,7 @@ export function ProductSEO({
                   type="button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50"
+                  className="btn-brand disabled:opacity-50"
                 >
                   {saving ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -274,7 +274,7 @@ export function ProductSEO({
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1"
+                className="btn-secondary"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -285,16 +285,16 @@ export function ProductSEO({
       </div>
 
       {/* Search Preview */}
-      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
+      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-2xl p-4 border border-gray-200 dark:border-gray-700">
+        <p className="text-2xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1 eyebrow">
           <Search className="w-3 h-3" />
           Search Engine Preview
         </p>
         <div className="space-y-1">
-          <p className="text-lg text-blue-600 hover:underline cursor-pointer">
+          <p className="text-lg text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">
             {previewTitle}
           </p>
-          <p className="text-sm text-green-700 dark:text-green-400">
+          <p className="text-sm text-success-700 dark:text-success-400 tabular-nums">
             {previewSlug
               ? `https://example.com/products/${previewSlug}`
               : 'https://example.com/products/...'}
@@ -310,7 +310,7 @@ export function ProductSEO({
         <motion.div
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
-          className="space-y-4"
+          className="space-y-4 animate-slide-down"
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -327,24 +327,25 @@ export function ProductSEO({
                       title: e.target.value,
                     }))
                   }
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="Enter meta title"
                   maxLength={200}
                 />
                 <button
                   type="button"
                   onClick={generateMetaTitle}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300"
+                  className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition duration-250 focus-ring"
                   title="Generate from product name"
+                  aria-label="Generate meta title"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
               <p
-                className={`text-xs mt-1 ${
+                className={`text-2xs mt-1 tabular-nums ${
                   titleLength > 60
-                    ? 'text-yellow-600 dark:text-yellow-400'
-                    : 'text-gray-400'
+                    ? 'text-warning-600 dark:text-warning-400'
+                    : 'text-gray-400 dark:text-gray-500'
                 }`}
               >
                 {titleLength} / 60 characters
@@ -366,14 +367,15 @@ export function ProductSEO({
                       slug: e.target.value,
                     }))
                   }
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="Enter URL slug"
                 />
                 <button
                   type="button"
                   onClick={generateSlug}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300"
+                  className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition duration-250 focus-ring"
                   title="Generate from product name"
+                  aria-label="Generate URL slug"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
@@ -394,15 +396,15 @@ export function ProductSEO({
                 }))
               }
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 resize-none"
               placeholder="Enter meta description"
               maxLength={400}
             />
             <p
-              className={`text-xs mt-1 ${
+              className={`text-2xs mt-1 tabular-nums ${
                 descriptionLength > 160
-                  ? 'text-yellow-600 dark:text-yellow-400'
-                  : 'text-gray-400'
+                  ? 'text-warning-600 dark:text-warning-400'
+                  : 'text-gray-400 dark:text-gray-500'
               }`}
             >
               {descriptionLength} / 160 characters
@@ -422,14 +424,14 @@ export function ProductSEO({
                 value={keywordInput}
                 onChange={(e) => setKeywordInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                 placeholder="Add keyword..."
               />
               <button
                 type="button"
                 onClick={addKeyword}
                 disabled={!keywordInput.trim()}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="btn-brand disabled:opacity-50"
               >
                 Add
               </button>
@@ -439,21 +441,21 @@ export function ProductSEO({
                 formData.keywords.map((keyword, index) => (
                   <span
                     key={`${keyword}-${index}`}
-                    className="flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+                    className="flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-xl text-sm"
                   >
                     {keyword}
                     <button
                       type="button"
                       onClick={() => removeKeyword(index)}
-                      className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                      className="p-0.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
                       aria-label={`Remove keyword ${keyword}`}
                     >
-                      <X className="w-3 h-3 text-red-500" />
+                      <X className="w-3 h-3 text-danger-500" />
                     </button>
                   </span>
                 ))
               ) : (
-                <p className="text-xs text-gray-400">
+                <p className="text-2xs text-gray-400 dark:text-gray-500">
                   No keywords added yet
                 </p>
               )}
@@ -474,7 +476,7 @@ export function ProductSEO({
                     ogTitle: e.target.value,
                   }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                 placeholder="Open Graph title"
               />
             </div>
@@ -491,7 +493,7 @@ export function ProductSEO({
                     ogImage: e.target.value,
                   }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                 placeholder="https://example.com/og-image.jpg"
               />
             </div>
@@ -510,7 +512,7 @@ export function ProductSEO({
                 }))
               }
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 resize-none"
               placeholder="Open Graph description"
             />
           </div>
@@ -528,7 +530,7 @@ export function ProductSEO({
                   canonicalUrl: e.target.value,
                 }))
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               placeholder="https://example.com/canonical-url"
             />
           </div>
@@ -544,7 +546,7 @@ export function ProductSEO({
                     noIndex: e.target.checked,
                   }))
                 }
-                className="w-4 h-4 text-blue-600 rounded"
+                className="w-4 h-4 text-brand-600 rounded border-gray-300 dark:border-gray-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 No Index
@@ -560,7 +562,7 @@ export function ProductSEO({
                     noFollow: e.target.checked,
                   }))
                 }
-                className="w-4 h-4 text-blue-600 rounded"
+                className="w-4 h-4 text-brand-600 rounded border-gray-300 dark:border-gray-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 No Follow

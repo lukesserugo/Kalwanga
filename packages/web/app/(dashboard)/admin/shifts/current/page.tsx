@@ -165,14 +165,14 @@ export default function CurrentShiftPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/admin/shifts')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
               aria-label="Back to Shifts"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-2">
-                <Clock className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <div className="bg-success-50 dark:bg-success-900/30 rounded-lg p-2">
+                <Clock className="h-5 w-5 text-success-600 dark:text-success-400" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -253,8 +253,8 @@ function OtherUserShiftCard({
   return (
     <Card className="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
       <div className="flex items-start gap-4">
-        <div className="bg-yellow-50 dark:bg-yellow-900/30 rounded-lg p-3 flex-shrink-0">
-          <AlertCircle className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+        <div className="bg-warning-50 dark:bg-warning-900/30 rounded-lg p-3 flex-shrink-0">
+          <AlertCircle className="h-6 w-6 text-warning-600 dark:text-warning-400" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -310,7 +310,7 @@ function OtherUserShiftCard({
             <Button
               size="sm"
               onClick={onGoToRegisters}
-              className="bg-blue-600 text-white hover:bg-blue-700"
+              className="bg-brand-500 text-white hover:bg-brand-600"
             >
               Go to Registers
             </Button>

@@ -19,12 +19,7 @@ import {
   Headphones,
   ArrowUp,
   Globe,
-  Lock,
-  Facebook,
-  Twitter,
-  Instagram,
-  Youtube,
-  Linkedin,
+  Lock
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { toast } from '../../utils/toast-manager';

@@ -4,7 +4,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Download, Printer, RefreshCw, Loader2, Check, Copy, QrCode, Barcode } from 'lucide-react';
+import {
+  Download,
+  Printer,
+  RefreshCw,
+  Loader2,
+  Check,
+  Copy,
+  QrCode,
+  Barcode,
+  X,
+} from 'lucide-react';
 import { useBarcode } from '../../hooks/useBarcode';
 import { toast } from '../../utils/toast-manager';
 
@@ -33,7 +43,7 @@ export function BarcodeDisplay({
 }: BarcodeDisplayProps) {
   const [copied, setCopied] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  
+
   const {
     barcode,
     barcodeUrl,
@@ -96,8 +106,10 @@ export function BarcodeDisplay({
   if (loading) {
     return (
       <div className={`flex items-center justify-center p-8 ${className}`}>
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-3 text-gray-600 dark:text-gray-400">Loading barcode...</span>
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
+        <span className="ml-3 text-gray-600 dark:text-gray-400">
+          Loading barcode...
+        </span>
       </div>
     );
   }
@@ -105,10 +117,10 @@ export function BarcodeDisplay({
   if (error) {
     return (
       <div className={`flex flex-col items-center justify-center p-8 ${className}`}>
-        <div className="text-red-500 mb-3">⚠️ {error}</div>
+        <div className="text-danger-500 mb-3">⚠️ {error}</div>
         <button
           onClick={loadBarcodeData}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 focus-ring"
         >
           <RefreshCw className="w-4 h-4" />
           Retry
@@ -123,28 +135,38 @@ export function BarcodeDisplay({
         {barcode ? (
           <div className="flex items-center gap-2">
             <Barcode className="w-4 h-4 text-gray-400" />
-            <span className="font-mono text-sm text-gray-700 dark:text-gray-300">{barcode}</span>
+            <span className="font-mono text-sm text-gray-700 dark:text-gray-300 tabular-nums">
+              {barcode}
+            </span>
             <button
               onClick={handleCopy}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
             >
-              {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-gray-400" />}
+              {copied ? (
+                <Check className="w-3 h-3 text-success-500" />
+              ) : (
+                <Copy className="w-3 h-3 text-gray-400" />
+              )}
             </button>
           </div>
         ) : (
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+            className="text-xs text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 flex items-center gap-1 transition-colors focus-ring rounded"
           >
-            {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            {generating ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3 h-3" />
+            )}
             Generate
           </button>
         )}
         {showQRCode && qrCodeUrl && (
           <button
             onClick={() => window.open(qrCodeUrl, '_blank')}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
             title="View QR Code"
           >
             <QrCode className="w-4 h-4 text-gray-400" />
@@ -156,21 +178,23 @@ export function BarcodeDisplay({
 
   if (variant === 'compact') {
     return (
-      <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 ${className}`}>
+      <div className={`card-brand !p-4 ${className}`}>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Barcode</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Barcode
+          </span>
           <div className="flex items-center gap-1">
             {onClose && (
               <button
                 onClick={onClose}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             )}
           </div>
         </div>
-        
+
         {barcodeUrl ? (
           <div className="flex flex-col items-center">
             <img
@@ -181,12 +205,18 @@ export function BarcodeDisplay({
               onError={() => setImageLoaded(false)}
             />
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-mono text-gray-600 dark:text-gray-400">{barcode}</span>
+              <span className="text-2xs font-mono text-gray-600 dark:text-gray-400 tabular-nums">
+                {barcode}
+              </span>
               <button
                 onClick={handleCopy}
-                className="p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="p-0.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
-                {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-gray-400" />}
+                {copied ? (
+                  <Check className="w-3 h-3 text-success-500" />
+                ) : (
+                  <Copy className="w-3 h-3 text-gray-400" />
+                )}
               </button>
             </div>
           </div>
@@ -194,19 +224,25 @@ export function BarcodeDisplay({
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="w-full py-4 text-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 transition-colors"
+            className="w-full py-4 text-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-brand-500 transition-colors focus-ring"
           >
             {generating ? (
-              <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto" />
+              <Loader2 className="w-6 h-6 animate-spin text-brand-500 mx-auto" />
             ) : (
-              <span className="text-sm text-gray-500 dark:text-gray-400">Generate Barcode</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                Generate Barcode
+              </span>
             )}
           </button>
         )}
-        
+
         {showQRCode && qrCodeUrl && (
           <div className="mt-2 flex items-center justify-center">
-            <img src={qrCodeUrl} alt="QR Code" className="w-16 h-16 object-contain" />
+            <img
+              src={qrCodeUrl}
+              alt="QR Code"
+              className="w-16 h-16 object-contain"
+            />
           </div>
         )}
       </div>
@@ -218,23 +254,29 @@ export function BarcodeDisplay({
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className={`bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 ${className}`}
+      className={`card-brand shadow-card-hover ${className}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Product Barcode</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Product Barcode
+          </h3>
           {productName && (
-            <p className="text-sm text-gray-500 dark:text-gray-400">{productName}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {productName}
+            </p>
           )}
           {productSku && (
-            <p className="text-xs text-gray-400 dark:text-gray-500">SKU: {productSku}</p>
+            <p className="text-2xs text-gray-400 dark:text-gray-500 font-mono">
+              SKU: {productSku}
+            </p>
           )}
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           >
             <X className="w-4 h-4 text-gray-500" />
           </button>
@@ -253,25 +295,37 @@ export function BarcodeDisplay({
               onError={() => setImageLoaded(false)}
             />
             <div className="flex items-center gap-2 mt-2">
-              <span className="text-sm font-mono text-gray-700 dark:text-gray-300">{barcode}</span>
+              <span className="text-sm font-mono text-gray-700 dark:text-gray-300 tabular-nums">
+                {barcode}
+              </span>
               <button
                 onClick={handleCopy}
-                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                 title="Copy barcode"
               >
-                {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-gray-400" />}
+                {copied ? (
+                  <Check className="w-4 h-4 text-success-500" />
+                ) : (
+                  <Copy className="w-4 h-4 text-gray-400" />
+                )}
               </button>
             </div>
           </div>
         ) : (
           <div className="text-center py-8">
-            <p className="text-gray-500 dark:text-gray-400">No barcode available</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              No barcode available
+            </p>
             <button
               onClick={handleGenerate}
               disabled={generating}
-              className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 mx-auto"
+              className="mt-3 px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg disabled:opacity-50 flex items-center gap-2 mx-auto transition-all focus-ring"
             >
-              {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {generating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
               Generate Barcode
             </button>
           </div>
@@ -281,7 +335,9 @@ export function BarcodeDisplay({
       {/* QR Code Display */}
       {showQRCode && qrCodeUrl && (
         <div className="flex flex-col items-center mb-4">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">QR Code</h4>
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            QR Code
+          </h4>
           <img
             src={qrCodeUrl}
             alt={`QR Code for ${productName || productId}`}
@@ -295,7 +351,7 @@ export function BarcodeDisplay({
         <div className="flex flex-wrap items-center justify-center gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={handlePrint}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+            className="btn-secondary focus-ring"
           >
             <Printer className="w-4 h-4" />
             Print
@@ -303,7 +359,7 @@ export function BarcodeDisplay({
           <button
             onClick={handleDownload}
             disabled={!barcodeUrl}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm disabled:opacity-50"
+            className="btn-secondary focus-ring disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
             Download
@@ -311,9 +367,13 @@ export function BarcodeDisplay({
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm"
+            className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg disabled:opacity-50 flex items-center gap-2 text-sm transition-all focus-ring"
           >
-            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {generating ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
             Regenerate
           </button>
         </div>
@@ -321,6 +381,3 @@ export function BarcodeDisplay({
     </motion.div>
   );
 }
-
-// Add missing imports
-import { X } from 'lucide-react';

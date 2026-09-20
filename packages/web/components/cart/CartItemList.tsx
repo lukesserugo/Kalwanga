@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartItemList.tsx
-
 'use client';
 
 import React from 'react';
@@ -30,10 +28,6 @@ export interface CartItemListProps {
   ) => Promise<void> | void;
   onRemove: (itemId: string) => Promise<void> | void;
   isLoading?: boolean;
-  /**
-   * ID of the item currently being updated, if any. The matching card
-   * shows a loading spinner on its quantity stepper.
-   */
   isUpdating?: string | null;
   disabled?: boolean;
   emptyTitle?: string;
@@ -41,9 +35,6 @@ export interface CartItemListProps {
   emptyActionLabel?: string;
   emptyActionHref?: string;
   onEmptyAction?: () => void;
-  /**
-   * How many skeleton rows to render while loading. Defaults to 3.
-   */
   skeletonCount?: number;
 }
 
@@ -61,17 +52,9 @@ export function CartItemList({
   onEmptyAction,
   skeletonCount = 3,
 }: CartItemListProps) {
-  // ============================================
-  // LOADING
-  // ============================================
-
   if (isLoading) {
     return <CartSkeleton count={skeletonCount} />;
   }
-
-  // ============================================
-  // EMPTY
-  // ============================================
 
   if (items.length === 0) {
     return (
@@ -84,10 +67,6 @@ export function CartItemList({
       />
     );
   }
-
-  // ============================================
-  // LIST
-  // ============================================
 
   return (
     <div className="space-y-3">

@@ -1,4 +1,3 @@
-// packages/web/components/categories/CategoryAvatar.tsx
 'use client';
 
 import { useState } from 'react';
@@ -12,7 +11,7 @@ interface CategoryAvatarProps {
 }
 
 const SIZES: Record<NonNullable<CategoryAvatarProps['size']>, string> = {
-  xs: 'w-6 h-6 text-[10px]',
+  xs: 'w-6 h-6 text-2xs',
   sm: 'w-8 h-8 text-xs',
   md: 'w-10 h-10 text-sm',
   lg: 'w-14 h-14 text-lg',
@@ -26,16 +25,16 @@ const ROUNDED: Record<NonNullable<CategoryAvatarProps['rounded']>, string> = {
 };
 
 const FALLBACK_COLORS = [
-  '#F97316', // orange
-  '#EF4444', // red
-  '#EC4899', // pink
-  '#8B5CF6', // violet
-  '#3B82F6', // blue
-  '#06B6D4', // cyan
-  '#10B981', // emerald
-  '#84CC16', // lime
-  '#EAB308', // yellow
-  '#F59E0B', // amber
+  '#F97316',
+  '#EF4444',
+  '#EC4899',
+  '#8B5CF6',
+  '#3B82F6',
+  '#06B6D4',
+  '#10B981',
+  '#84CC16',
+  '#EAB308',
+  '#F59E0B',
 ];
 
 function hashString(str: string): number {
@@ -70,7 +69,6 @@ export function CategoryAvatar({
 
   const base = `inline-flex items-center justify-center overflow-hidden shrink-0 font-semibold ${sizeClass} ${roundedClass} ${className}`;
 
-  // 1. Image
   if (category.image && !imgFailed) {
     return (
       <span className={base} style={{ backgroundColor: accent }}>
@@ -85,7 +83,6 @@ export function CategoryAvatar({
     );
   }
 
-  // 2. Icon (emoji or short text)
   if (category.icon) {
     return (
       <span
@@ -98,7 +95,6 @@ export function CategoryAvatar({
     );
   }
 
-  // 3. Initials on accent color
   return (
     <span
       className={base}

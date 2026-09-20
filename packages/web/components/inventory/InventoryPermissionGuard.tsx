@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\inventory\InventoryPermissionGuard.tsx
-
 'use client';
 
 import React, { ReactNode } from 'react';
@@ -8,15 +6,6 @@ import { Lock, Shield } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermission } from '../../hooks/usePermission';
 import { PermissionResource } from '../../types/enums';
-
-// ============================================
-// TYPES
-// ============================================
-//
-// NOTE: These names describe the *semantic* resource, not the
-// string casing that the backend or usePermission use. The
-// normalizers below convert them to the canonical lowercase
-// `resource:action` form before every comparison.
 
 export type InventoryPermission =
   | 'INVENTORY:view'
@@ -70,10 +59,6 @@ export interface InventoryPermissionCheckProps {
   checkOnMount?: boolean;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
-
 const PERMISSION_MESSAGES: Record<InventoryPermission, string> = {
   'INVENTORY:view': 'You need permission to view inventory items.',
   'INVENTORY:create': 'You need permission to create inventory items.',
@@ -90,29 +75,15 @@ const PERMISSION_MESSAGES: Record<InventoryPermission, string> = {
 };
 
 const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
-  'SUPER_ADMIN': 'Super Administrator',
-  'ADMIN': 'Administrator',
-  'MANAGER': 'Manager',
-  'INVENTORY_MANAGER': 'Inventory Manager',
-  'STORE_KEEPER': 'Store Keeper',
-  'STAFF': 'Staff',
-  'VIEWER': 'Viewer',
+  SUPER_ADMIN: 'Super Administrator',
+  ADMIN: 'Administrator',
+  MANAGER: 'Manager',
+  INVENTORY_MANAGER: 'Inventory Manager',
+  STORE_KEEPER: 'Store Keeper',
+  STAFF: 'Staff',
+  VIEWER: 'Viewer',
 };
 
-// ============================================
-// NORMALIZATION
-// ============================================
-//
-// Every comparison against usePermission's `hasPermission` MUST
-// be in lowercase `resource:action` form. The canonical catalogue
-// (see packages/web/types/permissions.ts) uses lowercase strings.
-// Anything upper- or mixed-case silently fails.
-
-/**
- * Normalize an InventoryPermission or PermissionConfig into the
- * canonical lowercase `resource:action` string that
- * `usePermission().hasPermission` accepts.
- */
 export function normalizePermissionString(
   permission: InventoryPermission | PermissionConfig
 ): string {
@@ -123,15 +94,6 @@ export function normalizePermissionString(
   return `${String(resource).toLowerCase()}:${String(action || 'view').toLowerCase()}`;
 }
 
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-
-/**
- * Convert InventoryPermission to PermissionConfig. Kept for
- * back-compat — the guard itself uses `normalizePermissionString`
- * directly, which is the safer path.
- */
 export function parsePermission(
   permission: InventoryPermission | PermissionConfig
 ): PermissionConfig {
@@ -143,13 +105,6 @@ export function parsePermission(
   };
 }
 
-/**
- * Legacy helper. Accepts an optional hasPermission function.
- *
- * Prefer `useInventoryPermission` from this module — it reads
- * the authoritative super-admin state from `usePermission`
- * instead of guessing from `user.role`.
- */
 export function hasInventoryPermission(
   user: any,
   permission: InventoryPermission | PermissionConfig,
@@ -163,20 +118,12 @@ export function hasInventoryPermission(
   return user.permissions?.includes?.(perm) || false;
 }
 
-/**
- * Legacy role check. `user.role === 'SUPER_ADMIN'` short-circuit
- * is retained for callers that don't have access to `usePermission`.
- */
 export function hasRole(user: any, roles: UserRole | UserRole[]): boolean {
   if (!user) return false;
   if (user.role === 'SUPER_ADMIN') return true;
   const list = Array.isArray(roles) ? roles : [roles];
   return list.some((r) => user.role === r);
 }
-
-// ============================================
-// PERMISSION GUARD COMPONENT
-// ============================================
 
 export function InventoryPermissionGuard({
   permission,
@@ -193,35 +140,17 @@ export function InventoryPermissionGuard({
     isSuperAdmin,
   } = usePermission();
 
-  // Stable string form of the permission we're checking.
   const permString = React.useMemo(
     () => normalizePermissionString(permission),
     [permission]
   );
 
-  // ────────────────────────────────────────────────────────────
-  // FIX — the decision is made AFTER both auth and permission
-  // hooks have settled, and it uses the AUTHORITATIVE super-admin
-  // flag rather than `user.role === 'SUPER_ADMIN'`.
-  //
-  // We return a tri-state:
-  //   null  → still loading
-  //   true  → access granted
-  //   false → access denied
-  // ────────────────────────────────────────────────────────────
   const decision = React.useMemo<'loading' | 'granted' | 'denied'>(() => {
     if (permLoading) return 'loading';
     if (!isAuthenticated || !user) return 'denied';
 
-    // ✅ AUTHORITATIVE: usePermission already folds in Clerk role,
-    //    user.role, wildcard, and the cached user. Do NOT
-    //    re-check `user.role === 'SUPER_ADMIN'` here — that path
-    //    misses three of the four sources.
     if (isSuperAdmin) return 'granted';
 
-    // ✅ NORMALIZED: lowercase `resource:action` matches the
-    //    strings that usePermission's named checkers compare
-    //    against.
     return hasPermission(permString) ? 'granted' : 'denied';
   }, [
     permLoading,
@@ -235,7 +164,7 @@ export function InventoryPermissionGuard({
   if (decision === 'loading') {
     return (
       <div className={`flex items-center justify-center p-4 ${className}`}>
-        <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent" />
+        <div className="animate-spin rounded-full h-5 w-5 border-2 border-brand-500 border-t-transparent" />
         <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
           Checking permissions…
         </span>
@@ -274,10 +203,6 @@ export function InventoryPermissionGuard({
 
   return <>{children}</>;
 }
-
-// ============================================
-// ROLE GUARD COMPONENT
-// ============================================
 
 export function InventoryRoleGuard({
   roles,
@@ -330,10 +255,6 @@ export function InventoryRoleGuard({
   return <>{children}</>;
 }
 
-// ============================================
-// PERMISSION CHECK COMPONENT (Render Props)
-// ============================================
-
 export function InventoryPermissionCheck({
   permission,
   children,
@@ -347,7 +268,6 @@ export function InventoryPermissionCheck({
     [permission]
   );
 
-  // Derive directly — no useState, no useEffect, no stale snapshot.
   const hasAccess = React.useMemo(() => {
     if (isLoading) return false;
     if (!isAuthenticated || !user) return false;
@@ -355,16 +275,10 @@ export function InventoryPermissionCheck({
     return hasPermission(permString);
   }, [isLoading, isAuthenticated, user, isSuperAdmin, hasPermission, permString]);
 
-  // `checkOnMount` is retained for back-compat. In practice the
-  // hook is fully synchronous now, so the flag is a no-op.
   void checkOnMount;
 
-  return children(hasAccess, isLoading);
+  return <>{children(hasAccess, isLoading)}</>;
 }
-
-// ============================================
-// COMPOSED GUARD COMPONENTS
-// ============================================
 
 export function InventoryCreateGuard(
   props: Omit<InventoryPermissionGuardProps, 'permission'>
@@ -414,10 +328,6 @@ export function InventoryExportGuard(
   return <InventoryPermissionGuard permission="INVENTORY:export" {...props} />;
 }
 
-// ============================================
-// HOOKS
-// ============================================
-
 export function useInventoryPermission(
   permission: InventoryPermission | PermissionConfig
 ): {
@@ -463,7 +373,6 @@ export function useAnyInventoryPermission(
 
   const permStrings = React.useMemo(
     () => permissions.map(normalizePermissionString),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [JSON.stringify(permissions)]
   );
 
@@ -493,7 +402,6 @@ export function useAllInventoryPermissions(
 
   const permStrings = React.useMemo(
     () => permissions.map(normalizePermissionString),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [JSON.stringify(permissions)]
   );
 
@@ -506,9 +414,5 @@ export function useAllInventoryPermissions(
 
   return { hasAll, isLoading, isSuperAdmin };
 }
-
-// ============================================
-// EXPORT
-// ============================================
 
 export default InventoryPermissionGuard;

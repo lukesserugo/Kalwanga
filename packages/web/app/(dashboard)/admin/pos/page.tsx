@@ -430,8 +430,8 @@ export default function POSPage() {
   if (!isLoaded || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto" />
+        <div className="text-center animate-fade-in">
+          <Loader2 className="w-12 h-12 animate-spin text-brand-600 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading POS...</p>
         </div>
       </div>
@@ -452,10 +452,10 @@ export default function POSPage() {
         {/* Main POS Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="bg-white dark:bg-gray-800 shadow-sm px-6 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <div className="bg-white dark:bg-gray-800 shadow-soft px-6 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
             <div className="flex items-center gap-4">
               <h1 className="text-xl font-bold text-gray-900 dark:text-white">Point of Sale</h1>
-              <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-full text-xs font-medium flex items-center gap-1">
+              <span className="px-2 py-1 bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300 rounded-full text-2xs font-medium flex items-center gap-1">
                 <CheckCircle className="w-3 h-3" />
                 Shift Open
               </span>
@@ -463,8 +463,9 @@ export default function POSPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
                 title="Toggle Sidebar"
+                aria-label="Toggle sidebar"
               >
                 <Settings className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               </button>
@@ -476,7 +477,7 @@ export default function POSPage() {
             {/* Left - Products */}
             <div className="flex-1 flex flex-col">
               {/* Search Bar */}
-              <div className="bg-white dark:bg-gray-800 shadow-sm p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <div className="bg-white dark:bg-gray-800 shadow-soft p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <div className="flex flex-col sm:flex-row gap-2">
                   <div className="flex-1 relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -485,11 +486,11 @@ export default function POSPage() {
                       placeholder="Search by name, SKU, or barcode..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition duration-250"
                     />
                     {searching && (
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+                        <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
                       </div>
                     )}
                   </div>
@@ -497,7 +498,7 @@ export default function POSPage() {
               </div>
 
               {/* Product Grid */}
-              <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                 {searchQuery ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     {searchResults.length > 0 ? (
@@ -520,7 +521,7 @@ export default function POSPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     {productsLoading ? (
                       <div className="col-span-full text-center py-12">
-                        <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+                        <Loader2 className="w-8 h-8 text-brand-500 animate-spin mx-auto" />
                         <p className="mt-2 text-gray-500 dark:text-gray-400">Loading products...</p>
                       </div>
                     ) : products.length > 0 ? (
@@ -548,15 +549,15 @@ export default function POSPage() {
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Items: <span className="font-medium text-gray-900 dark:text-white">{cart.items.length}</span>
+                        Items: <span className="font-medium tabular-nums text-gray-900 dark:text-white">{cart.items.length}</span>
                       </span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Total: <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(cart.total)}</span>
+                        Total: <span className="font-bold tabular-nums text-brand-600 dark:text-brand-400">{formatCurrency(cart.total)}</span>
                       </span>
                     </div>
                     <button
                       onClick={() => document.getElementById('cart-section')?.scrollIntoView({ behavior: 'smooth' })}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                      className="btn-brand"
                     >
                       <ShoppingCart className="w-4 h-4" />
                       View Cart
@@ -572,11 +573,16 @@ export default function POSPage() {
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   <ShoppingCart className="w-5 h-5" />
                   Cart
+                  {cart && cart.items.length > 0 && (
+                    <span className="badge-brand tabular-nums animate-badge-pop">
+                      {cart.items.length}
+                    </span>
+                  )}
                 </h2>
                 {cart && cart.items.length > 0 && (
                   <button
                     onClick={clearCart}
-                    className="text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                    className="text-sm text-danger-600 hover:text-danger-800 dark:text-danger-400 dark:hover:text-danger-300 transition duration-250 focus-ring"
                   >
                     Clear All
                   </button>
@@ -584,7 +590,7 @@ export default function POSPage() {
               </div>
 
               {/* Cart Items */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                 {!cart || cart.items.length === 0 ? (
                   <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                     <ShoppingCart className="w-12 h-12 mx-auto mb-2 opacity-50" />
@@ -609,27 +615,27 @@ export default function POSPage() {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-                      <span className="text-gray-900 dark:text-white">{formatCurrency(cart.subtotal)}</span>
+                      <span className="tabular-nums text-gray-900 dark:text-white">{formatCurrency(cart.subtotal)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600 dark:text-gray-400">Tax</span>
-                      <span className="text-gray-900 dark:text-white">{formatCurrency(cart.tax)}</span>
+                      <span className="tabular-nums text-gray-900 dark:text-white">{formatCurrency(cart.tax)}</span>
                     </div>
                     {cart.discount > 0 && (
-                      <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                      <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
                         <span>Discount</span>
-                        <span>-{formatCurrency(cart.discount)}</span>
+                        <span className="tabular-nums">-{formatCurrency(cart.discount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                       <span className="text-gray-900 dark:text-white">Total</span>
-                      <span className="text-blue-600 dark:text-blue-400">{formatCurrency(cart.total)}</span>
+                      <span className="tabular-nums text-brand-600 dark:text-brand-400">{formatCurrency(cart.total)}</span>
                     </div>
                   </div>
 
                   <div className="mt-4 space-y-2">
                     {customerName && (
-                      <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+                      <div className="flex items-center gap-2 text-sm text-brand-600 dark:text-brand-400">
                         <User className="w-4 h-4" />
                         <span>{customerName}</span>
                         <button
@@ -637,7 +643,8 @@ export default function POSPage() {
                             setCustomerId('');
                             setCustomerName('');
                           }}
-                          className="text-red-500 hover:text-red-700"
+                          className="text-danger-500 hover:text-danger-700 transition duration-250 focus-ring rounded"
+                          aria-label="Remove customer"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -646,7 +653,7 @@ export default function POSPage() {
                     <select
                       value={paymentMethod}
                       onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition duration-250"
                     >
                       <option value="CASH">Cash</option>
                       <option value="CREDIT_CARD">Credit Card</option>
@@ -660,17 +667,17 @@ export default function POSPage() {
                       placeholder="Amount Paid"
                       value={paidAmount}
                       onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition duration-250 tabular-nums"
                       step="0.01"
                       min="0"
                     />
                     {paidAmount > 0 && paidAmount < (cart?.total || 0) && (
-                      <p className="text-red-500 text-sm">
+                      <p className="text-danger-500 text-sm tabular-nums">
                         Insufficient amount. Remaining: {formatCurrency((cart?.total || 0) - paidAmount)}
                       </p>
                     )}
                     {paidAmount >= (cart?.total || 0) && cart?.total > 0 && (
-                      <p className="text-green-600 text-sm">
+                      <p className="text-success-600 dark:text-success-400 text-sm tabular-nums">
                         Change: {formatCurrency(changeAmount)}
                       </p>
                     )}
@@ -680,7 +687,7 @@ export default function POSPage() {
                     <button
                       onClick={handleCheckout}
                       disabled={isCheckingOut || paidAmount < (cart?.total || 0) || cart.items.length === 0}
-                      className="flex-1 bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 btn-success disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isCheckingOut ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -692,7 +699,9 @@ export default function POSPage() {
                     <button
                       onClick={holdOrder}
                       disabled={cart.items.length === 0}
-                      className="px-4 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Hold order"
+                      aria-label="Hold order"
                     >
                       <Clock className="w-4 h-4" />
                     </button>
@@ -704,7 +713,7 @@ export default function POSPage() {
         </div>
 
         {/* Sidebar - Quick Actions */}
-        <div className={`w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0 transition-all duration-300 ${sidebarCollapsed ? 'hidden' : ''}`}>
+        <div className={`w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto custom-scrollbar flex-shrink-0 transition-all duration-350 ${sidebarCollapsed ? 'hidden' : ''}`}>
           <QuickActions
             onRefresh={fetchCart}
             onViewSales={handleViewSales}
@@ -776,25 +785,30 @@ function ProductCard({ product, onAdd, availableStock }: ProductCardProps) {
   return (
     <div
       onClick={isOutOfStock ? undefined : onAdd}
-      className={`border rounded-lg p-3 hover:shadow-lg transition-all cursor-pointer ${
-        isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg'
-      } bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700`}
+      className={`border rounded-xl p-3 transition-all duration-250 ${
+        isOutOfStock
+          ? 'opacity-50 cursor-not-allowed border-gray-200 dark:border-gray-700'
+          : 'cursor-pointer hover:shadow-card-hover hover:border-brand-300 dark:hover:border-brand-500/50 border-gray-200 dark:border-gray-700'
+      } bg-white dark:bg-gray-800 focus-ring`}
+      role="button"
+      tabIndex={isOutOfStock ? -1 : 0}
+      aria-label={isOutOfStock ? `${product.name} out of stock` : `Add ${product.name} to cart`}
     >
-      <div className="aspect-square bg-gray-100 dark:bg-gray-700 rounded mb-2 flex items-center justify-center overflow-hidden">
+      <div className="aspect-square bg-gray-100 dark:bg-gray-700 rounded-lg mb-2 flex items-center justify-center overflow-hidden">
         {product.images?.[0] ? (
-          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover rounded" />
+          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover rounded-lg" />
         ) : (
           <Package className="w-8 h-8 text-gray-400 dark:text-gray-500" />
         )}
       </div>
       <h3 className="font-medium text-sm truncate text-gray-900 dark:text-white">{product.name}</h3>
-      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{product.sku}</p>
-      <p className="text-sm font-bold text-blue-600 dark:text-blue-400">{formatCurrency(product.unitPrice)}</p>
-      <p className={`text-xs ${availableStock <= 5 ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>
+      <p className="text-2xs font-mono text-gray-500 dark:text-gray-400 truncate">{product.sku}</p>
+      <p className="text-sm font-bold tabular-nums text-brand-600 dark:text-brand-400">{formatCurrency(product.unitPrice)}</p>
+      <p className={`text-2xs tabular-nums ${availableStock <= 5 ? 'text-danger-500' : 'text-gray-500 dark:text-gray-400'}`}>
         Stock: {availableStock}
       </p>
       {isOutOfStock && (
-        <span className="text-xs text-red-500 font-medium">Out of Stock</span>
+        <span className="text-2xs text-danger-500 font-medium">Out of Stock</span>
       )}
     </div>
   );
@@ -812,15 +826,17 @@ interface CartItemCardProps {
 
 function CartItemCard({ item, onUpdateQuantity, onRemove }: CartItemCardProps) {
   return (
-    <div className="border rounded-lg p-3 bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600">
+    <div className="border rounded-xl p-3 bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 transition duration-250">
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <h3 className="font-medium text-gray-900 dark:text-white">{item.name}</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">{formatCurrency(item.unitPrice)}</p>
+          <p className="text-sm tabular-nums text-gray-600 dark:text-gray-400">{formatCurrency(item.unitPrice)}</p>
         </div>
         <button
           onClick={onRemove}
-          className="text-red-500 hover:text-red-700 text-xl leading-none"
+          className="text-danger-500 hover:text-danger-700 text-xl leading-none transition duration-250 focus-ring rounded p-1"
+          title="Remove item"
+          aria-label="Remove item from cart"
         >
           ×
         </button>
@@ -828,24 +844,26 @@ function CartItemCard({ item, onUpdateQuantity, onRemove }: CartItemCardProps) {
       <div className="flex items-center gap-2 mt-2">
         <button
           onClick={() => onUpdateQuantity(Math.max(0, item.quantity - 1))}
-          className="w-8 h-8 border rounded hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600"
+          className="w-8 h-8 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 transition duration-250 focus-ring"
+          aria-label="Decrease quantity"
         >
-          -
+          <Minus className="w-3 h-3" />
         </button>
-        <span className="w-12 text-center text-gray-900 dark:text-white">{item.quantity}</span>
+        <span className="w-12 text-center tabular-nums text-gray-900 dark:text-white">{item.quantity}</span>
         <button
           onClick={() => onUpdateQuantity(item.quantity + 1)}
-          className="w-8 h-8 border rounded hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600"
+          className="w-8 h-8 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 transition duration-250 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={item.quantity >= item.availableStock}
+          aria-label="Increase quantity"
         >
-          +
+          <Plus className="w-3 h-3" />
         </button>
-        <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+        <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400 ml-auto">
           {formatCurrency(item.total)}
         </span>
       </div>
       {item.quantity >= item.availableStock && item.availableStock > 0 && (
-        <p className="text-xs text-red-500 mt-1">Max stock: {item.availableStock}</p>
+        <p className="text-2xs text-danger-500 mt-1 tabular-nums">Max stock: {item.availableStock}</p>
       )}
     </div>
   );

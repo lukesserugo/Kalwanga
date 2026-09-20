@@ -186,7 +186,7 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <LocationBUSelector value={businessUnitId} onChange={setBusinessUnitId} />
@@ -195,7 +195,7 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
           value={locationId}
           onChange={(e) => setLocationId(e.target.value)}
           disabled={!businessUnitId || locations.length === 0}
-          className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 min-w-[200px]"
+          className="px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 disabled:opacity-50 min-w-[200px]"
         >
           <option value="">Select location…</option>
           {locations.map((loc) => (
@@ -206,13 +206,13 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
         </select>
 
         <div className="flex-1 min-w-[200px] relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search products…"
-            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           />
         </div>
 
@@ -220,7 +220,7 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
           type="button"
           onClick={handleSubmit}
           disabled={saving || stats.counted === 0}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors"
+          className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? (
             <>
@@ -238,31 +238,31 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
 
       {/* Stats */}
       {rows.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total items</p>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="grid grid-cols-3 gap-3 animate-slide-down">
+          <div className="card-brand shadow-soft p-3">
+            <p className="text-2xs text-gray-500 dark:text-gray-400">Total items</p>
+            <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
               {stats.total}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Counted</p>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">
+          <div className="card-brand shadow-soft p-3">
+            <p className="text-2xs text-gray-500 dark:text-gray-400">Counted</p>
+            <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
               {stats.counted}
             </p>
           </div>
           <div
-            className={`rounded-lg border p-3 ${
+            className={`rounded-2xl border p-3 transition duration-250 ${
               stats.discrepancies > 0
-                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                ? 'bg-danger-50 dark:bg-danger-900/20 border-danger-200 dark:border-danger-800'
+                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-soft'
             }`}
           >
-            <p className="text-xs text-gray-500 dark:text-gray-400">Discrepancies</p>
+            <p className="text-2xs text-gray-500 dark:text-gray-400">Discrepancies</p>
             <p
-              className={`text-lg font-semibold ${
+              className={`text-lg font-semibold tabular-nums ${
                 stats.discrepancies > 0
-                  ? 'text-red-600 dark:text-red-400'
+                  ? 'text-danger-600 dark:text-danger-400'
                   : 'text-gray-900 dark:text-white'
               }`}
             >
@@ -274,46 +274,46 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
 
       {/* Sheet */}
       {!locationId ? (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
-          <AlertTriangle className="w-10 h-10 text-yellow-500 mx-auto mb-2" />
-          <p className="text-sm text-yellow-700 dark:text-yellow-300">
+        <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-2xl p-6 text-center">
+          <AlertTriangle className="w-10 h-10 text-warning-500 mx-auto mb-2" />
+          <p className="text-sm text-warning-700 dark:text-warning-300">
             Select a location to begin a stock count.
           </p>
         </div>
       ) : loading ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
-          <p className="mt-2 text-sm text-gray-500">Loading inventory…</p>
+        <div className="card-brand shadow-soft p-12 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400 mx-auto" />
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading inventory…</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div className="card-brand shadow-soft p-12 text-center">
           <ClipboardList className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No inventory rows at this location.
           </p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="card-brand shadow-soft overflow-hidden p-0">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Product
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow hidden md:table-cell">
                     SKU
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     System
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Counted
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Diff
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow hidden lg:table-cell">
                     Notes
                   </th>
                 </tr>
@@ -326,17 +326,17 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
                     diff === null
                       ? ''
                       : diff === 0
-                      ? 'bg-green-50/40 dark:bg-green-900/10'
-                      : 'bg-red-50/40 dark:bg-red-900/10';
+                      ? 'bg-success-50/40 dark:bg-success-900/10'
+                      : 'bg-danger-50/40 dark:bg-danger-900/10';
                   return (
-                    <tr key={r.inventoryId} className={rowCls}>
+                    <tr key={r.inventoryId} className={`transition duration-250 ${rowCls}`}>
                       <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">
                         {r.name}
                       </td>
-                      <td className="px-4 py-2 text-sm font-mono text-gray-500 dark:text-gray-400 hidden md:table-cell">
+                      <td className="px-4 py-2 text-sm font-mono tabular-nums text-gray-500 dark:text-gray-400 hidden md:table-cell">
                         {r.sku}
                       </td>
-                      <td className="px-4 py-2 text-sm text-right text-gray-600 dark:text-gray-400">
+                      <td className="px-4 py-2 text-sm text-right tabular-nums text-gray-600 dark:text-gray-400">
                         {r.systemQty}
                       </td>
                       <td className="px-4 py-2 text-right">
@@ -345,18 +345,18 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
                           min={0}
                           value={r.countedQty}
                           onChange={(e) => setCount(r.inventoryId, e.target.value)}
-                          className="w-20 px-2 py-1 text-right text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-20 px-2 py-1 text-right text-sm tabular-nums rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                         />
                       </td>
                       <td className="px-4 py-2 text-right">
                         {diff === null ? (
                           <span className="text-gray-300 dark:text-gray-600">—</span>
                         ) : diff === 0 ? (
-                          <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                          <span className="inline-flex items-center gap-1 tabular-nums text-success-600 dark:text-success-400">
                             <CheckCircle2 className="w-3.5 h-3.5" />0
                           </span>
                         ) : (
-                          <span className="text-red-600 dark:text-red-400 font-medium">
+                          <span className="text-danger-600 dark:text-danger-400 font-medium tabular-nums">
                             {diff > 0 ? '+' : ''}
                             {diff}
                           </span>
@@ -368,7 +368,7 @@ export function StockCountSheet({ initialBusinessUnitId }: StockCountSheetProps)
                           value={r.notes}
                           onChange={(e) => setNotes(r.inventoryId, e.target.value)}
                           placeholder="Optional"
-                          className="w-full px-2 py-1 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-2 py-1 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                         />
                       </td>
                     </tr>

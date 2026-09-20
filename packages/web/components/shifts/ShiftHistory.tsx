@@ -8,12 +8,10 @@ import {
   Printer,
   Eye,
   Search,
-  Filter,
   User,
   Building2,
   Store,
   Clock,
-  DollarSign,
   TrendingUp,
   TrendingDown,
   CheckCircle,
@@ -148,9 +146,11 @@ export function ShiftHistory({
 
   if (!isLoading && shifts.length === 0) {
     return (
-      <Card className="p-8 text-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+      <Card className="p-8 text-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-soft">
         <div className="text-gray-400 dark:text-gray-500">
-          <Clock className="w-12 h-12 mx-auto mb-3" />
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-brand-50 dark:bg-brand-950/40 flex items-center justify-center">
+            <Clock className="w-8 h-8 text-brand-500 dark:text-brand-400" />
+          </div>
           <p className="text-lg text-gray-900 dark:text-white">
             No shifts recorded yet
           </p>
@@ -163,21 +163,21 @@ export function ShiftHistory({
   }
 
   return (
-    <Card className="p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
+    <Card className="p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-soft">
       {/* Filters Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
             <Input
               placeholder="Search shifts..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 w-48 md:w-64 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+              className="pl-9 w-48 md:w-64 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-brand-500"
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-32 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white">
+            <SelectTrigger className="w-32 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus-visible:ring-brand-500">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -195,7 +195,7 @@ export function ShiftHistory({
                 onScopeChange(v as 'mine' | 'businessUnit' | 'all')
               }
             >
-              <SelectTrigger className="w-40 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white">
+              <SelectTrigger className="w-40 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus-visible:ring-brand-500">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -207,11 +207,11 @@ export function ShiftHistory({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className="focus-ring">
             <Printer className="w-4 h-4 mr-2" />
             Print
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className="focus-ring">
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
@@ -223,31 +223,31 @@ export function ShiftHistory({
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Shift
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Assigned To
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Register
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Business Unit
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Opened
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Duration
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Revenue
               </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Status
               </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-gray-400">
+              <th className="px-4 py-3 text-right text-2xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                 Actions
               </th>
             </tr>
@@ -270,7 +270,7 @@ export function ShiftHistory({
               return (
                 <tr
                   key={shift.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  className="hover:bg-brand-50/40 dark:hover:bg-gray-800/50 transition-colors"
                 >
                   <td className="px-4 py-3 text-sm font-mono text-gray-700 dark:text-gray-300">
                     {shift.id.slice(0, 8)}
@@ -279,7 +279,7 @@ export function ShiftHistory({
                   {/* ✅ Assigned user */}
                   <td className="px-4 py-3 text-sm">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                      <div className="w-7 h-7 rounded-full bg-brand-gradient flex items-center justify-center text-white text-2xs font-semibold flex-shrink-0 shadow-brand">
                         {userName.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
@@ -287,7 +287,7 @@ export function ShiftHistory({
                           {userName}
                         </p>
                         {shift.assignedUserRole && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
+                          <p className="text-2xs text-gray-400 dark:text-gray-500 truncate">
                             {shift.assignedUserRole}
                           </p>
                         )}
@@ -311,11 +311,11 @@ export function ShiftHistory({
                     </div>
                   </td>
 
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
                     {formatDateTime(shift.openedAt)}
                   </td>
 
-                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                  <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
                     {shift.duration
                       ? formatDuration(shift.duration)
                       : shift.closedAt
@@ -331,7 +331,7 @@ export function ShiftHistory({
                         )}
                   </td>
 
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(shift.totalRevenue || 0)}
                   </td>
 
@@ -347,6 +347,7 @@ export function ShiftHistory({
                       size="sm"
                       onClick={() => onViewShift?.(shift)}
                       aria-label={`View shift ${shift.id.slice(0, 8)}`}
+                      className="focus-ring"
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -361,7 +362,7 @@ export function ShiftHistory({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-gray-700 mt-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             Showing{' '}
             {Math.min(
               total || filteredShifts.length,
@@ -377,10 +378,11 @@ export function ShiftHistory({
               size="sm"
               onClick={() => handlePageChange(Math.max(1, localPage - 1))}
               disabled={localPage === 1}
+              className="focus-ring"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
               Page {localPage} of {totalPages}
             </span>
             <Button
@@ -390,6 +392,7 @@ export function ShiftHistory({
                 handlePageChange(Math.min(totalPages, localPage + 1))
               }
               disabled={localPage === totalPages}
+              className="focus-ring"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

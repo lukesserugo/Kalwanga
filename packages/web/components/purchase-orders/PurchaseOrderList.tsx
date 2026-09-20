@@ -145,13 +145,13 @@ export function PurchaseOrderList() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'RECEIVED': return 'green';
-      case 'PARTIALLY_RECEIVED': return 'blue';
-      case 'PENDING': return 'yellow';
-      case 'APPROVED': return 'purple';
+      case 'RECEIVED': return 'success';
+      case 'PARTIALLY_RECEIVED': return 'brand';
+      case 'PENDING': return 'warning';
+      case 'APPROVED': return 'secondary';
       case 'ORDERED': return 'indigo';
       case 'DRAFT': return 'gray';
-      case 'CANCELLED': return 'red';
+      case 'CANCELLED': return 'danger';
       default: return 'gray';
     }
   };
@@ -175,8 +175,8 @@ export function PurchaseOrderList() {
       header: 'PO Number',
       render: (order: PurchaseOrder) => (
         <div>
-          <p className="font-medium text-gray-900">{order.orderNumber}</p>
-          <p className="text-sm text-gray-500">
+          <p className="font-medium tabular-nums text-gray-900 dark:text-white">{order.orderNumber}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {new Date(order.createdAt).toLocaleString()}
           </p>
         </div>
@@ -187,8 +187,8 @@ export function PurchaseOrderList() {
       header: 'Supplier',
       render: (order: PurchaseOrder) => (
         <div>
-          <p className="font-medium">{order.supplier?.name}</p>
-          <p className="text-sm text-gray-500">{order.supplier?.email}</p>
+          <p className="font-medium text-gray-900 dark:text-white">{order.supplier?.name}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{order.supplier?.email}</p>
         </div>
       ),
     },
@@ -196,14 +196,14 @@ export function PurchaseOrderList() {
       key: 'items',
       header: 'Items',
       render: (order: PurchaseOrder) => (
-        <span>{order.items?.length || 0} items</span>
+        <span className="tabular-nums text-gray-700 dark:text-gray-300">{order.items?.length || 0} items</span>
       ),
     },
     {
       key: 'total',
       header: 'Total',
       render: (order: PurchaseOrder) => (
-        <span className="font-bold text-gray-900">${order.total.toFixed(2)}</span>
+        <span className="font-bold tabular-nums text-gray-900 dark:text-white">${order.total.toFixed(2)}</span>
       ),
     },
     {
@@ -212,11 +212,11 @@ export function PurchaseOrderList() {
       render: (order: PurchaseOrder) => (
         order.expectedDelivery ? (
           <div className="text-sm">
-            <p>{new Date(order.expectedDelivery).toLocaleDateString()}</p>
-            <span className={`text-xs ${
+            <p className="tabular-nums text-gray-900 dark:text-white">{new Date(order.expectedDelivery).toLocaleDateString()}</p>
+            <span className={`text-2xs ${
               new Date(order.expectedDelivery) < new Date() && order.status !== 'RECEIVED'
-                ? 'text-red-600'
-                : 'text-gray-500'
+                ? 'text-danger-600 dark:text-danger-400'
+                : 'text-gray-500 dark:text-gray-400'
             }`}>
               {new Date(order.expectedDelivery) < new Date() && order.status !== 'RECEIVED'
                 ? 'Overdue'
@@ -232,7 +232,7 @@ export function PurchaseOrderList() {
       render: (order: PurchaseOrder) => {
         const StatusIcon = getStatusIcon(order.status);
         return (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${getStatusColor(order.status)}-100 text-${getStatusColor(order.status)}-700 inline-flex items-center gap-1`}>
+          <span className={`px-2 py-1 rounded-full text-2xs font-medium bg-${getStatusColor(order.status)}-100 text-${getStatusColor(order.status)}-700 inline-flex items-center gap-1`}>
             <StatusIcon className="w-3 h-3" />
             {order.status}
           </span>
@@ -246,9 +246,10 @@ export function PurchaseOrderList() {
         <div className="flex items-center gap-2">
           <Link
             to={`/purchase-orders/${order.id}`}
-            className="p-1 hover:bg-blue-100 rounded transition-colors"
+            className="p-1 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition duration-250 focus-ring"
+            aria-label={`View ${order.orderNumber}`}
           >
-            <Eye className="w-4 h-4 text-blue-600" />
+            <Eye className="w-4 h-4 text-brand-600 dark:text-brand-400" />
           </Link>
           {(order.status === 'PENDING' || order.status === 'APPROVED' || order.status === 'ORDERED' || order.status === 'PARTIALLY_RECEIVED') && (
             <>
@@ -261,29 +262,32 @@ export function PurchaseOrderList() {
                   });
                   setShowReceiveModal(true);
                 }}
-                className="p-1 hover:bg-green-100 rounded transition-colors"
+                className="p-1 hover:bg-success-100 dark:hover:bg-success-900/30 rounded transition duration-250 focus-ring"
                 title="Receive PO"
+                aria-label={`Receive ${order.orderNumber}`}
               >
-                <Truck className="w-4 h-4 text-green-600" />
+                <Truck className="w-4 h-4 text-success-600 dark:text-success-400" />
               </button>
               <button
                 onClick={() => {
                   setSelectedOrder(order);
                   setShowCancelModal(true);
                 }}
-                className="p-1 hover:bg-red-100 rounded transition-colors"
+                className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
                 title="Cancel PO"
+                aria-label={`Cancel ${order.orderNumber}`}
               >
-                <XCircle className="w-4 h-4 text-red-600" />
+                <XCircle className="w-4 h-4 text-danger-600 dark:text-danger-400" />
               </button>
             </>
           )}
           {order.status === 'DRAFT' && (
             <Link
               to={`/purchase-orders/${order.id}/edit`}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
+              aria-label={`Edit ${order.orderNumber}`}
             >
-              <Edit className="w-4 h-4 text-gray-600" />
+              <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
             </Link>
           )}
         </div>
@@ -292,24 +296,24 @@ export function PurchaseOrderList() {
   ];
 
   return (
-    <div className="p-6">
+    <div className="p-6 animate-fade-in">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Purchase Orders</h1>
-          <p className="text-gray-600 mt-1">Manage all purchase orders</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Purchase Orders</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Manage all purchase orders</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+            className="btn-secondary"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
           <Link
             to="/purchase-orders/new"
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="btn-brand"
           >
             <Plus className="w-4 h-4" />
             Create PO
@@ -318,24 +322,24 @@ export function PurchaseOrderList() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+      <div className="card-brand shadow-soft mb-6">
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex-1 min-w-[200px]">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
               <input
                 type="text"
                 placeholder="Search by PO number..."
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
             </div>
           </div>
           <select
             value={filters.status}
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           >
             <option value="">All Status</option>
             <option value="DRAFT">Draft</option>
@@ -350,26 +354,26 @@ export function PurchaseOrderList() {
             type="date"
             value={filters.startDate}
             onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           />
-          <span className="text-gray-500">to</span>
+          <span className="text-gray-500 dark:text-gray-400">to</span>
           <input
             type="date"
             value={filters.endDate}
             onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           />
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div className="card-brand shadow-soft p-0 overflow-hidden">
         <Table
           columns={columns}
           data={orders}
           loading={loading}
         />
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           <Pagination
             currentPage={pagination.page}
             totalPages={pagination.totalPages}
@@ -387,21 +391,21 @@ export function PurchaseOrderList() {
         <div className="p-6">
           {selectedOrder && (
             <div className="mb-4">
-              <p className="font-medium">PO: {selectedOrder.orderNumber}</p>
-              <p className="text-sm text-gray-600">Supplier: {selectedOrder.supplier?.name}</p>
+              <p className="font-medium tabular-nums text-gray-900 dark:text-white">PO: {selectedOrder.orderNumber}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Supplier: {selectedOrder.supplier?.name}</p>
             </div>
           )}
           <div className="space-y-3">
             {selectedOrder?.items?.map((item: any) => (
-              <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
+              <div key={item.id} className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-xl">
                 <div>
-                  <p className="font-medium">{item.product?.name}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="font-medium text-gray-900 dark:text-white">{item.product?.name}</p>
+                  <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                     Ordered: {item.quantity} | Received: {item.receivedQuantity || 0}
                   </p>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1">Receive</label>
+                  <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Receive</label>
                   <input
                     type="number"
                     value={receivedItems[item.id] || 0}
@@ -414,7 +418,7 @@ export function PurchaseOrderList() {
                     }}
                     min="0"
                     max={item.quantity - (item.receivedQuantity || 0)}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   />
                 </div>
               </div>
@@ -423,13 +427,13 @@ export function PurchaseOrderList() {
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={() => setShowReceiveModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               onClick={handleReceive}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              className="btn-success"
             >
               Receive Items
             </button>
@@ -446,31 +450,31 @@ export function PurchaseOrderList() {
         <div className="p-6">
           {selectedOrder && (
             <div className="mb-4">
-              <p className="font-medium">PO: {selectedOrder.orderNumber}</p>
+              <p className="font-medium tabular-nums text-gray-900 dark:text-white">PO: {selectedOrder.orderNumber}</p>
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Reason for Cancellation
             </label>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 resize-none"
               placeholder="Reason for cancellation..."
             />
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={() => setShowCancelModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               onClick={handleCancel}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl transition duration-250 flex items-center gap-2 focus-ring shadow-brand"
             >
               Cancel PO
             </button>

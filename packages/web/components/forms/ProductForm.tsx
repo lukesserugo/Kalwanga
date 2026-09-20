@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import Input from '../common/Input';
 import Button from '../common/Button';
-import { validateRequired, validatePositiveNumber } from '../../utils/validators';
+import {
+  validateRequired,
+  validatePositiveNumber,
+} from '../../utils/validators';
 
 interface ProductFormData {
   name: string;
@@ -52,7 +55,11 @@ export default function ProductForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
     const { name, value, type } = e.target;
     setFormData((prev) => ({
       ...prev,
@@ -111,7 +118,7 @@ export default function ProductForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Description
         </label>
         <textarea
@@ -119,7 +126,7 @@ export default function ProductForm({
           value={formData.description}
           onChange={handleChange}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-shadow"
           disabled={isLoading}
         />
       </div>
@@ -175,14 +182,14 @@ export default function ProductForm({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Category
           </label>
           <select
             name="categoryId"
             value={formData.categoryId}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-shadow"
             disabled={isLoading}
           >
             <option value="">Select Category</option>
@@ -195,15 +202,17 @@ export default function ProductForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Business Unit *
           </label>
           <select
             name="businessUnitId"
             value={formData.businessUnitId}
             onChange={handleChange}
-            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              errors.businessUnitId ? 'border-red-500' : 'border-gray-300'
+            className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-shadow ${
+              errors.businessUnitId
+                ? 'border-danger-500'
+                : 'border-gray-300 dark:border-gray-600'
             }`}
             disabled={isLoading}
           >
@@ -215,7 +224,9 @@ export default function ProductForm({
             ))}
           </select>
           {errors.businessUnitId && (
-            <p className="mt-1 text-sm text-red-600">{errors.businessUnitId}</p>
+            <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+              {errors.businessUnitId}
+            </p>
           )}
         </div>
       </div>

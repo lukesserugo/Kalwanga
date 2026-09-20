@@ -289,7 +289,7 @@ function getStockStatus(product: Product) {
     return {
       status: 'Out of Stock',
       color:
-        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+        'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
       icon: XCircle,
     };
   }
@@ -297,14 +297,14 @@ function getStockStatus(product: Product) {
     return {
       status: 'Low Stock',
       color:
-        'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+        'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
       icon: AlertTriangle,
     };
   }
   return {
     status: 'In Stock',
     color:
-      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+      'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
     icon: CheckCircle,
   };
 }
@@ -751,13 +751,13 @@ export function ProductList({
           key={star}
           className={`w-3.5 h-3.5 ${
             star <= Math.round(rating)
-              ? 'text-yellow-400 fill-current'
+              ? 'text-warning-400 fill-current'
               : 'text-gray-300 dark:text-gray-600'
           }`}
         />
       ))}
       {rating > 0 && (
-        <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 ml-1">
           ({rating.toFixed(1)})
         </span>
       )}
@@ -815,7 +815,7 @@ export function ProductList({
 
   if (loading && products.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
+      <div className="card-brand shadow-soft p-6">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/4" />
           <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded" />
@@ -823,7 +823,7 @@ export function ProductList({
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="h-64 bg-gray-200 dark:bg-gray-700 rounded"
+                className="h-64 bg-gray-200 dark:bg-gray-700 rounded-xl"
               />
             ))}
           </div>
@@ -837,10 +837,10 @@ export function ProductList({
   // ============================================
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Filters */}
       {showFilters && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
+        <div className="card-brand shadow-soft">
           <div className="flex flex-wrap gap-4 items-center">
             <div className="flex-1 min-w-[200px] relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
@@ -849,18 +849,18 @@ export function ProductList({
                 placeholder="Search by name, SKU, or barcode..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
             </div>
 
             <button
               onClick={() => setShowMobileFilters(!showMobileFilters)}
-              className="lg:hidden flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+              className="lg:hidden flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-700 dark:text-gray-300 transition duration-250 focus-ring"
             >
               <SlidersHorizontal className="w-4 h-4" />
               Filters
               {hasActiveFilters && (
-                <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                <span className="w-2 h-2 bg-brand-500 rounded-full" />
               )}
             </button>
 
@@ -868,7 +868,7 @@ export function ProductList({
               <select
                 value={filters.categoryId}
                 onChange={(e) => updateFilter('categoryId', e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               >
                 <option value="">All Categories</option>
                 {categories.map((cat) => (
@@ -891,7 +891,7 @@ export function ProductList({
                         e.target.value as FilterState['status'],
                       )
                     }
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   >
                     <option value="all">All Status</option>
                     <option value="active">Active</option>
@@ -906,7 +906,7 @@ export function ProductList({
                         e.target.value as FilterState['hasBarcode'],
                       )
                     }
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   >
                     <option value="all">All Barcodes</option>
                     <option value="yes">Has Barcode</option>
@@ -921,7 +921,7 @@ export function ProductList({
                         e.target.value as FilterState['hasVariants'],
                       )
                     }
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   >
                     <option value="all">All Products</option>
                     <option value="yes">Has Variants</option>
@@ -933,7 +933,7 @@ export function ProductList({
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               >
                 <option value="newest">🆕 Newest</option>
                 <option value="price-low">💵 Price: Low → High</option>
@@ -947,7 +947,7 @@ export function ProductList({
                   placeholder="Min $"
                   value={filters.minPrice}
                   onChange={(e) => updateFilter('minPrice', e.target.value)}
-                  className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                  className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                 />
                 <span className="text-gray-500 dark:text-gray-400">-</span>
                 <input
@@ -955,7 +955,7 @@ export function ProductList({
                   placeholder="Max $"
                   value={filters.maxPrice}
                   onChange={(e) => updateFilter('maxPrice', e.target.value)}
-                  className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                  className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                 />
               </div>
 
@@ -967,7 +967,7 @@ export function ProductList({
                     onChange={(e) =>
                       updateFilter('inStock', e.target.checked)
                     }
-                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                   />
                   In Stock
                 </label>
@@ -978,7 +978,7 @@ export function ProductList({
                     onChange={(e) =>
                       updateFilter('featured', e.target.checked)
                     }
-                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-yellow-500 focus:ring-yellow-500 bg-white dark:bg-gray-700"
+                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-warning-500 focus:ring-warning-500 bg-white dark:bg-gray-700 transition duration-250"
                   />
                   ⭐ Featured
                 </label>
@@ -987,7 +987,7 @@ export function ProductList({
               {hasActiveFilters && (
                 <button
                   onClick={clearFilters}
-                  className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+                  className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring rounded"
                 >
                   Clear All
                 </button>
@@ -997,35 +997,38 @@ export function ProductList({
             <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 ml-auto">
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition duration-250 focus-ring ${
                   viewMode === 'table'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 title="Table view"
+                aria-label="Table view"
               >
                 <List className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition duration-250 focus-ring ${
                   viewMode === 'grid'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 title="Grid view"
+                aria-label="Grid view"
               >
                 <Grid className="w-4 h-4" />
               </button>
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition duration-250 focus-ring ${
                   refreshing
-                    ? 'text-blue-500'
+                    ? 'text-brand-500'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 title="Refresh"
+                aria-label="Refresh products"
               >
                 <RefreshCw
                   className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
@@ -1043,7 +1046,7 @@ export function ProductList({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 lg:hidden"
+            className="fixed inset-0 z-modal lg:hidden"
           >
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
@@ -1054,7 +1057,7 @@ export function ProductList({
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 right-0 w-80 bg-white dark:bg-gray-800 shadow-2xl flex flex-col"
+              className="fixed inset-y-0 right-0 w-80 bg-white dark:bg-gray-800 shadow-card flex flex-col"
             >
               <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1062,12 +1065,13 @@ export function ProductList({
                 </h2>
                 <button
                   onClick={() => setShowMobileFilters(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
+                  aria-label="Close filters"
                 >
                   <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Category
@@ -1077,7 +1081,7 @@ export function ProductList({
                     onChange={(e) =>
                       updateFilter('categoryId', e.target.value)
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   >
                     <option value="">All Categories</option>
                     {categories.map((cat) => (
@@ -1101,7 +1105,7 @@ export function ProductList({
                             e.target.value as FilterState['status'],
                           )
                         }
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                       >
                         <option value="all">All Status</option>
                         <option value="active">Active</option>
@@ -1120,7 +1124,7 @@ export function ProductList({
                             e.target.value as FilterState['hasBarcode'],
                           )
                         }
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                       >
                         <option value="all">All</option>
                         <option value="yes">Has Barcode</option>
@@ -1139,7 +1143,7 @@ export function ProductList({
                             e.target.value as FilterState['hasVariants'],
                           )
                         }
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                       >
                         <option value="all">All</option>
                         <option value="yes">Has Variants</option>
@@ -1160,7 +1164,7 @@ export function ProductList({
                       onChange={(e) =>
                         updateFilter('minPrice', e.target.value)
                       }
-                      className="w-1/2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-1/2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                     />
                     <input
                       type="number"
@@ -1169,7 +1173,7 @@ export function ProductList({
                       onChange={(e) =>
                         updateFilter('maxPrice', e.target.value)
                       }
-                      className="w-1/2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-1/2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                     />
                   </div>
                 </div>
@@ -1181,7 +1185,7 @@ export function ProductList({
                       onChange={(e) =>
                         updateFilter('inStock', e.target.checked)
                       }
-                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition duration-250"
                     />
                     In Stock
                   </label>
@@ -1192,7 +1196,7 @@ export function ProductList({
                       onChange={(e) =>
                         updateFilter('featured', e.target.checked)
                       }
-                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-yellow-500 focus:ring-yellow-500"
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-warning-500 focus:ring-warning-500 transition duration-250"
                     />
                     Featured
                   </label>
@@ -1201,13 +1205,13 @@ export function ProductList({
               <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex gap-2">
                 <button
                   onClick={clearFilters}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 btn-secondary"
                 >
                   Clear All
                 </button>
                 <button
                   onClick={() => setShowMobileFilters(false)}
-                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  className="flex-1 btn-brand"
                 >
                   Apply
                 </button>
@@ -1224,16 +1228,16 @@ export function ProductList({
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2"
+            className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 animate-slide-down"
           >
-            <span className="text-sm text-blue-700 dark:text-blue-300">
+            <span className="text-sm text-brand-700 dark:text-brand-300 tabular-nums">
               {selectedProducts.length} products selected
             </span>
             <div className="flex items-center gap-2 flex-wrap">
               {showBarcode && (
                 <button
                   onClick={handleBulkGenerateBarcodes}
-                  className="px-3 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors flex items-center gap-1"
+                  className="px-3 py-1 text-sm bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg transition duration-250 flex items-center gap-1 focus-ring"
                 >
                   <Barcode className="w-3 h-3" />
                   Generate Barcodes
@@ -1241,25 +1245,25 @@ export function ProductList({
               )}
               <button
                 onClick={handleBulkActivate}
-                className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                className="px-3 py-1 text-sm bg-success-600 hover:bg-success-700 text-white rounded-lg transition duration-250 focus-ring"
               >
                 Activate
               </button>
               <button
                 onClick={handleBulkDeactivate}
-                className="px-3 py-1 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700 transition-colors"
+                className="px-3 py-1 text-sm bg-warning-600 hover:bg-warning-700 text-white rounded-lg transition duration-250 focus-ring"
               >
                 Deactivate
               </button>
               <button
                 onClick={handleBulkDelete}
-                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                className="px-3 py-1 text-sm bg-danger-600 hover:bg-danger-700 text-white rounded-lg transition duration-250 focus-ring"
               >
                 Delete
               </button>
               <button
                 onClick={() => setSelectedProducts([])}
-                className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition duration-250 focus-ring"
               >
                 Cancel
               </button>
@@ -1270,8 +1274,8 @@ export function ProductList({
 
       {/* Products Display — Table */}
       {viewMode === 'table' ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
-          <div className="overflow-x-auto">
+        <div className="card-brand shadow-soft p-0 overflow-hidden">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -1284,37 +1288,37 @@ export function ProductList({
                           products.length > 0
                         }
                         onChange={toggleAllSelection}
-                        className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                       />
                     </th>
                   )}
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Product
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     SKU
                   </th>
                   {showBarcode && (
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                       Barcode
                     </th>
                   )}
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Category
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Price
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Stock
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Rating
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow">
                     Actions
                   </th>
                 </tr>
@@ -1343,7 +1347,7 @@ export function ProductList({
                     return (
                       <tr
                         key={product.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250"
                       >
                         {canDeleteProducts && isAdmin && (
                           <td className="px-4 py-3">
@@ -1364,7 +1368,7 @@ export function ProductList({
                                   ]);
                                 }
                               }}
-                              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                             />
                           </td>
                         )}
@@ -1390,22 +1394,22 @@ export function ProductList({
                               </p>
                               <div className="flex flex-wrap items-center gap-1">
                                 {product.featured && (
-                                  <span className="text-xs text-yellow-600 dark:text-yellow-400">
+                                  <span className="text-xs text-warning-600 dark:text-warning-400">
                                     ⭐ Featured
                                   </span>
                                 )}
                                 {product.variants &&
                                   product.variants.length > 0 && (
-                                    <span className="text-xs text-purple-600 dark:text-purple-400 flex items-center gap-0.5">
+                                    <span className="text-2xs text-secondary-600 dark:text-secondary-400 flex items-center gap-0.5">
                                       <Layers className="w-3 h-3" />
                                       {product.variants.length} variants
                                       {hasVariantImages && (
-                                        <ImageIcon className="w-3 h-3 text-blue-500" />
+                                        <ImageIcon className="w-3 h-3 text-brand-500" />
                                       )}
                                     </span>
                                   )}
                                 {product.inventoryId && (
-                                  <span className="text-xs text-blue-500 flex items-center gap-0.5">
+                                  <span className="text-2xs text-brand-500 dark:text-brand-400 flex items-center gap-0.5">
                                     <Link2 className="w-3 h-3" />
                                     Inventory
                                   </span>
@@ -1414,18 +1418,18 @@ export function ProductList({
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 font-mono">
+                        <td className="px-4 py-3 text-sm tabular-nums text-gray-600 dark:text-gray-400 font-mono">
                           {product.sku}
                         </td>
                         {showBarcode && (
                           <td className="px-4 py-3">
                             {hasBarcode ? (
-                              <span className="text-xs font-mono text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                                <Barcode className="w-3 h-3 text-green-500" />
+                              <span className="text-xs font-mono tabular-nums text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                                <Barcode className="w-3 h-3 text-success-500" />
                                 {product.barcode}
                               </span>
                             ) : (
-                              <span className="text-xs text-gray-400">
+                              <span className="text-xs text-gray-400 dark:text-gray-500">
                                 No barcode
                               </span>
                             )}
@@ -1434,17 +1438,17 @@ export function ProductList({
                         <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                           {product.category?.name || '-'}
                         </td>
-                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                        <td className="px-4 py-3 font-medium tabular-nums text-gray-900 dark:text-white">
                           {formatCurrency(product.unitPrice)}
                         </td>
                         <td className="px-4 py-3">
                           <div>
                             <span
-                              className={`px-2 py-1 text-xs font-medium rounded-full ${stock.color}`}
+                              className={`px-2 py-1 text-2xs font-medium rounded-full ${stock.color}`}
                             >
                               {stock.status}
                             </span>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            <p className="text-xs tabular-nums text-gray-500 dark:text-gray-400 mt-1">
                               {summary.available} available
                             </p>
                           </div>
@@ -1462,9 +1466,9 @@ export function ProductList({
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            className={`px-2 py-1 text-2xs font-medium rounded-full ${
                               product.isActive
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
                                 : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                             }`}
                           >
@@ -1485,8 +1489,9 @@ export function ProductList({
                                   ? `/admin/catalog/${product.id}`
                                   : `/shop/${product.id}`
                               }
-                              className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                              className="p-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition duration-250 focus-ring"
                               title="View"
+                              aria-label={`View ${product.name}`}
                               onClick={() =>
                                 onProductSelect && onProductSelect(product)
                               }
@@ -1496,8 +1501,9 @@ export function ProductList({
                             {canEditProducts && isAdmin && (
                               <Link
                                 href={`/admin/catalog/edit/${product.id}`}
-                                className="p-1.5 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-lg transition-colors"
+                                className="p-1.5 text-warning-600 dark:text-warning-400 hover:bg-warning-50 dark:hover:bg-warning-900/30 rounded-lg transition duration-250 focus-ring"
                                 title="Edit"
+                                aria-label={`Edit ${product.name}`}
                                 onClick={() =>
                                   onProductEdit && onProductEdit(product)
                                 }
@@ -1512,8 +1518,9 @@ export function ProductList({
                                   setSelectedProductName(product.name);
                                   setShowDeleteModal(true);
                                 }}
-                                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                className="p-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/30 rounded-lg transition duration-250 focus-ring"
                                 title="Delete"
+                                aria-label={`Delete ${product.name}`}
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -1527,12 +1534,13 @@ export function ProductList({
                                   summary.available <= 0 ||
                                   addingToCart[product.id]
                                 }
-                                className={`p-1.5 rounded-lg transition-colors ${
+                                className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                                   summary.available <= 0
                                     ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30'
+                                    : 'text-success-600 dark:text-success-400 hover:bg-success-50 dark:hover:bg-success-900/30'
                                 }`}
                                 title="Add to Cart"
+                                aria-label={`Add ${product.name} to cart`}
                               >
                                 {addingToCart[product.id] ? (
                                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1553,7 +1561,7 @@ export function ProductList({
 
           {pagination.totalPages > 1 && (
             <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                 Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
                 {Math.min(
                   pagination.page * pagination.limit,
@@ -1570,7 +1578,7 @@ export function ProductList({
                     }))
                   }
                   disabled={pagination.page === 1}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-250 flex items-center gap-1 focus-ring text-gray-700 dark:text-gray-300"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Previous
@@ -1600,10 +1608,10 @@ export function ProductList({
                             page: pageNum,
                           }))
                         }
-                        className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+                        className={`px-3 py-1 rounded-lg text-sm transition duration-250 focus-ring ${
                           pagination.page === pageNum
-                            ? 'bg-blue-600 text-white'
-                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            ? 'bg-brand-gradient text-white'
+                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                         }`}
                       >
                         {pageNum}
@@ -1619,7 +1627,7 @@ export function ProductList({
                     }))
                   }
                   disabled={pagination.page === pagination.totalPages}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition duration-250 flex items-center gap-1 focus-ring text-gray-700 dark:text-gray-300"
                 >
                   Next
                   <ChevronRight className="w-4 h-4" />
@@ -1647,7 +1655,7 @@ export function ProductList({
               </p>
               <button
                 onClick={clearFilters}
-                className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="mt-4 btn-brand"
               >
                 Clear All Filters
               </button>
@@ -1666,7 +1674,7 @@ export function ProductList({
                   key={product.id}
                   variants={itemVariants}
                   transition={{ delay: index * 0.05 }}
-                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 group"
+                  className="card-brand shadow-soft hover:shadow-card-hover transition duration-350 overflow-hidden group"
                 >
                   <Link
                     href={
@@ -1692,28 +1700,28 @@ export function ProductList({
                         </div>
                       )}
                       {!product.isActive && (
-                        <div className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white text-xs rounded">
+                        <div className="absolute top-2 right-2 px-2 py-1 bg-danger-600 text-white text-2xs rounded">
                           Inactive
                         </div>
                       )}
                       {product.featured && (
-                        <div className="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded flex items-center gap-1">
+                        <div className="absolute top-2 left-2 px-2 py-1 bg-warning-500 text-white text-2xs rounded flex items-center gap-1">
                           <Sparkles className="w-3 h-3" />
                           Featured
                         </div>
                       )}
                       {available <= 0 && (
-                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-red-600 text-white text-xs rounded">
+                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-danger-600 text-white text-2xs rounded">
                           Out of Stock
                         </div>
                       )}
                       {available > 0 && available <= 5 && (
-                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded">
+                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-warning-500 text-white text-2xs tabular-nums rounded">
                           Only {available} left
                         </div>
                       )}
                       {showBarcode && product.barcode && (
-                        <div className="absolute bottom-2 left-2 px-2 py-1 bg-green-500/80 text-white text-xs rounded flex items-center gap-1">
+                        <div className="absolute bottom-2 left-2 px-2 py-1 bg-success-500/80 text-white text-2xs tabular-nums rounded flex items-center gap-1">
                           <Barcode className="w-3 h-3" />
                           {product.barcode.slice(0, 8)}
                         </div>
@@ -1728,16 +1736,16 @@ export function ProductList({
                       )}
                       {product.variants &&
                         product.variants.length > 0 && (
-                          <div className="absolute top-12 right-2 px-2 py-1 bg-purple-500/80 text-white text-xs rounded flex items-center gap-1">
+                          <div className="absolute top-12 right-2 px-2 py-1 bg-secondary-500/80 text-white text-2xs tabular-nums rounded flex items-center gap-1">
                             <Layers className="w-3 h-3" />
                             {product.variants.length}
                             {hasVariantImages && (
-                              <ImageIcon className="w-3 h-3 text-blue-300" />
+                              <ImageIcon className="w-3 h-3 text-brand-300" />
                             )}
                           </div>
                         )}
                       {product.inventoryId && (
-                        <div className="absolute top-12 left-2 px-2 py-1 bg-blue-500/80 text-white text-xs rounded flex items-center gap-1">
+                        <div className="absolute top-12 left-2 px-2 py-1 bg-brand-500/80 text-white text-2xs rounded flex items-center gap-1">
                           <Link2 className="w-3 h-3" />
                         </div>
                       )}
@@ -1751,22 +1759,22 @@ export function ProductList({
                           : `/shop/${product.id}`
                       }
                     >
-                      <h3 className="font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate">
+                      <h3 className="font-medium text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition duration-250 truncate">
                         {product.name}
                       </h3>
                     </Link>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                    <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400 font-mono">
                       SKU: {product.sku}
                     </p>
                     {product.rating && product.rating > 0 && (
                       <div className="mt-1">{renderStars(product.rating)}</div>
                     )}
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                      <span className="text-lg font-bold tabular-nums text-brand-600 dark:text-brand-400">
                         {formatCurrency(product.unitPrice)}
                       </span>
                       <span
-                        className={`px-2 py-0.5 text-xs font-medium rounded-full ${stock.color} flex items-center gap-0.5`}
+                        className={`px-2 py-0.5 text-2xs font-medium rounded-full ${stock.color} flex items-center gap-0.5`}
                       >
                         <stock.icon className="w-3 h-3" />
                         {stock.status}
@@ -1785,7 +1793,7 @@ export function ProductList({
                             ? `/admin/catalog/${product.id}`
                             : `/shop/${product.id}`
                         }
-                        className="flex-1 text-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                        className="flex-1 text-center btn-brand"
                         onClick={() =>
                           onProductSelect && onProductSelect(product)
                         }
@@ -1795,7 +1803,8 @@ export function ProductList({
                       {canEditProducts && isAdmin && (
                         <Link
                           href={`/admin/catalog/edit/${product.id}`}
-                          className="px-3 py-1.5 bg-yellow-600 text-white text-sm rounded-lg hover:bg-yellow-700 transition-colors"
+                          className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-sm rounded-xl transition duration-250 focus-ring"
+                          aria-label={`Edit ${product.name}`}
                           onClick={() =>
                             onProductEdit && onProductEdit(product)
                           }
@@ -1809,7 +1818,8 @@ export function ProductList({
                             handleAddToCart(product.id, product.name)
                           }
                           disabled={addingToCart[product.id]}
-                          className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                          className="px-3 py-1.5 btn-success disabled:opacity-50"
+                          aria-label={`Add ${product.name} to cart`}
                         >
                           {addingToCart[product.id] ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1839,7 +1849,7 @@ export function ProductList({
               disabled={
                 pagination.page === pagination.totalPages || loading
               }
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
@@ -1863,7 +1873,7 @@ export function ProductList({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-modal flex items-center justify-center p-4"
           >
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
@@ -1873,18 +1883,18 @@ export function ProductList({
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                  <AlertTriangle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1910,7 +1920,7 @@ export function ProductList({
                     setSelectedProductId(null);
                     setSelectedProductName('');
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="btn-secondary"
                 >
                   Cancel
                 </button>
@@ -1923,7 +1933,7 @@ export function ProductList({
                     setSelectedProductId(null);
                     setSelectedProductName('');
                   }}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl transition duration-250 flex items-center gap-2 focus-ring shadow-brand"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete

@@ -475,14 +475,14 @@ export function ShiftsDashboard() {
               variant="outline"
               size="sm"
               onClick={loadData}
-              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus-ring"
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
             <Button
               onClick={handleOpenCreateModal}
-              className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+              className="btn-brand shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4 mr-2" />
               New Register
@@ -540,21 +540,21 @@ export function ShiftsDashboard() {
             {activeTab === 'registers' && (
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
                   <Input
                     placeholder="Search registers..."
                     value={searchTerm}
                     onChange={handleSearchChange}
-                    className="pl-9 w-48 md:w-64 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    className="pl-9 w-48 md:w-64 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-brand-500"
                   />
                 </div>
                 <div className="flex gap-1 border border-gray-200 dark:border-gray-700 rounded-lg p-1 bg-white dark:bg-gray-800">
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-1.5 rounded transition-colors duration-200 ${
+                    className={`p-1.5 rounded transition-colors duration-200 focus-ring ${
                       viewMode === 'grid'
-                        ? 'bg-blue-500 dark:bg-blue-600 text-white'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        ? 'bg-brand-500 dark:bg-brand-600 text-white'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-700'
                     }`}
                     aria-label="Grid view"
                   >
@@ -562,10 +562,10 @@ export function ShiftsDashboard() {
                   </button>
                   <button
                     onClick={() => setViewMode('list')}
-                    className={`p-1.5 rounded transition-colors duration-200 ${
+                    className={`p-1.5 rounded transition-colors duration-200 focus-ring ${
                       viewMode === 'list'
-                        ? 'bg-blue-500 dark:bg-blue-600 text-white'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        ? 'bg-brand-500 dark:bg-brand-600 text-white'
+                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-700'
                     }`}
                     aria-label="List view"
                   >

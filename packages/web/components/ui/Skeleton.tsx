@@ -10,7 +10,12 @@ interface SkeletonProps {
 
 export function Skeleton({ className = '', children }: SkeletonProps) {
   return (
-    <div className={cn('animate-pulse bg-gray-200 rounded', className)}>
+    <div
+      className={cn(
+        'animate-pulse bg-gray-200 dark:bg-gray-700 rounded transition-colors duration-250',
+        className
+      )}
+    >
       {children}
     </div>
   );

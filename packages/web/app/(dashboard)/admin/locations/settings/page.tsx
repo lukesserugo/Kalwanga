@@ -108,10 +108,10 @@ interface SectionProps {
 
 function Section({ title, description, icon: Icon, children }: SectionProps) {
   return (
-    <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+    <section className="card-brand p-5">
       <div className="flex items-start gap-3 mb-4">
-        <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
-          <Icon className="w-4.5 h-4.5 text-blue-600 dark:text-blue-400" />
+        <div className="w-9 h-9 rounded-lg bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center flex-shrink-0">
+          <Icon className="w-4.5 h-4.5 text-brand-600 dark:text-brand-400" />
         </div>
         <div>
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -168,9 +168,9 @@ function ToggleRow({
         aria-checked={checked}
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed ${
+        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:cursor-not-allowed ${
           checked
-            ? 'bg-blue-600'
+            ? 'bg-brand-600'
             : 'bg-gray-200 dark:bg-gray-600'
         }`}
       >
@@ -357,7 +357,7 @@ export default function LocationSettingsPage() {
   if (booting) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+        <Loader2 className="w-10 h-10 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -377,7 +377,7 @@ export default function LocationSettingsPage() {
           </p>
           <button
             onClick={() => router.push('/login')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             Go to Login
           </button>
@@ -398,14 +398,14 @@ export default function LocationSettingsPage() {
           <button
             type="button"
             onClick={() => router.push('/admin/locations')}
-            className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             aria-label="Back to locations"
           >
             <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Settings2 className="w-6 h-6 text-blue-500" />
+              <Settings2 className="w-6 h-6 text-brand-500" />
               Location Settings
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -419,7 +419,7 @@ export default function LocationSettingsPage() {
             type="button"
             onClick={handleReset}
             disabled={saving}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
           >
             Reset to defaults
           </button>
@@ -427,7 +427,7 @@ export default function LocationSettingsPage() {
             type="button"
             onClick={handleSave}
             disabled={saving || !isValidBU(selectedBUId) || loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors"
+            className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm font-medium hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors focus-ring"
           >
             {saving ? (
               <>
@@ -445,7 +445,7 @@ export default function LocationSettingsPage() {
       </div>
 
       {/* BU selector */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand p-4">
         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1.5">
           Business unit
         </label>
@@ -454,7 +454,7 @@ export default function LocationSettingsPage() {
             type="button"
             onClick={() => setShowBUDropdown((v) => !v)}
             disabled={businessUnits.length === 0}
-            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors min-w-[240px] disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors min-w-[240px] disabled:opacity-50 focus-ring"
           >
             <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
@@ -468,7 +468,7 @@ export default function LocationSettingsPage() {
           </button>
 
           {showBUDropdown && businessUnits.length > 0 && (
-            <div className="absolute z-50 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            <div className="absolute z-header mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto sidebar-scroll">
               {businessUnits.map((bu) => (
                 <button
                   key={bu.id}
@@ -482,9 +482,9 @@ export default function LocationSettingsPage() {
                       /* ignore */
                     }
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring ${
                     bu.id === selectedBUId
-                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                      ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
                       : 'text-gray-700 dark:text-gray-300'
                   }`}
                 >
@@ -506,7 +506,7 @@ export default function LocationSettingsPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
         </div>
       ) : (
         <div className="space-y-4">
@@ -527,7 +527,7 @@ export default function LocationSettingsPage() {
                   onChange={(e) =>
                     patch('defaultLocationId', e.target.value || null)
                   }
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
                 >
                   <option value="">None — leave forms unselected</option>
                   {locations.map((loc) => (
@@ -545,7 +545,7 @@ export default function LocationSettingsPage() {
                 </p>
               )}
               {locations.length === 0 && (
-                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <p className="mt-1.5 text-xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5" />
                   No active locations yet — add one on the Locations page first.
                 </p>
@@ -576,16 +576,16 @@ export default function LocationSettingsPage() {
                         ? 'Click to disable'
                         : 'Click to enable'
                     }
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors focus-ring ${
                       enabled
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                        ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
                         : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
                     }`}
                   >
                     <span
                       className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${
                         enabled
-                          ? 'bg-blue-600 border-blue-600'
+                          ? 'bg-brand-600 border-brand-600'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                     >
@@ -598,7 +598,7 @@ export default function LocationSettingsPage() {
                 );
               })}
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
               {settings.enabledTypes.length} of {LOCATION_TYPES.length} types enabled
             </p>
           </Section>
@@ -636,7 +636,7 @@ export default function LocationSettingsPage() {
                       Math.max(0, parseInt(e.target.value, 10) || 0)
                     )
                   }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 tabular-nums"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Applied to new inventory rows. Existing rows keep their own value.
@@ -656,7 +656,7 @@ export default function LocationSettingsPage() {
                       Math.max(1, parseInt(e.target.value, 10) || 1)
                     )
                   }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 tabular-nums"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Suggested order size when the reorder point is hit.
@@ -717,7 +717,7 @@ export default function LocationSettingsPage() {
               type="button"
               onClick={() => router.push('/admin/locations')}
               disabled={saving}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             >
               Cancel
             </button>
@@ -725,7 +725,7 @@ export default function LocationSettingsPage() {
               type="button"
               onClick={handleSave}
               disabled={saving || !isValidBU(selectedBUId)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm font-medium hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 transition-colors focus-ring"
             >
               {saving ? (
                 <>

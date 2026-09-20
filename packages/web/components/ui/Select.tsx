@@ -49,12 +49,17 @@ export function SelectTrigger({ children, className = '' }: SelectTriggerProps) 
       type="button"
       onClick={() => setOpen(!open)}
       className={cn(
-        'flex items-center justify-between w-full px-3 py-2 border rounded-lg bg-white focus:ring-2 focus:ring-blue-500',
+        'flex items-center justify-between w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 transition-colors duration-250',
         className
       )}
     >
       {children}
-      <ChevronDown className={cn('h-4 w-4 transition-transform', open ? 'rotate-180' : '')} />
+      <ChevronDown
+        className={cn(
+          'h-4 w-4 text-gray-400 dark:text-gray-500 transition-transform duration-250',
+          open ? 'rotate-180' : ''
+        )}
+      />
     </button>
   );
 }
@@ -66,7 +71,11 @@ interface SelectValueProps {
 
 export function SelectValue({ placeholder = 'Select...', className = '' }: SelectValueProps) {
   const { value } = useSelect();
-  return <span className={cn('text-sm', className)}>{value || placeholder}</span>;
+  return (
+    <span className={cn('text-sm', className)}>
+      {value || placeholder}
+    </span>
+  );
 }
 
 interface SelectContentProps {
@@ -96,7 +105,7 @@ export function SelectContent({ children, className = '' }: SelectContentProps) 
     <div
       ref={ref}
       className={cn(
-        'absolute z-50 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-auto',
+        'absolute z-modal w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-soft max-h-60 overflow-auto transition-colors duration-250',
         className
       )}
     >
@@ -123,8 +132,10 @@ export function SelectItem({ value, children, className = '' }: SelectItemProps)
         setOpen(false);
       }}
       className={cn(
-        'w-full px-3 py-2 text-sm text-left hover:bg-gray-50 transition-colors',
-        isSelected ? 'bg-blue-50 text-blue-700' : 'text-gray-700',
+        'w-full px-3 py-2 text-sm text-left transition-colors duration-250 focus-ring',
+        isSelected
+          ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300'
+          : 'text-gray-700 dark:text-gray-200 hover:bg-brand-50 dark:hover:bg-gray-700/60',
         className
       )}
     >

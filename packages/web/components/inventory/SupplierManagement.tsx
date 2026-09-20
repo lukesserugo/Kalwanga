@@ -142,12 +142,12 @@ const StarRating: React.FC<{
             onClick={() => handleClick(star)}
             onMouseEnter={() => handleMouseEnter(star)}
             disabled={readonly}
-            className={`${readonly ? 'cursor-default' : 'cursor-pointer'} focus:outline-none`}
+            className={`${readonly ? 'cursor-default' : 'cursor-pointer'} focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1 rounded`}
           >
             {isFilled ? (
-              <Star className={`${starClass} text-yellow-400 fill-yellow-400`} />
+              <Star className={`${starClass} text-brand-400 fill-brand-400`} />
             ) : isHalfFilled ? (
-              <StarHalf className={`${starClass} text-yellow-400 fill-yellow-400`} />
+              <StarHalf className={`${starClass} text-brand-400 fill-brand-400`} />
             ) : (
               <Star className={`${starClass} text-gray-300 dark:text-gray-600`} />
             )}
@@ -155,12 +155,12 @@ const StarRating: React.FC<{
         );
       })}
       {!readonly && (
-        <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-1 tabular-nums">
           {currentRating > 0 ? currentRating.toFixed(1) : 'Rate'}
         </span>
       )}
       {readonly && rating > 0 && (
-        <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">
+        <span className="text-xs text-gray-400 dark:text-gray-500 ml-1 tabular-nums">
           {rating.toFixed(1)}
         </span>
       )}
@@ -182,7 +182,7 @@ const SupplierCard: React.FC<{
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.01 }}
-      className={`border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:shadow-md transition-all bg-white dark:bg-gray-800 ${
+      className={`border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800 transition-all bg-white dark:bg-gray-800 ${
         compact ? 'p-3' : ''
       }`}
     >
@@ -190,11 +190,11 @@ const SupplierCard: React.FC<{
         <div className="flex items-center gap-3 min-w-0">
           <div className={`p-2 rounded-lg flex-shrink-0 ${
             isActive 
-              ? 'bg-blue-50 dark:bg-blue-900/20' 
+              ? 'bg-brand-50 dark:bg-brand-950/20' 
               : 'bg-gray-50 dark:bg-gray-700/30'
           }`}>
             <Truck className={`w-5 h-5 ${
-              isActive ? 'text-blue-500' : 'text-gray-400'
+              isActive ? 'text-brand-500' : 'text-gray-400'
             }`} />
           </div>
           <div className="min-w-0">
@@ -210,24 +210,24 @@ const SupplierCard: React.FC<{
         <div className="flex gap-1 flex-shrink-0 ml-2">
           <button
             onClick={() => onView(supplier)}
-            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             title="View Details"
           >
             <Eye className="w-4 h-4 text-gray-500" />
           </button>
           <button
             onClick={() => onEdit(supplier)}
-            className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded-lg transition-colors focus-ring"
             title="Edit Supplier"
           >
-            <Edit className="w-4 h-4 text-blue-500" />
+            <Edit className="w-4 h-4 text-brand-500" />
           </button>
           <button
             onClick={() => onDelete(supplier.id)}
-            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded-lg transition-colors focus-ring"
             title="Delete Supplier"
           >
-            <Trash2 className="w-4 h-4 text-red-500" />
+            <Trash2 className="w-4 h-4 text-brand-accent-500" />
           </button>
         </div>
       </div>
@@ -261,14 +261,14 @@ const SupplierCard: React.FC<{
             </span>
           )}
           {supplier.totalValue !== undefined && supplier.totalValue > 0 && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 tabular-nums">
               <DollarSign className="w-3 h-3" />
               {formatCurrency(supplier.totalValue)}
             </span>
           )}
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
             isActive
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
               : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
           }`}>
             {isActive ? 'Active' : 'Inactive'}
@@ -592,7 +592,7 @@ export function SupplierManagement({
       <div className={`${className}`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Truck className="w-6 h-6 text-blue-500" />
+            <Truck className="w-6 h-6 text-brand-500" />
             Suppliers
           </h2>
         </div>
@@ -603,13 +603,13 @@ export function SupplierManagement({
 
   if (error) {
     return (
-      <div className={`p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3 ${className}`}>
-        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+      <div className={`p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3 ${className}`}>
+        <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+          <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           <button
             onClick={handleRefresh}
-            className="mt-2 text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+            className="mt-2 text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 dark:hover:text-brand-accent-300 transition-colors focus-ring"
           >
             Try again
           </button>
@@ -624,10 +624,10 @@ export function SupplierManagement({
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Truck className="w-6 h-6 text-blue-500" />
+            <Truck className="w-6 h-6 text-brand-500" />
             Suppliers
           </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             {suppliers.length} suppliers • {suppliers.filter(s => s.isActive !== false).length} active
           </p>
         </div>
@@ -635,23 +635,23 @@ export function SupplierManagement({
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
               showFilters || filter !== 'all' || searchQuery
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
           </button>
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
           >
             {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
           </button>
@@ -661,7 +661,7 @@ export function SupplierManagement({
               resetForm();
               setShowAddModal(true);
             }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+            className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
           >
             <Plus className="w-4 h-4" />
             Add Supplier
@@ -686,7 +686,7 @@ export function SupplierManagement({
                   <select
                     value={filter}
                     onChange={(e) => setFilter(e.target.value as 'all' | 'active' | 'inactive')}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-colors"
                   >
                     <option value="all">All Suppliers</option>
                     <option value="active">Active</option>
@@ -702,7 +702,7 @@ export function SupplierManagement({
                       placeholder="Search by name, contact, or email..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                      className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -713,7 +713,7 @@ export function SupplierManagement({
                         setFilter('all');
                         setSearchQuery('');
                       }}
-                      className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex items-center gap-1"
+                      className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 dark:hover:text-brand-accent-300 flex items-center gap-1 transition-colors focus-ring"
                     >
                       <X className="w-4 h-4" />
                       Clear Filters
@@ -740,7 +740,7 @@ export function SupplierManagement({
                 resetForm();
                 setShowAddModal(true);
               }}
-              className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+              className="mt-2 text-sm text-brand-600 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300 transition-colors focus-ring"
             >
               Add your first supplier →
             </button>
@@ -764,7 +764,7 @@ export function SupplierManagement({
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -778,7 +778,7 @@ export function SupplierManagement({
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <tr key={supplier.id} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">{supplier.name}</p>
@@ -799,7 +799,7 @@ export function SupplierManagement({
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                         supplier.isActive !== false
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                           : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
                       }`}>
                         {supplier.isActive !== false ? 'Active' : 'Inactive'}
@@ -812,24 +812,24 @@ export function SupplierManagement({
                             setSelectedSupplier(supplier);
                             setShowDetailModal(true);
                           }}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                           title="View Details"
                         >
                           <Eye className="w-4 h-4 text-gray-500" />
                         </button>
                         <button
                           onClick={() => openEditModal(supplier)}
-                          className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded-lg transition-colors focus-ring"
                           title="Edit Supplier"
                         >
-                          <Edit className="w-4 h-4 text-blue-500" />
+                          <Edit className="w-4 h-4 text-brand-500" />
                         </button>
                         <button
                           onClick={() => handleDelete(supplier.id)}
-                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded-lg transition-colors focus-ring"
                           title="Delete Supplier"
                         >
-                          <Trash2 className="w-4 h-4 text-red-500" />
+                          <Trash2 className="w-4 h-4 text-brand-accent-500" />
                         </button>
                       </div>
                     </td>
@@ -854,7 +854,7 @@ export function SupplierManagement({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 custom-scrollbar"
             >
               <button
                 onClick={() => {
@@ -862,7 +862,7 @@ export function SupplierManagement({
                   setEditingSupplier(null);
                   resetForm();
                 }}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
@@ -874,7 +874,7 @@ export function SupplierManagement({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Supplier Name <span className="text-red-500">*</span>
+                    Supplier Name <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -887,19 +887,19 @@ export function SupplierManagement({
                       }
                     }}
                     onBlur={() => setTouched({ ...touched, name: true })}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                      formErrors.name && touched.name ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors ${
+                      formErrors.name && touched.name ? 'border-brand-accent-500 dark:border-brand-accent-500' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter supplier name"
                     disabled={isSubmitting}
                   />
                   {formErrors.name && touched.name && (
-                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.name}</p>
+                    <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">{formErrors.name}</p>
                   )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Contact Person <span className="text-red-500">*</span>
+                    Contact Person <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -912,19 +912,19 @@ export function SupplierManagement({
                       }
                     }}
                     onBlur={() => setTouched({ ...touched, contactPerson: true })}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                      formErrors.contactPerson && touched.contactPerson ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors ${
+                      formErrors.contactPerson && touched.contactPerson ? 'border-brand-accent-500 dark:border-brand-accent-500' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter contact person"
                     disabled={isSubmitting}
                   />
                   {formErrors.contactPerson && touched.contactPerson && (
-                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.contactPerson}</p>
+                    <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">{formErrors.contactPerson}</p>
                   )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email <span className="text-red-500">*</span>
+                    Email <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="email"
@@ -937,19 +937,19 @@ export function SupplierManagement({
                       }
                     }}
                     onBlur={() => setTouched({ ...touched, email: true })}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                      formErrors.email && touched.email ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors ${
+                      formErrors.email && touched.email ? 'border-brand-accent-500 dark:border-brand-accent-500' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter email"
                     disabled={isSubmitting}
                   />
                   {formErrors.email && touched.email && (
-                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.email}</p>
+                    <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">{formErrors.email}</p>
                   )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Phone <span className="text-red-500">*</span>
+                    Phone <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="tel"
@@ -962,14 +962,14 @@ export function SupplierManagement({
                       }
                     }}
                     onBlur={() => setTouched({ ...touched, phone: true })}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                      formErrors.phone && touched.phone ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors ${
+                      formErrors.phone && touched.phone ? 'border-brand-accent-500 dark:border-brand-accent-500' : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter phone number"
                     disabled={isSubmitting}
                   />
                   {formErrors.phone && touched.phone && (
-                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.phone}</p>
+                    <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">{formErrors.phone}</p>
                   )}
                 </div>
                 <div>
@@ -980,7 +980,7 @@ export function SupplierManagement({
                     type="text"
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                     placeholder="Enter address"
                     disabled={isSubmitting}
                   />
@@ -993,7 +993,7 @@ export function SupplierManagement({
                     type="text"
                     value={formData.taxId}
                     onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                     placeholder="Enter tax ID"
                     disabled={isSubmitting}
                   />
@@ -1006,7 +1006,7 @@ export function SupplierManagement({
                     type="url"
                     value={formData.website}
                     onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                     placeholder="Enter website URL"
                     disabled={isSubmitting}
                   />
@@ -1034,7 +1034,7 @@ export function SupplierManagement({
                               });
                             }
                           }}
-                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 transition-colors"
                           disabled={isSubmitting}
                         />
                         {cat}
@@ -1050,7 +1050,7 @@ export function SupplierManagement({
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors resize-y"
                     placeholder="Additional notes about the supplier"
                     disabled={isSubmitting}
                   />
@@ -1072,7 +1072,7 @@ export function SupplierManagement({
                       type="checkbox"
                       checked={formData.isActive}
                       onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 transition-colors"
                       disabled={isSubmitting}
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Active Supplier</span>
@@ -1087,7 +1087,7 @@ export function SupplierManagement({
                     setEditingSupplier(null);
                     resetForm();
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                   disabled={isSubmitting}
                 >
                   Cancel
@@ -1095,7 +1095,7 @@ export function SupplierManagement({
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 disabled:opacity-50 shadow-brand focus-ring"
                 >
                   {isSubmitting ? (
                     <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
@@ -1122,14 +1122,14 @@ export function SupplierManagement({
             >
               <button
                 onClick={() => setShowDetailModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <Truck className="w-6 h-6 text-blue-500" />
+                <div className="p-3 bg-brand-50 dark:bg-brand-950/20 rounded-lg">
+                  <Truck className="w-6 h-6 text-brand-500" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1161,7 +1161,7 @@ export function SupplierManagement({
                       href={selectedSupplier.website} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      className="text-brand-600 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300 transition-colors focus-ring"
                     >
                       {selectedSupplier.website}
                     </a>
@@ -1195,18 +1195,18 @@ export function SupplierManagement({
                   <StarRating rating={selectedSupplier.rating || 0} readonly size="md" />
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                     selectedSupplier.isActive !== false
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                      ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                       : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
                   }`}>
                     {selectedSupplier.isActive !== false ? 'Active' : 'Inactive'}
                   </span>
                   {selectedSupplier.productCount !== undefined && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                       {selectedSupplier.productCount} products
                     </span>
                   )}
                   {selectedSupplier.totalValue !== undefined && selectedSupplier.totalValue > 0 && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                       {formatCurrency(selectedSupplier.totalValue)}
                     </span>
                   )}
@@ -1224,7 +1224,7 @@ export function SupplierManagement({
                       onSupplierSelect(selectedSupplier);
                       setShowDetailModal(false);
                     }}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center justify-center gap-2 shadow-brand focus-ring"
                   >
                     <CheckCircle className="w-4 h-4" />
                     Select Supplier
@@ -1236,14 +1236,14 @@ export function SupplierManagement({
                     setShowDetailModal(false);
                     openEditModal(selectedSupplier);
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 focus-ring"
                 >
                   <Edit className="w-4 h-4" />
                   Edit
                 </button>
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Close
                 </button>

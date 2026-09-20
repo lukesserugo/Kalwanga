@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartPromotionInput.tsx
-
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -10,36 +8,13 @@ import { guestCartService } from '../../services/guestCartService';
 import { useAuth } from '../../hooks/useAuth';
 
 interface CartPromotionInputProps {
-  /**
-   * Called after a successful promotion apply. Receives whatever the
-   * cart service returned — typically the updated cart.
-   */
   onPromotionApplied?: (result: unknown) => void;
-  /**
-   * Code currently applied to the cart, if any. When provided, the
-   * input renders a "Remove" affordance instead of an empty field.
-   */
   currentPromotionCode?: string;
-  /**
-   * Called after a successful removal of the current promotion.
-   */
   onPromotionRemoved?: () => void;
   disabled?: boolean;
   className?: string;
 }
 
-/**
- * State machine for the apply flow:
- *
- *   idle      → user can type and press Apply
- *   applying  → request in flight; input is disabled
- *   applied   → a code has been successfully applied
- *
- * The component does NOT stay in `applied` forever. After a short
- * confirmation flash, it returns to `idle` so the user can apply a
- * second (stackable) code or correct a mistake. Whether the backend
- * accepts stacking is a policy decision — the UI just doesn't block it.
- */
 type ApplyState = 'idle' | 'applying' | 'applied';
 
 export function CartPromotionInput({
@@ -59,9 +34,6 @@ export function CartPromotionInput({
     [isAuthenticated],
   );
 
-  // Reset the transient confirmation after a short delay. Do this with
-  // an effect so an unmount during the timeout doesn't set state on a
-  // dead component.
   useEffect(() => {
     if (state !== 'applied') return;
     const t = setTimeout(() => setState('idle'), 2000);
@@ -79,9 +51,6 @@ export function CartPromotionInput({
         return;
       }
 
-      // Skip if the same code is already applied. Cheap local guard
-      // that saves a network round-trip; the server also rejects
-      // duplicate applies.
       if (
         currentPromotionCode &&
         code === currentPromotionCode.toUpperCase()
@@ -116,8 +85,6 @@ export function CartPromotionInput({
   const handleClear = useCallback(() => {
     setPromotionCode('');
     setError(null);
-    // Do not touch `state` here — the user is clearing the input, not
-    // the applied promotion.
   }, []);
 
   const handleRemoveApplied = useCallback(() => {
@@ -133,13 +100,13 @@ export function CartPromotionInput({
   return (
     <div className={`space-y-2 ${className}`}>
       {hasApplied && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-secondary-50 dark:bg-secondary-900/20 border border-secondary-200 dark:border-secondary-800">
           <div className="flex items-center gap-2 min-w-0">
-            <Check className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-            <span className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
+            <Check className="w-4 h-4 text-secondary-600 dark:text-secondary-400 shrink-0" />
+            <span className="text-sm font-medium text-secondary-700 dark:text-secondary-300 truncate font-mono tabular-nums">
               {currentPromotionCode}
             </span>
-            <span className="text-xs text-purple-500 dark:text-purple-400">
+            <span className="text-xs text-secondary-500 dark:text-secondary-400">
               applied
             </span>
           </div>
@@ -148,7 +115,7 @@ export function CartPromotionInput({
               type="button"
               onClick={handleRemoveApplied}
               disabled={disabled}
-              className="shrink-0 p-1 rounded-md text-purple-600 hover:bg-purple-100 dark:text-purple-400 dark:hover:bg-purple-900/40 transition-colors disabled:opacity-50"
+              className="shrink-0 p-1 rounded-md text-secondary-600 hover:bg-secondary-100 dark:text-secondary-400 dark:hover:bg-secondary-900/40 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Remove applied promotion"
             >
               <X className="w-3.5 h-3.5" />
@@ -164,7 +131,7 @@ export function CartPromotionInput({
         <div className="flex-1 relative">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             {justApplied ? (
-              <Check className="w-4 h-4 text-green-500" />
+              <Check className="w-4 h-4 text-success-500" />
             ) : (
               <Gift className="w-4 h-4 text-gray-400" />
             )}
@@ -183,12 +150,12 @@ export function CartPromotionInput({
             autoComplete="off"
             autoCapitalize="characters"
             spellCheck={false}
-            className={`w-full pl-9 pr-8 py-2 bg-white dark:bg-gray-700 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors ${
+            className={`w-full pl-9 pr-8 py-2 bg-white dark:bg-gray-700 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors font-mono uppercase ${
               justApplied
-                ? 'border-green-500 focus:ring-green-500'
+                ? 'border-success-500 focus:ring-success-500'
                 : error
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 dark:border-gray-600 focus:ring-purple-500'
+                ? 'border-danger-500 focus:ring-danger-500'
+                : 'border-gray-300 dark:border-gray-600 focus:ring-secondary-500'
             }`}
             aria-invalid={error ? 'true' : 'false'}
             aria-describedby={error ? 'promotion-error' : undefined}
@@ -198,7 +165,7 @@ export function CartPromotionInput({
               type="button"
               onClick={handleClear}
               disabled={inputDisabled}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-orange-50 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Clear promotion code"
             >
               <X className="w-3.5 h-3.5" />
@@ -214,7 +181,7 @@ export function CartPromotionInput({
             justApplied ||
             !promotionCode.trim()
           }
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px]"
+          className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px] focus-ring"
         >
           {isApplying ? (
             <>
@@ -235,7 +202,7 @@ export function CartPromotionInput({
       {error && (
         <p
           id="promotion-error"
-          className="text-sm text-red-600 dark:text-red-400 flex items-center gap-1"
+          className="text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1"
         >
           {error}
         </p>

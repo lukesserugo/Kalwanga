@@ -7,7 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { userService } from '../../../../../../services/userService';
 import { toast } from 'react-hot-toast';
-import { 
+import {
   ArrowLeft, Shield, Key, Lock, Unlock, Search, Filter,
   Loader2, AlertCircle, CheckCircle, XCircle, Save,
   RefreshCw, Copy, Check, X, Info, AlertTriangle,
@@ -74,11 +74,11 @@ interface PermissionSet {
 
 // Stats Card Component
 const StatsCard = ({ title, value, icon, color, subtitle }: any) => (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+  <div className="card-brand p-4 hover:shadow-card-hover transition-shadow">
     <div className="flex items-center justify-between">
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{title}</p>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{value}</p>
         {subtitle && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtitle}</p>}
       </div>
       <div className={`p-3 rounded-lg ${color} flex-shrink-0`}>
@@ -95,7 +95,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'User Management',
     description: 'Manage users, roles, and permissions',
     icon: <Users className="w-5 h-5" />,
-    color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+    color: 'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400',
     permissions: [
       { id: 'user:view', label: 'View Users', description: 'View user list and details', action: 'view', resource: 'user', category: 'user' },
       { id: 'user:create', label: 'Create Users', description: 'Create new user accounts', action: 'create', resource: 'user', category: 'user' },
@@ -114,7 +114,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Inventory Management',
     description: 'Manage inventory and stock',
     icon: <Boxes className="w-5 h-5" />,
-    color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    color: 'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400',
     permissions: [
       { id: 'inventory:view', label: 'View Inventory', description: 'View inventory items', action: 'view', resource: 'inventory', category: 'inventory' },
       { id: 'inventory:create', label: 'Create Items', description: 'Add new inventory items', action: 'create', resource: 'inventory', category: 'inventory' },
@@ -134,7 +134,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Product Management',
     description: 'Manage products and catalog',
     icon: <Package className="w-5 h-5" />,
-    color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    color: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400',
     permissions: [
       { id: 'product:view', label: 'View Products', description: 'View product list', action: 'view', resource: 'product', category: 'product' },
       { id: 'product:create', label: 'Create Products', description: 'Add new products', action: 'create', resource: 'product', category: 'product' },
@@ -150,7 +150,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Category Management',
     description: 'Manage product categories',
     icon: <FolderTree className="w-5 h-5" />,
-    color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400',
     permissions: [
       { id: 'category:view', label: 'View Categories', description: 'View category list', action: 'view', resource: 'category', category: 'category' },
       { id: 'category:create', label: 'Create Categories', description: 'Add new categories', action: 'create', resource: 'category', category: 'category' },
@@ -164,7 +164,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Reports',
     description: 'Access and generate reports',
     icon: <BarChart3 className="w-5 h-5" />,
-    color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+    color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-900/30 dark:text-brand-accent-400',
     permissions: [
       { id: 'report:view', label: 'View Reports', description: 'View report list', action: 'view', resource: 'report', category: 'report' },
       { id: 'report:create', label: 'Create Reports', description: 'Generate new reports', action: 'create', resource: 'report', category: 'report' },
@@ -177,7 +177,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Sales',
     description: 'Manage sales and transactions',
     icon: <ShoppingCart className="w-5 h-5" />,
-    color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+    color: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400',
     permissions: [
       { id: 'sale:view', label: 'View Sales', description: 'View sale records', action: 'view', resource: 'sale', category: 'sale' },
       { id: 'sale:create', label: 'Create Sales', description: 'Process new sales', action: 'create', resource: 'sale', category: 'sale' },
@@ -193,7 +193,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Point of Sale',
     description: 'POS system access',
     icon: <CreditCard className="w-5 h-5" />,
-    color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+    color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-900/30 dark:text-brand-accent-400',
     permissions: [
       { id: 'pos:view', label: 'View POS', description: 'Access POS interface', action: 'view', resource: 'pos', category: 'pos' },
       { id: 'pos:create', label: 'Process Transactions', description: 'Process POS transactions', action: 'create', resource: 'pos', category: 'pos' },
@@ -206,7 +206,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'Business Units',
     description: 'Manage business units',
     icon: <Store className="w-5 h-5" />,
-    color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+    color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400',
     permissions: [
       { id: 'business_unit:view', label: 'View Units', description: 'View business units', action: 'view', resource: 'business_unit', category: 'business_unit' },
       { id: 'business_unit:create', label: 'Create Units', description: 'Create business units', action: 'create', resource: 'business_unit', category: 'business_unit' },
@@ -220,7 +220,7 @@ const PERMISSION_RESOURCES: PermissionResource[] = [
     label: 'System Settings',
     description: 'System configuration access',
     icon: <Settings className="w-5 h-5" />,
-    color: 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400',
+    color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400',
     permissions: [
       { id: 'system:logs', label: 'View Logs', description: 'View system logs', action: 'logs', resource: 'system', category: 'system' },
       { id: 'system:backup', label: 'Backup System', description: 'Create system backups', action: 'backup', resource: 'system', category: 'system' },
@@ -237,7 +237,7 @@ const ROLE_TEMPLATES: RoleTemplate[] = [
     label: 'Super Admin',
     description: 'Full system access with all permissions',
     icon: <Shield className="w-5 h-5" />,
-    color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+    color: 'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400',
     permissions: PERMISSION_RESOURCES.flatMap(r => r.permissions.map(p => p.id)),
   },
   {
@@ -245,7 +245,7 @@ const ROLE_TEMPLATES: RoleTemplate[] = [
     label: 'Admin',
     description: 'Administrative access with user management',
     icon: <Shield className="w-5 h-5" />,
-    color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    color: 'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400',
     permissions: [
       'user:view', 'user:create', 'user:edit', 'user:delete', 'user:manage',
       'user:activate', 'user:deactivate', 'user:role:update', 'user:permission:update',
@@ -263,7 +263,7 @@ const ROLE_TEMPLATES: RoleTemplate[] = [
     label: 'Manager',
     description: 'Manage business units and teams',
     icon: <Users className="w-5 h-5" />,
-    color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    color: 'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400',
     permissions: [
       'user:view',
       'inventory:view', 'inventory:create', 'inventory:edit',
@@ -280,7 +280,7 @@ const ROLE_TEMPLATES: RoleTemplate[] = [
     label: 'Editor',
     description: 'Create and edit content',
     icon: <Edit className="w-5 h-5" />,
-    color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    color: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400',
     permissions: [
       'inventory:view', 'inventory:create', 'inventory:edit',
       'inventory:view_low_stock',
@@ -309,7 +309,7 @@ const ROLE_TEMPLATES: RoleTemplate[] = [
     label: 'Employee',
     description: 'Basic employee access',
     icon: <User className="w-5 h-5" />,
-    color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+    color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-900/30 dark:text-brand-accent-400',
     permissions: [
       'inventory:view', 'inventory:view_low_stock',
       'product:view',
@@ -321,7 +321,7 @@ const ROLE_TEMPLATES: RoleTemplate[] = [
     label: 'Cashier',
     description: 'POS and transaction access',
     icon: <CreditCard className="w-5 h-5" />,
-    color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400',
     permissions: [
       'pos:view', 'pos:create', 'pos:print',
       'sale:view', 'sale:create', 'sale:print',
@@ -347,7 +347,7 @@ export default function UserPermissionsPage() {
   const params = useParams();
   const userId = params?.id as string;
   const { can, isSuperAdmin, isAdmin } = useAuth();
-  
+
   // State management
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -381,14 +381,14 @@ export default function UserPermissionsPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       const userData = await userService.getUserById(userId);
       setUser(userData);
-      
+
       const permissions = userData.permissions || [];
       setSelectedPermissions(new Set(permissions));
       setOriginalPermissions(new Set(permissions));
-      
+
       setPermissionStats(prev => ({
         ...prev,
         total: PERMISSION_RESOURCES.flatMap(r => r.permissions).length,
@@ -396,7 +396,7 @@ export default function UserPermissionsPage() {
         inherited: 0,
         custom: permissions.filter(p => !PERMISSION_RESOURCES.flatMap(r => r.permissions).some(rp => rp.id === p)).length,
       }));
-      
+
       loadPermissionSets();
     } catch (error: any) {
       console.error('Failed to load user:', error);
@@ -445,16 +445,16 @@ export default function UserPermissionsPage() {
 
   // Check for changes
   useEffect(() => {
-    const hasChanges = 
+    const hasChanges =
       selectedPermissions.size !== originalPermissions.size ||
       Array.from(selectedPermissions).some(p => !originalPermissions.has(p));
     setHasChanges(hasChanges);
-    
+
     const totalPermissions = PERMISSION_RESOURCES.flatMap(r => r.permissions).length;
-    const customPermissions = Array.from(selectedPermissions).filter(p => 
+    const customPermissions = Array.from(selectedPermissions).filter(p =>
       !PERMISSION_RESOURCES.flatMap(r => r.permissions).some(rp => rp.id === p)
     ).length;
-    
+
     setPermissionStats({
       total: totalPermissions + customPermissions,
       selected: selectedPermissions.size,
@@ -480,11 +480,11 @@ export default function UserPermissionsPage() {
   const handleSelectAllInResource = useCallback((resourceId: string) => {
     const resource = PERMISSION_RESOURCES.find(r => r.id === resourceId);
     if (!resource) return;
-    
+
     setSelectedPermissions(prev => {
       const newSet = new Set(prev);
       const allSelected = resource.permissions.every(p => newSet.has(p.id));
-      
+
       resource.permissions.forEach(p => {
         if (allSelected) {
           newSet.delete(p.id);
@@ -492,7 +492,7 @@ export default function UserPermissionsPage() {
           newSet.add(p.id);
         }
       });
-      
+
       return newSet;
     });
   }, []);
@@ -513,7 +513,7 @@ export default function UserPermissionsPage() {
   const handleApplyRoleTemplate = useCallback((role: UserRole) => {
     const template = ROLE_TEMPLATES.find(t => t.role === role);
     if (!template) return;
-    
+
     setSelectedPermissions(new Set(template.permissions));
     setShowRoleTemplates(false);
     toast.success(`Applied ${template.label} template`);
@@ -522,18 +522,18 @@ export default function UserPermissionsPage() {
   // Handle add custom permission
   const handleAddCustomPermission = useCallback(() => {
     const permissionId = `${customPermission.resource}:${customPermission.action}`;
-    
+
     if (!customPermission.resource || !customPermission.action) {
       toast.error('Resource and action are required');
       return;
     }
-    
+
     setSelectedPermissions(prev => {
       const newSet = new Set(prev);
       newSet.add(permissionId);
       return newSet;
     });
-    
+
     setCustomPermission({ resource: '', action: '' });
     setShowCustomPermissionModal(false);
     toast.success(`Added custom permission: ${permissionId}`);
@@ -551,15 +551,15 @@ export default function UserPermissionsPage() {
     try {
       setSaving(true);
       setError(null);
-      
+
       const permissions = Array.from(selectedPermissions);
       await userService.updateUserPermissions(userId, permissions);
-      
+
       setOriginalPermissions(new Set(selectedPermissions));
       setHasChanges(false);
       setSuccessMessage('Permissions saved successfully');
       toast.success('Permissions saved successfully');
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to save permissions:', error);
@@ -589,17 +589,17 @@ export default function UserPermissionsPage() {
   // Filter resources based on search
   const filteredResources = useMemo(() => {
     if (!searchQuery) return PERMISSION_RESOURCES;
-    
+
     return PERMISSION_RESOURCES.filter(resource => {
-      const matchesResource = 
+      const matchesResource =
         resource.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
         resource.description.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesPermission = resource.permissions.some(p => 
+
+      const matchesPermission = resource.permissions.some(p =>
         p.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.id.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      
+
       return matchesResource || matchesPermission;
     });
   }, [searchQuery]);
@@ -638,7 +638,7 @@ export default function UserPermissionsPage() {
         </p>
         <button
           onClick={() => router.push(`/admin/users/${userId}`)}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to User
@@ -651,7 +651,7 @@ export default function UserPermissionsPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
         <p className="mt-4 text-gray-500 dark:text-gray-400">Loading permissions...</p>
       </div>
     );
@@ -664,14 +664,14 @@ export default function UserPermissionsPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push(`/admin/users/${userId}`)}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
             aria-label="Back to user"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
-              <Key className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500 flex-shrink-0" />
+              <Key className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500 flex-shrink-0" />
               <span>User Permissions</span>
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 hidden sm:block">
@@ -685,7 +685,7 @@ export default function UserPermissionsPage() {
               <button
                 onClick={handleResetPermissions}
                 disabled={saving}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span className="hidden sm:inline">Reset</span>
@@ -693,7 +693,7 @@ export default function UserPermissionsPage() {
               <button
                 onClick={handleSavePermissions}
                 disabled={saving}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
+                className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 text-sm focus-ring"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -709,30 +709,30 @@ export default function UserPermissionsPage() {
 
       {/* Success Message */}
       {successMessage && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex items-center gap-2 animate-slideIn">
-          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-          <span className="text-green-700 dark:text-green-300 text-sm flex-1">{successMessage}</span>
+        <div className="bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 rounded-lg p-3 flex items-center gap-2 animate-slideIn">
+          <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
+          <span className="text-success-700 dark:text-success-300 text-sm flex-1">{successMessage}</span>
           <button
             onClick={() => setSuccessMessage(null)}
-            className="p-1 hover:bg-green-100 dark:hover:bg-green-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-success-100 dark:hover:bg-success-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss"
           >
-            <XCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <XCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
           </button>
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300 text-sm flex-1">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
+          <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0" />
+          <span className="text-danger-700 dark:text-danger-300 text-sm flex-1">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-danger-100 dark:hover:bg-danger-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss error"
           >
-            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <XCircle className="w-5 h-5 text-danger-600 dark:text-danger-400" />
           </button>
         </div>
       )}
@@ -743,26 +743,26 @@ export default function UserPermissionsPage() {
           title="Total Permissions"
           value={permissionStats.total}
           icon={<Key className="w-5 h-5" />}
-          color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+          color="bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400"
         />
         <StatsCard
           title="Selected"
           value={permissionStats.selected}
           icon={<CheckCircle className="w-5 h-5" />}
-          color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+          color="bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400"
           subtitle={`${permissionStats.total > 0 ? Math.round((permissionStats.selected / permissionStats.total) * 100) : 0}%`}
         />
         <StatsCard
           title="Role Default"
           value={ROLE_TEMPLATES.find(t => t.role === user?.role)?.permissions.length || 0}
           icon={<Shield className="w-5 h-5" />}
-          color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+          color="bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400"
         />
         <StatsCard
           title="Custom"
           value={permissionStats.custom}
           icon={<Zap className="w-5 h-5" />}
-          color="bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400"
+          color="bg-brand-accent-100 text-brand-accent-600 dark:bg-brand-accent-900/30 dark:text-brand-accent-400"
         />
       </div>
 
@@ -770,8 +770,8 @@ export default function UserPermissionsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={() => setShowRoleTemplates(!showRoleTemplates)}
-          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm ${
-            showRoleTemplates ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm focus-ring ${
+            showRoleTemplates ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         >
           <Shield className="w-4 h-4" />
@@ -779,8 +779,8 @@ export default function UserPermissionsPage() {
         </button>
         <button
           onClick={() => setShowPermissionSets(!showPermissionSets)}
-          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm ${
-            showPermissionSets ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm focus-ring ${
+            showPermissionSets ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         >
           <Star className="w-4 h-4" />
@@ -788,15 +788,15 @@ export default function UserPermissionsPage() {
         </button>
         <button
           onClick={() => setShowCustomPermissionModal(true)}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
         >
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">Custom</span>
         </button>
         <button
           onClick={() => setShowInheritanceVisualization(!showInheritanceVisualization)}
-          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm ${
-            showInheritanceVisualization ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm focus-ring ${
+            showInheritanceVisualization ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         >
           <Eye className="w-4 h-4" />
@@ -804,8 +804,8 @@ export default function UserPermissionsPage() {
         </button>
         <button
           onClick={handleSelectAll}
-          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm ${
-            selectAll ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+          className={`px-3 py-2 border rounded-lg transition-colors flex items-center gap-2 text-sm focus-ring ${
+            selectAll ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         >
           {selectAll ? <Unlink className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
@@ -814,7 +814,7 @@ export default function UserPermissionsPage() {
         {selectedPermissions.size > 0 && (
           <button
             onClick={handleClearAllPermissions}
-            className="px-3 py-2 border border-red-300 dark:border-red-700 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-2 text-sm"
+            className="px-3 py-2 border border-danger-300 dark:border-danger-700 rounded-lg text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 transition-colors flex items-center gap-2 text-sm focus-ring"
           >
             <Trash2 className="w-4 h-4" />
             <span className="hidden sm:inline">Clear All</span>
@@ -824,14 +824,14 @@ export default function UserPermissionsPage() {
 
       {/* Role Templates Panel */}
       {showRoleTemplates && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 animate-slideIn">
+        <div className="card-brand p-4 sm:p-6 animate-slideIn">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Role Templates</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {ROLE_TEMPLATES.map(template => (
               <div
                 key={template.role}
-                className={`border rounded-lg p-4 cursor-pointer transition-all hover:shadow-md ${
-                  user?.role === template.role ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                className={`border rounded-lg p-4 cursor-pointer transition-all hover:shadow-card-hover focus-ring ${
+                  user?.role === template.role ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
                 }`}
                 onClick={() => handleApplyRoleTemplate(template.role)}
               >
@@ -841,7 +841,7 @@ export default function UserPermissionsPage() {
                   </div>
                   <div>
                     <h4 className="font-medium text-gray-900 dark:text-white">{template.label}</h4>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{template.permissions.length} permissions</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{template.permissions.length} permissions</p>
                   </div>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">{template.description}</p>
@@ -853,21 +853,21 @@ export default function UserPermissionsPage() {
 
       {/* Permission Sets Panel */}
       {showPermissionSets && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 animate-slideIn">
+        <div className="card-brand p-4 sm:p-6 animate-slideIn">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Saved Permission Sets</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {customPermissionSets.map(set => (
               <div
                 key={set.id}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 cursor-pointer hover:shadow-md transition-all"
+                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 cursor-pointer hover:shadow-card-hover transition-all focus-ring"
                 onClick={() => handleApplyPermissionSet(set)}
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <Star className="w-4 h-4 text-yellow-500" />
+                  <Star className="w-4 h-4 text-warning-500" />
                   <h4 className="font-medium text-gray-900 dark:text-white">{set.name}</h4>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{set.description}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{set.permissions.length} permissions</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{set.permissions.length} permissions</p>
               </div>
             ))}
           </div>
@@ -876,12 +876,12 @@ export default function UserPermissionsPage() {
 
       {/* Inheritance Visualization */}
       {showInheritanceVisualization && user && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 animate-slideIn">
+        <div className="card-brand p-4 sm:p-6 animate-slideIn">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permission Inheritance</h3>
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                <Shield className="w-5 h-5 text-purple-600" />
+              <div className="p-2 bg-secondary-100 dark:bg-secondary-900/30 rounded-lg">
+                <Shield className="w-5 h-5 text-secondary-600" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-900 dark:text-white">Role: {user.role}</p>
@@ -889,13 +889,13 @@ export default function UserPermissionsPage() {
                   Inherited from role template
                 </p>
               </div>
-              <span className="text-sm text-gray-500 whitespace-nowrap">
+              <span className="text-sm text-gray-500 whitespace-nowrap tabular-nums">
                 {ROLE_TEMPLATES.find(t => t.role === user.role)?.permissions.length || 0} permissions
               </span>
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                <Users className="w-5 h-5 text-blue-600" />
+              <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+                <Users className="w-5 h-5 text-brand-600" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-900 dark:text-white">Business Unit Assignments</p>
@@ -903,13 +903,13 @@ export default function UserPermissionsPage() {
                   Inherited from business unit roles
                 </p>
               </div>
-              <span className="text-sm text-gray-500 whitespace-nowrap">
+              <span className="text-sm text-gray-500 whitespace-nowrap tabular-nums">
                 {user.businessUnits?.length || 0} units
               </span>
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                <Key className="w-5 h-5 text-green-600" />
+              <div className="p-2 bg-success-100 dark:bg-success-900/30 rounded-lg">
+                <Key className="w-5 h-5 text-success-600" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-900 dark:text-white">Custom Permissions</p>
@@ -917,7 +917,7 @@ export default function UserPermissionsPage() {
                   Directly assigned permissions
                 </p>
               </div>
-              <span className="text-sm text-gray-500 whitespace-nowrap">
+              <span className="text-sm text-gray-500 whitespace-nowrap tabular-nums">
                 {selectedPermissions.size} permissions
               </span>
             </div>
@@ -926,7 +926,7 @@ export default function UserPermissionsPage() {
       )}
 
       {/* Search and Filter */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand p-4">
         <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
           <div className="flex-1 min-w-[200px] w-full sm:w-auto relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -935,23 +935,23 @@ export default function UserPermissionsPage() {
               placeholder="Search permissions..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4 text-gray-400" />
               </button>
             )}
           </div>
-          
+
           <select
             value={selectedResource}
             onChange={(e) => setSelectedResource(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full sm:w-auto px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           >
             <option value="all">All Resources</option>
             {PERMISSION_RESOURCES.map(resource => (
@@ -965,7 +965,7 @@ export default function UserPermissionsPage() {
                 setSearchQuery('');
                 setSelectedResource('all');
               }}
-              className="px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center gap-1"
+              className="px-3 py-2 text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-colors flex items-center gap-1 focus-ring"
             >
               <X className="w-4 h-4" />
               <span className="hidden sm:inline">Clear</span>
@@ -981,10 +981,10 @@ export default function UserPermissionsPage() {
           const isFullySelected = isResourceFullySelected(resource.id);
           const isPartiallySelected = isResourcePartiallySelected(resource.id);
           const selectedCount = resource.permissions.filter(p => selectedPermissions.has(p.id)).length;
-          
+
           return (
-            <div key={resource.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div 
+            <div key={resource.id} className="card-brand p-0 overflow-hidden">
+              <div
                 className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors gap-3"
                 onClick={() => {
                   setExpandedResources(prev => {
@@ -1009,15 +1009,15 @@ export default function UserPermissionsPage() {
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0 w-full sm:w-auto justify-between sm:justify-end">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap tabular-nums">
                       {selectedCount}/{resource.permissions.length}
                     </span>
                     <input
                       type="checkbox"
                       checked={isFullySelected}
                       onChange={() => handleSelectAllInResource(resource.id)}
-                      className={`rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 ${
-                        isPartiallySelected ? 'bg-blue-100' : ''
+                      className={`rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 ${
+                        isPartiallySelected ? 'bg-brand-100' : ''
                       }`}
                       onClick={(e) => e.stopPropagation()}
                       aria-label={`Select all ${resource.label} permissions`}
@@ -1030,19 +1030,19 @@ export default function UserPermissionsPage() {
                   )}
                 </div>
               </div>
-              
+
               {isExpanded && (
                 <div className="border-t border-gray-200 dark:border-gray-700 p-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {resource.permissions.map(permission => {
                       const isSelected = selectedPermissions.has(permission.id);
-                      
+
                       return (
                         <div
                           key={permission.id}
-                          className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                          className={`p-3 rounded-lg border transition-all cursor-pointer focus-ring ${
                             isSelected
-                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                              ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20'
                               : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                           }`}
                           onClick={() => handlePermissionToggle(permission.id)}
@@ -1054,7 +1054,7 @@ export default function UserPermissionsPage() {
                                   type="checkbox"
                                   checked={isSelected}
                                   onChange={() => handlePermissionToggle(permission.id)}
-                                  className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 flex-shrink-0"
+                                  className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 flex-shrink-0"
                                   onClick={(e) => e.stopPropagation()}
                                   aria-label={`Toggle ${permission.label}`}
                                 />
@@ -1066,7 +1066,7 @@ export default function UserPermissionsPage() {
                               </code>
                             </div>
                             {isSelected && (
-                              <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                              <CheckCircle className="w-4 h-4 text-brand-600 dark:text-brand-400 flex-shrink-0" />
                             )}
                           </div>
                         </div>
@@ -1082,21 +1082,21 @@ export default function UserPermissionsPage() {
 
       {/* Custom Permission Modal */}
       {showCustomPermissionModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="fixed inset-0 z-modal overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
             <div className="fixed inset-0 bg-black/50" onClick={() => setShowCustomPermissionModal(false)} />
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowCustomPermissionModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10 focus-ring"
                 aria-label="Close modal"
               >
                 <XCircle className="w-6 h-6 text-gray-500 dark:text-gray-400" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <Plus className="w-6 h-6 text-blue-600" />
+                <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+                  <Plus className="w-6 h-6 text-brand-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Add Custom Permission</h3>
@@ -1107,33 +1107,33 @@ export default function UserPermissionsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Resource <span className="text-red-500">*</span>
+                    Resource <span className="text-danger-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={customPermission.resource}
                     onChange={(e) => setCustomPermission(prev => ({ ...prev, resource: e.target.value }))}
                     placeholder="e.g., user, inventory, product"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Action <span className="text-red-500">*</span>
+                    Action <span className="text-danger-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={customPermission.action}
                     onChange={(e) => setCustomPermission(prev => ({ ...prev, action: e.target.value }))}
                     placeholder="e.g., view, create, edit, delete"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   />
                 </div>
-                
+
                 {customPermission.resource && customPermission.action && (
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                     <p className="text-sm text-gray-500 dark:text-gray-400">Permission ID:</p>
-                    <code className="text-sm text-blue-600 dark:text-blue-400 font-mono">
+                    <code className="text-sm text-brand-600 dark:text-brand-400 font-mono">
                       {customPermission.resource}:{customPermission.action}
                     </code>
                   </div>
@@ -1142,14 +1142,14 @@ export default function UserPermissionsPage() {
                 <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => setShowCustomPermissionModal(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleAddCustomPermission}
                     disabled={!customPermission.resource || !customPermission.action}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="flex-1 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 focus-ring"
                   >
                     <Plus className="w-4 h-4" />
                     Add Permission

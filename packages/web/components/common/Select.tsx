@@ -7,7 +7,8 @@ interface SelectOption {
   label: string;
 }
 
-interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+interface SelectProps
+  extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
   options: SelectOption[];
@@ -19,7 +20,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <div className="space-y-1">
         {label && (
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             {label}
           </label>
         )}
@@ -28,16 +29,20 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             className={`
               w-full px-4 py-2 border rounded-lg appearance-none
-              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-              disabled:bg-gray-100 disabled:cursor-not-allowed
-              ${error ? 'border-red-500 focus:ring-red-500' : 'border-gray-300'}
+              bg-white dark:bg-gray-800 text-gray-900 dark:text-white
+              focus:outline-none focus:ring-2 focus:border-transparent
+              disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed
+              transition-shadow
+              ${
+                error
+                  ? 'border-danger-500 focus:ring-danger-500'
+                  : 'border-gray-300 dark:border-gray-600 focus:ring-brand-500'
+              }
               ${className}
             `}
             {...props}
           >
-            {placeholder && (
-              <option value="">{placeholder}</option>
-            )}
+            {placeholder && <option value="">{placeholder}</option>}
             {options.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -47,14 +52,16 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
         </div>
         {error && (
-          <div className="flex items-center gap-1 text-sm text-red-600">
+          <div className="flex items-center gap-1 text-sm text-danger-600 dark:text-danger-400">
             <AlertCircle className="w-4 h-4" />
             {error}
           </div>
         )}
       </div>
     );
-  }
+  },
 );
 
 Select.displayName = 'Select';
+
+export default Select;

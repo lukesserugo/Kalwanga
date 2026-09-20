@@ -118,7 +118,7 @@ const TransferCard: React.FC<{
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.01 }}
-      className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all cursor-pointer"
+      className="px-4 py-3 hover:bg-brand-50/50 dark:hover:bg-brand-950/20 transition-all cursor-pointer"
       onClick={onClick}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -136,7 +136,7 @@ const TransferCard: React.FC<{
               <Warehouse className="w-3 h-3" />
               {transfer.fromLocation}
             </span>
-            <ArrowRight className="w-3 h-3 flex-shrink-0" />
+            <ArrowRight className="w-3 h-3 flex-shrink-0 text-brand-500" />
             <span className="flex items-center gap-0.5">
               <Building className="w-3 h-3" />
               {transfer.toLocation}
@@ -569,7 +569,7 @@ export function StockTransfer({
         </p>
         <button 
           onClick={() => router.push('/admin/inventory')} 
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors focus-ring"
         >
           Back to Inventory
         </button>
@@ -587,7 +587,7 @@ export function StockTransfer({
         <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">You need to be logged in to transfer stock.</p>
         <button 
           onClick={() => router.push('/login')} 
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors focus-ring"
         >
           Go to Login
         </button>
@@ -604,7 +604,7 @@ export function StockTransfer({
         <div className={`${compact ? 'px-0 pb-3' : 'px-6 py-4'} border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3`}>
           <div>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Truck className="w-6 h-6 text-blue-500" />
+              <Truck className="w-6 h-6 text-brand-500" />
               Transfer Stock
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">Move inventory between locations</p>
@@ -615,7 +615,7 @@ export function StockTransfer({
               setShowHistory(!showHistory); 
               if (!showHistory) loadTransferHistory(); 
             }}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-1.5 text-sm"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1.5 text-sm focus-ring"
           >
             <History className="w-4 h-4" />
             {showHistory ? 'Hide History' : 'View History'}
@@ -627,7 +627,7 @@ export function StockTransfer({
           {/* Product Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Product <span className="text-red-500">*</span>
+              Product <span className="text-brand-accent-500">*</span>
             </label>
             <div className="relative" ref={searchRef}>
               <div className="flex gap-2">
@@ -640,18 +640,18 @@ export function StockTransfer({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onFocus={() => searchResults.length > 0 && setIsSearchOpen(true)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 transition-colors"
                     disabled={!!selectedItem || loading}
                   />
                   {searchLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                    <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-brand-500" />
                   )}
                 </div>
                 {selectedItem && (
                   <button
                     type="button"
                     onClick={handleClearSelection}
-                    className="px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                    className="px-3 py-2 bg-brand-accent-50 dark:bg-brand-accent-950/30 text-brand-accent-600 dark:text-brand-accent-400 rounded-lg hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/50 transition-colors focus-ring"
                     disabled={loading}
                   >
                     <X className="w-5 h-5" />
@@ -665,14 +665,14 @@ export function StockTransfer({
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto"
+                    className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto custom-scrollbar"
                   >
                     {searchResults.map((item) => (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => handleSelectItem(item)}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between gap-3 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors"
+                        className="w-full px-4 py-2 text-left hover:bg-brand-50 dark:hover:bg-brand-950/30 flex items-center justify-between gap-3 border-b border-gray-100 dark:border-gray-700 last:border-0 transition-colors"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -691,7 +691,7 @@ export function StockTransfer({
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="text-sm text-gray-500 dark:text-gray-400">{formatCurrency(item.unitPrice)}</p>
-                          <p className={`text-xs ${item.available > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <p className={`text-xs ${item.available > 0 ? 'text-success-600 dark:text-success-400' : 'text-danger-600 dark:text-danger-400'}`}>
                             Available: {item.available}
                           </p>
                         </div>
@@ -702,14 +702,14 @@ export function StockTransfer({
               </AnimatePresence>
             </div>
             {formErrors.product && touched.product && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.product}</p>
+              <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">{formErrors.product}</p>
             )}
 
             {selectedItem && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
+                className="mt-3 p-4 bg-brand-50 dark:bg-brand-950/20 rounded-lg border border-brand-200 dark:border-brand-800"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -733,10 +733,10 @@ export function StockTransfer({
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500 dark:text-gray-400">Available Stock</p>
-                    <p className={`text-lg font-bold ${
-                      availableStock === 0 ? 'text-red-600 dark:text-red-400' : 
-                      availableStock <= (inventoryDetails?.reorderPoint || 5) ? 'text-yellow-600 dark:text-yellow-400' : 
-                      'text-green-600 dark:text-green-400'
+                    <p className={`text-lg font-bold tabular-nums ${
+                      availableStock === 0 ? 'text-danger-600 dark:text-danger-400' : 
+                      availableStock <= (inventoryDetails?.reorderPoint || 5) ? 'text-warning-600 dark:text-warning-400' : 
+                      'text-success-600 dark:text-success-400'
                     }`}>
                       {availableStock} {inventoryDetails?.unit || 'units'}
                     </p>
@@ -749,7 +749,7 @@ export function StockTransfer({
                       Location: {inventoryDetails.location || 'Warehouse'}
                     </span>
                     {inventoryDetails.reserved > 0 && (
-                      <span className="text-yellow-600 dark:text-yellow-400">
+                      <span className="text-warning-600 dark:text-warning-400">
                         ({inventoryDetails.reserved} reserved)
                       </span>
                     )}
@@ -767,7 +767,7 @@ export function StockTransfer({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                From Location <span className="text-red-500">*</span>
+                From Location <span className="text-brand-accent-500">*</span>
               </label>
               <div className="relative">
                 <Warehouse className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -781,7 +781,7 @@ export function StockTransfer({
                     }
                   }}
                   onBlur={() => setTouched({ ...touched, fromLocation: true })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 transition-colors"
                   disabled={loading || !selectedItem}
                   required
                 >
@@ -792,12 +792,12 @@ export function StockTransfer({
                 </select>
               </div>
               {formErrors.fromLocation && touched.fromLocation && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.fromLocation}</p>
+                <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">{formErrors.fromLocation}</p>
               )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                To Location <span className="text-red-500">*</span>
+                To Location <span className="text-brand-accent-500">*</span>
               </label>
               <div className="relative">
                 <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -814,7 +814,7 @@ export function StockTransfer({
                     }
                   }}
                   onBlur={() => setTouched({ ...touched, toLocation: true })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 transition-colors"
                   disabled={loading || !selectedItem}
                   required
                 >
@@ -825,10 +825,10 @@ export function StockTransfer({
                 </select>
               </div>
               {formErrors.toLocation && touched.toLocation && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.toLocation}</p>
+                <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">{formErrors.toLocation}</p>
               )}
               {formErrors.locations && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.locations}</p>
+                <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">{formErrors.locations}</p>
               )}
             </div>
           </div>
@@ -836,7 +836,7 @@ export function StockTransfer({
           {/* Quantity */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Quantity to Transfer <span className="text-red-500">*</span>
+              Quantity to Transfer <span className="text-brand-accent-500">*</span>
             </label>
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-1">
@@ -844,7 +844,7 @@ export function StockTransfer({
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }))}
                   disabled={loading || !selectedItem || formData.quantity <= 1}
-                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
@@ -863,7 +863,7 @@ export function StockTransfer({
                   onBlur={() => setTouched({ ...touched, quantity: true })}
                   min="1"
                   max={availableStock || 0}
-                  className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 text-center"
+                  className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 text-center tabular-nums transition-colors"
                   required
                   disabled={loading || !selectedItem}
                 />
@@ -871,7 +871,7 @@ export function StockTransfer({
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, quantity: Math.min(availableStock || 999, prev.quantity + 1) }))}
                   disabled={loading || !selectedItem || formData.quantity >= (availableStock || 0)}
-                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -885,7 +885,7 @@ export function StockTransfer({
                 <button
                   type="button"
                   onClick={() => setFormData(prev => ({ ...prev, quantity: availableStock }))}
-                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                  className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 transition-colors focus-ring"
                   disabled={loading || !selectedItem}
                 >
                   Max
@@ -893,13 +893,13 @@ export function StockTransfer({
               )}
             </div>
             {formData.quantity > availableStock && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+              <p className="mt-1 text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
                 Not enough stock available. Max: {availableStock}
               </p>
             )}
             {formErrors.quantity && touched.quantity && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.quantity}</p>
+              <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">{formErrors.quantity}</p>
             )}
           </div>
 
@@ -912,7 +912,7 @@ export function StockTransfer({
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               rows={3}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 resize-y"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 resize-y transition-colors"
               placeholder="Reason for transfer..."
               disabled={loading || !selectedItem}
             />
@@ -921,11 +921,11 @@ export function StockTransfer({
           {/* Business Unit Info */}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700/30 p-2 rounded-lg">
             <span className="flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${businessUnitId() ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${businessUnitId() ? 'bg-success-500' : 'bg-danger-500'}`} />
               {businessUnitId() ? `Business Unit: ${businessUnitId()?.slice(0, 8)}...` : '⚠️ No business unit selected'}
             </span>
             <span className="flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${userId() ? 'bg-blue-500' : 'bg-red-500'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${userId() ? 'bg-brand-500' : 'bg-danger-500'}`} />
               {userId() ? `User: ${userId()?.slice(0, 8)}...` : '⚠️ No user ID'}
             </span>
           </div>
@@ -933,7 +933,7 @@ export function StockTransfer({
           {/* Actions */}
           <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-yellow-500 dark:text-yellow-400 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 text-warning-500 dark:text-warning-400 flex-shrink-0" />
               <span>Stock will be deducted from source and added to destination</span>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -941,7 +941,7 @@ export function StockTransfer({
                 <button
                   type="button"
                   onClick={onCancel}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
                   disabled={loading}
                 >
                   Cancel
@@ -957,7 +957,7 @@ export function StockTransfer({
                   !businessUnitId() ||
                   formData.quantity > availableStock
                 }
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring shadow-brand"
               >
                 {loading ? (
                   <><Loader2 className="w-4 h-4 animate-spin" />Transferring...</>
@@ -983,17 +983,17 @@ export function StockTransfer({
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                  <History className="w-4 h-4" />
+                  <History className="w-4 h-4 text-brand-500" />
                   Transfer History
                 </h3>
-                <span className="text-sm text-gray-500 dark:text-gray-400">
+                <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                   {transferHistory.length} transfers
                 </span>
               </div>
-              <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-80 overflow-y-auto">
+              <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-80 overflow-y-auto custom-scrollbar">
                 {loadingHistory ? (
                   <div className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-500" />
                     Loading history...
                   </div>
                 ) : transferHistory.length === 0 ? (
@@ -1029,3 +1029,4 @@ export function StockTransfer({
 // ============================================
 
 export default StockTransfer;
+

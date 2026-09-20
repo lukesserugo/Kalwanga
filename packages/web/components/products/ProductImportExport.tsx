@@ -367,16 +367,16 @@ export function ProductImportExport() {
   // ============================================
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="card-brand shadow-soft overflow-hidden p-0 animate-fade-in">
       {/* Tabs */}
       <div className="flex border-b border-gray-200 dark:border-gray-700">
         <button
           type="button"
           onClick={() => setActiveTab('import')}
-          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition duration-250 focus-ring ${
             activeTab === 'import'
-              ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              ? 'border-b-2 border-brand-600 text-brand-600 dark:text-brand-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
           <Upload className="w-4 h-4" />
@@ -385,10 +385,10 @@ export function ProductImportExport() {
         <button
           type="button"
           onClick={() => setActiveTab('export')}
-          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition duration-250 focus-ring ${
             activeTab === 'export'
-              ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              ? 'border-b-2 border-brand-600 text-brand-600 dark:text-brand-400'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
           <Download className="w-4 h-4" />
@@ -410,9 +410,9 @@ export function ProductImportExport() {
             </div>
 
             {/* Not-yet-implemented banner */}
-            <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-              <Info className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-yellow-800 dark:text-yellow-300">
+            <div className="flex items-start gap-2 p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl animate-slide-down">
+              <Info className="w-4 h-4 text-warning-600 dark:text-warning-400 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-warning-800 dark:text-warning-300">
                 Server-side import is not yet implemented. Uploads are
                 accepted and acknowledged but no products will be
                 created. Use the template to prepare your data for when
@@ -421,8 +421,8 @@ export function ProductImportExport() {
             </div>
 
             {/* Template Download */}
-            <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-              <FileText className="w-5 h-5 text-blue-500" />
+            <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-200 dark:border-gray-600">
+              <FileText className="w-5 h-5 text-brand-500 dark:text-brand-400" />
               <span className="text-sm text-gray-600 dark:text-gray-300">
                 Need a template?
               </span>
@@ -430,7 +430,7 @@ export function ProductImportExport() {
                 type="button"
                 onClick={handleDownloadTemplate}
                 disabled={downloadingTemplate || !canExportProducts}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5 transition duration-250 focus-ring rounded"
                 title={
                   canExportProducts
                     ? undefined
@@ -450,12 +450,12 @@ export function ProductImportExport() {
 
             {/* File Drop Area */}
             <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              className={`border-2 border-dashed rounded-xl p-8 text-center transition duration-250 ${
                 dragActive
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20'
                   : file
-                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                  ? 'border-success-500 bg-success-50 dark:bg-success-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -464,30 +464,30 @@ export function ProductImportExport() {
             >
               {file ? (
                 <div className="flex items-center justify-center gap-3">
-                  <FileSpreadsheet className="w-10 h-10 text-green-500" />
+                  <FileSpreadsheet className="w-10 h-10 text-success-500" />
                   <div className="text-left">
                     <p className="font-medium text-gray-900 dark:text-white break-all">
                       {file.name}
                     </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                       {(file.size / 1024).toFixed(1)} KB
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={resetFile}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                     aria-label="Remove file"
                   >
-                    <X className="w-5 h-5 text-gray-500" />
+                    <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                   </button>
                 </div>
               ) : (
                 <>
-                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <Upload className="w-12 h-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
                   <p className="text-gray-600 dark:text-gray-400">
                     Drag and drop your file here, or{' '}
-                    <label className="text-blue-600 dark:text-blue-400 hover:text-blue-700 cursor-pointer">
+                    <label className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 cursor-pointer transition duration-250 focus-ring rounded">
                       browse
                       <input
                         type="file"
@@ -519,7 +519,7 @@ export function ProductImportExport() {
                 type="button"
                 onClick={resetFile}
                 disabled={!file}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                className="btn-secondary disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -527,7 +527,7 @@ export function ProductImportExport() {
                 type="button"
                 onClick={handleImport}
                 disabled={!file || loading || !canImportProducts}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
                   canImportProducts
                     ? undefined
@@ -548,17 +548,17 @@ export function ProductImportExport() {
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`p-4 rounded-lg ${
+                className={`p-4 rounded-xl ${
                   result.success
-                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                    : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                    ? 'bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800'
+                    : 'bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800'
                 }`}
               >
                 <div className="flex items-start gap-3">
                   {result.success ? (
-                    <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                    <Check className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" />
                   ) : (
-                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 dark:text-white">
@@ -572,7 +572,7 @@ export function ProductImportExport() {
                       </p>
                     )}
                     {result.data && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                      <p className="text-sm tabular-nums text-gray-600 dark:text-gray-300 mt-1">
                         {result.data.imported} imported,{' '}
                         {result.data.failed} failed out of{' '}
                         {result.data.total} total
@@ -582,7 +582,7 @@ export function ProductImportExport() {
                   <button
                     type="button"
                     onClick={() => setResult(null)}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                     aria-label="Dismiss result"
                   >
                     <X className="w-4 h-4" />
@@ -616,9 +616,9 @@ export function ProductImportExport() {
                     key={format}
                     type="button"
                     onClick={() => setExportFormat(format)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition duration-250 focus-ring ${
                       exportFormat === format
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-brand-gradient text-white shadow-brand'
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                     }`}
                   >
@@ -639,7 +639,7 @@ export function ProductImportExport() {
                 type="button"
                 onClick={handleExport}
                 disabled={exporting || !canExportProducts}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
                 title={
                   canExportProducts
                     ? undefined

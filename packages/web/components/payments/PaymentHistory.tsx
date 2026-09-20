@@ -154,15 +154,15 @@ const PROVIDER_NAMES: Record<string, string> = {
 };
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  PAID: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  PENDING: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-  FAILED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  PENDING: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  FAILED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
   REFUNDED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  PARTIAL: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  PROCESSING: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  AUTHORIZED: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
-  DECLINED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  DISPUTED: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  PARTIAL: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  PROCESSING: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  AUTHORIZED: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  DECLINED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  DISPUTED: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
   CANCELLED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
 };
 
@@ -309,366 +309,375 @@ export function PaymentHistory({
 
   return (
     <div className={className}>
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-          Payment History
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className={`p-2 rounded-lg transition ${
-              isDark
-                ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
-                : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
-            } disabled:opacity-50`}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          {showFilters && (
+      <div className="animate-fade-in">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            Payment History
+          </h3>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowFilterPanel(!showFilterPanel)}
-              className={`p-2 rounded-lg transition ${
+              onClick={handleRefresh}
+              disabled={loading}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
                 isDark
                   ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
                   : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
-              }`}
+              } disabled:opacity-50`}
+              aria-label="Refresh payments"
             >
-              <Filter className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* Search & Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        <div className="flex-1 min-w-[200px] relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by reference, customer..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${
-              isDark
-                ? 'bg-gray-700 text-white placeholder-gray-400'
-                : 'bg-gray-100 text-gray-900 placeholder-gray-500'
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-          />
-        </div>
-        <button
-          onClick={handleSearch}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
-        >
-          Search
-        </button>
-      </div>
-
-      {/* Filter Panel */}
-      {showFilters && showFilterPanel && (
-        <div className={`p-4 rounded-lg mb-4 ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Status
-              </label>
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                className={`w-full px-3 py-2 rounded-lg text-sm ${
-                  isDark
-                    ? 'bg-gray-600 text-white border-gray-500'
-                    : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
-              >
-                <option value="all">All Status</option>
-                <option value="PAID">Paid</option>
-                <option value="PENDING">Pending</option>
-                <option value="FAILED">Failed</option>
-                <option value="REFUNDED">Refunded</option>
-                <option value="PARTIAL">Partial</option>
-                <option value="PROCESSING">Processing</option>
-                <option value="AUTHORIZED">Authorized</option>
-                <option value="DECLINED">Declined</option>
-                <option value="DISPUTED">Disputed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-            </div>
-            <div>
-              <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Payment Method
-              </label>
-              <select
-                value={filters.paymentMethod}
-                onChange={(e) => setFilters(prev => ({ ...prev, paymentMethod: e.target.value }))}
-                className={`w-full px-3 py-2 rounded-lg text-sm ${
-                  isDark
-                    ? 'bg-gray-600 text-white border-gray-500'
-                    : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
-              >
-                <option value="all">All Methods</option>
-                <option value="CASH">Cash</option>
-                <option value="CREDIT_CARD">Credit Card</option>
-                <option value="DEBIT_CARD">Debit Card</option>
-                <option value="MOBILE_MONEY">Mobile Money</option>
-                <option value="BANK_TRANSFER">Bank Transfer</option>
-                <option value="GIFT_CARD">Gift Card</option>
-                <option value="LOYALTY_POINTS">Loyalty Points</option>
-                <option value="CHECK">Check</option>
-                <option value="PAYPAL">PayPal</option>
-                <option value="FLUTTERWAVE">Flutterwave</option>
-                <option value="PAYSTACK">Paystack</option>
-                <option value="SQUARE">Square</option>
-              </select>
-            </div>
-            <div>
-              <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Provider
-              </label>
-              <select
-                value={filters.provider}
-                onChange={(e) => setFilters(prev => ({ ...prev, provider: e.target.value }))}
-                className={`w-full px-3 py-2 rounded-lg text-sm ${
-                  isDark
-                    ? 'bg-gray-600 text-white border-gray-500'
-                    : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
-              >
-                <option value="all">All Providers</option>
-                <option value="STRIPE">Stripe</option>
-                <option value="CASH">Cash</option>
-                <option value="MOBILE_MONEY">Mobile Money</option>
-                <option value="BANK_TRANSFER">Bank Transfer</option>
-                <option value="GIFT_CARD">Gift Card</option>
-                <option value="LOYALTY_POINTS">Loyalty Points</option>
-                <option value="PAYPAL">PayPal</option>
-                <option value="FLUTTERWAVE">Flutterwave</option>
-                <option value="PAYSTACK">Paystack</option>
-                <option value="SQUARE">Square</option>
-              </select>
-            </div>
-            <div>
-              <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Date Range
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={filters.startDate}
-                  onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-                    isDark
-                      ? 'bg-gray-600 text-white border-gray-500'
-                      : 'bg-white text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                />
-                <input
-                  type="date"
-                  value={filters.endDate}
-                  onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-                    isDark
-                      ? 'bg-gray-600 text-white border-gray-500'
-                      : 'bg-white text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => {
-                setFilters({
-                  status: 'all',
-                  paymentMethod: 'all',
-                  provider: 'all',
-                  startDate: '',
-                  endDate: '',
-                });
-                setSearch('');
-                setPagination(prev => ({ ...prev, page: 1 }));
-                loadPayments();
-              }}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-            >
-              Clear Filters
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Payments List */}
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        </div>
-      ) : payments.length === 0 ? (
-        <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-          <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>No payments found</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {payments.map((payment) => {
-            const providerImageUrl = getProviderImageUrl(payment.provider || payment.gatewayId);
-            const providerName = getProviderName(payment.provider || payment.gatewayId);
-
-            return (
-              <div
-                key={payment.id}
-                className={`p-4 rounded-lg border transition ${
-                  isDark
-                    ? 'border-gray-700 hover:bg-gray-700/30'
-                    : 'border-gray-200 hover:bg-gray-50'
+            {showFilters && (
+              <button
+                onClick={() => setShowFilterPanel(!showFilterPanel)}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                  showFilterPanel
+                    ? 'bg-brand-gradient text-white shadow-brand'
+                    : isDark
+                      ? 'hover:bg-gray-700 text-gray-400 hover:text-white'
+                      : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
                 }`}
+                aria-label="Toggle filters"
+                aria-expanded={showFilterPanel}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    {/* Provider Logo or Icon */}
-                    <div className={`p-2 rounded-lg ${getStatusColor(payment.status)} flex items-center justify-center min-w-[40px]`}>
-                      {providerImageUrl ? (
-                        <div className="relative w-6 h-6">
-                          <Image
-                            src={providerImageUrl}
-                            alt={providerName}
-                            width={24}
-                            height={24}
-                            className="rounded object-contain"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                              const parent = (e.target as HTMLImageElement).parentElement;
-                              if (parent) {
-                                const fallback = document.createElement('span');
-                                fallback.className = 'text-lg';
-                                fallback.textContent = getPaymentMethodEmoji(payment.paymentMethod);
-                                parent.appendChild(fallback);
-                              }
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        getPaymentIcon(payment.paymentMethod)
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {formatCurrency(payment.amount)}
-                        </p>
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1 ${getStatusColor(payment.status)}`}>
-                          {getStatusIcon(payment.status)}
-                          {payment.status}
-                        </span>
-                        {(payment.provider || payment.gatewayId) && (
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full flex items-center gap-1 ${
-                            isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                          }`}>
-                            {providerImageUrl ? (
-                              <div className="relative w-3 h-3">
-                                <Image
-                                  src={providerImageUrl}
-                                  alt={providerName}
-                                  width={12}
-                                  height={12}
-                                  className="rounded object-contain"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                  }}
-                                />
-                              </div>
-                            ) : null}
-                            {providerName}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 mt-1 text-sm">
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
-                        </span>
-                        <button
-                          onClick={() => handleCopyReference(payment.reference || payment.id)}
-                          className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition`}
-                          title="Copy reference"
-                        >
-                          <Copy className="w-3 h-3 text-gray-400" />
-                        </button>
-                        <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          {formatMethod(payment.paymentMethod)}
-                        </span>
-                        <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          {formatDateTime(payment.processedAt)}
-                        </span>
-                        {payment.sale?.receiptNumber && (
-                          <>
-                            <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
-                            <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                              Sale: {payment.sale.receiptNumber}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleViewReceipt(payment)}
-                      className={`p-1.5 rounded-lg transition ${
-                        isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                      }`}
-                      title="View receipt"
-                    >
-                      <Receipt className="w-4 h-4 text-blue-500" />
-                    </button>
-                  </div>
+                <Filter className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search & Filters */}
+        <div className="flex flex-wrap gap-3 mb-4">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search by reference, customer..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${
+                isDark
+                  ? 'bg-gray-700 text-white placeholder-gray-400'
+                  : 'bg-gray-100 text-gray-900 placeholder-gray-500'
+              } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+            />
+          </div>
+          <button
+            onClick={handleSearch}
+            className="btn-brand"
+          >
+            Search
+          </button>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && showFilterPanel && (
+          <div className={`p-4 rounded-2xl mb-4 animate-slide-down ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Status
+                </label>
+                <select
+                  value={filters.status}
+                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${
+                    isDark
+                      ? 'bg-gray-600 text-white border-gray-500'
+                      : 'bg-white text-gray-900 border-gray-300'
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+                >
+                  <option value="all">All Status</option>
+                  <option value="PAID">Paid</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="FAILED">Failed</option>
+                  <option value="REFUNDED">Refunded</option>
+                  <option value="PARTIAL">Partial</option>
+                  <option value="PROCESSING">Processing</option>
+                  <option value="AUTHORIZED">Authorized</option>
+                  <option value="DECLINED">Declined</option>
+                  <option value="DISPUTED">Disputed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Payment Method
+                </label>
+                <select
+                  value={filters.paymentMethod}
+                  onChange={(e) => setFilters(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${
+                    isDark
+                      ? 'bg-gray-600 text-white border-gray-500'
+                      : 'bg-white text-gray-900 border-gray-300'
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+                >
+                  <option value="all">All Methods</option>
+                  <option value="CASH">Cash</option>
+                  <option value="CREDIT_CARD">Credit Card</option>
+                  <option value="DEBIT_CARD">Debit Card</option>
+                  <option value="MOBILE_MONEY">Mobile Money</option>
+                  <option value="BANK_TRANSFER">Bank Transfer</option>
+                  <option value="GIFT_CARD">Gift Card</option>
+                  <option value="LOYALTY_POINTS">Loyalty Points</option>
+                  <option value="CHECK">Check</option>
+                  <option value="PAYPAL">PayPal</option>
+                  <option value="FLUTTERWAVE">Flutterwave</option>
+                  <option value="PAYSTACK">Paystack</option>
+                  <option value="SQUARE">Square</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Provider
+                </label>
+                <select
+                  value={filters.provider}
+                  onChange={(e) => setFilters(prev => ({ ...prev, provider: e.target.value }))}
+                  className={`w-full px-3 py-2 rounded-lg text-sm ${
+                    isDark
+                      ? 'bg-gray-600 text-white border-gray-500'
+                      : 'bg-white text-gray-900 border-gray-300'
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+                >
+                  <option value="all">All Providers</option>
+                  <option value="STRIPE">Stripe</option>
+                  <option value="CASH">Cash</option>
+                  <option value="MOBILE_MONEY">Mobile Money</option>
+                  <option value="BANK_TRANSFER">Bank Transfer</option>
+                  <option value="GIFT_CARD">Gift Card</option>
+                  <option value="LOYALTY_POINTS">Loyalty Points</option>
+                  <option value="PAYPAL">PayPal</option>
+                  <option value="FLUTTERWAVE">Flutterwave</option>
+                  <option value="PAYSTACK">Paystack</option>
+                  <option value="SQUARE">Square</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Date Range
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={filters.startDate}
+                    onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${
+                      isDark
+                        ? 'bg-gray-600 text-white border-gray-500'
+                        : 'bg-white text-gray-900 border-gray-300'
+                    } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums`}
+                  />
+                  <input
+                    type="date"
+                    value={filters.endDate}
+                    onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${
+                      isDark
+                        ? 'bg-gray-600 text-white border-gray-500'
+                        : 'bg-white text-gray-900 border-gray-300'
+                    } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums`}
+                  />
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {pagination.totalPages > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-            {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-          </p>
-          <div className="flex gap-1">
-            <button
-              onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-              disabled={pagination.page === 1}
-              className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 ${
-                isDark
-                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                  : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-              } border`}
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-              disabled={pagination.page === pagination.totalPages}
-              className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 ${
-                isDark
-                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                  : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-              } border`}
-            >
-              Next
-            </button>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setFilters({
+                    status: 'all',
+                    paymentMethod: 'all',
+                    provider: 'all',
+                    startDate: '',
+                    endDate: '',
+                  });
+                  setSearch('');
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                  loadPayments();
+                }}
+                className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring rounded"
+              >
+                Clear Filters
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Payments List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+          </div>
+        ) : payments.length === 0 ? (
+          <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>No payments found</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {payments.map((payment) => {
+              const providerImageUrl = getProviderImageUrl(payment.provider || payment.gatewayId);
+              const providerName = getProviderName(payment.provider || payment.gatewayId);
+
+              return (
+                <div
+                  key={payment.id}
+                  className={`p-4 rounded-xl border transition duration-250 ${
+                    isDark
+                      ? 'border-gray-700 hover:bg-gray-700/30'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      {/* Provider Logo or Icon */}
+                      <div className={`p-2 rounded-lg ${getStatusColor(payment.status)} flex items-center justify-center min-w-[40px]`}>
+                        {providerImageUrl ? (
+                          <div className="relative w-6 h-6">
+                            <Image
+                              src={providerImageUrl}
+                              alt={providerName}
+                              width={24}
+                              height={24}
+                              className="rounded object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                const parent = (e.target as HTMLImageElement).parentElement;
+                                if (parent) {
+                                  const fallback = document.createElement('span');
+                                  fallback.className = 'text-lg';
+                                  fallback.textContent = getPaymentMethodEmoji(payment.paymentMethod);
+                                  parent.appendChild(fallback);
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          getPaymentIcon(payment.paymentMethod)
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className={`font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            {formatCurrency(payment.amount)}
+                          </p>
+                          <span className={`px-2 py-0.5 text-2xs font-medium rounded-full flex items-center gap-1 ${getStatusColor(payment.status)}`}>
+                            {getStatusIcon(payment.status)}
+                            {payment.status}
+                          </span>
+                          {(payment.provider || payment.gatewayId) && (
+                            <span className={`px-2 py-0.5 text-2xs font-medium rounded-full flex items-center gap-1 ${
+                              isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {providerImageUrl ? (
+                                <div className="relative w-3 h-3">
+                                  <Image
+                                    src={providerImageUrl}
+                                    alt={providerName}
+                                    width={12}
+                                    height={12}
+                                    className="rounded object-contain"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              ) : null}
+                              {providerName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 mt-1 text-sm">
+                          <span className={`tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
+                          </span>
+                          <button
+                            onClick={() => handleCopyReference(payment.reference || payment.id)}
+                            className={`p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition duration-250 focus-ring`}
+                            title="Copy reference"
+                            aria-label="Copy payment reference"
+                          >
+                            <Copy className="w-3 h-3 text-gray-400" />
+                          </button>
+                          <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                            {formatMethod(payment.paymentMethod)}
+                          </span>
+                          <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                          <span className={`tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {formatDateTime(payment.processedAt)}
+                          </span>
+                          {payment.sale?.receiptNumber && (
+                            <>
+                              <span className="w-px h-4 bg-gray-300 dark:bg-gray-600" />
+                              <span className={`tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                Sale: {payment.sale.receiptNumber}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleViewReceipt(payment)}
+                        className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
+                          isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                        }`}
+                        title="View receipt"
+                        aria-label="View receipt"
+                      >
+                        <Receipt className="w-4 h-4 text-brand-500 dark:text-brand-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <p className={`text-sm tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+            </p>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                disabled={pagination.page === 1}
+                className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
+                  isDark
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                    : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                } border`}
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+                disabled={pagination.page === pagination.totalPages}
+                className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
+                  isDark
+                    ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                    : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                } border`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Receipt Modal */}
       {showReceiptModal && selectedPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
+        <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto custom-scrollbar animate-fade-in">
           <div className="max-w-2xl w-full">
             <PaymentReceipt
               payment={{

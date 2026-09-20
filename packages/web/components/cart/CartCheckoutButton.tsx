@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartCheckoutButton.tsx
-
 'use client';
 
 import React from 'react';
@@ -13,11 +11,6 @@ export interface CartCheckoutButtonProps {
   loadingLabel?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
-  /**
-   * When false, the button renders with "Sign in to Checkout" and a
-   * login icon. The caller still owns the actual redirect — this
-   * prop only affects the visual state.
-   */
   isAuthenticated?: boolean;
 }
 
@@ -37,9 +30,12 @@ export function CartCheckoutButton({
     lg: 'px-8 py-4 text-lg',
   };
 
+  // Authenticated users get the flat brand color; guests get the
+  // gradient as a stronger call-to-action since they need to sign in
+  // first.
   const paletteClasses = isAuthenticated
-    ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'
-    : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-md hover:shadow-lg';
+    ? 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand hover:shadow-brand-lg'
+    : 'bg-brand-gradient hover:shadow-brand-lg text-white shadow-brand';
 
   const resolvedLabel =
     label ?? (isAuthenticated ? 'Proceed to Checkout' : 'Sign in to Checkout');
@@ -51,7 +47,7 @@ export function CartCheckoutButton({
       type="button"
       onClick={onClick}
       disabled={disabled || isLoading}
-      className={`w-full inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed ${sizeClasses[size]} ${paletteClasses} ${className}`}
+      className={`w-full inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed ${sizeClasses[size]} ${paletteClasses} ${className}`}
       aria-busy={isLoading}
     >
       {isLoading ? (

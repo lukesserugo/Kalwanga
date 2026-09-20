@@ -315,12 +315,6 @@ function mergeStats(partial: Partial<DashboardStats>): DashboardStats {
  * Fetch a dashboard sub-resource. Returns `null` when the endpoint
  * is missing (404) — that's not an error, it just means the backend
  * hasn't implemented this view yet.
- *
- * ⚠️ Without this, three endpoints that the backend doesn't have
- *    yet (`/dashboard/trends`, `/dashboard/top-products`,
- *    `/dashboard/activity`) each emit a scary `❌ API Error 404`
- *    log line on every fetch. Treating them as "no data" keeps the
- *    console clean and the page functional.
  */
 async function safeFetch<T = any>(
   url: string,
@@ -350,12 +344,6 @@ export default function DashboardPage() {
   const { showToast } = useToast();
 
   // ---------- Primitive derivations from unstable objects ----------
-  //
-  // ⚠️ Clerk's `useUser()` can return a new `user` object on every
-  //    render. If `user` is used directly in an effect dep array,
-  //    the effect fires on every render — which is an infinite
-  //    render loop that unmounts the page. Same for `showToast`,
-  //    which may not be memoized by `useToast`.
   const userId = user?.id ?? null;
   const hasAuthUser = !!authUser;
 
@@ -401,10 +389,6 @@ export default function DashboardPage() {
   const hasAccess = isAdmin || isManager;
 
   // ---------- Permissions (DERIVED, not state) ----------
-  //
-  // Depends on `hasAuthUser` (a boolean), not on `authUser` (an
-  // object). This keeps the memo stable across renders where
-  // `authUser` is a new object with identical contents.
   const permissions: Permission = useMemo<Permission>(() => {
     if (!hasAuthUser) return getEmptyPermissions();
 
@@ -448,9 +432,6 @@ export default function DashboardPage() {
   }, [hasAuthUser, isManager, isAdmin]);
 
   // ---------- Primitive form of the filters object ----------
-  //
-  // This is the SINGLE source of truth for the effect's dependency
-  // on filters. If any of these strings change, we refetch.
   const filtersKey = useMemo(
     () =>
       [
@@ -466,11 +447,6 @@ export default function DashboardPage() {
   );
 
   // ---------- Stable `showToast` ref ----------
-  //
-  // `useToast` may return a new function on every render. Holding
-  // it in a ref lets `fetchDashboardData` access the latest version
-  // without listing `showToast` as a dep, which would otherwise
-  // recreate the callback on every render.
   const showToastRef = useRef(showToast);
   useEffect(() => {
     showToastRef.current = showToast;
@@ -517,8 +493,6 @@ export default function DashboardPage() {
           ? { ...params, businessUnitId: primaryBusinessUnitId }
           : params;
 
-        // Build the fetch list and remember which slot each one
-        // occupies, so we don't have to keep a running index.
         type Slot =
           | 'stats'
           | 'trends'
@@ -569,8 +543,6 @@ export default function DashboardPage() {
 
         let hasData = false;
 
-        // ── Stats ────────────────────────────────────────────
-        // Merge with defaults so every nested field exists.
         if (bySlot.stats) {
           const data = bySlot.stats as Partial<DashboardStats>;
           if (data && Object.keys(data).length > 0) {
@@ -579,7 +551,6 @@ export default function DashboardPage() {
           }
         }
 
-        // ── Trends ───────────────────────────────────────────
         if (bySlot.trends) {
           const data = bySlot.trends as SalesTrend[];
           if (Array.isArray(data) && data.length > 0) {
@@ -588,7 +559,6 @@ export default function DashboardPage() {
           }
         }
 
-        // ── Recent sales ─────────────────────────────────────
         if (bySlot.recentSales) {
           const data = bySlot.recentSales as RecentSale[];
           if (Array.isArray(data) && data.length > 0) {
@@ -597,7 +567,6 @@ export default function DashboardPage() {
           }
         }
 
-        // ── Top products ─────────────────────────────────────
         if (bySlot.topProducts) {
           const data = bySlot.topProducts as TopProduct[];
           if (Array.isArray(data) && data.length > 0) {
@@ -606,7 +575,6 @@ export default function DashboardPage() {
           }
         }
 
-        // ── Activity ─────────────────────────────────────────
         if (bySlot.activity) {
           const data = bySlot.activity as RecentActivityItem[];
           if (Array.isArray(data) && data.length > 0) {
@@ -615,12 +583,8 @@ export default function DashboardPage() {
           }
         }
 
-        // Always ensure `stats` is defined, even if the API
-        // returned nothing for it. Otherwise the render below
-        // would guard on `stats === null` and show zeroed cards
-        // only after the first `setStats` — which may never come.
         setStats((prev) => prev ?? getEmptyStats());
-        if (!hasData) hasData = true; // ensure the loader doesn't loop on empty payloads
+        if (!hasData) hasData = true;
 
         const hasErrors = results.some((r) => r.status === 'rejected');
         if (hasErrors) {
@@ -631,7 +595,10 @@ export default function DashboardPage() {
         }
 
         if (silent && showToastRef.current) {
-          showToastRef.current('Dashboard data refreshed successfully', 'success');
+          showToastRef.current(
+            'Dashboard data refreshed successfully',
+            'success'
+          );
         }
       } catch (err) {
         console.error('Failed to fetch dashboard data:', err);
@@ -650,21 +617,16 @@ export default function DashboardPage() {
       selectedBusinessUnit,
       filters.businessUnit,
       filters.search,
-      filtersKey, // ← single stable string replaces the four filter arrays
+      filtersKey,
       primaryBusinessUnitId,
       permissions.canViewSales,
       permissions.canViewProducts,
       permissions.canViewCustomers,
       permissions.canViewOrders,
-      // showToast intentionally omitted — accessed via showToastRef
     ]
   );
 
   // ---------- Mount + refetch effect ----------
-  //
-  // Depends on `userId` (a primitive), not on `user` (an object).
-  // Clerk can return a new `user` object on every render, which
-  // would fire this effect on every render — an infinite loop.
   useEffect(() => {
     if (!isLoaded || !userId || !hasAccess) return;
     fetchDashboardData();
@@ -712,7 +674,10 @@ export default function DashboardPage() {
         window.URL.revokeObjectURL(url);
 
         if (showToastRef.current) {
-          showToastRef.current('Dashboard data exported successfully', 'success');
+          showToastRef.current(
+            'Dashboard data exported successfully',
+            'success'
+          );
         }
       }
     } catch (err) {
@@ -763,7 +728,7 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading dashboard...
           </p>
@@ -794,9 +759,9 @@ export default function DashboardPage() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className={`space-y-6 ${
+      className={`space-y-6 animate-fade-in ${
         isFullScreen
-          ? 'fixed inset-0 z-50 overflow-auto p-6 bg-gray-50 dark:bg-gray-900'
+          ? 'fixed inset-0 z-modal overflow-auto p-6 bg-gray-50 dark:bg-gray-900'
           : ''
       }`}
     >
@@ -807,17 +772,17 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
               Dashboard
               {isSuperAdmin && (
-                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                <span className="text-2xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-semibold uppercase tracking-wide">
                   Super Admin
                 </span>
               )}
               {isAdmin && !isSuperAdmin && (
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">
+                <span className="text-2xs bg-brand-100 text-brand-700 px-2 py-1 rounded-full font-semibold uppercase tracking-wide">
                   Admin
                 </span>
               )}
               {isManager && (
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                <span className="text-2xs bg-success-100 text-success-700 px-2 py-1 rounded-full font-semibold uppercase tracking-wide">
                   Manager
                 </span>
               )}
@@ -825,7 +790,7 @@ export default function DashboardPage() {
             <p className="text-gray-600 dark:text-gray-400 mt-1">
               Welcome back, {user?.firstName}! Here's your business overview.
               {isManager && (
-                <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
+                <span className="ml-2 text-sm text-brand-600 dark:text-brand-400">
                   (Manager View)
                 </span>
               )}
@@ -842,7 +807,7 @@ export default function DashboardPage() {
                   e.target.value === 'all' ? null : e.target.value
                 )
               }
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm focus-ring"
             >
               <option value="all">All Business Units</option>
               {businessUnits.map((unit) => (
@@ -858,10 +823,10 @@ export default function DashboardPage() {
               <button
                 key={range}
                 onClick={() => setTimeRange(range)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 focus-ring ${
                   timeRange === range
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-brand-gradient text-white shadow-brand'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700'
                 }`}
               >
                 {range.charAt(0).toUpperCase() + range.slice(1)}
@@ -874,10 +839,10 @@ export default function DashboardPage() {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-2 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                className={`px-2 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 focus-ring ${
                   viewMode === mode
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-brand-500 text-white'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700'
                 }`}
               >
                 {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -887,7 +852,7 @@ export default function DashboardPage() {
 
           <button
             onClick={() => setShowFilters((s) => !s)}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             aria-label="Filters"
           >
             <Filter className="w-4 h-4" />
@@ -896,7 +861,7 @@ export default function DashboardPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
             aria-label="Refresh"
           >
             <RefreshCw
@@ -908,7 +873,7 @@ export default function DashboardPage() {
             <button
               onClick={handleExport}
               disabled={exportLoading}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
               aria-label="Export"
             >
               <Download
@@ -919,7 +884,7 @@ export default function DashboardPage() {
 
           <button
             onClick={() => setIsFullScreen((s) => !s)}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             aria-label="Toggle fullscreen"
           >
             {isFullScreen ? (
@@ -932,19 +897,19 @@ export default function DashboardPage() {
           <div className="relative">
             <button
               onClick={() => setShowNotifications((s) => !s)}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors relative"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors relative focus-ring"
               aria-label="Notifications"
             >
               <Bell className="w-4 h-4" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-brand-accent-500 text-white text-2xs rounded-full flex items-center justify-center animate-badge-pop">
                   {unreadCount}
                 </span>
               )}
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 max-h-96 overflow-y-auto">
+              <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover border border-gray-200 dark:border-gray-700 z-toast max-h-96 overflow-y-auto custom-scrollbar animate-slide-down">
                 <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                   <h3 className="font-semibold">Notifications</h3>
                   <button
@@ -953,7 +918,7 @@ export default function DashboardPage() {
                         prev.map((n) => ({ ...n, isRead: true }))
                       )
                     }
-                    className="text-sm text-blue-600 hover:text-blue-700"
+                    className="text-sm text-brand-600 hover:text-brand-700 font-medium"
                   >
                     Mark all read
                   </button>
@@ -976,9 +941,9 @@ export default function DashboardPage() {
                           )
                         )
                       }
-                      className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                      className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors ${
                         !notification.isRead
-                          ? 'bg-blue-50 dark:bg-blue-900/20'
+                          ? 'bg-brand-50 dark:bg-brand-900/20'
                           : ''
                       }`}
                     >
@@ -990,12 +955,12 @@ export default function DashboardPage() {
                           <p className="text-xs text-gray-500 mt-1">
                             {notification.message}
                           </p>
-                          <p className="text-xs text-gray-400 mt-1">
+                          <p className="text-2xs text-gray-400 mt-1">
                             {formatDate(notification.timestamp)}
                           </p>
                         </div>
                         {!notification.isRead && (
-                          <div className="w-2 h-2 bg-blue-600 rounded-full mt-1" />
+                          <div className="w-2 h-2 bg-brand-500 rounded-full mt-1" />
                         )}
                       </div>
                     </div>
@@ -1009,19 +974,19 @@ export default function DashboardPage() {
 
       {/* Permissions summary */}
       <div className="flex flex-wrap gap-2 text-sm">
-        <div className="flex items-center gap-1 text-green-600">
+        <div className="flex items-center gap-1 text-success-600">
           <Shield className="w-4 h-4" />
-          <span>Permissions:</span>
+          <span className="font-medium">Permissions:</span>
         </div>
         {Object.entries(permissions).map(([key, value]) => (
           <span
             key={key}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-xs"
+            className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-2xs font-medium"
           >
             {value ? (
-              <CheckCircle className="w-3 h-3 text-green-500" />
+              <CheckCircle className="w-3 h-3 text-success-500" />
             ) : (
-              <XCircle className="w-3 h-3 text-red-500" />
+              <XCircle className="w-3 h-3 text-danger-500" />
             )}
             {key.replace('can', '').replace(/([A-Z])/g, ' $1').trim()}
           </span>
@@ -1034,7 +999,7 @@ export default function DashboardPage() {
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
-          className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4"
+          className="card-brand !p-4 animate-slide-down"
         >
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
@@ -1049,7 +1014,7 @@ export default function DashboardPage() {
                     dateRange: e.target.value as FilterState['dateRange'],
                   }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                className="input-brand"
               >
                 <option value="today">Today</option>
                 <option value="week">This Week</option>
@@ -1072,7 +1037,7 @@ export default function DashboardPage() {
                   );
                   setFilters((f) => ({ ...f, status: values }));
                 }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                className="input-brand custom-scrollbar"
               >
                 <option value="COMPLETED">Completed</option>
                 <option value="PENDING">Pending</option>
@@ -1094,7 +1059,7 @@ export default function DashboardPage() {
                   );
                   setFilters((f) => ({ ...f, category: values }));
                 }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                className="input-brand custom-scrollbar"
               >
                 <option value="ELECTRONICS">Electronics</option>
                 <option value="CLOTHING">Clothing</option>
@@ -1113,7 +1078,7 @@ export default function DashboardPage() {
                   setFilters((f) => ({ ...f, search: e.target.value }))
                 }
                 placeholder="Search..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                className="input-brand"
               />
             </div>
           </div>
@@ -1123,13 +1088,13 @@ export default function DashboardPage() {
                 setFilters({ dateRange: 'week' });
                 setShowFilters(false);
               }}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              className="btn-secondary"
             >
               Clear Filters
             </button>
             <button
               onClick={() => setShowFilters(false)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+              className="btn-brand !py-2 !px-4 text-sm"
             >
               Apply Filters
             </button>
@@ -1138,12 +1103,12 @@ export default function DashboardPage() {
       )}
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
-          <span className="text-red-700 dark:text-red-300">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-2xl p-4 flex items-center gap-3 animate-slide-down">
+          <AlertTriangle className="w-5 h-5 text-danger-600 dark:text-danger-400" />
+          <span className="text-danger-700 dark:text-danger-300">{error}</span>
           <button
             onClick={() => fetchDashboardData(true)}
-            className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300 rounded-lg text-sm hover:bg-red-200"
+            className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-800 text-danger-700 dark:text-danger-300 rounded-lg text-sm hover:bg-danger-200 transition-colors focus-ring"
           >
             Retry
           </button>
@@ -1152,13 +1117,13 @@ export default function DashboardPage() {
 
       <div className="space-y-6">
         {/* Overview */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-soft border border-gray-200 dark:border-gray-700 overflow-hidden">
           <button
             onClick={() => toggleSection('overview')}
-            className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="w-full px-6 py-4 flex items-center justify-between hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Layers className="w-5 h-5 text-blue-500" />
+              <Layers className="w-5 h-5 text-brand-500" />
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Overview
               </h2>
@@ -1225,13 +1190,13 @@ export default function DashboardPage() {
 
         {/* Sales */}
         {permissions.canViewSales && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-soft border border-gray-200 dark:border-gray-700 overflow-hidden">
             <button
               onClick={() => toggleSection('sales')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-green-500" />
+                <BarChart3 className="w-5 h-5 text-success-500" />
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Sales Analytics
                 </h2>
@@ -1264,14 +1229,14 @@ export default function DashboardPage() {
                             className="flex items-center gap-3"
                           >
                             <div
-                              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                              className={`w-7 h-7 rounded-full flex items-center justify-center text-2xs font-bold ${
                                 index === 0
-                                  ? 'bg-yellow-100 text-yellow-700'
+                                  ? 'bg-warning-100 text-warning-700'
                                   : index === 1
                                   ? 'bg-gray-100 text-gray-700'
                                   : index === 2
-                                  ? 'bg-orange-100 text-orange-700'
-                                  : 'bg-blue-100 text-blue-600'
+                                  ? 'bg-brand-100 text-brand-700'
+                                  : 'bg-brand-50 text-brand-600'
                               }`}
                             >
                               {index + 1}
@@ -1285,7 +1250,7 @@ export default function DashboardPage() {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                              <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
                                 {formatCurrency(product.revenue)}
                               </p>
                             </div>
@@ -1307,13 +1272,13 @@ export default function DashboardPage() {
 
         {/* Customers */}
         {permissions.canViewCustomers && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-soft border border-gray-200 dark:border-gray-700 overflow-hidden">
             <button
               onClick={() => toggleSection('customers')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-500" />
+                <Users className="w-5 h-5 text-secondary-500" />
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Customer Insights
                 </h2>
@@ -1377,13 +1342,13 @@ export default function DashboardPage() {
 
         {/* Inventory */}
         {permissions.canViewInventory && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-soft border border-gray-200 dark:border-gray-700 overflow-hidden">
             <button
               onClick={() => toggleSection('inventory')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors"
             >
               <div className="flex items-center gap-2">
-                <Package className="w-5 h-5 text-orange-500" />
+                <Package className="w-5 h-5 text-brand-500" />
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Inventory Management
                 </h2>
@@ -1448,66 +1413,66 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <RecentActivity activities={recentActivity} limit={5} />
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+          <div className="card-brand">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Quick Stats
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-4 border border-blue-100 dark:border-blue-800/30">
+              <div className="bg-gradient-to-r from-brand-50 to-secondary-50 dark:from-brand-900/20 dark:to-secondary-900/20 rounded-2xl p-4 border border-brand-100 dark:border-brand-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Order Completion
                 </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                   {s.orders.completionRate || 0}%
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                  <span className="text-green-600 dark:text-green-400">
+                  <CheckCircle className="w-4 h-4 text-success-500" />
+                  <span className="text-success-600 dark:text-success-400">
                     {s.orders.completed || 0} completed
                   </span>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 rounded-xl p-4 border border-green-100 dark:border-green-800/30">
+              <div className="bg-gradient-to-r from-success-50 to-emerald-50 dark:from-success-900/20 dark:to-emerald-900/20 rounded-2xl p-4 border border-success-100 dark:border-success-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Customer Satisfaction
                 </p>
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                <p className="text-2xl font-bold text-success-600 dark:text-success-400 tabular-nums">
                   {s.performance.customerSatisfaction || 0}⭐
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
-                  <Users className="w-4 h-4 text-green-500" />
-                  <span className="text-green-600 dark:text-green-400">
+                  <Users className="w-4 h-4 text-success-500" />
+                  <span className="text-success-600 dark:text-success-400">
                     from {s.customers.active || 0} customers
                   </span>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl p-4 border border-purple-100 dark:border-purple-800/30">
+              <div className="bg-gradient-to-r from-secondary-50 to-pink-50 dark:from-secondary-900/20 dark:to-pink-900/20 rounded-2xl p-4 border border-secondary-100 dark:border-secondary-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Conversion Rate
                 </p>
-                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                <p className="text-2xl font-bold text-secondary-600 dark:text-secondary-400 tabular-nums">
                   {s.performance.conversionRate || 0}%
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
-                  <TrendingUp className="w-4 h-4 text-purple-500" />
-                  <span className="text-purple-600 dark:text-purple-400">
+                  <TrendingUp className="w-4 h-4 text-secondary-500" />
+                  <span className="text-secondary-600 dark:text-secondary-400">
                     visitors to customers
                   </span>
                 </div>
               </div>
 
-              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-xl p-4 border border-yellow-100 dark:border-yellow-800/30">
+              <div className="bg-gradient-to-r from-warning-50 to-brand-50 dark:from-warning-900/20 dark:to-brand-900/20 rounded-2xl p-4 border border-warning-100 dark:border-warning-800/30">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Revenue Target
                 </p>
-                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                <p className="text-2xl font-bold text-warning-600 dark:text-warning-400 tabular-nums">
                   {s.revenue.progress || 0}%
                 </p>
                 <div className="flex items-center gap-2 mt-1 text-sm">
-                  <Target className="w-4 h-4 text-yellow-500" />
-                  <span className="text-yellow-600 dark:text-yellow-400">
+                  <Target className="w-4 h-4 text-warning-500" />
+                  <span className="text-warning-600 dark:text-warning-400">
                     {formatCurrency(s.revenue.total || 0)} /{' '}
                     {formatCurrency(s.revenue.target || 0)}
                   </span>

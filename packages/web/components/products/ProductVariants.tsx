@@ -655,18 +655,18 @@ export function ProductVariants({
         return {
           label: 'Out of Stock',
           color:
-            'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+            'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
         };
       if (stock <= 5)
         return {
           label: 'Low Stock',
           color:
-            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+            'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
         };
       return {
         label: 'In Stock',
         color:
-          'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+          'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
       };
     },
     [],
@@ -677,14 +677,14 @@ export function ProductVariants({
   // ============================================
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Variants
           </h3>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex flex-wrap items-center gap-3 text-sm tabular-nums text-gray-500 dark:text-gray-400">
             <span>{variants.length} variants</span>
             <span className="w-px h-3 bg-gray-300 dark:bg-gray-600" />
             <span>Total Stock: {totalStock}</span>
@@ -694,7 +694,7 @@ export function ProductVariants({
               <>
                 <span className="w-px h-3 bg-gray-300 dark:bg-gray-600" />
                 <span className="flex items-center gap-1">
-                  <ImageIcon className="w-3 h-3 text-purple-500" />
+                  <ImageIcon className="w-3 h-3 text-secondary-500" />
                   With Images
                 </span>
               </>
@@ -705,7 +705,7 @@ export function ProductVariants({
           <button
             type="button"
             onClick={() => setShowAddForm(true)}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-1 transition-colors"
+            className="btn-brand"
           >
             <Plus className="w-4 h-4" />
             Add Variant
@@ -715,15 +715,15 @@ export function ProductVariants({
 
       {/* Filters */}
       {variants.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
+        <div className="flex flex-wrap items-center gap-3 bg-gray-50 dark:bg-gray-700/30 rounded-2xl p-3 animate-slide-down">
           <div className="flex-1 min-w-[150px] relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
               placeholder="Search variants..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             />
           </div>
           <select
@@ -733,7 +733,7 @@ export function ProductVariants({
                 e.target.value as 'all' | 'active' | 'inactive',
               )
             }
-            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           >
             <option value="all">All Variants</option>
             <option value="active">Active</option>
@@ -741,13 +741,13 @@ export function ProductVariants({
           </select>
           {selectedVariants.length > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-blue-600 dark:text-blue-400">
+              <span className="text-xs text-brand-600 dark:text-brand-400 tabular-nums">
                 {selectedVariants.length} selected
               </span>
               <button
                 type="button"
                 onClick={() => setSelectedVariants([])}
-                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
               >
                 Clear
               </button>
@@ -758,8 +758,8 @@ export function ProductVariants({
 
       {/* Bulk actions — ✅ shows for 1+ selections, not just 2+ */}
       {selectedVariants.length >= 1 && canManage && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm text-blue-700 dark:text-blue-300">
+        <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2 animate-slide-down">
+          <span className="text-sm tabular-nums text-brand-700 dark:text-brand-300">
             {selectedVariants.length} variant
             {selectedVariants.length > 1 ? 's' : ''} selected
           </span>
@@ -772,7 +772,7 @@ export function ProductVariants({
                 ref={bulkStockInputRef}
                 type="number"
                 min="0"
-                className="w-16 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-16 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                 placeholder="0"
               />
               <button
@@ -789,7 +789,7 @@ export function ProductVariants({
                   }
                 }}
                 disabled={loading}
-                className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                className="px-2 py-1 text-xs btn-brand disabled:opacity-50"
               >
                 Apply
               </button>
@@ -798,7 +798,7 @@ export function ProductVariants({
               type="button"
               onClick={() => setShowBulkDeleteConfirm(true)}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              className="px-2 py-1 text-xs bg-danger-600 text-white rounded-lg hover:bg-danger-700 disabled:opacity-50 transition duration-250 focus-ring"
             >
               Delete Selected
             </button>
@@ -809,7 +809,7 @@ export function ProductVariants({
       {/* Variant list */}
       <div className="space-y-3">
         {variants.length === 0 ? (
-          <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="text-center py-8 card-brand shadow-soft">
             <Layers className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
             <p className="text-gray-500 dark:text-gray-400">
               No variants added yet
@@ -818,14 +818,14 @@ export function ProductVariants({
               <button
                 type="button"
                 onClick={() => setShowAddForm(true)}
-                className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                className="mt-2 text-sm text-brand-600 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300 transition duration-250 focus-ring rounded"
               >
                 Add your first variant
               </button>
             )}
           </div>
         ) : filteredVariants.length === 0 ? (
-          <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="text-center py-6 card-brand shadow-soft">
             <p className="text-gray-500 dark:text-gray-400">
               No variants match your filters
             </p>
@@ -842,7 +842,7 @@ export function ProductVariants({
                     filteredVariants.length > 0
                   }
                   onChange={toggleSelectAll}
-                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                   aria-label="Select all variants"
                 />
                 <span>Select all ({filteredVariants.length})</span>
@@ -864,16 +864,16 @@ export function ProductVariants({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className={`border rounded-lg overflow-hidden transition-colors ${
+                  className={`border rounded-xl overflow-hidden transition duration-250 ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/10'
+                      ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/10'
                       : 'border-gray-200 dark:border-gray-700'
                   }`}
                 >
                   {/* Row */}
                   <div
-                    className={`p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                      isEditing ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                    className={`p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250 ${
+                      isEditing ? 'bg-brand-50 dark:bg-brand-900/10' : ''
                     }`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-[200px]">
@@ -885,23 +885,23 @@ export function ProductVariants({
                             variant.id && toggleSelect(variant.id)
                           }
                           disabled={!variant.id}
-                          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                           aria-label={`Select ${variant.name}`}
                         />
                       )}
                       <button
                         type="button"
                         onClick={() => toggleExpand(variantKey)}
-                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition duration-250 focus-ring"
                         aria-label={isExpanded ? 'Collapse' : 'Expand'}
                       >
                         <ChevronDown
-                          className={`w-4 h-4 text-gray-500 transition-transform ${
+                          className={`w-4 h-4 text-gray-500 transition-transform duration-250 ${
                             isExpanded ? 'rotate-180' : ''
                           }`}
                         />
                       </button>
-                      <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      <div className="w-10 h-10 bg-brand-50 dark:bg-brand-900/20 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                         {variant.images && variant.images.length > 0 ? (
                           <img
                             src={variant.images[0]}
@@ -909,41 +909,41 @@ export function ProductVariants({
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <Layers className="w-4 h-4 text-blue-500" />
+                          <Layers className="w-4 h-4 text-brand-500 dark:text-brand-400" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-gray-900 dark:text-white truncate">
                           {variant.name}
                           {variant.isActive === false && (
-                            <span className="ml-2 text-xs text-red-500">
+                            <span className="ml-2 text-2xs text-danger-500">
                               (Inactive)
                             </span>
                           )}
                         </p>
                         <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                          <span className="font-mono text-xs">
+                          <span className="font-mono text-2xs tabular-nums">
                             SKU: {variant.sku}
                           </span>
-                          <span className="font-medium text-gray-900 dark:text-white">
+                          <span className="font-medium tabular-nums text-gray-900 dark:text-white">
                             {formatCurrency(variant.price)}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded-full text-xs font-medium ${stockStatus.color}`}
+                            className={`px-2 py-0.5 rounded-full text-2xs font-medium ${stockStatus.color}`}
                           >
                             {stockStatus.label}
                           </span>
-                          <span className="text-xs">
+                          <span className="text-2xs tabular-nums">
                             Stock: {variant.stock || 0}
                           </span>
                           {variant.barcode && (
-                            <span className="text-xs flex items-center gap-0.5">
+                            <span className="text-2xs tabular-nums flex items-center gap-0.5">
                               <Barcode className="w-3 h-3" />
                               {variant.barcode}
                             </span>
                           )}
                           {variant.inventoryId && (
-                            <span className="text-xs text-blue-500 flex items-center gap-0.5">
+                            <span className="text-2xs text-brand-500 dark:text-brand-400 flex items-center gap-0.5">
                               <Link2 className="w-3 h-3" />
                               Inventory
                             </span>
@@ -966,7 +966,7 @@ export function ProductVariants({
                                 </div>
                               ))}
                             {variant.images.length > 4 && (
-                              <div className="w-8 h-8 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-500">
+                              <div className="w-8 h-8 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-2xs tabular-nums text-gray-500">
                                 +{variant.images.length - 4}
                               </div>
                             )}
@@ -995,20 +995,20 @@ export function ProductVariants({
                               inventoryId: variant.inventoryId ?? null,
                             });
                           }}
-                          className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition duration-250 focus-ring"
                           title="Edit variant"
                           aria-label={`Edit ${variant.name}`}
                         >
-                          <Edit className="w-4 h-4 text-blue-500" />
+                          <Edit className="w-4 h-4 text-brand-500 dark:text-brand-400" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteVariant(variant.id!)}
-                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                          className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
                           title="Delete variant"
                           aria-label={`Delete ${variant.name}`}
                         >
-                          <Trash2 className="w-4 h-4 text-red-500" />
+                          <Trash2 className="w-4 h-4 text-danger-500" />
                         </button>
                       </div>
                     )}
@@ -1019,7 +1019,7 @@ export function ProductVariants({
                           type="button"
                           onClick={handleEditVariant}
                           disabled={loading}
-                          className="p-1.5 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
+                          className="p-1.5 btn-success disabled:opacity-50"
                           title="Save changes"
                           aria-label="Save changes"
                         >
@@ -1035,7 +1035,7 @@ export function ProductVariants({
                             setEditingVariantId(null);
                             setEditVariant(null);
                           }}
-                          className="p-1.5 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+                          className="p-1.5 btn-secondary"
                           title="Cancel"
                           aria-label="Cancel edit"
                         >
@@ -1068,7 +1068,7 @@ export function ProductVariants({
                                   name: e.target.value,
                                 })
                               }
-                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                             />
                           </div>
                           <div>
@@ -1085,7 +1085,7 @@ export function ProductVariants({
                                     sku: e.target.value.toUpperCase(),
                                   })
                                 }
-                                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                               />
                               <button
                                 type="button"
@@ -1095,8 +1095,9 @@ export function ProductVariants({
                                     sku: generateVariantSku(),
                                   })
                                 }
-                                className="px-2 py-1.5 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+                                className="px-2 py-1.5 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition duration-250 focus-ring"
                                 title="Generate SKU"
+                                aria-label="Generate SKU"
                               >
                                 <Wand2 className="w-3 h-3" />
                               </button>
@@ -1117,7 +1118,7 @@ export function ProductVariants({
                               }
                               step="0.01"
                               min="0"
-                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                             />
                           </div>
                           <div>
@@ -1134,7 +1135,7 @@ export function ProductVariants({
                                 })
                               }
                               min="0"
-                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                             />
                           </div>
                           <div className="sm:col-span-2 lg:col-span-4">
@@ -1157,7 +1158,7 @@ export function ProductVariants({
                                   /* invalid JSON — ignore until it parses */
                                 }
                               }}
-                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                               placeholder='{"size": "large"}'
                             />
                           </div>
@@ -1171,7 +1172,7 @@ export function ProductVariants({
                                 editVariant.images.map((img, imgIndex) => (
                                   <div
                                     key={`${img.slice(0, 16)}-${imgIndex}`}
-                                    className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-200"
+                                    className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600"
                                   >
                                     <img
                                       src={img}
@@ -1183,7 +1184,7 @@ export function ProductVariants({
                                       onClick={() =>
                                         removeVariantImage(imgIndex, 'edit')
                                       }
-                                      className="absolute top-0.5 right-0.5 bg-red-600 text-white rounded-full p-0.5"
+                                      className="absolute top-0.5 right-0.5 bg-danger-600 text-white rounded-full p-0.5 focus-ring"
                                       aria-label={`Remove image ${imgIndex + 1}`}
                                     >
                                       <X className="w-3 h-3" />
@@ -1192,9 +1193,9 @@ export function ProductVariants({
                                 ))}
                               {(editVariant.images?.length || 0) <
                                 MAX_VARIANT_IMAGES && (
-                                <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-500 cursor-pointer flex flex-col items-center justify-center text-gray-400">
+                                <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-brand-500 dark:hover:text-brand-400 transition duration-250 focus-ring">
                                   <Upload className="w-4 h-4" />
-                                  <span className="text-[8px] mt-0.5">
+                                  <span className="text-2xs mt-0.5">
                                     Upload
                                   </span>
                                   <input
@@ -1229,7 +1230,7 @@ export function ProductVariants({
                             <p className="text-xs text-gray-500 dark:text-gray-400">
                               Created
                             </p>
-                            <p className="text-sm text-gray-900 dark:text-white">
+                            <p className="text-sm tabular-nums text-gray-900 dark:text-white">
                               {variant.createdAt
                                 ? formatDate(variant.createdAt)
                                 : 'N/A'}
@@ -1239,7 +1240,7 @@ export function ProductVariants({
                             <p className="text-xs text-gray-500 dark:text-gray-400">
                               Cost Price
                             </p>
-                            <p className="text-sm text-gray-900 dark:text-white">
+                            <p className="text-sm tabular-nums text-gray-900 dark:text-white">
                               {variant.costPrice
                                 ? formatCurrency(variant.costPrice)
                                 : 'N/A'}
@@ -1249,7 +1250,7 @@ export function ProductVariants({
                             <p className="text-xs text-gray-500 dark:text-gray-400">
                               Profit Margin
                             </p>
-                            <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                            <p className="text-sm font-medium tabular-nums text-success-600 dark:text-success-400">
                               {variant.costPrice &&
                               variant.costPrice > 0 &&
                               variant.price > 0
@@ -1299,7 +1300,7 @@ export function ProductVariants({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="border border-blue-200 dark:border-blue-800 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/10 overflow-hidden"
+            className="border border-brand-200 dark:border-brand-800 rounded-2xl p-4 bg-brand-50 dark:bg-brand-900/10 overflow-hidden"
           >
             <div className="flex items-center justify-between mb-4">
               <h4 className="font-medium text-gray-900 dark:text-white">
@@ -1308,17 +1309,17 @@ export function ProductVariants({
               <button
                 type="button"
                 onClick={() => setShowAddForm(false)}
-                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                 aria-label="Close form"
               >
-                <X className="w-4 h-4 text-gray-500" />
+                <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Name <span className="text-red-500">*</span>
+                  Name <span className="text-danger-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1334,13 +1335,13 @@ export function ProductVariants({
                           : prev.sku,
                     }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="e.g., Large, Red"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  SKU <span className="text-red-500">*</span>
+                  SKU <span className="text-danger-500">*</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1352,7 +1353,7 @@ export function ProductVariants({
                         sku: e.target.value.toUpperCase(),
                       }))
                     }
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                     placeholder="Enter SKU"
                   />
                   <button
@@ -1363,8 +1364,9 @@ export function ProductVariants({
                         sku: generateVariantSku(),
                       }))
                     }
-                    className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
+                    className="px-3 py-2 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition duration-250 focus-ring"
                     title="Generate SKU"
+                    aria-label="Generate SKU"
                   >
                     <Wand2 className="w-4 h-4" />
                   </button>
@@ -1372,7 +1374,7 @@ export function ProductVariants({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Price <span className="text-red-500">*</span>
+                  Price <span className="text-danger-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -1385,7 +1387,7 @@ export function ProductVariants({
                   }
                   step="0.01"
                   min="0"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="0.00"
                 />
               </div>
@@ -1403,7 +1405,7 @@ export function ProductVariants({
                     }))
                   }
                   min="0"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="0"
                 />
               </div>
@@ -1425,7 +1427,7 @@ export function ProductVariants({
                       /* invalid JSON — ignore until it parses */
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white font-mono text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder='{"size": "large", "color": "red"}'
                 />
               </div>
@@ -1439,7 +1441,7 @@ export function ProductVariants({
                     newVariant.images.map((img, imgIndex) => (
                       <div
                         key={`${img.slice(0, 16)}-${imgIndex}`}
-                        className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-200"
+                        className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600"
                       >
                         <img
                           src={img}
@@ -1451,7 +1453,7 @@ export function ProductVariants({
                           onClick={() =>
                             removeVariantImage(imgIndex, 'new')
                           }
-                          className="absolute top-0.5 right-0.5 bg-red-600 text-white rounded-full p-0.5"
+                          className="absolute top-0.5 right-0.5 bg-danger-600 text-white rounded-full p-0.5 focus-ring"
                           aria-label={`Remove image ${imgIndex + 1}`}
                         >
                           <X className="w-3 h-3" />
@@ -1460,9 +1462,9 @@ export function ProductVariants({
                     ))}
                   {(newVariant.images?.length || 0) <
                     MAX_VARIANT_IMAGES && (
-                    <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 hover:border-blue-500 cursor-pointer flex flex-col items-center justify-center text-gray-400">
+                    <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-brand-500 dark:hover:text-brand-400 transition duration-250 focus-ring">
                       <Upload className="w-4 h-4" />
-                      <span className="text-[8px] mt-0.5">Upload</span>
+                      <span className="text-2xs mt-0.5">Upload</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1478,11 +1480,11 @@ export function ProductVariants({
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-brand-200 dark:border-brand-800">
               <button
                 type="button"
                 onClick={() => setShowAddForm(false)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="btn-secondary"
               >
                 Cancel
               </button>
@@ -1490,7 +1492,7 @@ export function ProductVariants({
                 type="button"
                 onClick={handleAddVariant}
                 disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                className="btn-brand disabled:opacity-50"
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1511,7 +1513,7 @@ export function ProductVariants({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-modal flex items-center justify-center p-4"
           >
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
@@ -1521,19 +1523,19 @@ export function ProductVariants({
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
             >
               <button
                 type="button"
                 onClick={() => setShowBulkDeleteConfirm(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                 aria-label="Close"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                  <AlertTriangle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1546,7 +1548,7 @@ export function ProductVariants({
               </div>
               <p className="text-gray-600 dark:text-gray-300 mb-6">
                 Are you sure you want to delete{' '}
-                <strong className="text-gray-900 dark:text-white">
+                <strong className="text-gray-900 dark:text-white tabular-nums">
                   {selectedVariants.length}
                 </strong>{' '}
                 selected variant
@@ -1557,7 +1559,7 @@ export function ProductVariants({
                 <button
                   type="button"
                   onClick={() => setShowBulkDeleteConfirm(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="btn-secondary"
                 >
                   Cancel
                 </button>
@@ -1565,14 +1567,14 @@ export function ProductVariants({
                   type="button"
                   onClick={handleBulkDelete}
                   disabled={loading}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl flex items-center gap-2 disabled:opacity-50 transition duration-250 focus-ring shadow-brand"
                 >
                   {loading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Trash2 className="w-4 h-4" />
                   )}
-                  Delete {selectedVariants.length} Variant
+                  Delete <span className="tabular-nums">{selectedVariants.length}</span> Variant
                   {selectedVariants.length !== 1 ? 's' : ''}
                 </button>
               </div>
@@ -1585,3 +1587,4 @@ export function ProductVariants({
 }
 
 export default ProductVariants;
+

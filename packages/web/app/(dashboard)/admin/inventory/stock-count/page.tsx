@@ -60,29 +60,6 @@ interface StockCountSession {
   priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 }
 
-interface StockCountItem {
-  id: string;
-  productId: string;
-  product: {
-    id: string;
-    name: string;
-    sku: string;
-    unitPrice: number;
-    images?: string[];
-  };
-  expectedQuantity: number;
-  countedQuantity: number;
-  variance: number;
-  notes?: string;
-  status: 'PENDING' | 'COUNTED' | 'VERIFIED' | 'DISCREPANCY';
-  countedBy?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-  };
-  countedAt?: string;
-}
-
 interface StockCountFilters {
   search: string;
   status: string;
@@ -98,16 +75,16 @@ interface StockCountFilters {
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   PENDING: { label: 'Pending', color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300', icon: Clock },
-  IN_PROGRESS: { label: 'In Progress', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', icon: Loader2 },
-  COMPLETED: { label: 'Completed', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300', icon: Check },
-  CANCELLED: { label: 'Cancelled', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300', icon: X },
+  IN_PROGRESS: { label: 'In Progress', color: 'bg-brand-100 text-brand-800 dark:bg-brand-950/30 dark:text-brand-300', icon: Loader2 },
+  COMPLETED: { label: 'Completed', color: 'bg-success-100 text-success-800 dark:bg-success-950/30 dark:text-success-300', icon: Check },
+  CANCELLED: { label: 'Cancelled', color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-950/30 dark:text-brand-accent-300', icon: X },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
   LOW: { label: 'Low', color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300' },
-  MEDIUM: { label: 'Medium', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
-  HIGH: { label: 'High', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' },
-  CRITICAL: { label: 'Critical', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
+  MEDIUM: { label: 'Medium', color: 'bg-warning-100 text-warning-800 dark:bg-warning-950/30 dark:text-warning-300' },
+  HIGH: { label: 'High', color: 'bg-brand-100 text-brand-800 dark:bg-brand-950/30 dark:text-brand-300' },
+  CRITICAL: { label: 'Critical', color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-950/30 dark:text-brand-accent-300' },
 };
 
 // ============================================
@@ -144,33 +121,33 @@ const StatCard: React.FC<{
   trend?: { value: number; direction: 'up' | 'down' | 'neutral' };
 }> = ({ label, value, icon: Icon, color, subtext, trend }) => {
   const colorClasses: Record<string, { bg: string; text: string }> = {
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' },
-    green: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400' },
-    yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-600 dark:text-yellow-400' },
-    red: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' },
-    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-600 dark:text-indigo-400' },
-    teal: { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-600 dark:text-teal-400' },
-    orange: { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400' },
+    brand: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
+    success: { bg: 'bg-success-50 dark:bg-success-950/20', text: 'text-success-600 dark:text-success-400' },
+    warning: { bg: 'bg-warning-50 dark:bg-warning-950/20', text: 'text-warning-600 dark:text-warning-400' },
+    danger: { bg: 'bg-brand-accent-50 dark:bg-brand-accent-950/20', text: 'text-brand-accent-600 dark:text-brand-accent-400' },
+    secondary: { bg: 'bg-secondary-50 dark:bg-secondary-950/20', text: 'text-secondary-600 dark:text-secondary-400' },
+    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/20', text: 'text-indigo-600 dark:text-indigo-400' },
+    teal: { bg: 'bg-teal-50 dark:bg-teal-950/20', text: 'text-teal-600 dark:text-teal-400' },
+    orange: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`${colorClasses[color]?.bg || colorClasses.blue.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
+      className={`${colorClasses[color]?.bg || colorClasses.brand.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
     >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.blue.text} mt-1`}>
+          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.brand.text} mt-1 tabular-nums`}>
             {value}
           </p>
           {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
           {trend && (
-            <div className={`flex items-center gap-1 mt-1 text-xs ${
-              trend.direction === 'up' ? 'text-green-600 dark:text-green-400' :
-              trend.direction === 'down' ? 'text-red-600 dark:text-red-400' :
+            <div className={`flex items-center gap-1 mt-1 text-xs tabular-nums ${
+              trend.direction === 'up' ? 'text-success-600 dark:text-success-400' :
+              trend.direction === 'down' ? 'text-brand-accent-600 dark:text-brand-accent-400' :
               'text-gray-400'
             }`}>
               {trend.direction === 'up' && <TrendingUp className="w-3 h-3" />}
@@ -180,7 +157,7 @@ const StatCard: React.FC<{
           )}
         </div>
         <div className={`p-2 rounded-lg bg-white dark:bg-gray-700/50`}>
-          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.blue.text}`} />
+          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.brand.text}`} />
         </div>
       </div>
     </motion.div>
@@ -251,10 +228,6 @@ export default function StockCountPage() {
 
   const canManageInventory = hasPermission(`${PermissionResource.INVENTORY}:manage`) || user?.role === 'SUPER_ADMIN';
 
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
-
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
@@ -279,17 +252,13 @@ export default function StockCountPage() {
         </p>
         <button
           onClick={() => router.push('/admin/inventory')}
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
         >
           Back to Inventory
         </button>
       </div>
     );
   }
-
-  // ============================================
-  // DATA LOADING
-  // ============================================
 
   const loadSessions = useCallback(async () => {
     if (!businessUnitId) {
@@ -301,10 +270,6 @@ export default function StockCountPage() {
       setLoading(true);
       setError(null);
       
-      // Load sessions from API
-      // const data = await inventoryService.getStockCountSessions(businessUnitId);
-      
-      // Mock data for development
       const mockSessions: StockCountSession[] = [
         {
           id: '1',
@@ -393,10 +358,6 @@ export default function StockCountPage() {
     toast.success('Stock count sessions refreshed');
   };
 
-  // ============================================
-  // FILTERING
-  // ============================================
-
   const applyFilters = useCallback(() => {
     let filtered = [...sessions];
 
@@ -437,10 +398,6 @@ export default function StockCountPage() {
     applyFilters();
   }, [applyFilters]);
 
-  // ============================================
-  // SESSION MANAGEMENT
-  // ============================================
-
   const handleCreate = async () => {
     if (!formData.name || !formData.location) {
       toast.error('Please fill in all required fields');
@@ -450,7 +407,6 @@ export default function StockCountPage() {
     setSubmitting(true);
     setError(null);
     try {
-      // await inventoryService.createStockCountSession({ ...formData, businessUnitId });
       toast.success('Stock count session created successfully');
       setShowCreateModal(false);
       setFormData({ name: '', location: '', expectedItems: 0, priority: 'MEDIUM', notes: '' });
@@ -471,7 +427,6 @@ export default function StockCountPage() {
     setDeleting(true);
     setError(null);
     try {
-      // await inventoryService.deleteStockCountSession(sessionToDelete.id);
       toast.success('Stock count session deleted successfully');
       setShowDeleteModal(false);
       setSessionToDelete(null);
@@ -486,7 +441,6 @@ export default function StockCountPage() {
     }
   };
 
-  // ✅ FIXED: Renamed from getStats to statsData to avoid confusion
   const statsData = useMemo(() => {
     const total = sessions.length;
     const pending = sessions.filter(s => s.status === 'PENDING').length;
@@ -509,19 +463,11 @@ export default function StockCountPage() {
     };
   }, [sessions]);
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     if (isAuthenticated && businessUnitId) {
       loadSessions();
     }
   }, [isAuthenticated, businessUnitId, loadSessions]);
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (loading && !refreshing) {
     return <LoadingSkeleton />;
@@ -531,18 +477,17 @@ export default function StockCountPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -551,20 +496,20 @@ export default function StockCountPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <ClipboardList className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+            <ClipboardList className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
             Stock Count
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
             {sessions.length} sessions • {statsData.inProgress} in progress • {statsData.completed} completed
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
               showFilters || hasActiveFilters
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -572,7 +517,7 @@ export default function StockCountPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -581,7 +526,7 @@ export default function StockCountPage() {
               setFormData({ name: '', location: '', expectedItems: 0, priority: 'MEDIUM', notes: '' });
               setShowCreateModal(true);
             }}
-            className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
+            className="px-3 sm:px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm shadow-brand focus-ring"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">New Count</span>
@@ -591,29 +536,14 @@ export default function StockCountPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard
-          label="Total Sessions"
-          value={statsData.total}
-          icon={ClipboardList}
-          color="blue"
-        />
-        <StatCard
-          label="In Progress"
-          value={statsData.inProgress}
-          icon={Loader2}
-          color="yellow"
-        />
-        <StatCard
-          label="Completed"
-          value={statsData.completed}
-          icon={Check}
-          color="green"
-        />
+        <StatCard label="Total Sessions" value={statsData.total} icon={ClipboardList} color="brand" />
+        <StatCard label="In Progress" value={statsData.inProgress} icon={Loader2} color="warning" />
+        <StatCard label="Completed" value={statsData.completed} icon={Check} color="success" />
         <StatCard
           label="Avg Accuracy"
           value={statsData.avgAccuracy.toFixed(1) + '%'}
           icon={Award}
-          color="purple"
+          color="secondary"
           subtext={`${statsData.totalDiscrepancies} discrepancies found`}
         />
       </div>
@@ -637,13 +567,13 @@ export default function StockCountPage() {
                     placeholder="Search sessions..."
                     value={filters.search}
                     onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <select
                   value={filters.status}
                   onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 >
                   <option value="">All Status</option>
                   {Object.entries(STATUS_CONFIG).map(([key, config]) => (
@@ -653,7 +583,7 @@ export default function StockCountPage() {
                 <select
                   value={filters.priority}
                   onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 >
                   <option value="">All Priority</option>
                   {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
@@ -665,7 +595,7 @@ export default function StockCountPage() {
                   placeholder="Filter by location..."
                   value={filters.location}
                   onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 />
               </div>
               <div className="flex flex-wrap items-center gap-4 mt-3">
@@ -674,14 +604,14 @@ export default function StockCountPage() {
                     type="date"
                     value={filters.dateFrom}
                     onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                   <span className="text-sm text-gray-500">to</span>
                   <input
                     type="date"
                     value={filters.dateTo}
                     onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 {hasActiveFilters && (
@@ -696,7 +626,7 @@ export default function StockCountPage() {
                         priority: '',
                       });
                     }}
-                    className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1"
+                    className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 flex items-center gap-1 focus-ring transition-colors"
                   >
                     <X className="w-4 h-4" />
                     Clear Filters
@@ -724,7 +654,7 @@ export default function StockCountPage() {
                 setFormData({ name: '', location: '', expectedItems: 0, priority: 'MEDIUM', notes: '' });
                 setShowCreateModal(true);
               }}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4 inline mr-2" />
               New Count
@@ -738,7 +668,7 @@ export default function StockCountPage() {
               key={session.id}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow cursor-pointer"
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800 transition-all cursor-pointer"
               onClick={() => router.push(`/inventory/stock-count/${session.id}`)}
             >
               <div className="flex items-start justify-between">
@@ -755,11 +685,10 @@ export default function StockCountPage() {
                 </div>
               </div>
 
-              {/* Progress */}
               <div className="mt-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-500 dark:text-gray-400">Progress</span>
-                  <span className="font-medium text-gray-900 dark:text-white">
+                  <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                     {session.expectedItems > 0
                       ? Math.round((session.countedItems / session.expectedItems) * 100)
                       : 0}%
@@ -771,31 +700,30 @@ export default function StockCountPage() {
                     animate={{ width: `${Math.min((session.countedItems / (session.expectedItems || 1)) * 100, 100)}%` }}
                     transition={{ duration: 0.5 }}
                     className={`h-2 rounded-full ${
-                      session.status === 'COMPLETED' ? 'bg-green-500' :
-                      session.status === 'IN_PROGRESS' ? 'bg-blue-500' :
-                      session.status === 'CANCELLED' ? 'bg-red-500' :
+                      session.status === 'COMPLETED' ? 'bg-success-500' :
+                      session.status === 'IN_PROGRESS' ? 'bg-brand-500' :
+                      session.status === 'CANCELLED' ? 'bg-brand-accent-500' :
                       'bg-gray-400'
                     }`}
                   />
                 </div>
               </div>
 
-              {/* Stats */}
               <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
                 <div className="text-center">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Expected</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{session.expectedItems}</p>
+                  <p className="font-medium text-gray-900 dark:text-white tabular-nums">{session.expectedItems}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Counted</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{session.countedItems}</p>
+                  <p className="font-medium text-gray-900 dark:text-white tabular-nums">{session.countedItems}</p>
                 </div>
                 <div className="text-center">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Accuracy</p>
-                  <p className={`font-medium ${
-                    session.accuracy >= 95 ? 'text-green-600 dark:text-green-400' :
-                    session.accuracy >= 80 ? 'text-yellow-600 dark:text-yellow-400' :
-                    session.accuracy > 0 ? 'text-red-600 dark:text-red-400' :
+                  <p className={`font-medium tabular-nums ${
+                    session.accuracy >= 95 ? 'text-success-600 dark:text-success-400' :
+                    session.accuracy >= 80 ? 'text-warning-600 dark:text-warning-400' :
+                    session.accuracy > 0 ? 'text-brand-accent-600 dark:text-brand-accent-400' :
                     'text-gray-400'
                   }`}>
                     {session.accuracy > 0 ? session.accuracy.toFixed(1) + '%' : '-'}
@@ -803,7 +731,6 @@ export default function StockCountPage() {
                 </div>
               </div>
 
-              {/* Footer */}
               <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                 <div className="flex items-center gap-2">
                   <User className="w-3 h-3" />
@@ -815,11 +742,10 @@ export default function StockCountPage() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="mt-2 flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => router.push(`/inventory/stock-count/${session.id}`)}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                   title="View Details"
                 >
                   <Eye className="w-4 h-4 text-gray-500" />
@@ -829,13 +755,12 @@ export default function StockCountPage() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Edit functionality
                         toast.info('Edit functionality coming soon');
                       }}
-                      className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                      className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                       title="Edit"
                     >
-                      <Edit className="w-4 h-4 text-blue-500" />
+                      <Edit className="w-4 h-4 text-brand-500" />
                     </button>
                     <button
                       onClick={(e) => {
@@ -843,10 +768,10 @@ export default function StockCountPage() {
                         setSessionToDelete(session);
                         setShowDeleteModal(true);
                       }}
-                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                      className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                       title="Delete"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                      <Trash2 className="w-4 h-4 text-brand-accent-500" />
                     </button>
                   </>
                 )}
@@ -869,7 +794,7 @@ export default function StockCountPage() {
             >
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
@@ -879,13 +804,13 @@ export default function StockCountPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Session Name <span className="text-red-500">*</span>
+                    Session Name <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                     placeholder="e.g., Warehouse Count Q1 2024"
                     autoFocus
                   />
@@ -893,13 +818,13 @@ export default function StockCountPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Location <span className="text-red-500">*</span>
+                    Location <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                     placeholder="e.g., Warehouse, Store A"
                   />
                 </div>
@@ -913,7 +838,7 @@ export default function StockCountPage() {
                     value={formData.expectedItems}
                     onChange={(e) => setFormData({ ...formData, expectedItems: parseInt(e.target.value) || 0 })}
                     min="0"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums transition-colors"
                     placeholder="0"
                   />
                 </div>
@@ -925,7 +850,7 @@ export default function StockCountPage() {
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value as StockCountSession['priority'] })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                   >
                     {Object.entries(PRIORITY_CONFIG).map(([key, config]) => (
                       <option key={key} value={key}>{config.label}</option>
@@ -941,7 +866,7 @@ export default function StockCountPage() {
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none transition-colors"
                     placeholder="Additional notes..."
                   />
                 </div>
@@ -950,14 +875,14 @@ export default function StockCountPage() {
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreate}
                   disabled={submitting || !formData.name || !formData.location}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2 shadow-brand focus-ring"
                 >
                   {submitting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -985,20 +910,20 @@ export default function StockCountPage() {
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
 
               <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                <div className="w-16 h-16 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete Stock Count</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{sessionToDelete.name}</strong>?
                 </p>
-                <p className="text-sm text-red-600 dark:text-red-400 mb-4">
+                <p className="text-sm text-brand-accent-600 dark:text-brand-accent-400 mb-4">
                   This action cannot be undone. All associated data will be permanently removed.
                 </p>
               </div>
@@ -1006,14 +931,14 @@ export default function StockCountPage() {
               <div className="flex justify-center gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 disabled:opacity-50 transition-colors flex items-center gap-2 shadow-brand focus-ring"
                 >
                   {deleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

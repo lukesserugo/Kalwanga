@@ -1,5 +1,4 @@
 // D:\Projects\Kalwanga\packages\web\components\suppliers\SupplierCard.tsx
-
 'use client';
 
 import Link from 'next/link';
@@ -112,17 +111,20 @@ function StarRating({ rating = 0, size = 'sm' }: StarRatingProps) {
   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-4 h-4';
 
   return (
-    <div className="flex items-center gap-0.5" aria-label={`Rating: ${safeRating.toFixed(1)} out of 5`}>
+    <div
+      className="flex items-center gap-0.5"
+      aria-label={`Rating: ${safeRating.toFixed(1)} out of 5`}
+    >
       {Array.from({ length: fullStars }).map((_, i) => (
         <Star
           key={`full-${i}`}
-          className={`${iconSize} text-yellow-400 fill-yellow-400`}
+          className={`${iconSize} text-warning-400 fill-warning-400`}
           aria-hidden="true"
         />
       ))}
       {hasHalfStar && (
         <StarHalf
-          className={`${iconSize} text-yellow-400 fill-yellow-400`}
+          className={`${iconSize} text-warning-400 fill-warning-400`}
           aria-hidden="true"
         />
       )}
@@ -134,7 +136,7 @@ function StarRating({ rating = 0, size = 'sm' }: StarRatingProps) {
         />
       ))}
       {safeRating > 0 && (
-        <span className="text-xs text-gray-500 ml-1">
+        <span className="text-2xs text-gray-500 dark:text-gray-400 ml-1 tabular-nums">
           {safeRating.toFixed(1)}
         </span>
       )}
@@ -153,10 +155,10 @@ interface StatusBadgeProps {
 
 function StatusBadge({ isActive, size = 'md' }: StatusBadgeProps) {
   const padding = size === 'sm' ? 'px-2 py-0.5' : 'px-2 py-1';
-  const base = `${padding} rounded-full text-xs font-medium`;
+  const base = `${padding} rounded-full text-2xs font-medium`;
   return isActive ? (
     <span
-      className={`${base} bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300`}
+      className={`${base} bg-success-100 text-success-700 dark:bg-success-950/40 dark:text-success-300`}
     >
       Active
     </span>
@@ -198,16 +200,18 @@ export function SupplierCard({
   if (variant === 'minimal') {
     return (
       <div
-        className={`flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg hover:shadow-md transition-all ${className}`}
+        className={`flex items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-soft hover:shadow-card-hover transition-all duration-250 ${className}`}
       >
-        <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-          <Truck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+        <div className="w-8 h-8 rounded-lg bg-brand-100 dark:bg-brand-950/40 flex items-center justify-center flex-shrink-0">
+          <Truck className="w-4 h-4 text-brand-600 dark:text-brand-400" />
         </div>
         <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">
           {name}
         </span>
         {!isActive && (
-          <span className="text-xs text-gray-400">Inactive</span>
+          <span className="text-2xs text-gray-400 dark:text-gray-500">
+            Inactive
+          </span>
         )}
       </div>
     );
@@ -217,17 +221,17 @@ export function SupplierCard({
   if (variant === 'compact') {
     return (
       <div
-        className={`flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-xl hover:shadow-md transition-all ${className}`}
+        className={`flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-xl shadow-soft hover:shadow-card-hover transition-all duration-250 ${className}`}
       >
-        <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-          <Truck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        <div className="w-10 h-10 rounded-lg bg-brand-100 dark:bg-brand-950/40 flex items-center justify-center flex-shrink-0">
+          <Truck className="w-5 h-5 text-brand-600 dark:text-brand-400" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-medium text-gray-900 dark:text-white truncate">
             {name}
           </p>
           {email && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+            <p className="text-2xs text-gray-500 dark:text-gray-400 truncate">
               {email}
             </p>
           )}
@@ -241,14 +245,14 @@ export function SupplierCard({
   return (
     <motion.div
       whileHover={{ y: -4 }}
-      className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all overflow-hidden border border-gray-100 dark:border-gray-700 ${className}`}
+      className={`bg-white dark:bg-gray-800 rounded-xl shadow-soft hover:shadow-card-hover transition-all duration-250 overflow-hidden border border-gray-100 dark:border-gray-700 ${className}`}
     >
       <div className="p-5">
         {/* Header: avatar + name + contact person + actions */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-              <Truck className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            <div className="w-12 h-12 rounded-lg bg-brand-100 dark:bg-brand-950/40 flex items-center justify-center flex-shrink-0">
+              <Truck className="w-6 h-6 text-brand-600 dark:text-brand-400" />
             </div>
             <div className="min-w-0">
               <h3 className="font-semibold text-gray-900 dark:text-white truncate">
@@ -269,33 +273,33 @@ export function SupplierCard({
                 <button
                   type="button"
                   onClick={() => onView(supplier)}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-250 focus-ring"
                   title="View"
                   aria-label={`View ${name}`}
                 >
-                  <Eye className="w-4 h-4 text-gray-500" />
+                  <Eye className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 </button>
               )}
               {onEdit && (
                 <button
                   type="button"
                   onClick={() => onEdit(supplier)}
-                  className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/40 rounded-lg transition-colors duration-250 focus-ring"
                   title="Edit"
                   aria-label={`Edit ${name}`}
                 >
-                  <Edit className="w-4 h-4 text-blue-600" />
+                  <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                 </button>
               )}
               {onDelete && (
                 <button
                   type="button"
                   onClick={() => onDelete(supplier)}
-                  className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-950/40 rounded-lg transition-colors duration-250 focus-ring"
                   title="Delete"
                   aria-label={`Delete ${name}`}
                 >
-                  <Trash2 className="w-4 h-4 text-red-600" />
+                  <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
                 </button>
               )}
             </div>
@@ -306,20 +310,20 @@ export function SupplierCard({
         <div className="mt-4 space-y-2 text-sm">
           {email && (
             <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <Mail className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
               <span className="truncate">{email}</span>
             </div>
           )}
           {phone && (
             <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <Phone className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
               <span className="truncate">{phone}</span>
             </div>
           )}
           {address && (
             <div className="flex items-start gap-2 text-gray-600 dark:text-gray-400">
-              <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-              <span className="text-xs truncate">{address}</span>
+              <MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
+              <span className="text-2xs truncate">{address}</span>
             </div>
           )}
         </div>
@@ -328,7 +332,7 @@ export function SupplierCard({
         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
           <StarRating rating={rating} />
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
               {productCount} product{productCount !== 1 ? 's' : ''}
             </span>
             <StatusBadge isActive={isActive} size="sm" />

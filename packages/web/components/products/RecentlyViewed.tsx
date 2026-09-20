@@ -171,7 +171,7 @@ export function RecentlyViewed({
       <div ref={containerRef} className={className}>
         {showTitle && (
           <div className="flex items-center gap-2 mb-4">
-            <Clock className="w-5 h-5 text-gray-400" />
+            <Clock className="w-5 h-5 text-gray-400 dark:text-gray-500" />
             <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
               {title}
             </h2>
@@ -181,7 +181,7 @@ export function RecentlyViewed({
           {[...Array(effectiveLimit)].map((_, i) => (
             <div
               key={i}
-              className="bg-gray-100 dark:bg-gray-700 rounded-lg h-32 animate-pulse"
+              className="bg-gray-100 dark:bg-gray-700 rounded-2xl h-32 animate-pulse"
             />
           ))}
         </div>
@@ -205,7 +205,7 @@ export function RecentlyViewed({
       {showTitle && (
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-gray-400" />
+            <Clock className="w-5 h-5 text-gray-400 dark:text-gray-500" />
             <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
               {title}
             </h2>
@@ -221,12 +221,12 @@ export function RecentlyViewed({
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.05 }}
             whileHover={{ y: -4, transition: { duration: 0.2 } }}
-            className="group relative bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-all overflow-hidden border border-gray-200 dark:border-gray-700"
+            className="group relative card-brand shadow-soft hover:shadow-card-hover transition duration-250 overflow-hidden"
           >
             <Link
               href={`/shop/${product.id}`}
               onClick={() => handleProductClick(product.id)}
-              className="block"
+              className="block focus-ring rounded-2xl"
             >
               <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
                 {product.images?.[0] ? (
@@ -246,7 +246,7 @@ export function RecentlyViewed({
                   <WishlistButton
                     productId={product.id}
                     size="sm"
-                    className="shadow-md"
+                    className="shadow-soft"
                   />
                 </div>
               </div>
@@ -254,7 +254,7 @@ export function RecentlyViewed({
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                   {product.name}
                 </p>
-                <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                <p className="text-sm font-semibold tabular-nums text-brand-600 dark:text-brand-400">
                   {formatCurrency(product.unitPrice)}
                 </p>
               </div>

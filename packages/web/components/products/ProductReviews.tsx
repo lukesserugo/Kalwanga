@@ -98,21 +98,21 @@ function statusLabel(status: ReviewStatus): {
       return {
         label: 'Pending approval',
         className:
-          'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800',
+          'bg-warning-50 dark:bg-warning-900/20 text-warning-700 dark:text-warning-400 border-warning-200 dark:border-warning-800',
         Icon: Clock,
       };
     case 'REJECTED':
       return {
         label: 'Rejected',
         className:
-          'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
+          'bg-danger-50 dark:bg-danger-900/20 text-danger-700 dark:text-danger-400 border-danger-200 dark:border-danger-800',
         Icon: XCircle,
       };
     case 'FLAGGED':
       return {
         label: 'Flagged',
         className:
-          'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800',
+          'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-400 border-brand-200 dark:border-brand-800',
         Icon: XCircle,
       };
     default:
@@ -393,7 +393,7 @@ export function ProductReviews({
           key={star}
           className={`w-4 h-4 ${
             star <= rating
-              ? 'text-yellow-400 fill-current'
+              ? 'text-warning-400 fill-current'
               : 'text-gray-300 dark:text-gray-600'
           }`}
         />
@@ -410,18 +410,19 @@ export function ProductReviews({
           onClick={() =>
             setNewReview((prev) => ({ ...prev, rating: star }))
           }
-          className="focus:outline-none"
+          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded transition duration-250"
+          aria-label={`Rate ${star} star${star === 1 ? '' : 's'}`}
         >
           <Star
             className={`w-6 h-6 ${
               star <= newReview.rating
-                ? 'text-yellow-400 fill-current'
+                ? 'text-warning-400 fill-current'
                 : 'text-gray-300 dark:text-gray-600'
-            } transition-colors hover:text-yellow-400`}
+            } transition-colors hover:text-warning-400`}
           />
         </button>
       ))}
-      <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+      <span className="ml-2 text-sm tabular-nums text-gray-500 dark:text-gray-400">
         {newReview.rating}/5
       </span>
     </div>
@@ -437,7 +438,7 @@ export function ProductReviews({
   if (loading && reviews.length === 0 && !authRequired) {
     return (
       <div className="flex flex-col items-center justify-center py-8">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400" />
         <p className="text-gray-500 dark:text-gray-400 mt-2">
           Loading reviews...
         </p>
@@ -448,7 +449,7 @@ export function ProductReviews({
   // ✅ Guests see a sign-in prompt instead of an empty state.
   if (authRequired) {
     return (
-      <div className="text-center py-12 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-700">
+      <div className="text-center py-12 card-brand shadow-soft animate-fade-in">
         <LogIn className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
           Sign in to view reviews
@@ -462,7 +463,7 @@ export function ProductReviews({
               ? window.location.pathname
               : `/shop/${productId}`,
           )}`}
-          className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 btn-brand"
         >
           <LogIn className="w-4 h-4" />
           Sign In
@@ -478,11 +479,11 @@ export function ProductReviews({
     isAuthenticated && !hasUserReviewed && !showReviewForm;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Stats Summary */}
-      <div className="flex flex-wrap items-start gap-6 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+      <div className="flex flex-wrap items-start gap-6 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl">
         <div className="text-center">
-          <div className="text-3xl font-bold text-gray-900 dark:text-white">
+          <div className="text-3xl font-bold tabular-nums text-gray-900 dark:text-white">
             {stats?.average > 0 ? stats.average.toFixed(1) : 'N/A'}
           </div>
           <div className="text-sm text-gray-500 dark:text-gray-400">
@@ -497,17 +498,17 @@ export function ProductReviews({
                 stats?.total > 0 ? (count / stats.total) * 100 : 0;
               return (
                 <div key={rating} className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400 w-4">
+                  <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400 w-4">
                     {rating}
                   </span>
-                  <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                  <Star className="w-3 h-3 text-warning-400 fill-current" />
                   <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-yellow-400 rounded-full transition-all"
+                      className="h-full bg-warning-400 rounded-full transition-all"
                       style={{ width: `${Math.min(percentage, 100)}%` }}
                     />
                   </div>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 w-8 text-right">
+                  <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 w-8 text-right">
                     {count}
                   </span>
                 </div>
@@ -516,7 +517,7 @@ export function ProductReviews({
           </div>
         </div>
         <div className="text-center">
-          <div className="text-xl font-bold text-gray-900 dark:text-white">
+          <div className="text-xl font-bold tabular-nums text-gray-900 dark:text-white">
             {stats?.total || 0}
           </div>
           <div className="text-sm text-gray-500 dark:text-gray-400">
@@ -529,7 +530,7 @@ export function ProductReviews({
       {canWriteReview && (
         <button
           onClick={() => setShowReviewForm(true)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="btn-brand"
         >
           Write a Review
         </button>
@@ -544,7 +545,7 @@ export function ProductReviews({
                 ? window.location.pathname
                 : `/shop/${productId}`,
             )}`}
-            className="text-blue-600 dark:text-blue-400 hover:underline"
+            className="text-brand-600 dark:text-brand-400 hover:underline transition duration-250 focus-ring rounded"
           >
             Sign in
           </a>{' '}
@@ -562,7 +563,7 @@ export function ProductReviews({
       {showReviewForm && (
         <form
           onSubmit={handleSubmitReview}
-          className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4"
+          className="border border-gray-200 dark:border-gray-700 rounded-2xl p-4 space-y-4 animate-slide-down"
         >
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-gray-900 dark:text-white">
@@ -571,7 +572,8 @@ export function ProductReviews({
             <button
               type="button"
               onClick={() => setShowReviewForm(false)}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
+              aria-label="Close review form"
             >
               <X className="w-4 h-4" />
             </button>
@@ -599,7 +601,7 @@ export function ProductReviews({
               }
               placeholder="Summarize your experience"
               maxLength={200}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             />
           </div>
 
@@ -618,7 +620,7 @@ export function ProductReviews({
               placeholder="Share your experience with this product"
               rows={4}
               maxLength={2000}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 resize-none"
               required
             />
           </div>
@@ -631,14 +633,14 @@ export function ProductReviews({
             <button
               type="button"
               onClick={() => setShowReviewForm(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="btn-brand disabled:opacity-50"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
               Submit Review
@@ -650,13 +652,13 @@ export function ProductReviews({
       {/* Sort */}
       {reviews.length > 0 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
             {reviews.length} reviews
           </p>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           >
             <option value="newest">Newest First</option>
             <option value="highest">Highest Rated</option>
@@ -673,7 +675,7 @@ export function ProductReviews({
           {isAuthenticated && !hasUserReviewed && (
             <button
               onClick={() => setShowReviewForm(true)}
-              className="mt-2 text-blue-600 dark:text-blue-400 hover:underline"
+              className="mt-2 text-brand-600 dark:text-brand-400 hover:underline transition duration-250 focus-ring rounded"
             >
               Be the first to review
             </button>
@@ -690,7 +692,7 @@ export function ProductReviews({
             return (
               <div
                 key={review.id}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                className="border border-gray-200 dark:border-gray-700 rounded-xl p-4"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -712,11 +714,11 @@ export function ProductReviews({
                           </span>
                         )}
                         {review.isVerified && (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <CheckCircle className="w-4 h-4 text-success-500 dark:text-success-400" />
                         )}
                         {statusBadge && canManage && (
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border ${statusBadge.className}`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 text-2xs rounded-full border ${statusBadge.className}`}
                           >
                             <statusBadge.Icon className="w-3 h-3" />
                             {statusBadge.label}
@@ -725,7 +727,7 @@ export function ProductReviews({
                       </div>
                       <div className="flex items-center gap-2">
                         {renderStars(review.rating || 0)}
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
                           {formatTimeAgo(review.createdAt)}
                         </span>
                       </div>
@@ -734,8 +736,9 @@ export function ProductReviews({
                   {canDelete && (
                     <button
                       onClick={() => handleDeleteReview(review.id)}
-                      className="text-red-500 hover:text-red-700 text-sm flex items-center gap-1"
+                      className="text-danger-500 hover:text-danger-700 dark:text-danger-400 dark:hover:text-danger-300 text-sm flex items-center gap-1 transition duration-250 focus-ring rounded"
                       title="Delete review"
+                      aria-label="Delete review"
                     >
                       <Trash2 className="w-4 h-4" />
                       Delete
@@ -769,7 +772,7 @@ export function ProductReviews({
                   <button
                     onClick={() => handleMarkHelpful(review.id)}
                     disabled={alreadyMarkedHelpful || !isAuthenticated}
-                    className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-500"
+                    className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition duration-250 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-gray-500 dark:disabled:hover:text-gray-400 focus-ring rounded"
                     title={
                       !isAuthenticated
                         ? 'Sign in to mark reviews as helpful'
@@ -779,7 +782,7 @@ export function ProductReviews({
                     }
                   >
                     <ThumbsUp className="w-4 h-4" />
-                    <span>{review.helpfulCount || 0}</span>
+                    <span className="tabular-nums">{review.helpfulCount || 0}</span>
                     <span>
                       {alreadyMarkedHelpful ? 'Helpful' : 'Helpful?'}
                     </span>
@@ -796,10 +799,10 @@ export function ProductReviews({
         <button
           onClick={() => setPage((prev) => prev + 1)}
           disabled={loading}
-          className="w-full py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="w-full py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 disabled:opacity-50 focus-ring text-gray-700 dark:text-gray-300"
         >
           {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+            <Loader2 className="w-4 h-4 animate-spin mx-auto text-brand-600 dark:text-brand-400" />
           ) : (
             'Load More Reviews'
           )}

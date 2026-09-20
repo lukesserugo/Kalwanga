@@ -392,7 +392,7 @@ export default function LocationTransferPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50"
+            className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 focus-ring"
             aria-label="Go back"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -414,7 +414,7 @@ export default function LocationTransferPage() {
         {/* ------------------------------- */}
         <div className="space-y-6 lg:col-span-2">
           {/* Locations */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <section className="card-brand p-5">
             <h2 className="mb-4 text-sm font-semibold text-gray-900">
               Route
             </h2>
@@ -431,9 +431,9 @@ export default function LocationTransferPage() {
                     setField('fromLocationId', e.target.value)
                   }
                   disabled={locationsLoading}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${
                     errors.fromLocationId
-                      ? 'border-red-400'
+                      ? 'border-danger-400'
                       : 'border-gray-300'
                   }`}
                 >
@@ -448,7 +448,7 @@ export default function LocationTransferPage() {
                   ))}
                 </select>
                 {errors.fromLocationId && (
-                  <p className="mt-1 text-xs text-red-600">
+                  <p className="mt-1 text-xs text-danger-600">
                     {errors.fromLocationId}
                   </p>
                 )}
@@ -463,8 +463,8 @@ export default function LocationTransferPage() {
                   value={form.toLocationId}
                   onChange={(e) => setField('toLocationId', e.target.value)}
                   disabled={locationsLoading}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    errors.toLocationId ? 'border-red-400' : 'border-gray-300'
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+                    errors.toLocationId ? 'border-danger-400' : 'border-gray-300'
                   }`}
                 >
                   <option value="">
@@ -480,7 +480,7 @@ export default function LocationTransferPage() {
                     ))}
                 </select>
                 {errors.toLocationId && (
-                  <p className="mt-1 text-xs text-red-600">
+                  <p className="mt-1 text-xs text-danger-600">
                     {errors.toLocationId}
                   </p>
                 )}
@@ -489,7 +489,7 @@ export default function LocationTransferPage() {
 
             {/* Visual route */}
             {fromLocation && toLocation && (
-              <div className="mt-4 flex items-center gap-3 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              <div className="mt-4 flex items-center gap-3 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-800">
                 <span className="flex items-center gap-1 font-medium">
                   {LOCATION_ICONS[fromLocation.type] ?? (
                     <Warehouse className="h-4 w-4" />
@@ -508,7 +508,7 @@ export default function LocationTransferPage() {
           </section>
 
           {/* Items */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <section className="card-brand p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-900">
                 Items to transfer
@@ -517,7 +517,7 @@ export default function LocationTransferPage() {
                 type="button"
                 disabled={!form.fromLocationId}
                 onClick={() => setPickerOpen((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-gray-300 focus-ring"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add product
@@ -525,7 +525,7 @@ export default function LocationTransferPage() {
             </div>
 
             {!form.fromLocationId && (
-              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
                 Select a source location first to load available stock.
               </p>
             )}
@@ -540,11 +540,11 @@ export default function LocationTransferPage() {
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search by product name or SKU…"
-                    className="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
 
-                <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white">
+                <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200 bg-white sidebar-scroll">
                   {inventoryLoading ? (
                     <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -568,7 +568,7 @@ export default function LocationTransferPage() {
                           type="button"
                           disabled={out || !product}
                           onClick={() => addLine(row)}
-                          className="flex w-full items-center justify-between border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex w-full items-center justify-between border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
                         >
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium text-gray-900">
@@ -584,10 +584,10 @@ export default function LocationTransferPage() {
                             </p>
                           </div>
                           <span
-                            className={`ml-3 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                            className={`ml-3 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums ${
                               out
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-green-100 text-green-700'
+                                ? 'bg-danger-100 text-danger-700'
+                                : 'bg-success-100 text-success-700'
                             }`}
                           >
                             {row.available} available
@@ -639,7 +639,7 @@ export default function LocationTransferPage() {
                           <td className="px-3 py-2 text-gray-500">
                             {line.sku}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-500">
+                          <td className="px-3 py-2 text-right text-gray-500 tabular-nums">
                             {line.available}
                           </td>
                           <td className="px-3 py-2 text-right">
@@ -654,8 +654,8 @@ export default function LocationTransferPage() {
                                   parseInt(e.target.value, 10)
                                 )
                               }
-                              className={`w-20 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                over ? 'border-red-400' : 'border-gray-300'
+                              className={`w-20 rounded-md border px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 tabular-nums ${
+                                over ? 'border-danger-400' : 'border-gray-300'
                               }`}
                             />
                           </td>
@@ -663,7 +663,7 @@ export default function LocationTransferPage() {
                             <button
                               type="button"
                               onClick={() => removeLine(line.key)}
-                              className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                              className="rounded-md p-1 text-gray-400 hover:bg-danger-50 hover:text-danger-600 focus-ring"
                               aria-label={`Remove ${line.productName}`}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -678,7 +678,7 @@ export default function LocationTransferPage() {
             )}
 
             {errors.lines && (
-              <p className="mt-2 flex items-center gap-1 text-xs text-red-600">
+              <p className="mt-2 flex items-center gap-1 text-xs text-danger-600">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 {errors.lines}
               </p>
@@ -686,7 +686,7 @@ export default function LocationTransferPage() {
           </section>
 
           {/* Metadata */}
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <section className="card-brand p-5">
             <h2 className="mb-4 text-sm font-semibold text-gray-900">
               Transfer details
             </h2>
@@ -699,7 +699,7 @@ export default function LocationTransferPage() {
                   value={form.reference}
                   onChange={(e) => setField('reference', e.target.value)}
                   placeholder="e.g. TRF-2024-001"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
@@ -710,7 +710,7 @@ export default function LocationTransferPage() {
                   value={form.carrier}
                   onChange={(e) => setField('carrier', e.target.value)}
                   placeholder="e.g. Internal van, DHL"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div>
@@ -723,7 +723,7 @@ export default function LocationTransferPage() {
                   onChange={(e) =>
                     setField('expectedArrival', e.target.value)
                   }
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
               <div className="md:col-span-2">
@@ -735,7 +735,7 @@ export default function LocationTransferPage() {
                   value={form.notes}
                   onChange={(e) => setField('notes', e.target.value)}
                   placeholder="Optional notes for this transfer…"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
             </div>
@@ -747,7 +747,7 @@ export default function LocationTransferPage() {
         {/* ------------------------------- */}
         <aside className="space-y-4 lg:col-span-1">
           <div className="sticky top-6 space-y-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="card-brand p-5">
               <h2 className="mb-4 text-sm font-semibold text-gray-900">
                 Summary
               </h2>
@@ -767,20 +767,20 @@ export default function LocationTransferPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <dt className="text-gray-500">Line items</dt>
-                  <dd className="font-medium text-gray-900">
+                  <dd className="font-medium text-gray-900 tabular-nums">
                     {lines.length}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between border-t border-gray-100 pt-3">
                   <dt className="text-gray-500">Total units</dt>
-                  <dd className="text-lg font-semibold text-gray-900">
+                  <dd className="text-lg font-semibold text-gray-900 tabular-nums">
                     {totalUnits}
                   </dd>
                 </div>
               </dl>
 
               {hasStockWarning && (
-                <p className="mt-4 flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                <p className="mt-4 flex items-start gap-2 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   One or more lines exceed the available stock at the source
                   location.
@@ -791,7 +791,7 @@ export default function LocationTransferPage() {
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting || hasStockWarning || lines.length === 0}
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-gray-300 focus-ring"
               >
                 {submitting ? (
                   <>
@@ -810,7 +810,7 @@ export default function LocationTransferPage() {
                 type="button"
                 onClick={() => router.back()}
                 disabled={submitting}
-                className="mt-2 w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="mt-2 w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 focus-ring"
               >
                 Cancel
               </button>
@@ -831,3 +831,4 @@ export default function LocationTransferPage() {
     </div>
   );
 }
+

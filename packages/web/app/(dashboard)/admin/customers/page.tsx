@@ -179,13 +179,13 @@ export default function CustomersPage() {
       return {
         label: 'Platinum',
         color:
-          'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+          'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
       };
     if (points >= 500)
       return {
         label: 'Gold',
         color:
-          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+          'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
       };
     if (points >= 200)
       return {
@@ -196,7 +196,7 @@ export default function CustomersPage() {
     return {
       label: 'Bronze',
       color:
-        'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+        'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
     };
   };
 
@@ -248,7 +248,7 @@ export default function CustomersPage() {
   if (loading && customers.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -260,7 +260,7 @@ export default function CustomersPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <Users className="w-8 h-8 text-blue-500" />
+            <Users className="w-8 h-8 text-brand-500" />
             Customers
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
@@ -272,7 +272,7 @@ export default function CustomersPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title="Refresh"
           >
             <RefreshCw
@@ -282,8 +282,8 @@ export default function CustomersPage() {
           <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded ${
-                viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-500'
+              className={`p-1.5 rounded focus-ring ${
+                viewMode === 'grid' ? 'bg-brand-500 text-white' : 'text-gray-500'
               }`}
               title="Grid view"
             >
@@ -291,8 +291,8 @@ export default function CustomersPage() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-1.5 rounded ${
-                viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-500'
+              className={`p-1.5 rounded focus-ring ${
+                viewMode === 'list' ? 'bg-brand-500 text-white' : 'text-gray-500'
               }`}
               title="List view"
             >
@@ -301,7 +301,7 @@ export default function CustomersPage() {
           </div>
           <button
             onClick={handleExport}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 focus-ring"
             title="Export"
           >
             <Download className="w-4 h-4" />
@@ -310,7 +310,7 @@ export default function CustomersPage() {
           {canCreateCustomers && (
             <Link
               href="/admin/customers/create"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 transition-colors focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Customer
@@ -320,7 +320,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Search and Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border p-4">
+      <div className="card-brand p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px]">
             <div className="relative">
@@ -333,7 +333,7 @@ export default function CustomersPage() {
                   setSearchQuery(e.target.value);
                   setPagination((prev) => ({ ...prev, page: 1 }));
                 }}
-                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none"
               />
             </div>
           </div>
@@ -343,7 +343,7 @@ export default function CustomersPage() {
               setStatusFilter(e.target.value as any);
               setPagination((prev) => ({ ...prev, page: 1 }));
             }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:outline-none"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>
@@ -352,7 +352,7 @@ export default function CustomersPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:outline-none"
           >
             <option value="name">Sort by Name</option>
             <option value="spent">Sort by Spent</option>
@@ -361,7 +361,7 @@ export default function CustomersPage() {
           </select>
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus-ring"
             title="Toggle sort order"
           >
             <ArrowUpDown className="w-4 h-4" />
@@ -371,11 +371,11 @@ export default function CustomersPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-xl p-4 flex items-center justify-between">
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 text-danger-700 dark:text-danger-300 rounded-xl p-4 flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => loadCustomers()}
-            className="text-sm underline hover:no-underline"
+            className="text-sm underline hover:no-underline focus-ring rounded"
           >
             Retry
           </button>
@@ -384,7 +384,7 @@ export default function CustomersPage() {
 
       {/* Customers */}
       {sortedCustomers.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-12 text-center">
+        <div className="card-brand p-12 text-center">
           <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             No customers found
@@ -399,7 +399,7 @@ export default function CustomersPage() {
             statusFilter === 'all' && (
               <Link
                 href="/admin/customers/create"
-                className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                className="mt-4 inline-block px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 focus-ring"
               >
                 <Plus className="w-4 h-4 inline mr-2" />
                 Add Customer
@@ -415,14 +415,14 @@ export default function CustomersPage() {
                 key={customer.id}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border p-4 hover:shadow-md transition-shadow"
+                className="card-brand p-4 hover:shadow-card-hover transition-shadow"
               >
                 <div className="flex items-start justify-between">
                   <Link
                     href={`/admin/customers/${customer.id}`}
                     className="flex items-center gap-3 min-w-0"
                   >
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-brand-gradient flex items-center justify-center text-white font-bold flex-shrink-0">
                       {customer.firstName?.[0]}
                       {customer.lastName?.[0]}
                     </div>
@@ -439,7 +439,7 @@ export default function CustomersPage() {
                     {canEditCustomers && (
                       <Link
                         href={`/admin/customers/${customer.id}/edit`}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded focus-ring"
                         title="Edit"
                       >
                         <Edit className="w-4 h-4 text-gray-500" />
@@ -451,10 +451,10 @@ export default function CustomersPage() {
                           setCustomerToDelete(customer);
                           setShowDeleteModal(true);
                         }}
-                        className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                        className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded focus-ring"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-4 h-4 text-danger-500" />
                       </button>
                     )}
                   </div>
@@ -483,12 +483,12 @@ export default function CustomersPage() {
                     >
                       {tier.label}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-500 tabular-nums">
                       {customer.loyaltyPoints || 0} pts
                     </span>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-gray-900 dark:text-white">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
                       {formatCurrency(customer.totalSpent || 0)}
                     </p>
                     <p className="text-xs text-gray-500">Total Spent</p>
@@ -499,7 +499,7 @@ export default function CustomersPage() {
                   <span
                     className={`px-2 py-0.5 rounded-full ${
                       customer.isActive
-                        ? 'bg-green-100 text-green-700'
+                        ? 'bg-success-100 text-success-700'
                         : 'bg-gray-100 text-gray-500'
                     }`}
                   >
@@ -507,7 +507,7 @@ export default function CustomersPage() {
                   </span>
                   <Link
                     href={`/admin/customers/${customer.id}`}
-                    className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    className="text-brand-600 hover:text-brand-800 flex items-center gap-1 focus-ring rounded"
                   >
                     <Eye className="w-3 h-3" />
                     View
@@ -518,8 +518,8 @@ export default function CustomersPage() {
           })}
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="card-brand p-0 overflow-hidden">
+          <div className="overflow-x-auto sidebar-scroll">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
@@ -556,7 +556,7 @@ export default function CustomersPage() {
                           href={`/admin/customers/${customer.id}`}
                           className="flex items-center gap-3"
                         >
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                          <div className="w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white font-bold flex-shrink-0">
                             {customer.firstName?.[0]}
                             {customer.lastName?.[0]}
                           </div>
@@ -582,18 +582,18 @@ export default function CustomersPage() {
                         >
                           {tier.label}
                         </span>
-                        <span className="ml-2 text-xs text-gray-500">
+                        <span className="ml-2 text-xs text-gray-500 tabular-nums">
                           {customer.loyaltyPoints || 0} pts
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
+                      <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(customer.totalSpent || 0)}
                       </td>
                       <td className="px-4 py-3">
                         <span
                           className={`px-2 py-1 rounded-full text-xs ${
                             customer.isActive
-                              ? 'bg-green-100 text-green-700'
+                              ? 'bg-success-100 text-success-700'
                               : 'bg-gray-100 text-gray-500'
                           }`}
                         >
@@ -604,7 +604,7 @@ export default function CustomersPage() {
                         <div className="flex items-center justify-end gap-1">
                           <Link
                             href={`/admin/customers/${customer.id}`}
-                            className="p-1.5 hover:bg-gray-100 rounded"
+                            className="p-1.5 hover:bg-gray-100 rounded focus-ring"
                             title="View"
                           >
                             <Eye className="w-4 h-4 text-gray-500" />
@@ -612,10 +612,10 @@ export default function CustomersPage() {
                           {canEditCustomers && (
                             <Link
                               href={`/admin/customers/${customer.id}/edit`}
-                              className="p-1.5 hover:bg-blue-100 rounded"
+                              className="p-1.5 hover:bg-brand-100 rounded focus-ring"
                               title="Edit"
                             >
-                              <Edit className="w-4 h-4 text-blue-500" />
+                              <Edit className="w-4 h-4 text-brand-500" />
                             </Link>
                           )}
                           {canDeleteCustomers && (
@@ -624,10 +624,10 @@ export default function CustomersPage() {
                                 setCustomerToDelete(customer);
                                 setShowDeleteModal(true);
                               }}
-                              className="p-1.5 hover:bg-red-100 rounded"
+                              className="p-1.5 hover:bg-danger-100 rounded focus-ring"
                               title="Delete"
                             >
-                              <Trash2 className="w-4 h-4 text-red-500" />
+                              <Trash2 className="w-4 h-4 text-danger-500" />
                             </button>
                           )}
                         </div>
@@ -644,24 +644,24 @@ export default function CustomersPage() {
       {/* Pagination */}
       {pagination.totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 tabular-nums">
             Showing {customers.length} of {pagination.total} customers
           </span>
           <div className="flex gap-2">
             <button
               onClick={() => handlePageChange(pagination.page - 1)}
               disabled={pagination.page <= 1}
-              className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50"
+              className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 focus-ring"
             >
               Previous
             </button>
-            <span className="px-3 py-1 text-sm">
+            <span className="px-3 py-1 text-sm tabular-nums">
               Page {pagination.page} of {pagination.totalPages}
             </span>
             <button
               onClick={() => handlePageChange(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
-              className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50"
+              className="px-3 py-1 text-sm border rounded-lg disabled:opacity-50 focus-ring"
             >
               Next
             </button>
@@ -676,7 +676,7 @@ export default function CustomersPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
+            className="fixed inset-0 z-modal flex items-center justify-center"
           >
             <div
               className="fixed inset-0 bg-black/50"
@@ -704,14 +704,14 @@ export default function CustomersPage() {
                   <button
                     onClick={() => setShowDeleteModal(false)}
                     disabled={deleting}
-                    className="px-4 py-2 border border-gray-300 rounded-lg"
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+                    className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
                   >
                     {deleting ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

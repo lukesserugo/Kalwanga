@@ -44,31 +44,31 @@ const icons: Record<string, React.ComponentType<any>> = {
 };
 
 const typeColors: Record<string, string> = {
-  SALE: 'text-green-600 dark:text-green-400',
-  INVENTORY: 'text-orange-600 dark:text-orange-400',
-  ORDER: 'text-blue-600 dark:text-blue-400',
-  PAYMENT: 'text-purple-600 dark:text-purple-400',
-  CUSTOMER: 'text-indigo-600 dark:text-indigo-400',
+  SALE: 'text-success-600 dark:text-success-400',
+  INVENTORY: 'text-brand-600 dark:text-brand-400',
+  ORDER: 'text-primary-600 dark:text-primary-400',
+  PAYMENT: 'text-secondary-600 dark:text-secondary-400',
+  CUSTOMER: 'text-primary-700 dark:text-primary-300',
   SYSTEM: 'text-gray-600 dark:text-gray-400',
-  ALERT: 'text-red-600 dark:text-red-400',
-  SUCCESS: 'text-green-600 dark:text-green-400',
-  INFO: 'text-blue-600 dark:text-blue-400',
-  WARNING: 'text-yellow-600 dark:text-yellow-400',
-  ERROR: 'text-red-600 dark:text-red-400',
+  ALERT: 'text-danger-600 dark:text-danger-400',
+  SUCCESS: 'text-success-600 dark:text-success-400',
+  INFO: 'text-primary-600 dark:text-primary-400',
+  WARNING: 'text-warning-600 dark:text-warning-400',
+  ERROR: 'text-danger-600 dark:text-danger-400',
 };
 
 const typeBgColors: Record<string, string> = {
-  SALE: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-  INVENTORY: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
-  ORDER: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-  PAYMENT: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
-  CUSTOMER: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400',
+  SALE: 'bg-success-100 dark:bg-success-950/40 text-success-700 dark:text-success-300',
+  INVENTORY: 'bg-brand-100 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300',
+  ORDER: 'bg-primary-100 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300',
+  PAYMENT: 'bg-secondary-100 dark:bg-secondary-950/40 text-secondary-700 dark:text-secondary-300',
+  CUSTOMER: 'bg-primary-100 dark:bg-primary-950/40 text-primary-800 dark:text-primary-200',
   SYSTEM: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-400',
-  ALERT: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
-  SUCCESS: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-  INFO: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-  WARNING: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
-  ERROR: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  ALERT: 'bg-danger-100 dark:bg-danger-950/40 text-danger-700 dark:text-danger-300',
+  SUCCESS: 'bg-success-100 dark:bg-success-950/40 text-success-700 dark:text-success-300',
+  INFO: 'bg-primary-100 dark:bg-primary-950/40 text-primary-700 dark:text-primary-300',
+  WARNING: 'bg-warning-100 dark:bg-warning-950/40 text-warning-700 dark:text-warning-300',
+  ERROR: 'bg-danger-100 dark:bg-danger-950/40 text-danger-700 dark:text-danger-300',
 };
 
 const typeLabels: Record<string, string> = {
@@ -120,10 +120,10 @@ export function NotificationItem({
   return (
     <div
       className={`
-        bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-all hover:shadow-md
+        bg-white dark:bg-gray-800 rounded-xl shadow-soft border transition-all duration-250 hover:shadow-card-hover
         ${isRead
           ? 'border-gray-100 dark:border-gray-700'
-          : 'border-l-4 border-l-blue-500 border-gray-200 dark:border-gray-700'
+          : 'border-l-4 border-l-brand-500 border-gray-200 dark:border-gray-700'
         }
       `}
     >
@@ -139,11 +139,11 @@ export function NotificationItem({
               <p className={`font-medium truncate ${isRead ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
                 {title}
               </p>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${typeBg}`}>
+              <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${typeBg}`}>
                 {typeLabel}
               </span>
               {!isRead && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-brand-100 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300">
                   New
                 </span>
               )}
@@ -156,8 +156,9 @@ export function NotificationItem({
             {/* Link */}
             {link && (
               <button
+                type="button"
                 onClick={handleClick}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 hover:underline mt-1 transition-colors duration-250 focus-ring rounded"
               >
                 View Details →
               </button>
@@ -165,11 +166,11 @@ export function NotificationItem({
 
             {/* Timestamps */}
             <div className="flex flex-wrap items-center gap-3 mt-2">
-              <p className="text-xs text-gray-400 dark:text-gray-500">
+              <p className="text-2xs text-gray-400 dark:text-gray-500 tabular-nums">
                 {new Date(createdAt).toLocaleString()}
               </p>
               {readAt && (
-                <p className="text-xs text-gray-400 dark:text-gray-500">
+                <p className="text-2xs text-gray-400 dark:text-gray-500 tabular-nums">
                   Read: {new Date(readAt).toLocaleString()}
                 </p>
               )}
@@ -181,26 +182,30 @@ export function NotificationItem({
         <div className="flex items-start gap-1 flex-shrink-0">
           {!isRead && (
             <button
+              type="button"
               onClick={() => onMarkAsRead(id)}
               disabled={isMarking}
-              className="p-2 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors disabled:opacity-50"
+              className="p-2 text-success-600 dark:text-success-400 hover:bg-success-50 dark:hover:bg-success-950/30 rounded-lg transition-colors duration-250 disabled:opacity-50 focus-ring"
               title="Mark as read"
+              aria-label={`Mark "${title}" as read`}
             >
               {isMarking ? (
-                <div className="animate-spin h-5 w-5 border-2 border-green-600 dark:border-green-400 border-t-transparent rounded-full"></div>
+                <div className="animate-spin h-5 w-5 border-2 border-success-600 dark:border-success-400 border-t-transparent rounded-full"></div>
               ) : (
                 <CheckIcon className="w-5 h-5" />
               )}
             </button>
           )}
           <button
+            type="button"
             onClick={() => onDelete(id)}
             disabled={isDeleting}
-            className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+            className="p-2 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-950/30 rounded-lg transition-colors duration-250 disabled:opacity-50 focus-ring"
             title="Delete"
+            aria-label={`Delete "${title}"`}
           >
             {isDeleting ? (
-              <div className="animate-spin h-5 w-5 border-2 border-red-600 dark:border-red-400 border-t-transparent rounded-full"></div>
+              <div className="animate-spin h-5 w-5 border-2 border-danger-600 dark:border-danger-400 border-t-transparent rounded-full"></div>
             ) : (
               <XMarkIcon className="w-5 h-5" />
             )}

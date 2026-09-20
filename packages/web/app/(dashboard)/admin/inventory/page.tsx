@@ -204,11 +204,11 @@ const StatsCards: React.FC<{
     icon: React.ComponentType<{ className?: string }>;
     color: string;
   }> = [
-    { label: 'Total Items', value: stats.totalItems, icon: Package, color: 'blue' },
-    { label: 'Total Value', value: formatCurrency(stats.totalValue || 0), icon: DollarSign, color: 'green' },
-    { label: 'Total Cost', value: formatCurrency(stats.totalCost || 0), icon: TrendingDown, color: 'purple' },
-    { label: 'Low Stock', value: stats.lowStock, icon: AlertTriangle, color: 'yellow' },
-    { label: 'Out of Stock', value: stats.outOfStock, icon: AlertCircle, color: 'red' },
+    { label: 'Total Items', value: stats.totalItems, icon: Package, color: 'brand' },
+    { label: 'Total Value', value: formatCurrency(stats.totalValue || 0), icon: DollarSign, color: 'success' },
+    { label: 'Total Cost', value: formatCurrency(stats.totalCost || 0), icon: TrendingDown, color: 'secondary' },
+    { label: 'Low Stock', value: stats.lowStock, icon: AlertTriangle, color: 'warning' },
+    { label: 'Out of Stock', value: stats.outOfStock, icon: AlertCircle, color: 'danger' },
     {
       label: 'In Stock',
       value: stats.inStock ?? stats.totalItems - stats.outOfStock,
@@ -227,13 +227,13 @@ const StatsCards: React.FC<{
   }
 
   const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
-    red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    indigo: 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400',
-    teal: 'bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400',
+    brand: 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400',
+    success: 'bg-success-50 dark:bg-success-950/20 text-success-600 dark:text-success-400',
+    warning: 'bg-warning-50 dark:bg-warning-950/20 text-warning-600 dark:text-warning-400',
+    danger: 'bg-danger-50 dark:bg-danger-950/20 text-danger-600 dark:text-danger-400',
+    secondary: 'bg-secondary-50 dark:bg-secondary-950/20 text-secondary-600 dark:text-secondary-400',
+    indigo: 'bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400',
+    teal: 'bg-teal-50 dark:bg-teal-950/20 text-teal-600 dark:text-teal-400',
   };
 
   return (
@@ -254,13 +254,13 @@ const StatsCards: React.FC<{
               </p>
               <div
                 className={`p-1.5 rounded-lg ${
-                  colorClasses[card.color] || colorClasses.blue
+                  colorClasses[card.color] || colorClasses.brand
                 }`}
               >
                 <Icon className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">
+            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
               {card.value}
             </p>
           </motion.div>
@@ -290,7 +290,7 @@ const BusinessUnitSelector: React.FC<{
 
   if (businessUnits.length === 0) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-yellow-700 dark:text-yellow-300 text-sm">
+      <div className="flex items-center gap-2 px-3 py-2 bg-warning-50 dark:bg-warning-950/20 rounded-lg text-warning-700 dark:text-warning-300 text-sm">
         <AlertTriangle className="w-4 h-4" />
         <span>No business units</span>
       </div>
@@ -317,7 +317,7 @@ const BusinessUnitSelector: React.FC<{
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors min-w-[180px]"
+        className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 border border-transparent transition-colors min-w-[180px] focus-ring"
       >
         <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
         <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
@@ -337,9 +337,9 @@ const BusinessUnitSelector: React.FC<{
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden"
+            className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden custom-scrollbar"
           >
-            <div className="p-2 max-h-80 overflow-y-auto">
+            <div className="p-2 max-h-80 overflow-y-auto custom-scrollbar">
               <p className="text-xs text-gray-500 dark:text-gray-400 px-3 py-1 border-b border-gray-100 dark:border-gray-700 mb-1 flex items-center gap-2">
                 <Database className="w-3 h-3" />
                 Switch Business Unit
@@ -362,8 +362,8 @@ const BusinessUnitSelector: React.FC<{
                       w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between
                       ${
                         isSelected
-                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                          ? 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                          : 'hover:bg-brand-50/50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }
                       ${
                         !isActive
@@ -389,12 +389,12 @@ const BusinessUnitSelector: React.FC<{
                           </span>
                         )}
                         {!isActive && (
-                          <span className="text-red-500">• Inactive</span>
+                          <span className="text-danger-500">• Inactive</span>
                         )}
                       </div>
                     </div>
                     {isSelected && (
-                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />
+                      <CheckCircle className="w-4 h-4 text-brand-500 flex-shrink-0 ml-2" />
                     )}
                   </button>
                 );
@@ -418,11 +418,11 @@ const QuickActions: React.FC<{
   loading?: boolean;
 }> = ({ onAction, permissions, loading }) => {
   const actions = [
-    { id: 'add', label: 'Add Item', icon: Plus, visible: permissions.canCreate, color: 'blue' },
-    { id: 'scan', label: 'Scan Barcode', icon: Scan, visible: true, color: 'purple' },
-    { id: 'adjust', label: 'Adjust Stock', icon: RefreshCcw, visible: permissions.canAdjust, color: 'orange' },
-    { id: 'transfer', label: 'Transfer', icon: Truck, visible: permissions.canTransfer, color: 'amber' },
-    { id: 'export', label: 'Export', icon: Download, visible: permissions.canExport, color: 'green' },
+    { id: 'add', label: 'Add Item', icon: Plus, visible: permissions.canCreate, color: 'brand' },
+    { id: 'scan', label: 'Scan Barcode', icon: Scan, visible: true, color: 'secondary' },
+    { id: 'adjust', label: 'Adjust Stock', icon: RefreshCcw, visible: permissions.canAdjust, color: 'warning' },
+    { id: 'transfer', label: 'Transfer', icon: Truck, visible: permissions.canTransfer, color: 'brand' },
+    { id: 'export', label: 'Export', icon: Download, visible: permissions.canExport, color: 'success' },
     { id: 'import', label: 'Import', icon: Upload, visible: permissions.canCreate, color: 'indigo' },
     { id: 'settings', label: 'Settings', icon: Settings, visible: permissions.canAdjust, color: 'gray' },
   ];
@@ -432,13 +432,12 @@ const QuickActions: React.FC<{
   if (visibleActions.length === 0) return null;
 
   const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-600 hover:bg-blue-700 text-white',
-    purple: 'bg-purple-600 hover:bg-purple-700 text-white',
-    orange: 'bg-orange-600 hover:bg-orange-700 text-white',
-    green: 'bg-green-600 hover:bg-green-700 text-white',
+    brand: 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand',
+    secondary: 'bg-secondary-600 hover:bg-secondary-700 text-white',
+    warning: 'bg-warning-600 hover:bg-warning-700 text-white',
+    success: 'bg-success-600 hover:bg-success-700 text-white',
     indigo: 'bg-indigo-600 hover:bg-indigo-700 text-white',
     gray: 'bg-gray-600 hover:bg-gray-700 text-white',
-    amber: 'bg-amber-600 hover:bg-amber-700 text-white',
   };
 
   return (
@@ -450,7 +449,7 @@ const QuickActions: React.FC<{
             key={action.id}
             onClick={() => onAction(action.id)}
             disabled={loading}
-            className={`px-3 sm:px-4 py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors text-sm ${colorClasses[action.color]} disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`px-3 sm:px-4 py-2 rounded-lg flex items-center gap-1 sm:gap-2 transition-colors text-sm focus-ring ${colorClasses[action.color]} disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <Icon className="w-4 h-4" />
             <span className="hidden sm:inline">{action.label}</span>
@@ -546,23 +545,23 @@ const InventoryFiltersBar: React.FC<{
             value={filters.search}
             onChange={(e) => onFilterChange('search', e.target.value)}
             disabled={loading}
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
           />
         </div>
 
         <button
           onClick={onToggleFilters}
           disabled={loading}
-          className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 ${
+          className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 focus-ring ${
             showFilters
-              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              ? 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 border border-transparent'
           }`}
         >
           <Filter className="w-4 h-4" />
           Filters
           {activeFilterCount > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+            <span className="ml-1 px-1.5 py-0.5 bg-brand-600 text-white text-xs rounded-full tabular-nums">
               {activeFilterCount}
             </span>
           )}
@@ -577,9 +576,9 @@ const InventoryFiltersBar: React.FC<{
             <button
               key={opt.id}
               onClick={() => onFilterChange('sortBy', opt.id)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
+              className={`px-2 py-1 text-xs rounded transition-colors focus-ring ${
                 filters.sortBy === opt.id
-                  ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                  ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                   : 'text-gray-500 dark:text-gray-400'
               }`}
             >
@@ -610,7 +609,7 @@ const InventoryFiltersBar: React.FC<{
               onFilterChange('isActive', 'all');
             }}
             disabled={loading}
-            className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1 disabled:opacity-50"
+            className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 flex items-center gap-1 disabled:opacity-50 focus-ring transition-colors"
           >
             <X className="w-4 h-4" />
             Clear All
@@ -645,7 +644,7 @@ const InventoryFiltersBar: React.FC<{
                     }
                   }}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   <option value="">All Categories</option>
                   {allCategories.map((cat) => (
@@ -661,7 +660,7 @@ const InventoryFiltersBar: React.FC<{
                     value={filters.category}
                     onChange={(e) => onFilterChange('category', e.target.value)}
                     placeholder="Enter category..."
-                    className="w-full mt-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full mt-1 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 )}
               </div>
@@ -674,7 +673,7 @@ const InventoryFiltersBar: React.FC<{
                   value={filters.location}
                   onChange={(e) => onFilterChange('location', e.target.value)}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   <option value="">All Locations</option>
                   {allLocations.map((loc) => (
@@ -693,7 +692,7 @@ const InventoryFiltersBar: React.FC<{
                   value={filters.status}
                   onChange={(e) => onFilterChange('status', e.target.value)}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   {statusOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -716,7 +715,7 @@ const InventoryFiltersBar: React.FC<{
                     )
                   }
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   {barcodeOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -735,7 +734,7 @@ const InventoryFiltersBar: React.FC<{
                     value={filters.sortBy || 'name'}
                     onChange={(e) => onFilterChange('sortBy', e.target.value)}
                     disabled={loading}
-                    className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                   >
                     {sortOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -753,7 +752,7 @@ const InventoryFiltersBar: React.FC<{
                         onFilterChange('lowStock', e.target.checked)
                       }
                       disabled={loading}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50"
+                      className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 disabled:opacity-50 transition-colors"
                     />
                     Low Stock
                   </label>
@@ -765,7 +764,7 @@ const InventoryFiltersBar: React.FC<{
                         onFilterChange('inStock', e.target.checked)
                       }
                       disabled={loading}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50"
+                      className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 disabled:opacity-50 transition-colors"
                     />
                     In Stock
                   </label>
@@ -789,7 +788,7 @@ const InventoryFiltersBar: React.FC<{
                   }
                   placeholder="0.00"
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 />
               </div>
               <div>
@@ -807,7 +806,7 @@ const InventoryFiltersBar: React.FC<{
                   }
                   placeholder="0.00"
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 />
               </div>
               <div>
@@ -818,7 +817,7 @@ const InventoryFiltersBar: React.FC<{
                   value={filters.hasImages || 'all'}
                   onChange={(e) => onFilterChange('hasImages', e.target.value)}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   {booleanOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -835,7 +834,7 @@ const InventoryFiltersBar: React.FC<{
                   value={filters.isDigital || 'all'}
                   onChange={(e) => onFilterChange('isDigital', e.target.value)}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   {booleanOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -852,7 +851,7 @@ const InventoryFiltersBar: React.FC<{
                   value={filters.featured || 'all'}
                   onChange={(e) => onFilterChange('featured', e.target.value)}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   {booleanOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -869,7 +868,7 @@ const InventoryFiltersBar: React.FC<{
                   value={filters.isActive || 'all'}
                   onChange={(e) => onFilterChange('isActive', e.target.value)}
                   disabled={loading}
-                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 transition-colors"
                 >
                   {booleanOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -923,20 +922,20 @@ const InventoryTable: React.FC<{
       return {
         label: 'Out of Stock',
         color:
-          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+          'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
       };
     }
     if (stock <= reorderPoint) {
       return {
         label: 'Low Stock',
         color:
-          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+          'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
       };
     }
     return {
       label: 'In Stock',
       color:
-        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+        'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
     };
   };
 
@@ -950,7 +949,7 @@ const InventoryTable: React.FC<{
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
           <span className="ml-3 text-gray-500 dark:text-gray-400">
             Loading inventory...
           </span>
@@ -975,7 +974,7 @@ const InventoryTable: React.FC<{
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -986,7 +985,7 @@ const InventoryTable: React.FC<{
                     selectedItems.length === data.length && data.length > 0
                   }
                   onChange={onSelectAll}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 transition-colors"
                 />
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -1027,8 +1026,8 @@ const InventoryTable: React.FC<{
               return (
                 <tr
                   key={item.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${
-                    isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                  className={`hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors cursor-pointer ${
+                    isSelected ? 'bg-brand-50 dark:bg-brand-950/20' : ''
                   }`}
                   onClick={() => onView(item)}
                 >
@@ -1040,7 +1039,7 @@ const InventoryTable: React.FC<{
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => onSelectItem(item.id)}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 transition-colors"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -1077,13 +1076,13 @@ const InventoryTable: React.FC<{
                             </span>
                           )}
                           {item.isDigital && (
-                            <span className="text-xs text-blue-400 flex items-center gap-0.5">
+                            <span className="text-xs text-brand-400 flex items-center gap-0.5">
                               <Globe className="w-3 h-3" />
                               Digital
                             </span>
                           )}
                           {item.featured && (
-                            <span className="text-xs text-yellow-400 flex items-center gap-0.5">
+                            <span className="text-xs text-brand-400 flex items-center gap-0.5">
                               <Star className="w-3 h-3" />
                               Featured
                             </span>
@@ -1104,7 +1103,7 @@ const InventoryTable: React.FC<{
                   <td className="px-4 py-3 hidden lg:table-cell">
                     {hasBarcode ? (
                       <div className="flex items-center gap-1">
-                        <Barcode className="w-4 h-4 text-green-500" />
+                        <Barcode className="w-4 h-4 text-success-500" />
                         <span className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate max-w-[100px]">
                           {item.barcode}
                         </span>
@@ -1113,17 +1112,17 @@ const InventoryTable: React.FC<{
                       <span className="text-xs text-gray-400">No barcode</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(item.price || item.unitPrice || 0)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span
-                      className={`font-medium ${
+                      className={`font-medium tabular-nums ${
                         stock === 0
-                          ? 'text-red-600 dark:text-red-400'
+                          ? 'text-danger-600 dark:text-danger-400'
                           : stock <= (item.reorderPoint || item.minStock || 5)
-                          ? 'text-yellow-600 dark:text-yellow-400'
-                          : 'text-green-600 dark:text-green-400'
+                          ? 'text-warning-600 dark:text-warning-400'
+                          : 'text-success-600 dark:text-success-400'
                       }`}
                     >
                       {stock}
@@ -1134,7 +1133,7 @@ const InventoryTable: React.FC<{
                       )}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-500 dark:text-gray-400 hidden lg:table-cell">
+                  <td className="px-4 py-3 text-right text-sm text-gray-500 dark:text-gray-400 hidden lg:table-cell tabular-nums">
                     {formatCurrency(stockValue)}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
@@ -1152,39 +1151,39 @@ const InventoryTable: React.FC<{
                       {hasBarcode && (
                         <button
                           onClick={() => onPrintBarcode(item)}
-                          className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
+                          className="p-1 hover:bg-success-100 dark:hover:bg-success-950/30 rounded transition-colors focus-ring"
                           title="Print Barcode"
                         >
-                          <Printer className="w-4 h-4 text-green-500" />
+                          <Printer className="w-4 h-4 text-success-500" />
                         </button>
                       )}
                       <button
                         onClick={() => onAdjust(item)}
-                        className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded transition-colors"
+                        className="p-1 hover:bg-warning-100 dark:hover:bg-warning-950/30 rounded transition-colors focus-ring"
                         title="Adjust Stock"
                       >
-                        <RefreshCcw className="w-4 h-4 text-amber-500" />
+                        <RefreshCcw className="w-4 h-4 text-warning-500" />
                       </button>
                       <button
                         onClick={() => onView(item)}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                         title="View Details"
                       >
                         <Eye className="w-4 h-4 text-gray-500" />
                       </button>
                       <button
                         onClick={() => onEdit(item)}
-                        className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                        className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                         title="Edit"
                       >
-                        <Edit className="w-4 h-4 text-blue-500" />
+                        <Edit className="w-4 h-4 text-brand-500" />
                       </button>
                       <button
                         onClick={() => onDelete(item.id)}
-                        className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                        className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-4 h-4 text-brand-accent-500" />
                       </button>
                     </div>
                   </td>
@@ -1198,7 +1197,7 @@ const InventoryTable: React.FC<{
       {pagination.totalPages > 1 && (
         <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
               Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
               {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
               {pagination.total}
@@ -1206,7 +1205,7 @@ const InventoryTable: React.FC<{
             <select
               value={pagination.limit}
               onChange={(e) => onLimitChange(parseInt(e.target.value))}
-              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 focus:ring-2 focus:ring-brand-500 transition-colors"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
@@ -1218,17 +1217,17 @@ const InventoryTable: React.FC<{
             <button
               onClick={() => onPageChange(pagination.page - 1)}
               disabled={pagination.page <= 1}
-              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-brand-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
             >
               Previous
             </button>
-            <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300">
+            <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
               Page {pagination.page} of {pagination.totalPages}
             </span>
             <button
               onClick={() => onPageChange(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
-              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-brand-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
             >
               Next
             </button>
@@ -1306,14 +1305,14 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({
         <Clock className="w-4 h-4 text-gray-400" />
         Recent Activity
       </h3>
-      <div className="space-y-3 max-h-[300px] overflow-y-auto">
+      <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar">
         {activities.map((activity: any, index) => (
           <div key={index} className="flex items-start gap-3 text-sm">
             <div
               className={`p-1.5 rounded-full ${
                 activity.quantity && activity.quantity > 0
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                  : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                  ? 'bg-success-100 dark:bg-success-950/30 text-success-600 dark:text-success-400'
+                  : 'bg-danger-100 dark:bg-danger-950/30 text-danger-600 dark:text-danger-400'
               }`}
             >
               {activity.quantity && activity.quantity > 0 ? (
@@ -1328,10 +1327,10 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({
                   {activity.product?.name || 'Unknown'}
                 </span>
                 <span
-                  className={`ml-1 ${
+                  className={`ml-1 tabular-nums ${
                     activity.quantity && activity.quantity > 0
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-red-600 dark:text-red-400'
+                      ? 'text-success-600 dark:text-success-400'
+                      : 'text-danger-600 dark:text-danger-400'
                   }`}
                 >
                   {activity.quantity && activity.quantity > 0 ? '+' : ''}
@@ -1393,13 +1392,13 @@ const InventoryCharts: React.FC<{
                   <span className="text-gray-600 dark:text-gray-400 truncate flex-1 mr-2">
                     {name}
                   </span>
-                  <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                  <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap tabular-nums">
                     {cat.count} units
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-0.5">
                   <div
-                    className="bg-blue-500 rounded-full h-1.5 transition-all duration-500"
+                    className="bg-brand-500 rounded-full h-1.5 transition-all duration-500"
                     style={{ width: `${Math.min(percentage, 100)}%` }}
                   />
                 </div>
@@ -1408,7 +1407,7 @@ const InventoryCharts: React.FC<{
           })}
         </div>
       )}
-      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 flex justify-between">
+      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 flex justify-between tabular-nums">
         <span>Total: {total} units</span>
         <span>{data.length} items</span>
       </div>
@@ -1497,19 +1496,19 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ duration: 0.2 }}
-        className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4 border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto"
+        className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4 border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto custom-scrollbar"
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
+          className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400 focus-ring"
           aria-label="Close modal"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-            <RefreshCcw className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <div className="p-2 bg-brand-50 dark:bg-brand-950/30 rounded-lg">
+            <RefreshCcw className="w-5 h-5 text-brand-600 dark:text-brand-400" />
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1527,7 +1526,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <span className="text-gray-600 dark:text-gray-300">
                 Current Stock
               </span>
-              <p className="font-semibold text-gray-900 dark:text-white">
+              <p className="font-semibold text-gray-900 dark:text-white tabular-nums">
                 {currentStock} units
               </p>
             </div>
@@ -1536,7 +1535,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                 <span className="text-gray-600 dark:text-gray-300">
                   Reserved
                 </span>
-                <p className="font-semibold text-yellow-600 dark:text-yellow-400">
+                <p className="font-semibold text-warning-600 dark:text-warning-400 tabular-nums">
                   {reserved} units
                 </p>
               </div>
@@ -1546,12 +1545,12 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                 Available
               </span>
               <p
-                className={`font-semibold ${
+                className={`font-semibold tabular-nums ${
                   availableStock === 0
-                    ? 'text-red-600 dark:text-red-400'
+                    ? 'text-danger-600 dark:text-danger-400'
                     : isLowStock
-                    ? 'text-yellow-600 dark:text-yellow-400'
-                    : 'text-green-600 dark:text-green-400'
+                    ? 'text-warning-600 dark:text-warning-400'
+                    : 'text-success-600 dark:text-success-400'
                 }`}
               >
                 {availableStock} units
@@ -1561,7 +1560,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <span className="text-gray-600 dark:text-gray-300">
                 Reorder Point
               </span>
-              <p className="font-semibold text-gray-700 dark:text-gray-300">
+              <p className="font-semibold text-gray-700 dark:text-gray-300 tabular-nums">
                 {reorderPoint} units
               </p>
             </div>
@@ -1571,8 +1570,8 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <p
                 className={`text-sm flex items-center gap-1 ${
                   isOutOfStock
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-yellow-600 dark:text-yellow-400'
+                    ? 'text-danger-600 dark:text-danger-400'
+                    : 'text-warning-600 dark:text-warning-400'
                 }`}
               >
                 {isOutOfStock ? (
@@ -1595,10 +1594,10 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <button
                 type="button"
                 onClick={() => setLocalType('ADJUSTMENT_IN')}
-                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 focus-ring ${
                   localType === 'ADJUSTMENT_IN'
-                    ? 'bg-green-600 text-white shadow-md ring-2 ring-green-500 ring-offset-2 dark:ring-offset-gray-800'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    ? 'bg-success-600 text-white shadow-md ring-2 ring-success-500 ring-offset-2 dark:ring-offset-gray-800'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-success-50 dark:hover:bg-gray-600 hover:border-success-300 dark:hover:border-success-700 border border-transparent'
                 }`}
                 disabled={loading}
               >
@@ -1610,10 +1609,10 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <button
                 type="button"
                 onClick={() => setLocalType('ADJUSTMENT_OUT')}
-                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 focus-ring ${
                   localType === 'ADJUSTMENT_OUT'
-                    ? 'bg-red-600 text-white shadow-md ring-2 ring-red-500 ring-offset-2 dark:ring-offset-gray-800'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    ? 'bg-brand-accent-600 text-white shadow-md ring-2 ring-brand-accent-500 ring-offset-2 dark:ring-offset-gray-800'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-brand-accent-50 dark:hover:bg-gray-600 hover:border-brand-accent-300 dark:hover:border-brand-accent-700 border border-transparent'
                 }`}
                 disabled={loading}
               >
@@ -1627,7 +1626,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Quantity <span className="text-red-500">*</span>
+              Quantity <span className="text-brand-accent-500">*</span>
             </label>
             <div className="relative">
               <input
@@ -1638,7 +1637,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                 }
                 min="0"
                 step="1"
-                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors"
+                className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors tabular-nums"
                 placeholder="Enter quantity"
                 disabled={loading}
                 autoFocus
@@ -1650,7 +1649,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
 
             {localType === 'ADJUSTMENT_OUT' &&
               localQuantity > currentStock && (
-                <p className="mt-1.5 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                <p className="mt-1.5 text-sm text-danger-600 dark:text-danger-400 flex items-center gap-1">
                   <AlertCircle className="w-4 h-4" />
                   Cannot remove more than current stock ({currentStock} units)
                 </p>
@@ -1663,25 +1662,25 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                     New stock:
                   </span>
                   <span
-                    className={`font-semibold ${
+                    className={`font-semibold tabular-nums ${
                       isNewStockOut
-                        ? 'text-red-600 dark:text-red-400'
+                        ? 'text-danger-600 dark:text-danger-400'
                         : isNewStockLow
-                        ? 'text-yellow-600 dark:text-yellow-400'
-                        : 'text-green-600 dark:text-green-400'
+                        ? 'text-warning-600 dark:text-warning-400'
+                        : 'text-success-600 dark:text-success-400'
                     }`}
                   >
                     {newStock} units
                   </span>
                 </div>
                 {isNewStockLow && !isNewStockOut && (
-                  <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-warning-600 dark:text-warning-400 mt-1 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
                     Below reorder point ({reorderPoint} units)
                   </p>
                 )}
                 {isNewStockOut && (
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-danger-600 dark:text-danger-400 mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     Will be out of stock
                   </p>
@@ -1689,7 +1688,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                 {!isNewStockLow &&
                   !isNewStockOut &&
                   localType === 'ADJUSTMENT_IN' && (
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                    <p className="text-xs text-success-600 dark:text-success-400 mt-1 flex items-center gap-1">
                       <CheckCircle className="w-3 h-3" />
                       Stock level healthy
                     </p>
@@ -1709,7 +1708,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               value={localNotes}
               onChange={(e) => setLocalNotes(e.target.value)}
               rows={3}
-              className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors resize-none"
+              className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors resize-none"
               placeholder="Reason for adjustment (e.g., Restock, Damaged, Return, etc.)"
               disabled={loading}
             />
@@ -1719,7 +1718,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
         <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={onClose}
-            className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 text-sm font-medium w-full sm:w-auto"
+            className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 text-sm font-medium w-full sm:w-auto focus-ring"
             disabled={loading}
           >
             Cancel
@@ -1732,10 +1731,10 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               (localType === 'ADJUSTMENT_OUT' &&
                 localQuantity > currentStock)
             }
-            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto focus-ring shadow-brand ${
               localType === 'ADJUSTMENT_IN'
-                ? 'bg-green-600 hover:bg-green-700 text-white'
-                : 'bg-red-600 hover:bg-red-700 text-white'
+                ? 'bg-success-600 hover:bg-success-700 text-white'
+                : 'bg-brand-accent-600 hover:bg-brand-accent-700 text-white'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {loading ? (
@@ -2724,7 +2723,7 @@ export default function InventoryDashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Checking your session...
           </p>
@@ -2753,7 +2752,7 @@ export default function InventoryDashboardPage() {
           </p>
           <button
             onClick={() => router.push('/login')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Go to Login
           </button>
@@ -2783,7 +2782,7 @@ export default function InventoryDashboardPage() {
           </p>
           <button
             onClick={() => router.push('/dashboard')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Go to Dashboard
           </button>
@@ -2801,7 +2800,7 @@ export default function InventoryDashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading inventory...
           </p>
@@ -2832,16 +2831,16 @@ export default function InventoryDashboardPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <Package className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+            <Package className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
             Inventory Management
           </h1>
           <div className="flex flex-wrap items-center gap-3 mt-1">
-            <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
+            <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 tabular-nums">
               {stats.totalItems} items •{' '}
               {formatCurrency(stats.totalValue || 0)} total value
             </p>
             {stats.withBarcode !== undefined && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-400 tabular-nums">
                 {stats.withBarcode} with barcode • {stats.withoutBarcode}{' '}
                 without
               </span>
@@ -2852,7 +2851,7 @@ export default function InventoryDashboardPage() {
               </span>
             )}
             {selectedBU && (
-              <span className="text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+              <span className="text-xs bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full flex items-center gap-1">
                 <Building className="w-3 h-3" />
                 {selectedBU.name}
               </span>
@@ -2871,7 +2870,7 @@ export default function InventoryDashboardPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing || loading}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw
@@ -2882,7 +2881,7 @@ export default function InventoryDashboardPage() {
           {canCreate && (
             <button
               onClick={() => router.push('/admin/inventory/add')}
-              className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
+              className="px-3 sm:px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add Item</span>
@@ -2919,9 +2918,9 @@ export default function InventoryDashboardPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
+            className="bg-brand-50 dark:bg-brand-950/20 border border-brand-200 dark:border-brand-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
           >
-            <span className="text-sm text-blue-700 dark:text-blue-300">
+            <span className="text-sm text-brand-700 dark:text-brand-300 tabular-nums">
               {selectedItems.length} item
               {selectedItems.length > 1 ? 's' : ''} selected
             </span>
@@ -2929,7 +2928,7 @@ export default function InventoryDashboardPage() {
               {canDelete && (
                 <button
                   onClick={handleBulkDelete}
-                  className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
+                  className="px-3 py-1 bg-brand-accent-600 text-white rounded-lg text-sm hover:bg-brand-accent-700 transition-colors flex items-center gap-1 focus-ring"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete
@@ -2940,7 +2939,7 @@ export default function InventoryDashboardPage() {
                   setSelectedItems([]);
                   setShowBulkActions(false);
                 }}
-                className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center gap-1"
+                className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center gap-1 focus-ring"
               >
                 <X className="w-4 h-4" />
                 Cancel

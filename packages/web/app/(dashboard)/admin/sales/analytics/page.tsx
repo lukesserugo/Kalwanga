@@ -61,9 +61,9 @@ export default function SalesAnalytics() {
                 <button
                   key={v}
                   onClick={() => setView(v as any)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors focus-ring ${
                     view === v
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-brand-500 text-white'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
@@ -73,7 +73,7 @@ export default function SalesAnalytics() {
             </div>
             <button
               onClick={loadAnalytics}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
             >
               <RefreshCw className="w-4 h-4" />
               Refresh
@@ -82,7 +82,7 @@ export default function SalesAnalytics() {
         </div>
 
         {/* Date Range Filter */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="card-brand p-4 mb-6">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-gray-400" />
@@ -92,18 +92,18 @@ export default function SalesAnalytics() {
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
             />
             <span className="text-gray-500 dark:text-gray-400">to</span>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
             />
             <button
               onClick={loadAnalytics}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filter
             </button>
@@ -140,28 +140,28 @@ export default function SalesAnalytics() {
             value={analytics?.bestCategory || 'N/A'}
             subtitle={`${analytics?.bestCategorySales || 0} units`}
             icon={Award}
-            color="gold"
+            color="warning"
           />
           <MetricCard
             title="Average Order Value"
             value={formatCurrency(analytics?.averageOrderValue || 0)}
             subtitle={`${analytics?.averageItems || 0} items per order`}
             icon={TrendingUp}
-            color="green"
+            color="success"
           />
           <MetricCard
             title="Customer Retention"
             value={`${analytics?.retentionRate || 0}%`}
             subtitle={`${analytics?.returningCustomers || 0} returning customers`}
             icon={Users}
-            color="blue"
+            color="brand"
           />
           <MetricCard
             title="Conversion Rate"
             value={`${analytics?.conversionRate || 0}%`}
             subtitle={`${analytics?.totalVisitors || 0} visitors`}
             icon={Target}
-            color="purple"
+            color="secondary"
           />
         </div>
       </div>
@@ -172,9 +172,9 @@ export default function SalesAnalytics() {
 // Helper Components
 function AnalyticsCard({ title, icon: Icon, children }: any) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-6">
       <div className="flex items-center gap-2 mb-4">
-        <Icon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        <Icon className="w-5 h-5 text-brand-600 dark:text-brand-400" />
         <h3 className="font-semibold text-gray-900 dark:text-white">{title}</h3>
       </div>
       {children}
@@ -184,22 +184,22 @@ function AnalyticsCard({ title, icon: Icon, children }: any) {
 
 function MetricCard({ title, value, subtitle, icon: Icon, color }: any) {
   const colors: Record<string, string> = {
-    gold: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
+    success: 'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
+    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-600 dark:text-secondary-400',
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-6">
       <div className="flex items-center gap-3">
         <div className={`p-3 rounded-lg ${colors[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
         <div>
           <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">{value}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">{subtitle}</p>
         </div>
       </div>
     </div>
@@ -247,15 +247,15 @@ function CustomerInsights({ data }: any) {
     <div className="space-y-3">
       <div className="flex justify-between">
         <span className="text-gray-600 dark:text-gray-400">New Customers</span>
-        <span className="font-semibold text-gray-900 dark:text-white">{data.newCustomers || 0}</span>
+        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{data.newCustomers || 0}</span>
       </div>
       <div className="flex justify-between">
         <span className="text-gray-600 dark:text-gray-400">Returning Customers</span>
-        <span className="font-semibold text-gray-900 dark:text-white">{data.returningCustomers || 0}</span>
+        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{data.returningCustomers || 0}</span>
       </div>
       <div className="flex justify-between">
         <span className="text-gray-600 dark:text-gray-400">Total Customers</span>
-        <span className="font-semibold text-gray-900 dark:text-white">{data.totalCustomers || 0}</span>
+        <span className="font-semibold text-gray-900 dark:text-white tabular-nums">{data.totalCustomers || 0}</span>
       </div>
     </div>
   );

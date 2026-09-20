@@ -47,7 +47,7 @@ export default function BarcodePrintPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
       </div>
     );
   }
@@ -56,7 +56,7 @@ export default function BarcodePrintPage() {
     <div className="flex items-center justify-center min-h-screen p-8 print:p-0">
       <div className="text-center print:block">
         {barcodeUrl && (
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-8 print:border-none">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-2xl p-8 print:border-none">
             <img
               src={barcodeUrl}
               alt={`Barcode for ${product?.name || ''}`}
@@ -65,8 +65,12 @@ export default function BarcodePrintPage() {
             {product && (
               <div className="mt-4">
                 <p className="text-xl font-bold">{product.name}</p>
-                <p className="text-sm text-gray-500">SKU: {product.sku}</p>
-                <p className="text-lg font-semibold">${product.unitPrice?.toFixed(2)}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-mono tabular-nums">
+                  SKU: {product.sku}
+                </p>
+                <p className="text-lg font-semibold tabular-nums">
+                  ${product.unitPrice?.toFixed(2)}
+                </p>
               </div>
             )}
           </div>

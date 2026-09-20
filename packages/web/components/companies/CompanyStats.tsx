@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\companies\components\CompanyStats.tsx
-
 'use client';
 
 import React from 'react';
@@ -27,15 +25,9 @@ interface CompanyStatsProps {
   };
   currency?: string;
   timezone?: string;
-  /** Timestamp the stats were fetched. Defaults to now. */
   updatedAt?: string | Date;
   isLoading?: boolean;
 }
-
-// ============================================================
-// Currency formatting helpers (module-level so they don't
-// recreate on every render).
-// ============================================================
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
@@ -69,23 +61,18 @@ function formatCompactNumber(num: number): string {
 
 function formatRevenue(num: number, symbol: string): string {
   if (!Number.isFinite(num)) return `${symbol}0`;
-  if (Math.abs(num) >= 1_000_000) return `${symbol}${(num / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(num) >= 1_000_000)
+    return `${symbol}${(num / 1_000_000).toFixed(1)}M`;
   if (Math.abs(num) >= 1_000) return `${symbol}${(num / 1_000).toFixed(1)}K`;
   return `${symbol}${num.toLocaleString()}`;
 }
 
-// ============================================================
-// Skeleton — matches the real layout so there's no layout shift
-// ============================================================
 function CompanyStatsSkeleton() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {Array.from({ length: 7 }).map((_, i) => (
-          <div
-            key={i}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4"
-          >
+          <div key={i} className="card-brand !p-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
@@ -97,16 +84,13 @@ function CompanyStatsSkeleton() {
         ))}
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand !p-4">
         <div className="h-4 w-full bg-gray-200 dark:bg-gray-700 rounded" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div
-            key={i}
-            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4"
-          >
+          <div key={i} className="card-brand !p-4">
             <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded" />
             <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded mt-3" />
           </div>
@@ -134,61 +118,60 @@ export function CompanyStats({
       label: 'Business Units',
       value: stats.totalBusinessUnits || 0,
       icon: Briefcase,
-      color: 'text-blue-600 dark:text-blue-400',
-      bg: 'bg-blue-50 dark:bg-blue-900/30',
-      borderColor: 'border-blue-200 dark:border-blue-800',
+      color: 'text-brand-600 dark:text-brand-400',
+      bg: 'bg-brand-50 dark:bg-brand-900/30',
+      borderColor: 'border-brand-200 dark:border-brand-800',
     },
     {
       label: 'Users',
       value: stats.totalUsers || 0,
       icon: Users,
-      color: 'text-green-600 dark:text-green-400',
-      bg: 'bg-green-50 dark:bg-green-900/30',
-      borderColor: 'border-green-200 dark:border-green-800',
+      color: 'text-success-600 dark:text-success-400',
+      bg: 'bg-success-50 dark:bg-success-900/30',
+      borderColor: 'border-success-200 dark:border-success-800',
     },
     {
       label: 'Products',
       value: stats.totalProducts || 0,
       icon: Package,
-      color: 'text-purple-600 dark:text-purple-400',
-      bg: 'bg-purple-50 dark:bg-purple-900/30',
-      borderColor: 'border-purple-200 dark:border-purple-800',
+      color: 'text-secondary-600 dark:text-secondary-400',
+      bg: 'bg-secondary-50 dark:bg-secondary-900/30',
+      borderColor: 'border-secondary-200 dark:border-secondary-800',
     },
     {
       label: 'Sales',
       value: stats.totalSales || 0,
       icon: ShoppingBag,
-      color: 'text-orange-600 dark:text-orange-400',
-      bg: 'bg-orange-50 dark:bg-orange-900/30',
-      borderColor: 'border-orange-200 dark:border-orange-800',
+      color: 'text-brand-600 dark:text-brand-400',
+      bg: 'bg-brand-50 dark:bg-brand-900/30',
+      borderColor: 'border-brand-200 dark:border-brand-800',
     },
     {
       label: 'Revenue',
       value: formatRevenue(stats.totalRevenue || 0, currencySymbol),
       icon: DollarSign,
-      color: 'text-yellow-600 dark:text-yellow-400',
-      bg: 'bg-yellow-50 dark:bg-yellow-900/30',
-      borderColor: 'border-yellow-200 dark:border-yellow-800',
+      color: 'text-warning-600 dark:text-warning-400',
+      bg: 'bg-warning-50 dark:bg-warning-900/30',
+      borderColor: 'border-warning-200 dark:border-warning-800',
     },
     {
       label: 'Customers',
       value: stats.totalCustomers || 0,
       icon: UserPlus,
-      color: 'text-pink-600 dark:text-pink-400',
-      bg: 'bg-pink-50 dark:bg-pink-900/30',
-      borderColor: 'border-pink-200 dark:border-pink-800',
+      color: 'text-brand-accent-600 dark:text-brand-accent-400',
+      bg: 'bg-brand-accent-50 dark:bg-brand-accent-900/30',
+      borderColor: 'border-brand-accent-200 dark:border-brand-accent-800',
     },
     {
       label: 'Suppliers',
       value: stats.totalSuppliers || 0,
       icon: Truck,
-      color: 'text-indigo-600 dark:text-indigo-400',
-      bg: 'bg-indigo-50 dark:bg-indigo-900/30',
-      borderColor: 'border-indigo-200 dark:border-indigo-800',
+      color: 'text-secondary-600 dark:text-secondary-400',
+      bg: 'bg-secondary-50 dark:bg-secondary-900/30',
+      borderColor: 'border-secondary-200 dark:border-secondary-800',
     },
   ];
 
-  // Format the updated timestamp using the timezone prop
   const formattedTimestamp = (() => {
     const date = updatedAt ? new Date(updatedAt) : new Date();
     try {
@@ -198,7 +181,6 @@ export function CompanyStats({
         timeZone: timezone,
       }).format(date);
     } catch {
-      // Invalid timezone → fall back to local
       return date.toLocaleString();
     }
   })();
@@ -212,14 +194,14 @@ export function CompanyStats({
           return (
             <div
               key={card.label}
-              className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border ${card.borderColor} p-4 hover:shadow-md transition-shadow`}
+              className={`card-brand !p-4 !border ${card.borderColor} hover:shadow-card-hover transition-shadow`}
             >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     {card.label}
                   </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
                     {card.value}
                   </p>
                 </div>
@@ -233,13 +215,13 @@ export function CompanyStats({
       </div>
 
       {/* Summary Bar */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand !p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-2">
               <Building className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {stats.totalBusinessUnits}
                 </span>{' '}
                 Business Units
@@ -248,7 +230,7 @@ export function CompanyStats({
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {stats.totalUsers}
                 </span>{' '}
                 Users
@@ -257,7 +239,7 @@ export function CompanyStats({
             <div className="flex items-center gap-2">
               <Package className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {stats.totalProducts}
                 </span>{' '}
                 Products
@@ -266,7 +248,7 @@ export function CompanyStats({
             <div className="flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {stats.totalSales}
                 </span>{' '}
                 Sales
@@ -275,14 +257,14 @@ export function CompanyStats({
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-gray-400 dark:text-gray-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {formatRevenue(stats.totalRevenue, currencySymbol)}
                 </span>{' '}
                 Revenue
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+          <div className="flex items-center gap-2 text-2xs text-gray-400 dark:text-gray-500">
             <Calendar className="w-3.5 h-3.5" />
             <span>
               Updated: {formattedTimestamp} • {timezone}
@@ -293,62 +275,62 @@ export function CompanyStats({
 
       {/* Derived Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
-          <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">
+        <div className="bg-gradient-to-r from-brand-50 to-brand-100 dark:from-brand-900/20 dark:to-brand-900/10 rounded-2xl border border-brand-200 dark:border-brand-800 p-4">
+          <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300">
             Quick Stats
           </h4>
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div>
-              <p className="text-xs text-blue-600 dark:text-blue-400">
+              <p className="text-2xs text-brand-600 dark:text-brand-400">
                 Total Customers
               </p>
-              <p className="text-lg font-bold text-blue-900 dark:text-blue-200">
+              <p className="text-lg font-bold text-brand-900 dark:text-brand-200 tabular-nums">
                 {stats.totalCustomers}
               </p>
             </div>
             <div>
-              <p className="text-xs text-blue-600 dark:text-blue-400">
+              <p className="text-2xs text-brand-600 dark:text-brand-400">
                 Total Suppliers
               </p>
-              <p className="text-lg font-bold text-blue-900 dark:text-blue-200">
+              <p className="text-lg font-bold text-brand-900 dark:text-brand-200 tabular-nums">
                 {stats.totalSuppliers}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/10 rounded-xl border border-green-200 dark:border-green-800 p-4">
-          <h4 className="text-sm font-medium text-green-800 dark:text-green-300">
+        <div className="bg-gradient-to-r from-success-50 to-success-100 dark:from-success-900/20 dark:to-success-900/10 rounded-2xl border border-success-200 dark:border-success-800 p-4">
+          <h4 className="text-sm font-medium text-success-800 dark:text-success-300">
             Revenue Breakdown
           </h4>
           <div className="mt-2">
-            <p className="text-xs text-green-600 dark:text-green-400">
+            <p className="text-2xs text-success-600 dark:text-success-400">
               Average Revenue per Sale
             </p>
-            <p className="text-lg font-bold text-green-900 dark:text-green-200">
+            <p className="text-lg font-bold text-success-900 dark:text-success-200 tabular-nums">
               {stats.totalSales > 0
                 ? formatRevenue(
                     stats.totalRevenue / stats.totalSales,
-                    currencySymbol
+                    currencySymbol,
                   )
                 : formatRevenue(0, currencySymbol)}
             </p>
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-900/10 rounded-xl border border-purple-200 dark:border-purple-800 p-4">
-          <h4 className="text-sm font-medium text-purple-800 dark:text-purple-300">
+        <div className="bg-gradient-to-r from-secondary-50 to-secondary-100 dark:from-secondary-900/20 dark:to-secondary-900/10 rounded-2xl border border-secondary-200 dark:border-secondary-800 p-4">
+          <h4 className="text-sm font-medium text-secondary-800 dark:text-secondary-300">
             Business Growth
           </h4>
           <div className="mt-2">
-            <p className="text-xs text-purple-600 dark:text-purple-400">
+            <p className="text-2xs text-secondary-600 dark:text-secondary-400">
               Revenue per Business Unit
             </p>
-            <p className="text-lg font-bold text-purple-900 dark:text-purple-200">
+            <p className="text-lg font-bold text-secondary-900 dark:text-secondary-200 tabular-nums">
               {stats.totalBusinessUnits > 0
                 ? formatRevenue(
                     stats.totalRevenue / stats.totalBusinessUnits,
-                    currencySymbol
+                    currencySymbol,
                   )
                 : formatRevenue(0, currencySymbol)}
             </p>

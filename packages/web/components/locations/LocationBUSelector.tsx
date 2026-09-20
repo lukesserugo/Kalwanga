@@ -77,7 +77,7 @@ export function LocationBUSelector({
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled || businessUnits.length === 0}
-        className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors min-w-[220px] disabled:opacity-50"
+        className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 min-w-[220px] disabled:opacity-50 focus-ring"
       >
         <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
         <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
@@ -91,7 +91,7 @@ export function LocationBUSelector({
       </button>
 
       {open && businessUnits.length > 0 && (
-        <div className="absolute z-50 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-modal mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-card max-h-60 overflow-y-auto custom-scrollbar animate-slide-down">
           {businessUnits.map((bu) => (
             <button
               key={bu.id}
@@ -105,15 +105,15 @@ export function LocationBUSelector({
                   /* ignore */
                 }
               }}
-              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 focus-ring ${
                 bu.id === value
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
                   : 'text-gray-700 dark:text-gray-300'
               }`}
             >
               <span className="font-medium">{bu.name}</span>
               {bu.code && (
-                <span className="text-xs text-gray-400 ml-2">
+                <span className="text-2xs font-mono tabular-nums text-gray-400 dark:text-gray-500 ml-2">
                   ({bu.code})
                 </span>
               )}

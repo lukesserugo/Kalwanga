@@ -31,14 +31,14 @@ export function LocationPageHeader({
         <button
           type="button"
           onClick={() => router.push(backHref)}
-          className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex-shrink-0"
+          className="p-2 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 flex-shrink-0 focus-ring"
           aria-label="Back"
         >
           <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
         </button>
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Icon className="w-6 h-6 text-blue-500 flex-shrink-0" />
+            <Icon className="w-6 h-6 text-brand-500 dark:text-brand-400 flex-shrink-0" />
             <span className="truncate">{title}</span>
           </h1>
           {description && (

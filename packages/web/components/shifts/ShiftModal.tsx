@@ -41,13 +41,13 @@ export function ShiftModal({ isOpen, onClose, onSubmit, register }: ShiftModalPr
     e.preventDefault();
     setError(null);
     setLoading(true);
-    
+
     try {
       const amount = parseFloat(formData.startingBalance);
       if (isNaN(amount) || amount < 0) {
         throw new Error('Please enter a valid starting balance');
       }
-      
+
       await onSubmit({
         cashRegisterId: register.id,
         startingBalance: amount,
@@ -72,10 +72,12 @@ export function ShiftModal({ isOpen, onClose, onSubmit, register }: ShiftModalPr
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">
         <DialogHeader>
-          <DialogTitle>Start Shift</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="text-gray-900 dark:text-white">
+            Start Shift
+          </DialogTitle>
+          <DialogDescription className="text-gray-500 dark:text-gray-400">
             Open a new shift for <strong>{register.name}</strong>
           </DialogDescription>
         </DialogHeader>
@@ -83,25 +85,44 @@ export function ShiftModal({ isOpen, onClose, onSubmit, register }: ShiftModalPr
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 py-2">
             {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
+              <Alert
+                variant="destructive"
+                className="bg-danger-50 dark:bg-danger-950/30 border-danger-200 dark:border-danger-900"
+              >
+                <AlertCircle className="h-4 w-4 text-danger-600 dark:text-danger-400" />
+                <AlertDescription className="text-danger-700 dark:text-danger-300">
+                  {error}
+                </AlertDescription>
               </Alert>
             )}
 
-            <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-2 border border-gray-200 dark:border-gray-700">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Register</span>
-                <span className="font-medium">{register.name}</span>
+                <span className="text-2xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Register
+                </span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {register.name}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Current Balance</span>
-                <span className="font-medium">{formatCurrency(register.cashBalance || 0)}</span>
+                <span className="text-2xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Current Balance
+                </span>
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                  {formatCurrency(register.cashBalance || 0)}
+                </span>
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="startingBalance">Starting Balance *</Label>
+              <Label
+                htmlFor="startingBalance"
+                required
+                className="text-gray-700 dark:text-gray-300"
+              >
+                Starting Balance
+              </Label>
               <Input
                 id="startingBalance"
                 type="number"
@@ -111,33 +132,45 @@ export function ShiftModal({ isOpen, onClose, onSubmit, register }: ShiftModalPr
                 min="0"
                 step="0.01"
                 required
+                className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-brand-500 tabular-nums"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-2xs text-gray-500 dark:text-gray-400">
                 Initial cash amount in the register at shift start
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="notes">Notes (optional)</Label>
+              <Label
+                htmlFor="notes"
+                className="text-gray-700 dark:text-gray-300"
+              >
+                Notes (optional)
+              </Label>
               <Input
                 id="notes"
                 placeholder="Any notes about this shift"
                 value={formData.notes}
                 onChange={handleInputChange}
+                className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 focus-visible:ring-brand-500"
               />
             </div>
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button 
-              type="button" 
-              variant="outline" 
+            <Button
+              type="button"
+              variant="outline"
               onClick={onClose}
               disabled={loading}
+              className="focus-ring"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="btn-brand shadow-brand focus-ring"
+            >
               {loading ? 'Starting...' : 'Start Shift'}
             </Button>
           </DialogFooter>

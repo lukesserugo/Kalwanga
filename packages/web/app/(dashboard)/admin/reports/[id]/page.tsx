@@ -23,7 +23,7 @@ export default function ReportDetailPage() {
   const id = params?.id as string;
   const { user } = useAuth();
   const { canView, canDelete, canManage } = usePermission();
-  
+
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -84,8 +84,13 @@ export default function ReportDetailPage() {
   if (!canViewReport) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
-        <Lock className="w-12 h-12 text-gray-400 mb-4" />
-        <h2 className="text-2xl font-bold">Access Restricted</h2>
+        <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+          <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You don't have permission to view this report.
+        </p>
       </div>
     );
   }
@@ -93,7 +98,7 @@ export default function ReportDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -102,8 +107,11 @@ export default function ReportDetailPage() {
     return (
       <div className="text-center py-12">
         <div className="text-6xl mb-4">📄</div>
-        <h2 className="text-xl font-semibold">Report not found</h2>
-        <Link href="/admin/reports" className="mt-4 inline-block text-blue-600">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Report not found</h2>
+        <Link
+          href="/admin/reports"
+          className="mt-4 inline-block text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 transition duration-250 focus-ring rounded"
+        >
           Back to Reports
         </Link>
       </div>
@@ -122,11 +130,15 @@ export default function ReportDetailPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 max-w-container mx-auto animate-fade-in">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link href="/admin/reports" className="p-2 hover:bg-gray-100 rounded-lg">
+          <Link
+            href="/admin/reports"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
+            aria-label="Back to reports"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
@@ -135,7 +147,9 @@ export default function ReportDetailPage() {
               {report.name}
             </h1>
             <p className="text-gray-500 dark:text-gray-400 mt-1">
-              {report.type.toUpperCase()} • {report.format.toUpperCase()} • Generated {formatDate(report.generatedAt)}
+              <span className="tabular-nums">{report.type.toUpperCase()}</span> •{' '}
+              <span className="tabular-nums">{report.format.toUpperCase()}</span> • Generated{' '}
+              {formatDate(report.generatedAt)}
             </p>
           </div>
         </div>
@@ -143,7 +157,7 @@ export default function ReportDetailPage() {
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            className="btn-brand disabled:opacity-50"
           >
             {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Download
@@ -151,7 +165,7 @@ export default function ReportDetailPage() {
           {canDeleteReport && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+              className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-xl transition duration-250 flex items-center gap-2 focus-ring"
             >
               <Trash2 className="w-4 h-4" />
               Delete
@@ -161,27 +175,35 @@ export default function ReportDetailPage() {
       </div>
 
       {/* Report Info */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border p-6">
-        <h3 className="font-semibold mb-4">Report Details</h3>
+      <div className="card-brand shadow-soft animate-slide-down">
+        <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Report Details</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>
-            <p className="text-sm text-gray-500">Type</p>
-            <p className="font-medium">{report.type.toUpperCase()}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Type</p>
+            <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+              {report.type.toUpperCase()}
+            </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Format</p>
-            <p className="font-medium">{report.format.toUpperCase()}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Format</p>
+            <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+              {report.format.toUpperCase()}
+            </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Period</p>
-            <p className="font-medium">{report.period}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Period</p>
+            <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+              {report.period}
+            </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500">Status</p>
-            <span className={`px-2 py-1 rounded-full text-xs ${
-              report.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-              report.status === 'FAILED' ? 'bg-red-100 text-red-700' :
-              'bg-yellow-100 text-yellow-700'
+            <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
+            <span className={`inline-block px-2 py-1 rounded-full text-2xs font-medium ${
+              report.status === 'COMPLETED'
+                ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                : report.status === 'FAILED'
+                  ? 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
+                  : 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300'
             }`}>
               {report.status}
             </span>
@@ -191,10 +213,10 @@ export default function ReportDetailPage() {
 
       {/* Report Data Preview */}
       {report.data && Object.keys(report.data).length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border p-6">
-          <h3 className="font-semibold mb-4">Report Data</h3>
-          <div className="overflow-x-auto">
-            <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+        <div className="card-brand shadow-soft animate-slide-down">
+          <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Report Data</h3>
+          <div className="overflow-x-auto custom-scrollbar">
+            <pre className="text-sm font-mono tabular-nums text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all max-h-96 overflow-y-auto custom-scrollbar">
               {JSON.stringify(report.data, null, 2)}
             </pre>
           </div>
@@ -203,26 +225,33 @@ export default function ReportDetailPage() {
 
       {/* Delete Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowDeleteModal(false)} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+        <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowDeleteModal(false)}
+          />
+          <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6 animate-fade-in">
             <div className="text-center">
               <div className="text-6xl mb-4">⚠️</div>
-              <h3 className="text-lg font-bold mb-2">Delete Report</h3>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                Delete Report
+              </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Are you sure you want to delete <strong>{report.name}</strong>?
+                Are you sure you want to delete{' '}
+                <strong className="text-gray-900 dark:text-white">{report.name}</strong>?
               </p>
               <div className="flex justify-center gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                  className="btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-xl transition duration-250 flex items-center gap-2 focus-ring"
                 >
+                  <Trash2 className="w-4 h-4" />
                   Delete
                 </button>
               </div>

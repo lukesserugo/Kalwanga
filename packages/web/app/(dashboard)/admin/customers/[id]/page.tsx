@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import {
   ArrowLeft, Edit, Trash2, Mail, Phone, MapPin,
   Award, TrendingUp, ShoppingBag, Calendar, Clock,
   Star, Users, DollarSign, Loader2, Gift, User,
@@ -67,7 +67,7 @@ export default function CustomerDetailPage() {
   const id = params?.id as string;
   const { user } = useAuth();
   const { canView, canEdit, canDelete, canManage } = usePermission();
-  
+
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [sales, setSales] = useState<Sale[]>([]);
   const [loyaltyHistory, setLoyaltyHistory] = useState<LoyaltyHistoryEntry[]>([]);
@@ -93,24 +93,24 @@ export default function CustomerDetailPage() {
 
     try {
       if (showLoading) setLoading(true);
-      
+
       const [customerData, statsData, salesData] = await Promise.all([
         customerService.getCustomerById(id),
         customerService.getCustomerStats(id),
         customerService.getAllCustomers({ page: 1, limit: 10 }), // For loyalty history (mock)
       ]);
-      
+
       setCustomer(customerData);
       setStats(statsData);
-      
+
       // Extract sales from customer data if available
       const customerSales = (customerData as any).sales || [];
       setSales(customerSales);
-      
+
       // Extract loyalty history from customer data if available
       const loyalty = (customerData as any).loyaltyHistory || [];
       setLoyaltyHistory(loyalty);
-      
+
     } catch (error) {
       console.error('Failed to load customer:', error);
       toast.error('Failed to load customer');
@@ -169,10 +169,10 @@ export default function CustomerDetailPage() {
   };
 
   const getLoyaltyTier = (points: number) => {
-    if (points >= 1000) return { label: 'Platinum', color: 'bg-purple-100 text-purple-700', icon: Star };
-    if (points >= 500) return { label: 'Gold', color: 'bg-yellow-100 text-yellow-700', icon: Award };
+    if (points >= 1000) return { label: 'Platinum', color: 'bg-secondary-100 text-secondary-700', icon: Star };
+    if (points >= 500) return { label: 'Gold', color: 'bg-warning-100 text-warning-700', icon: Award };
     if (points >= 200) return { label: 'Silver', color: 'bg-gray-100 text-gray-700', icon: Award };
-    return { label: 'Bronze', color: 'bg-orange-100 text-orange-700', icon: Award };
+    return { label: 'Bronze', color: 'bg-brand-accent-100 text-brand-accent-700', icon: Award };
   };
 
   if (!canViewCustomer) {
@@ -183,7 +183,7 @@ export default function CustomerDetailPage() {
         </div>
         <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to view this customer.</p>
-        <Link href="/admin/customers" className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg">
+        <Link href="/admin/customers" className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg focus-ring">
           Back to Customers
         </Link>
       </div>
@@ -193,7 +193,7 @@ export default function CustomerDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -203,7 +203,7 @@ export default function CustomerDetailPage() {
       <div className="text-center py-12">
         <div className="text-6xl mb-4">👤</div>
         <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">Customer not found</h2>
-        <Link href="/admin/customers" className="mt-4 inline-block text-blue-600">
+        <Link href="/admin/customers" className="mt-4 inline-block text-brand-600 focus-ring rounded">
           Back to Customers
         </Link>
       </div>
@@ -218,11 +218,11 @@ export default function CustomerDetailPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link href="/admin/customers" className="p-2 hover:bg-gray-100 rounded-lg">
+          <Link href="/admin/customers" className="p-2 hover:bg-gray-100 rounded-lg focus-ring">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white text-2xl font-bold">
+            <div className="w-16 h-16 rounded-full bg-brand-gradient flex items-center justify-center text-white text-2xl font-bold">
               {customer.firstName?.[0]}{customer.lastName?.[0]}
             </div>
             <div>
@@ -246,7 +246,7 @@ export default function CustomerDetailPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -254,7 +254,7 @@ export default function CustomerDetailPage() {
           {canEditCustomer && (
             <Link
               href={`/admin/customers/${customer.id}/edit`}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
             >
               <Edit className="w-4 h-4" />
               Edit
@@ -263,7 +263,7 @@ export default function CustomerDetailPage() {
           {canDeleteCustomer && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+              className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
             >
               <Trash2 className="w-4 h-4" />
               Delete
@@ -273,22 +273,22 @@ export default function CustomerDetailPage() {
       </div>
 
       {/* Loyalty Card */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+      <div className="bg-brand-gradient rounded-xl shadow-lg p-6 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-blue-100">Loyalty Status</p>
+            <p className="text-brand-100">Loyalty Status</p>
             <div className="flex items-center gap-3 mt-1">
               <TierIcon className="w-8 h-8" />
               <h2 className="text-2xl font-bold">{tier.label}</h2>
             </div>
-            <p className="text-blue-100 mt-1">{customer.loyaltyPoints || 0} points</p>
+            <p className="text-brand-100 mt-1 tabular-nums">{customer.loyaltyPoints || 0} points</p>
           </div>
           <div className="text-right">
-            <p className="text-blue-100">Total Spent</p>
-            <p className="text-2xl font-bold">{formatCurrency(customer.totalSpent)}</p>
+            <p className="text-brand-100">Total Spent</p>
+            <p className="text-2xl font-bold tabular-nums">{formatCurrency(customer.totalSpent)}</p>
           </div>
         </div>
-        <div className="mt-4 w-full bg-blue-500/30 rounded-full h-2">
+        <div className="mt-4 w-full bg-brand-500/30 rounded-full h-2">
           <div
             className="bg-white h-2 rounded-full transition-all"
             style={{ width: `${Math.min((customer.loyaltyPoints || 0) / 10, 100)}%` }}
@@ -298,27 +298,27 @@ export default function CustomerDetailPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <ShoppingBag className="w-5 h-5 text-blue-600" />
+            <ShoppingBag className="w-5 h-5 text-brand-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Orders</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">{stats?.totalOrders || 0}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{stats?.totalOrders || 0}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <DollarSign className="w-5 h-5 text-green-600" />
+            <DollarSign className="w-5 h-5 text-success-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Average Order</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">{formatCurrency(stats?.averageOrder || 0)}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(stats?.averageOrder || 0)}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <Calendar className="w-5 h-5 text-purple-600" />
+            <Calendar className="w-5 h-5 text-secondary-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Last Purchase</p>
               <p className="text-xl font-bold text-gray-900 dark:text-white">
@@ -327,9 +327,9 @@ export default function CustomerDetailPage() {
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <Clock className="w-5 h-5 text-yellow-600" />
+            <Clock className="w-5 h-5 text-warning-600" />
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Member Since</p>
               <p className="text-xl font-bold text-gray-900 dark:text-white">{formatDate(customer.createdAt)}</p>
@@ -339,16 +339,16 @@ export default function CustomerDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+      <div className="card-brand p-0 overflow-hidden">
         <div className="border-b border-gray-200 dark:border-gray-700 px-6">
           <nav className="flex gap-4">
             {(['overview', 'purchases', 'loyalty'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize ${
+                className={`px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize focus-ring ${
                   activeTab === tab
-                    ? 'border-blue-600 text-blue-600'
+                    ? 'border-brand-600 text-brand-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -394,8 +394,8 @@ export default function CustomerDetailPage() {
                         <p className="text-sm text-gray-500">{formatDate(sale.saleDate)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">{formatCurrency(sale.total)}</p>
-                        <p className="text-sm text-gray-500">{sale.items?.length || 0} items</p>
+                        <p className="font-bold tabular-nums">{formatCurrency(sale.total)}</p>
+                        <p className="text-sm text-gray-500 tabular-nums">{sale.items?.length || 0} items</p>
                       </div>
                     </div>
                   ))}
@@ -411,7 +411,7 @@ export default function CustomerDetailPage() {
               <div className="flex justify-end mb-4">
                 <button
                   onClick={() => setShowLoyaltyModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
                 >
                   <Gift className="w-4 h-4" />
                   Manage Points
@@ -421,11 +421,11 @@ export default function CustomerDetailPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                     <p className="text-sm text-gray-500">Current Points</p>
-                    <p className="text-2xl font-bold">{customer.loyaltyPoints || 0}</p>
+                    <p className="text-2xl font-bold tabular-nums">{customer.loyaltyPoints || 0}</p>
                   </div>
                   <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                     <p className="text-sm text-gray-500">Points to Next Tier</p>
-                    <p className="text-2xl font-bold">
+                    <p className="text-2xl font-bold tabular-nums">
                       {customer.loyaltyPoints < 200 ? 200 - (customer.loyaltyPoints || 0) :
                        customer.loyaltyPoints < 500 ? 500 - (customer.loyaltyPoints || 0) :
                        customer.loyaltyPoints < 1000 ? 1000 - (customer.loyaltyPoints || 0) : 0}
@@ -433,11 +433,11 @@ export default function CustomerDetailPage() {
                   </div>
                 </div>
                 {loyaltyHistory.length > 0 && (
-                  <div className="space-y-3 max-h-80 overflow-y-auto">
+                  <div className="space-y-3 max-h-80 overflow-y-auto sidebar-scroll">
                     {loyaltyHistory.map((entry) => (
                       <div key={entry.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                         <div>
-                          <p className={`font-medium ${entry.points > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          <p className={`font-medium tabular-nums ${entry.points > 0 ? 'text-success-600' : 'text-danger-600'}`}>
                             {entry.points > 0 ? '+' : ''}{entry.points} points
                           </p>
                           <p className="text-sm text-gray-500">{entry.notes || entry.type}</p>
@@ -460,7 +460,7 @@ export default function CustomerDetailPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
+            className="fixed inset-0 z-modal flex items-center justify-center"
           >
             <div className="fixed inset-0 bg-black/50" onClick={() => setShowDeleteModal(false)} />
             <motion.div
@@ -479,14 +479,14 @@ export default function CustomerDetailPage() {
                   <button
                     onClick={() => setShowDeleteModal(false)}
                     disabled={deleting}
-                    className="px-4 py-2 border border-gray-300 rounded-lg"
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+                    className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
                   >
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     Delete
@@ -505,7 +505,7 @@ export default function CustomerDetailPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
+            className="fixed inset-0 z-modal flex items-center justify-center"
           >
             <div className="fixed inset-0 bg-black/50" onClick={() => setShowLoyaltyModal(false)} />
             <motion.div
@@ -521,7 +521,7 @@ export default function CustomerDetailPage() {
                   <select
                     value={loyaltyAction}
                     onChange={(e) => setLoyaltyAction(e.target.value as 'add' | 'redeem')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
                     <option value="add">Add Points</option>
                     <option value="redeem">Redeem Points</option>
@@ -534,20 +534,20 @@ export default function CustomerDetailPage() {
                     value={loyaltyPoints}
                     onChange={(e) => setLoyaltyPoints(parseInt(e.target.value) || 0)}
                     min="1"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none tabular-nums"
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowLoyaltyModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleLoyaltyUpdate}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 focus-ring"
                 >
                   Update
                 </button>

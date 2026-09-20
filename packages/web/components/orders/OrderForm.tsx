@@ -448,7 +448,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
   if (loadingShift) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -456,24 +456,24 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
   const shiftBlocked = activeMethod.requiresShift && !shift;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
       {/* LEFT: customer + items */}
       <div className="lg:col-span-2 space-y-4">
         {shiftBlocked && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-4 flex items-start gap-3 animate-slide-down">
+            <AlertCircle className="w-5 h-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-medium text-amber-900 dark:text-amber-200">
+              <p className="font-medium text-warning-900 dark:text-warning-200">
                 No active shift
               </p>
-              <p className="text-sm text-amber-800 dark:text-amber-300 mt-1">
+              <p className="text-sm text-warning-800 dark:text-warning-300 mt-1">
                 Cash sales require an open shift. Open one, or switch to a
                 non-cash payment method.
               </p>
             </div>
             <Link
               href="/admin/shifts"
-              className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 whitespace-nowrap"
+              className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-sm rounded-lg whitespace-nowrap transition duration-250 focus-ring"
             >
               Open Shift
             </Link>
@@ -481,19 +481,19 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
         )}
 
         {/* Customer picker */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand shadow-soft">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <User className="w-4 h-4" />
               Customer
               {activeMethod.requiresCustomer && (
-                <span className="text-red-500 text-sm">*</span>
+                <span className="text-danger-500 text-sm">*</span>
               )}
             </h2>
             {customer && (
               <button
                 onClick={() => handleSelectCustomer(null)}
-                className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1 transition duration-250 focus-ring rounded"
               >
                 <X className="w-3 h-3" /> Clear
               </button>
@@ -501,15 +501,15 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
           </div>
 
           {customer ? (
-            <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-brand-50 dark:bg-brand-900/20 rounded-lg">
               <div>
                 <p className="font-medium text-gray-900 dark:text-white">
                   {customer.firstName} {customer.lastName}
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {customer.email || customer.phoneNumber}
                   {typeof customer.loyaltyPoints === 'number' && (
-                    <span className="ml-2 text-xs">
+                    <span className="ml-2 text-xs tabular-nums">
                       · {customer.loyaltyPoints} pts
                     </span>
                   )}
@@ -517,30 +517,31 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
               </div>
               <button
                 onClick={() => handleSelectCustomer(null)}
-                className="p-1.5 rounded hover:bg-blue-100"
+                className="p-1.5 rounded hover:bg-brand-100 dark:hover:bg-brand-900/40 transition duration-250 focus-ring"
+                aria-label="Remove customer"
               >
-                <X className="w-4 h-4 text-gray-500" />
+                <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               </button>
             </div>
           ) : (
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
               <input
                 type="text"
                 placeholder="Search customer (or leave blank for walk-in)"
                 value={customerSearch}
                 onChange={(e) => setCustomerSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
               {customerSearch && (
-                <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                <div className="absolute z-modal mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-card max-h-64 overflow-y-auto custom-scrollbar">
                   {searchingCustomers ? (
-                    <div className="p-4 text-center text-sm text-gray-500">
-                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                    <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                      <Loader2 className="w-4 h-4 animate-spin inline mr-2 text-brand-600" />
                       Searching...
                     </div>
                   ) : customerResults.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-gray-500">
+                    <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
                       No customers found
                     </div>
                   ) : (
@@ -548,12 +549,12 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                       <button
                         key={c.id}
                         onClick={() => handleSelectCustomer(c)}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition duration-250 focus-ring"
                       >
                         <p className="font-medium text-gray-900 dark:text-white">
                           {c.firstName} {c.lastName}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {c.email || c.phoneNumber}
                         </p>
                       </button>
@@ -566,28 +567,28 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
         </div>
 
         {/* Item picker */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand shadow-soft">
           <h2 className="font-semibold text-gray-900 dark:text-white mb-3">
             Add Items
           </h2>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
             <input
               type="text"
               placeholder="Search products by name, SKU, or barcode"
               value={itemSearch}
               onChange={(e) => setItemSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             />
             {itemSearch && (
-              <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+              <div className="absolute z-modal mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-card max-h-72 overflow-y-auto custom-scrollbar">
                 {searchingItems ? (
-                  <div className="p-4 text-center text-sm text-gray-500">
-                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                  <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2 text-brand-600" />
                     Searching...
                   </div>
                 ) : itemResults.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-gray-500">
+                  <div className="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
                     No products found
                   </div>
                 ) : (
@@ -596,20 +597,20 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                       key={p.id}
                       onClick={() => handleAddItem(p)}
                       disabled={addingItemId === p.id}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0 flex items-center justify-between"
+                      className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0 flex items-center justify-between transition duration-250 focus-ring"
                     >
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">
                           {p.name}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                           {p.sku} · {formatCurrency(p.unitPrice)}
                         </p>
                       </div>
                       {addingItemId === p.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
                       ) : (
-                        <Plus className="w-4 h-4 text-blue-600" />
+                        <Plus className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                       )}
                     </button>
                   ))
@@ -630,7 +631,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                     <p className="font-medium text-gray-900 dark:text-white truncate">
                       {item.product?.name ?? 'Product'}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                       {item.variant?.name ? `${item.variant.name} · ` : ''}
                       {formatCurrency(item.unitPrice)} each
                     </p>
@@ -639,27 +640,30 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                     <button
                       onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
                       disabled={item.quantity <= 1}
-                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30"
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 transition duration-250 focus-ring"
+                      aria-label="Decrease quantity"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="w-8 text-center text-sm font-medium">
+                    <span className="w-8 text-center text-sm font-medium tabular-nums text-gray-900 dark:text-white">
                       {item.quantity}
                     </span>
                     <button
                       onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
-                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition duration-250 focus-ring"
+                      aria-label="Increase quantity"
                     >
                       <Plus className="w-3 h-3" />
                     </button>
-                    <span className="w-20 text-right font-medium text-gray-900 dark:text-white">
+                    <span className="w-20 text-right font-medium tabular-nums text-gray-900 dark:text-white">
                       {formatCurrency(item.total)}
                     </span>
                     <button
                       onClick={() => handleRemoveItem(item.id)}
-                      className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 ml-1"
+                      className="p-1 rounded hover:bg-danger-100 dark:hover:bg-danger-900/30 ml-1 transition duration-250 focus-ring"
+                      aria-label="Remove item"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                      <Trash2 className="w-4 h-4 text-danger-500" />
                     </button>
                   </div>
                 </div>
@@ -668,15 +672,15 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
           )}
 
           {cartLoading && (
-            <div className="mt-4 flex items-center justify-center text-sm text-gray-500">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            <div className="mt-4 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin mr-2 text-brand-600" />
               Loading cart...
             </div>
           )}
         </div>
 
         {/* Notes */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand shadow-soft">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Notes (optional)
           </label>
@@ -685,14 +689,14 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
             placeholder="Add any notes about this order..."
-            className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+            className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 resize-none"
           />
         </div>
       </div>
 
       {/* RIGHT: totals + payment */}
       <div className="space-y-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 sticky top-6">
+        <div className="card-brand shadow-soft sticky top-6">
           <h2 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <Receipt className="w-4 h-4" />
             Order Summary
@@ -702,21 +706,21 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-600 dark:text-gray-400">
               <span>Subtotal</span>
-              <span>{formatCurrency(totals.subtotal)}</span>
+              <span className="tabular-nums">{formatCurrency(totals.subtotal)}</span>
             </div>
             <div className="flex justify-between text-gray-600 dark:text-gray-400">
               <span>Tax</span>
-              <span>{formatCurrency(totals.tax)}</span>
+              <span className="tabular-nums">{formatCurrency(totals.tax)}</span>
             </div>
             {totals.discount > 0 && (
-              <div className="flex justify-between text-green-600">
+              <div className="flex justify-between text-success-600 dark:text-success-400">
                 <span>Discount</span>
-                <span>-{formatCurrency(totals.discount)}</span>
+                <span className="tabular-nums">-{formatCurrency(totals.discount)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-gray-900 dark:text-white pt-3 border-t border-gray-200 dark:border-gray-700 text-base">
               <span>Total</span>
-              <span>{formatCurrency(totals.total)}</span>
+              <span className="tabular-nums">{formatCurrency(totals.total)}</span>
             </div>
           </div>
 
@@ -733,7 +737,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
               value={manualDiscount}
               onChange={(e) => setManualDiscount(e.target.value)}
               placeholder="0.00"
-              className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+              className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             />
           </div>
 
@@ -753,9 +757,9 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                     disabled={!m.enabled}
                     onClick={() => setPaymentMethod(m.value as PaymentMethodValue)}
                     title={m.enabled ? m.label : `${m.label} — not yet available`}
-                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-xs font-medium transition duration-250 focus-ring ${
                       isActive
-                        ? 'bg-blue-600 text-white border-blue-600'
+                        ? 'bg-brand-gradient text-white border-brand-600 shadow-brand'
                         : m.enabled
                         ? 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                         : 'bg-gray-100 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed'
@@ -780,7 +784,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                 value={mobilePhone}
                 onChange={(e) => setMobilePhone(e.target.value)}
                 placeholder="+256 7XX XXX XXX"
-                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
             </div>
           )}
@@ -795,7 +799,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                 value={giftCardCode}
                 onChange={(e) => setGiftCardCode(e.target.value)}
                 placeholder="Enter code"
-                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm"
+                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
             </div>
           )}
@@ -812,15 +816,15 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
                 step="0.01"
                 value={paidAmount}
                 onChange={(e) => setPaidAmount(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-semibold"
+                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
               {totals.change > 0 && (
-                <p className="text-xs text-green-600 mt-1">
+                <p className="text-xs text-success-600 dark:text-success-400 mt-1 tabular-nums">
                   Change: {formatCurrency(totals.change)}
                 </p>
               )}
               {totals.balance > 0 && (
-                <p className="text-xs text-red-600 mt-1">
+                <p className="text-xs text-danger-600 dark:text-danger-400 mt-1 tabular-nums">
                   Balance due: {formatCurrency(totals.balance)}
                 </p>
               )}
@@ -831,7 +835,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
           <button
             onClick={handleCompleteSale}
             disabled={submitting || shiftBlocked || !cart || cart.items.length === 0}
-            className="mt-5 w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            className="mt-5 w-full btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? (
               <>
@@ -841,7 +845,7 @@ export function OrderForm({ mode = 'order' }: OrderFormProps) {
             ) : (
               <>
                 <ShoppingCart className="w-4 h-4" />
-                Complete Sale — {formatCurrency(totals.total)}
+                Complete Sale — <span className="tabular-nums">{formatCurrency(totals.total)}</span>
               </>
             )}
           </button>

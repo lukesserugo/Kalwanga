@@ -12,13 +12,15 @@ interface AlertProps {
 
 export function Alert({ children, variant = 'default', className = '' }: AlertProps) {
   return (
-    <div className={cn(
-      'p-4 rounded-lg border',
-      variant === 'destructive' 
-        ? 'bg-red-50 border-red-200 text-red-800' 
-        : 'bg-blue-50 border-blue-200 text-blue-800',
-      className
-    )}>
+    <div
+      className={cn(
+        'p-4 rounded-lg border',
+        variant === 'destructive'
+          ? 'bg-danger-50 border-danger-200 text-danger-700 dark:bg-danger-950/30 dark:border-danger-900 dark:text-danger-300'
+          : 'bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-950/30 dark:border-primary-900 dark:text-primary-300',
+        className
+      )}
+    >
       {children}
     </div>
   );
@@ -30,5 +32,9 @@ interface AlertDescriptionProps {
 }
 
 export function AlertDescription({ children, className = '' }: AlertDescriptionProps) {
-  return <div className={cn('text-sm', className)}>{children}</div>;
+  return (
+    <div className={cn('text-sm leading-relaxed', className)}>
+      {children}
+    </div>
+  );
 }

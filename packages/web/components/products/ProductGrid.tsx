@@ -472,13 +472,13 @@ export default function ProductGrid({
           key={star}
           className={`w-3.5 h-3.5 ${
             star <= Math.round(rating)
-              ? 'text-yellow-400 fill-current'
+              ? 'text-warning-400 fill-current'
               : 'text-gray-300 dark:text-gray-600'
           }`}
         />
       ))}
       {rating > 0 && (
-        <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 ml-1">
           ({rating.toFixed(1)})
         </span>
       )}
@@ -504,7 +504,7 @@ export default function ProductGrid({
         animate={{ opacity: 1, y: 0 }}
         whileHover={{ y: -4 }}
         transition={{ duration: 0.3 }}
-        className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 group ${
+        className={`card-brand shadow-soft hover:shadow-card-hover transition duration-350 overflow-hidden group animate-fade-in ${
           viewMode === 'list' ? 'flex flex-col sm:flex-row' : ''
         }`}
       >
@@ -530,25 +530,25 @@ export default function ProductGrid({
               </div>
             )}
             {isOutOfStock && (
-              <div className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white text-xs rounded">
+              <div className="absolute top-2 right-2 px-2 py-1 bg-danger-600 text-white text-2xs rounded">
                 Out of Stock
               </div>
             )}
             {product.featured && (
-              <div className="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded flex items-center gap-1">
+              <div className="absolute top-2 left-2 px-2 py-1 bg-warning-500 text-white text-2xs rounded flex items-center gap-1">
                 <Star className="w-3 h-3 fill-current" />
                 Featured
               </div>
             )}
             {variantCount > 0 && (
-              <div className="absolute bottom-2 left-2 px-2 py-1 bg-purple-500/80 text-white text-xs rounded flex items-center gap-1">
+              <div className="absolute bottom-2 left-2 px-2 py-1 bg-secondary-500/80 text-white text-2xs tabular-nums rounded flex items-center gap-1">
                 <Layers className="w-3 h-3" />
                 {variantCount}
                 {hasVariantImages && <ImageIcon className="w-3 h-3" />}
               </div>
             )}
             {isInventoryLinked && (
-              <div className="absolute top-12 left-2 px-2 py-1 bg-blue-500/80 text-white text-xs rounded flex items-center gap-1">
+              <div className="absolute top-12 left-2 px-2 py-1 bg-brand-500/80 text-white text-2xs rounded flex items-center gap-1">
                 <Link2 className="w-3 h-3" />
               </div>
             )}
@@ -562,11 +562,11 @@ export default function ProductGrid({
 
         <div className="p-4 flex-1 flex flex-col">
           <Link href={`/shop/${product.id}`}>
-            <h3 className="font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors line-clamp-1">
+            <h3 className="font-semibold text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition duration-250 line-clamp-1">
               {product.name}
             </h3>
           </Link>
-          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+          <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400 truncate">
             SKU: {product.sku}
           </p>
           {product.category && (
@@ -587,7 +587,7 @@ export default function ProductGrid({
               {product.variants?.slice(0, 3).map((variant) => (
                 <span
                   key={variant.id}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-full text-xs"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 rounded-full text-2xs"
                 >
                   {variant.images?.[0] && (
                     <img
@@ -597,12 +597,12 @@ export default function ProductGrid({
                     />
                   )}
                   {variant.name}
-                  <span className="text-purple-400">•</span>
-                  {formatCurrency(variant.price)}
+                  <span className="text-secondary-400">•</span>
+                  <span className="tabular-nums">{formatCurrency(variant.price)}</span>
                 </span>
               ))}
               {variantCount > 3 && (
-                <span className="text-xs text-gray-400">
+                <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
                   +{variantCount - 3} more
                 </span>
               )}
@@ -610,16 +610,16 @@ export default function ProductGrid({
           )}
           <div className="mt-auto pt-3 flex items-center justify-between">
             <div>
-              <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+              <span className="text-lg font-bold tabular-nums text-brand-600 dark:text-brand-400">
                 {formatCurrency(product.unitPrice)}
               </span>
               {isOutOfStock && (
-                <p className="text-xs text-red-600 dark:text-red-400">
+                <p className="text-xs text-danger-600 dark:text-danger-400">
                   Out of stock
                 </p>
               )}
               {!isOutOfStock && available <= 5 && (
-                <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                <p className="text-xs tabular-nums text-warning-600 dark:text-warning-400">
                   Only {available} left
                 </p>
               )}
@@ -627,8 +627,9 @@ export default function ProductGrid({
             <div className="flex items-center gap-2">
               <Link
                 href={`/shop/${product.id}`}
-                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                className="p-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition duration-250 focus-ring"
                 title="View Details"
+                aria-label={`View ${product.name}`}
               >
                 <Eye className="w-4 h-4" />
               </Link>
@@ -636,10 +637,10 @@ export default function ProductGrid({
                 <button
                   onClick={() => handleAddToCart(product.id)}
                   disabled={isOutOfStock || addingToCart[product.id]}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition duration-250 flex items-center gap-1 focus-ring ${
                     isOutOfStock
                       ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'btn-brand'
                   }`}
                 >
                   {addingToCart[product.id] ? (
@@ -669,7 +670,7 @@ export default function ProductGrid({
         {[...Array(8)].map((_, i) => (
           <div
             key={i}
-            className="bg-gray-100 dark:bg-gray-700 rounded-xl h-72 animate-pulse"
+            className="bg-gray-100 dark:bg-gray-700 rounded-2xl h-72 animate-pulse"
           />
         ))}
       </div>
@@ -678,12 +679,12 @@ export default function ProductGrid({
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+      <div className="text-center py-12 animate-fade-in">
+        <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-4" />
         <p className="text-gray-600 dark:text-gray-400">{error}</p>
         <button
           onClick={fetchProducts}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 btn-brand"
         >
           Try Again
         </button>
@@ -693,7 +694,7 @@ export default function ProductGrid({
 
   if (products.length === 0) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-12 animate-fade-in">
         <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
           No products found
@@ -706,7 +707,7 @@ export default function ProductGrid({
         {hasActiveFilters && (
           <button
             onClick={clearFilters}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 btn-brand"
           >
             Clear Filters
           </button>
@@ -720,10 +721,10 @@ export default function ProductGrid({
   // ============================================
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-6 ${className} animate-fade-in`}>
       {/* Filters Bar */}
       {showFilters && (
-        <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 transition-colors duration-200">
+        <div className="card-brand shadow-soft flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-1 min-w-[200px]">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
@@ -732,7 +733,7 @@ export default function ProductGrid({
                 placeholder="Search products..."
                 value={filters.search}
                 onChange={(e) => handleFilterChange('search', e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
             </div>
           </div>
@@ -741,7 +742,7 @@ export default function ProductGrid({
             <select
               value={filters.sortBy}
               onChange={(e) => handleFilterChange('sortBy', e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             >
               <option value="newest">Newest</option>
               <option value="price-low">Price: Low → High</option>
@@ -751,7 +752,8 @@ export default function ProductGrid({
 
             <button
               onClick={() => setShowMobileFilters(!showMobileFilters)}
-              className="lg:hidden p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="lg:hidden p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 focus-ring"
+              aria-label="Toggle filters"
             >
               <Filter className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
@@ -764,7 +766,7 @@ export default function ProductGrid({
                 onChange={(e) =>
                   handleFilterChange('minPrice', e.target.value)
                 }
-                className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
               <span className="text-gray-500 dark:text-gray-400">-</span>
               <input
@@ -774,7 +776,7 @@ export default function ProductGrid({
                 onChange={(e) =>
                   handleFilterChange('maxPrice', e.target.value)
                 }
-                className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
               <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input
@@ -783,14 +785,14 @@ export default function ProductGrid({
                   onChange={(e) =>
                     handleFilterChange('inStock', e.target.checked)
                   }
-                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                 />
                 In Stock
               </label>
               {hasActiveFilters && (
                 <button
                   onClick={clearFilters}
-                  className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+                  className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring rounded"
                 >
                   Clear
                 </button>
@@ -800,23 +802,25 @@ export default function ProductGrid({
             <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition duration-250 focus-ring ${
                   viewMode === 'grid'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 title="Grid view"
+                aria-label="Grid view"
               >
                 <Grid className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition duration-250 focus-ring ${
                   viewMode === 'list'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 title="List view"
+                aria-label="List view"
               >
                 <List className="w-4 h-4" />
               </button>
@@ -827,19 +831,20 @@ export default function ProductGrid({
 
       {/* Mobile Filters Modal */}
       {showMobileFilters && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-modal lg:hidden animate-fade-in">
           <div
-            className="fixed inset-0 bg-black/50"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setShowMobileFilters(false)}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-xl p-6 max-h-[80vh] overflow-y-auto">
+          <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl p-6 max-h-[80vh] overflow-y-auto custom-scrollbar animate-slide-down">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Filters
               </h3>
               <button
                 onClick={() => setShowMobileFilters(false)}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
+                aria-label="Close filters"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
@@ -855,7 +860,7 @@ export default function ProductGrid({
                   onChange={(e) =>
                     handleFilterChange('minPrice', e.target.value)
                   }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="Min"
                 />
               </div>
@@ -869,7 +874,7 @@ export default function ProductGrid({
                   onChange={(e) =>
                     handleFilterChange('maxPrice', e.target.value)
                   }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="Max"
                 />
               </div>
@@ -880,20 +885,20 @@ export default function ProductGrid({
                   onChange={(e) =>
                     handleFilterChange('inStock', e.target.checked)
                   }
-                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 bg-white dark:bg-gray-700 transition duration-250"
                 />
                 In Stock Only
               </label>
               <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={clearFilters}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 btn-secondary"
                 >
                   Clear All
                 </button>
                 <button
                   onClick={() => setShowMobileFilters(false)}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="flex-1 btn-brand"
                 >
                   Apply
                 </button>
@@ -926,7 +931,7 @@ export default function ProductGrid({
               setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
             }
             disabled={pagination.page === pagination.totalPages}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {pagination.page === pagination.totalPages ? (
               'No More Products'

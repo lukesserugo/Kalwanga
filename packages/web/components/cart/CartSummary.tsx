@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartSummary.tsx
-
 'use client';
 
 import React, { useState } from 'react';
@@ -31,12 +29,6 @@ interface CartSummaryProps {
   loading: boolean;
   customerId?: string;
   loyaltyPoints?: number;
-  /**
-   * Whether the current viewer is signed in. Loyalty redemption and
-   * the customer association flow are only available to authenticated
-   * users. Defaults to `true` for backward compatibility with callers
-   * that haven't been updated yet.
-   */
   isAuthenticated?: boolean;
 }
 
@@ -58,10 +50,6 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
   const [showPromotionInput, setShowPromotionInput] = useState(false);
   const [showLoyaltyInput, setShowLoyaltyInput] = useState(false);
   const [applying, setApplying] = useState(false);
-
-  // ============================================
-  // HANDLERS
-  // ============================================
 
   const handleApplyDiscount = async () => {
     if (!discountCode.trim()) {
@@ -125,10 +113,6 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
     }
   };
 
-  // ============================================
-  // DERIVED
-  // ============================================
-
   const hasDiscounts =
     (cart.discount || 0) > 0 ||
     (cart.promotionDiscount || 0) > 0 ||
@@ -139,39 +123,31 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
     cart.items.length === 0 ||
     cart.itemCount === 0;
 
-  // Loyalty widget only renders when:
-  //  - the user is authenticated, AND
-  //  - a customer is associated with the cart, AND
-  //  - the customer actually has points to spend
   const canUseLoyalty =
     isAuthenticated && Boolean(customerId) && loyaltyPoints > 0;
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 sticky top-24">
+    <div className="card-brand sticky top-24">
       <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         Order Summary
       </h2>
 
-      {/* Guest notice — why some controls are hidden */}
       {!isAuthenticated && (
-        <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-          <LogIn className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-800 dark:text-blue-300">
+        <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
+          <LogIn className="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-brand-800 dark:text-brand-300">
             Sign in to unlock loyalty points, saved addresses, and order
             history.
           </p>
         </div>
       )}
 
-      {/* ============================================
-          CART TOTALS
-          ============================================ */}
       <div className="space-y-3 border-b border-gray-200 dark:border-gray-700 pb-4">
         <div className="flex justify-between text-sm">
           <span className="text-gray-600 dark:text-gray-400">
             Subtotal
           </span>
-          <span className="font-medium text-gray-900 dark:text-white">
+          <span className="font-medium text-gray-900 dark:text-white tabular-nums">
             {formatCurrency(cart.subtotal)}
           </span>
         </div>
@@ -179,50 +155,46 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           <span className="text-gray-600 dark:text-gray-400">
             Tax
           </span>
-          <span className="font-medium text-gray-900 dark:text-white">
+          <span className="font-medium text-gray-900 dark:text-white tabular-nums">
             {formatCurrency(cart.tax)}
           </span>
         </div>
         {(cart.discount || 0) > 0 && (
-          <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+          <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
             <span>Discount</span>
-            <span>-{formatCurrency(cart.discount)}</span>
+            <span className="tabular-nums">-{formatCurrency(cart.discount)}</span>
           </div>
         )}
         {(cart.promotionDiscount || 0) > 0 && (
-          <div className="flex justify-between text-sm text-purple-600 dark:text-purple-400">
+          <div className="flex justify-between text-sm text-secondary-600 dark:text-secondary-400">
             <span>Promotion</span>
-            <span>
+            <span className="tabular-nums">
               -{formatCurrency(cart.promotionDiscount || 0)}
             </span>
           </div>
         )}
         {(cart.loyaltyDiscount || 0) > 0 && (
-          <div className="flex justify-between text-sm text-indigo-600 dark:text-indigo-400">
+          <div className="flex justify-between text-sm text-secondary-600 dark:text-secondary-400">
             <span>Loyalty Points</span>
-            <span>
+            <span className="tabular-nums">
               -{formatCurrency(cart.loyaltyDiscount || 0)}
             </span>
           </div>
         )}
         <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
           <span className="text-gray-900 dark:text-white">Total</span>
-          <span className="text-blue-600 dark:text-blue-400">
+          <span className="text-brand-600 dark:text-brand-400 tabular-nums">
             {formatCurrency(cart.total)}
           </span>
         </div>
       </div>
 
-      {/* ============================================
-          DISCOUNT / PROMOTION / LOYALTY INPUTS
-          ============================================ */}
       <div className="space-y-2 mt-4">
-        {/* Discount */}
         <div>
           <button
             type="button"
             onClick={() => setShowDiscountInput(!showDiscountInput)}
-            className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors w-full justify-between"
+            className="flex items-center gap-2 text-sm text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 transition-colors w-full justify-between focus-ring rounded"
             aria-expanded={showDiscountInput}
           >
             <span className="flex items-center gap-2">
@@ -250,14 +222,14 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                   value={discountCode}
                   onChange={(e) => setDiscountCode(e.target.value)}
                   placeholder="Enter discount code"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm"
                   disabled={applying || loading}
                 />
                 <button
                   type="button"
                   onClick={handleApplyDiscount}
                   disabled={applying || loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm whitespace-nowrap"
+                  className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all disabled:opacity-50 text-sm whitespace-nowrap focus-ring"
                 >
                   {applying ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -270,14 +242,13 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* Promotion */}
         <div>
           <button
             type="button"
             onClick={() =>
               setShowPromotionInput(!showPromotionInput)
             }
-            className="flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors w-full justify-between"
+            className="flex items-center gap-2 text-sm text-secondary-600 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300 transition-colors w-full justify-between focus-ring rounded"
             aria-expanded={showPromotionInput}
           >
             <span className="flex items-center gap-2">
@@ -307,14 +278,14 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                     setPromotionCode(e.target.value.toUpperCase())
                   }
                   placeholder="Enter promotion code"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm uppercase"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm uppercase font-mono"
                   disabled={applying || loading}
                 />
                 <button
                   type="button"
                   onClick={handleApplyPromotion}
                   disabled={applying || loading}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm whitespace-nowrap"
+                  className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg transition-colors disabled:opacity-50 text-sm whitespace-nowrap focus-ring"
                 >
                   {applying ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -327,13 +298,12 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* Loyalty Points — gated on authentication + customer + balance */}
         {canUseLoyalty && (
           <div>
             <button
               type="button"
               onClick={() => setShowLoyaltyInput(!showLoyaltyInput)}
-              className="flex items-center gap-2 text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors w-full justify-between"
+              className="flex items-center gap-2 text-sm text-secondary-600 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300 transition-colors w-full justify-between focus-ring rounded"
               aria-expanded={showLoyaltyInput}
             >
               <span className="flex items-center gap-2">
@@ -341,7 +311,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                 {(cart.loyaltyPointsUsed || 0) > 0
                   ? 'Edit Loyalty Points'
                   : 'Use Loyalty Points'}
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-500 tabular-nums">
                   ({loyaltyPoints} available)
                 </span>
               </span>
@@ -370,7 +340,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                     placeholder="Points to use"
                     min="0"
                     max={loyaltyPoints}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm tabular-nums"
                     disabled={applying || loading}
                   />
                   <button
@@ -381,7 +351,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                       loading ||
                       loyaltyPointsToUse <= 0
                     }
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 text-sm whitespace-nowrap"
+                    className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg transition-colors disabled:opacity-50 text-sm whitespace-nowrap focus-ring"
                   >
                     {applying ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -396,17 +366,14 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
         )}
       </div>
 
-      {/* ============================================
-          CHECKOUT BUTTON
-          ============================================ */}
       <button
         type="button"
         onClick={onCheckout}
         disabled={loading || isEmpty}
-        className={`w-full mt-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+        className={`w-full mt-6 py-3 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 focus-ring ${
           isAuthenticated
-            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-            : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white'
+            ? 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand hover:shadow-brand-lg'
+            : 'bg-brand-gradient hover:shadow-brand-lg text-white shadow-brand'
         }`}
       >
         {loading ? (
@@ -427,17 +394,13 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
         )}
       </button>
 
-      {/* Continue Shopping */}
       <Link
         href="/shop"
-        className="block text-center mt-4 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+        className="block text-center mt-4 text-sm text-gray-600 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors focus-ring rounded"
       >
         Continue Shopping
       </Link>
 
-      {/* ============================================
-          FOOTER BADGES
-          ============================================ */}
       <div className="mt-4 flex flex-col items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-1">
           <ShieldCheck className="w-4 h-4" />
@@ -448,7 +411,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           <span>Free shipping on orders over $50</span>
         </div>
         {hasDiscounts && (
-          <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+          <div className="flex items-center gap-1 text-success-600 dark:text-success-400">
             <Sparkles className="w-4 h-4" />
             <span>Savings applied!</span>
           </div>

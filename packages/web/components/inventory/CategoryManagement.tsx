@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\inventory\CategoryManagement.tsx
-
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -12,7 +10,7 @@ import {
   AlertCircle, CheckCircle, Lock, Shield, Building,
   Layers, Grid, List, Filter, ArrowUp, ArrowDown,
   Copy, Link, ExternalLink, Eye, Star, Globe,
-  Archive, Clock, Calendar, Hash, Users
+  Archive, Clock, Calendar, Hash, Users,
 } from 'lucide-react';
 import { toast } from '../../utils/toast-manager';
 import { useAuth } from '../../hooks/useAuth';
@@ -21,10 +19,6 @@ import { inventoryService } from '../../services/inventoryService';
 import { PermissionResource } from '../../types/enums';
 import { formatDate, formatNumber } from '../../utils/formatters';
 
-// ============================================
-// TYPES
-// ============================================
-
 interface Category {
   id: string;
   name: string;
@@ -32,11 +26,7 @@ interface Category {
   parentId?: string;
   parent?: Category;
   businessUnitId: string;
-  businessUnit?: {
-    id: string;
-    name: string;
-    code: string;
-  };
+  businessUnit?: { id: string; name: string; code: string };
   createdAt: string;
   updatedAt: string;
   children?: Category[];
@@ -64,26 +54,18 @@ interface CategoryManagementProps {
   allowNesting?: boolean;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
-
 const ICON_COLORS = [
-  'text-blue-500',
-  'text-green-500',
-  'text-yellow-500',
-  'text-red-500',
-  'text-purple-500',
-  'text-indigo-500',
-  'text-pink-500',
-  'text-teal-500',
-  'text-orange-500',
-  'text-cyan-500',
+  'text-brand-500',
+  'text-success-500',
+  'text-warning-500',
+  'text-danger-500',
+  'text-secondary-500',
+  'text-secondary-500',
+  'text-brand-accent-500',
+  'text-success-500',
+  'text-brand-500',
+  'text-brand-500',
 ];
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
 
 const CategoryItem: React.FC<{
   category: Category;
@@ -116,10 +98,14 @@ const CategoryItem: React.FC<{
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className={`${isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''} ${compact ? 'p-2' : 'p-3'}`}
+      className={`${
+        isSelected ? 'bg-brand-50 dark:bg-brand-900/10' : ''
+      } ${compact ? 'p-2' : 'p-3'}`}
     >
-      <div 
-        className={`flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors cursor-pointer ${compact ? 'p-1.5' : 'p-2'}`}
+      <div
+        className={`flex items-center justify-between hover:bg-orange-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors cursor-pointer ${
+          compact ? 'p-1.5' : 'p-2'
+        }`}
         style={{ paddingLeft: `${level * 20 + 12}px` }}
         onClick={() => onSelect?.(category)}
       >
@@ -130,7 +116,7 @@ const CategoryItem: React.FC<{
                 e.stopPropagation();
                 onToggle();
               }}
-              className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+              className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
             >
               {isExpanded ? (
                 <ChevronDown className="w-4 h-4 text-gray-500" />
@@ -140,29 +126,47 @@ const CategoryItem: React.FC<{
             </button>
           )}
           {!hasChildren && <div className="w-5" />}
-          
-          <div className={`p-1.5 rounded-lg flex-shrink-0 ${
-            isActive ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-gray-50 dark:bg-gray-700/30'
-          }`}>
+
+          <div
+            className={`p-1.5 rounded-lg flex-shrink-0 ${
+              isActive
+                ? 'bg-brand-50 dark:bg-brand-900/20'
+                : 'bg-gray-50 dark:bg-gray-700/30'
+            }`}
+          >
             {hasChildren ? (
-              <FolderTree className={`w-4 h-4 ${isActive ? ICON_COLORS[colorIndex] : 'text-gray-400'}`} />
+              <FolderTree
+                className={`w-4 h-4 ${
+                  isActive ? ICON_COLORS[colorIndex] : 'text-gray-400'
+                }`}
+              />
             ) : (
-              <Tag className={`w-4 h-4 ${isActive ? ICON_COLORS[colorIndex] : 'text-gray-400'}`} />
+              <Tag
+                className={`w-4 h-4 ${
+                  isActive ? ICON_COLORS[colorIndex] : 'text-gray-400'
+                }`}
+              />
             )}
           </div>
-          
+
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <p className={`font-medium truncate ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>
+              <p
+                className={`font-medium truncate ${
+                  isActive
+                    ? 'text-gray-900 dark:text-white'
+                    : 'text-gray-400 dark:text-gray-500'
+                }`}
+              >
                 {category.name}
               </p>
               {!isActive && (
-                <span className="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-full">
+                <span className="px-1.5 py-0.5 text-2xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-full">
                   Inactive
                 </span>
               )}
               {category.slug && (
-                <span className="text-xs text-gray-400 font-mono hidden sm:inline">
+                <span className="text-2xs text-gray-400 font-mono hidden sm:inline">
                   {category.slug}
                 </span>
               )}
@@ -177,14 +181,14 @@ const CategoryItem: React.FC<{
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {showProductCount && category.productCount !== undefined && (
-            <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1 tabular-nums">
               <Package className="w-3 h-3" />
               {category.productCount}
             </span>
           )}
-          
+
           {category.businessUnit && (
-            <span className="text-xs text-gray-400 hidden sm:flex items-center gap-1">
+            <span className="text-2xs text-gray-400 hidden sm:flex items-center gap-1">
               <Building className="w-3 h-3" />
               {category.businessUnit.name}
             </span>
@@ -196,28 +200,31 @@ const CategoryItem: React.FC<{
                 e.stopPropagation();
                 onEdit(category);
               }}
-              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+              className="p-1 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition-colors focus-ring"
               title="Edit Category"
             >
-              <Edit className="w-4 h-4 text-blue-500" />
+              <Edit className="w-4 h-4 text-brand-500" />
             </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (confirm(`Are you sure you want to delete "${category.name}"?`)) {
+                if (
+                  confirm(
+                    `Are you sure you want to delete "${category.name}"?`
+                  )
+                ) {
                   onDelete(category.id);
                 }
               }}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition-colors focus-ring"
               title="Delete Category"
             >
-              <Trash2 className="w-4 h-4 text-red-500" />
+              <Trash2 className="w-4 h-4 text-danger-500" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Children */}
       {isExpanded && hasChildren && (
         <div className="border-l-2 border-gray-200 dark:border-gray-700 ml-5">
           {category.children!.map((child) => (
@@ -258,10 +265,6 @@ const LoadingSkeleton: React.FC<{ count?: number }> = ({ count = 5 }) => {
   );
 };
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
-
 export function CategoryManagement({
   className = '',
   compact = false,
@@ -273,7 +276,7 @@ export function CategoryManagement({
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const { hasPermission } = usePermission();
-  
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -294,31 +297,29 @@ export function CategoryManagement({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
-  const canManage = hasPermission(`${PermissionResource.INVENTORY}:manage`) || 
-                     hasPermission(`${PermissionResource.INVENTORY}:edit`) ||
-                     user?.role === 'SUPER_ADMIN';
+  const canManage =
+    hasPermission(`${PermissionResource.INVENTORY}:manage`) ||
+    hasPermission(`${PermissionResource.INVENTORY}:edit`) ||
+    user?.role === 'SUPER_ADMIN';
 
-  const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || 
-                          (user?.businessUnits?.[0] as any)?.id || 
-                          localStorage.getItem('businessUnitId') || '';
-
-  // ============================================
-  // DATA LOADING
-  // ============================================
+  const businessUnitId =
+    user?.businessUnits?.[0]?.businessUnitId ||
+    (user?.businessUnits?.[0] as any)?.id ||
+    localStorage.getItem('businessUnitId') ||
+    '';
 
   const loadCategories = useCallback(async () => {
     if (!businessUnitId) {
       setLoading(false);
       return;
     }
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       const data = await inventoryService.getCategories(businessUnitId);
-      
-      // Build category tree
+
       const categoryList = (data || []).map((item: any) => ({
         id: item.id || '',
         name: item.name || 'Unnamed',
@@ -334,15 +335,12 @@ export function CategoryManagement({
         slug: item.slug || '',
         metadata: item.metadata || {},
       }));
-      
-      // Build tree structure
+
       const tree = buildCategoryTree(categoryList);
       setCategories(tree);
-      
-      // Expand first level by default
-      const firstLevelIds = new Set(tree.map(c => c.id));
+
+      const firstLevelIds = new Set(tree.map((c) => c.id));
       setExpanded(firstLevelIds);
-      
     } catch (error: any) {
       console.error('Failed to load categories:', error);
       setError(error?.message || 'Failed to load categories');
@@ -356,14 +354,12 @@ export function CategoryManagement({
   const buildCategoryTree = (items: Category[]): Category[] => {
     const map = new Map<string, Category>();
     const roots: Category[] = [];
-    
-    // Create map
-    items.forEach(item => {
+
+    items.forEach((item) => {
       map.set(item.id, { ...item, children: [] });
     });
-    
-    // Build tree
-    map.forEach(item => {
+
+    map.forEach((item) => {
       if (item.parentId && map.has(item.parentId)) {
         const parent = map.get(item.parentId)!;
         if (!parent.children) parent.children = [];
@@ -372,14 +368,13 @@ export function CategoryManagement({
         roots.push(item);
       }
     });
-    
-    // Sort children by sortOrder
-    roots.forEach(root => {
+
+    roots.forEach((root) => {
       if (root.children) {
         root.children.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       }
     });
-    
+
     return roots.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   };
 
@@ -389,20 +384,16 @@ export function CategoryManagement({
     toast.success('Categories refreshed');
   };
 
-  // ============================================
-  // CRUD OPERATIONS
-  // ============================================
-
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    
+
     if (!formData.name.trim()) {
       errors.name = 'Category name is required';
     }
     if (formData.name.trim().length > 100) {
       errors.name = 'Category name must be less than 100 characters';
     }
-    
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -420,15 +411,13 @@ export function CategoryManagement({
         ...formData,
         businessUnitId: businessUnitId,
       };
-      
+
       if (editingCategory) {
-        // await inventoryService.updateCategory(editingCategory.id, data);
         toast.success('Category updated successfully');
       } else {
-        // await inventoryService.createCategory(data);
         toast.success('Category created successfully');
       }
-      
+
       setShowAddModal(false);
       setEditingCategory(null);
       resetForm();
@@ -442,7 +431,6 @@ export function CategoryManagement({
 
   const handleDelete = async (id: string) => {
     try {
-      // await inventoryService.deleteCategory(id);
       toast.success('Category deleted successfully');
       await loadCategories();
     } catch (error: any) {
@@ -474,22 +462,18 @@ export function CategoryManagement({
     setShowAddModal(true);
   };
 
-  // ============================================
-  // FILTERING & SEARCH
-  // ============================================
-
   const filteredCategories = useMemo(() => {
     if (!searchQuery.trim()) return categories;
-    
+
     const query = searchQuery.toLowerCase().trim();
     const filterTree = (items: Category[]): Category[] => {
       const result: Category[] = [];
-      
+
       for (const item of items) {
-        const matches = 
+        const matches =
           item.name.toLowerCase().includes(query) ||
           (item.description && item.description.toLowerCase().includes(query));
-        
+
         if (matches) {
           result.push(item);
         } else if (item.children && item.children.length > 0) {
@@ -499,10 +483,10 @@ export function CategoryManagement({
           }
         }
       }
-      
+
       return result;
     };
-    
+
     return filterTree(categories);
   }, [categories, searchQuery]);
 
@@ -527,19 +511,11 @@ export function CategoryManagement({
     return count;
   };
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     if (isAuthenticated && businessUnitId) {
       loadCategories();
     }
   }, [isAuthenticated, businessUnitId, loadCategories]);
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (!isAuthenticated) {
     return (
@@ -547,8 +523,12 @@ export function CategoryManagement({
         <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-8 h-8 text-gray-400" />
         </div>
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Please Login</h3>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">You need to be logged in to manage categories</p>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          Please Login
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+          You need to be logged in to manage categories
+        </p>
       </div>
     );
   }
@@ -559,8 +539,12 @@ export function CategoryManagement({
         <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Shield className="w-8 h-8 text-gray-400" />
         </div>
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Access Denied</h3>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">You don't have permission to manage categories</p>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          Access Denied
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+          You don't have permission to manage categories
+        </p>
       </div>
     );
   }
@@ -570,7 +554,7 @@ export function CategoryManagement({
       <div className={`${className}`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <FolderTree className="w-6 h-6 text-blue-500" />
+            <FolderTree className="w-6 h-6 text-brand-500" />
             Categories
           </h2>
         </div>
@@ -581,13 +565,17 @@ export function CategoryManagement({
 
   if (error) {
     return (
-      <div className={`p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3 ${className}`}>
-        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+      <div
+        className={`p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl flex items-start gap-3 ${className}`}
+      >
+        <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+          <p className="text-sm text-danger-700 dark:text-danger-300">
+            {error}
+          </p>
           <button
             onClick={handleRefresh}
-            className="mt-2 text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+            className="mt-2 text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 focus-ring rounded"
           >
             Try again
           </button>
@@ -601,30 +589,35 @@ export function CategoryManagement({
 
   return (
     <div className={`${className}`}>
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <FolderTree className="w-6 h-6 text-blue-500" />
+            <FolderTree className="w-6 h-6 text-brand-500" />
             Categories
           </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             {totalCount} categories • {totalProducts} products
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setViewMode(viewMode === 'tree' ? 'list' : 'tree')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
-            {viewMode === 'tree' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
+            {viewMode === 'tree' ? (
+              <List className="w-4 h-4" />
+            ) : (
+              <Grid className="w-4 h-4" />
+            )}
           </button>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+            />
           </button>
           <button
             onClick={() => {
@@ -632,7 +625,7 @@ export function CategoryManagement({
               resetForm();
               setShowAddModal(true);
             }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+            className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg flex items-center gap-2 transition-all focus-ring"
           >
             <Plus className="w-4 h-4" />
             Add Category
@@ -640,7 +633,6 @@ export function CategoryManagement({
         </div>
       </div>
 
-      {/* Search */}
       <div className="mb-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -649,18 +641,19 @@ export function CategoryManagement({
             placeholder="Search categories..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none transition-shadow"
           />
         </div>
       </div>
 
-      {/* Categories List */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="card-brand !p-0 overflow-hidden">
         {filteredCategories.length === 0 ? (
           <div className="p-8 text-center">
             <FolderOpen className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
             <p className="text-gray-500 dark:text-gray-400">
-              {searchQuery ? 'No categories match your search' : 'No categories found'}
+              {searchQuery
+                ? 'No categories match your search'
+                : 'No categories found'}
             </p>
             {!searchQuery && (
               <button
@@ -669,7 +662,7 @@ export function CategoryManagement({
                   resetForm();
                   setShowAddModal(true);
                 }}
-                className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                className="mt-2 text-sm text-brand-600 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300 focus-ring rounded"
               >
                 Add your first category →
               </button>
@@ -704,20 +697,22 @@ export function CategoryManagement({
         )}
       </div>
 
-      {/* Add/Edit Modal */}
       <AnimatePresence>
         {showAddModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => {
-              setShowAddModal(false);
-              setEditingCategory(null);
-              resetForm();
-            }} />
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in">
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => {
+                setShowAddModal(false);
+                setEditingCategory(null);
+                resetForm();
+              }}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6"
+              className="relative card-brand shadow-card-hover max-w-md w-full animate-slide-up"
             >
               <button
                 onClick={() => {
@@ -725,19 +720,19 @@ export function CategoryManagement({
                   setEditingCategory(null);
                   resetForm();
                 }}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
-              
+
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
                 {editingCategory ? 'Edit Category' : 'Add Category'}
               </h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Category Name <span className="text-red-500">*</span>
+                    Category Name <span className="text-danger-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -746,37 +741,42 @@ export function CategoryManagement({
                       setFormData({ ...formData, name: e.target.value });
                       setTouched({ ...touched, name: true });
                       if (formErrors.name) {
-                        // ✅ FIXED: Use empty string instead of undefined
                         setFormErrors({ ...formErrors, name: '' });
                       }
                     }}
                     onBlur={() => setTouched({ ...touched, name: true })}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                      formErrors.name && touched.name ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none transition-shadow ${
+                      formErrors.name && touched.name
+                        ? 'border-danger-500 dark:border-danger-500'
+                        : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter category name"
                     disabled={isSubmitting}
                     autoFocus
                   />
                   {formErrors.name && touched.name && (
-                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.name}</p>
+                    <p className="mt-1 text-sm text-danger-600 dark:text-danger-400">
+                      {formErrors.name}
+                    </p>
                   )}
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Description
                   </label>
                   <textarea
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none transition-shadow"
                     placeholder="Category description"
                     disabled={isSubmitting}
                   />
                 </div>
-                
+
                 {allowNesting && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -784,34 +784,42 @@ export function CategoryManagement({
                     </label>
                     <select
                       value={formData.parentId}
-                      onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      onChange={(e) =>
+                        setFormData({ ...formData, parentId: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none transition-shadow"
                       disabled={isSubmitting}
                     >
                       <option value="">None (Top Level)</option>
                       {categories
-                        .filter(c => c.id !== editingCategory?.id)
+                        .filter((c) => c.id !== editingCategory?.id)
                         .map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
                         ))}
                     </select>
                   </div>
                 )}
-                
+
                 <div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={formData.isActive}
-                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      onChange={(e) =>
+                        setFormData({ ...formData, isActive: e.target.checked })
+                      }
+                      className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 focus:outline-none"
                       disabled={isSubmitting}
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Active Category</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Active Category
+                    </span>
                   </label>
                 </div>
               </div>
-              
+
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => {
@@ -819,7 +827,7 @@ export function CategoryManagement({
                     setEditingCategory(null);
                     resetForm();
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="btn-secondary focus-ring"
                   disabled={isSubmitting}
                 >
                   Cancel
@@ -827,12 +835,18 @@ export function CategoryManagement({
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 disabled:opacity-50 focus-ring"
                 >
                   {isSubmitting ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
                   ) : (
-                    <><Save className="w-4 h-4" />{editingCategory ? 'Update' : 'Create'}</>
+                    <>
+                      <Save className="w-4 h-4" />
+                      {editingCategory ? 'Update' : 'Create'}
+                    </>
                   )}
                 </button>
               </div>
@@ -843,9 +857,5 @@ export function CategoryManagement({
     </div>
   );
 }
-
-// ============================================
-// EXPORT
-// ============================================
 
 export default CategoryManagement;

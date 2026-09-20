@@ -1,6 +1,6 @@
-'use client';
-
 // packages/web/app/(dashboard)/admin/catalog/edit/[id]/page.tsx
+
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -127,7 +127,6 @@ export default function EditProductPage() {
   const params = useParams();
   const router = useRouter();
 
-  // `params?.id` can be `string | string[] | undefined`. Normalize once.
   const rawId = params?.id;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -229,7 +228,6 @@ export default function EditProductPage() {
     [variantImageErrors]
   );
 
-  /** Variant images are always an array after `loadData` maps them. */
   const getVariantImages = useCallback(
     (variant: Variant): string[] => variant.images || [],
     []
@@ -476,11 +474,6 @@ export default function EditProductPage() {
       setSaving(true);
 
       try {
-        // The service's `Product` type declares `category?: any` and
-        // `supplier?: any` — the update payload can safely carry
-        // `categoryId`/`supplierId` because the service maps them
-        // internally. Cast through `any` so the compile-time shape
-        // doesn't need to match every field.
         const data: any = {
           name: formData.name.trim(),
           sku: formData.sku.trim().toUpperCase(),
@@ -590,7 +583,7 @@ export default function EditProductPage() {
       await loadData();
       toast.success('Product refreshed');
     } catch {
-      // loadData handles its own error state + toast.
+      /* loadData handles its own error state + toast. */
     }
   }, [loadData]);
 
@@ -732,8 +725,8 @@ export default function EditProductPage() {
   const productName = originalProduct?.name || 'Product';
   const productStatus = originalProduct?.isActive ? 'Active' : 'Inactive';
   const productStatusColor = originalProduct?.isActive
-    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+    ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
+    : 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300';
 
   const mainStock = originalProduct?.inventory?.quantity || 0;
   const variantStock = formData.variants.reduce(
@@ -749,11 +742,9 @@ export default function EditProductPage() {
   // ============================================
 
   if (!id) {
-    // The redirect effect above has already fired. Render a spinner so
-    // the transition is smooth instead of returning null mid-render.
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400" />
       </div>
     );
   }
@@ -762,7 +753,7 @@ export default function EditProductPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading product...
           </p>
@@ -786,7 +777,7 @@ export default function EditProductPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -798,8 +789,8 @@ export default function EditProductPage() {
   if (!productExists) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
-        <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-          <AlertCircle className="w-12 h-12 text-red-500" />
+        <div className="w-24 h-24 bg-brand-accent-100 dark:bg-brand-accent-950/20 rounded-full flex items-center justify-center mb-4">
+          <AlertCircle className="w-12 h-12 text-brand-accent-500" />
         </div>
         <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
           Product Not Found
@@ -809,7 +800,7 @@ export default function EditProductPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -821,8 +812,8 @@ export default function EditProductPage() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
-        <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-          <AlertCircle className="w-12 h-12 text-red-500" />
+        <div className="w-24 h-24 bg-brand-accent-100 dark:bg-brand-accent-950/20 rounded-full flex items-center justify-center mb-4">
+          <AlertCircle className="w-12 h-12 text-brand-accent-500" />
         </div>
         <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
           Error Loading Product
@@ -833,14 +824,14 @@ export default function EditProductPage() {
         <div className="flex items-center gap-3 mt-4">
           <button
             onClick={loadData}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
           >
             <Loader2 className="w-4 h-4" />
             Retry
           </button>
           <button
             onClick={() => router.push('/admin/catalog')}
-            className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
           >
             Back to Catalog
           </button>
@@ -861,7 +852,7 @@ export default function EditProductPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/admin/catalog')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Back to catalog"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -877,7 +868,7 @@ export default function EditProductPage() {
                   {productStatus}
                 </span>
                 {originalProduct?.inventoryId && (
-                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 flex items-center gap-1">
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300 flex items-center gap-1">
                     <Link2 className="w-3 h-3" />
                     Linked to Inventory
                   </span>
@@ -894,12 +885,12 @@ export default function EditProductPage() {
                 </span>
                 <button
                   onClick={handleCopyId}
-                  className="flex items-center gap-1 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  className="flex items-center gap-1 text-xs hover:text-brand-600 dark:hover:text-brand-400 transition-colors focus-ring"
                   title="Copy full product ID"
                 >
                   ID: {idPreview}
                   {copied ? (
-                    <CheckCircle className="w-3 h-3 text-green-500" />
+                    <CheckCircle className="w-3 h-3 text-success-500" />
                   ) : (
                     <Copy className="w-3 h-3" />
                   )}
@@ -911,7 +902,7 @@ export default function EditProductPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Refresh product"
             >
               <RefreshCw
@@ -921,11 +912,11 @@ export default function EditProductPage() {
 
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
               aria-label="Toggle theme"
             >
               {isDark ? (
-                <Sun className="w-5 h-5 text-yellow-500" />
+                <Sun className="w-5 h-5 text-brand-500" />
               ) : (
                 <Moon className="w-5 h-5 text-gray-600" />
               )}
@@ -934,7 +925,7 @@ export default function EditProductPage() {
             <Link
               href={`/shop/${id}`}
               target="_blank"
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
               aria-label="View product"
             >
               <Eye className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -943,10 +934,10 @@ export default function EditProductPage() {
             {canDeleteProducts && (
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="p-2 rounded-lg border border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="p-2 rounded-lg border border-brand-accent-300 dark:border-brand-accent-700 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-950/20 transition-colors focus-ring"
                 aria-label="Delete product"
               >
-                <Trash2 className="w-5 h-5 text-red-500" />
+                <Trash2 className="w-5 h-5 text-brand-accent-500" />
               </button>
             )}
           </div>
@@ -956,7 +947,7 @@ export default function EditProductPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Price</p>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
               ${parseFloat(formData.unitPrice || '0').toFixed(2)}
             </p>
           </div>
@@ -964,7 +955,7 @@ export default function EditProductPage() {
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Total Stock
             </p>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
               {totalStock}
               {variantStock > 0 && (
                 <span className="text-xs font-normal text-gray-500 dark:text-gray-400 ml-1">
@@ -975,16 +966,16 @@ export default function EditProductPage() {
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Variants</p>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
               {formData.variants.length}
               {formData.variants.some((v) => hasVariantImages(v)) && (
-                <ImageIcon className="w-3 h-3 inline ml-1 text-purple-500" />
+                <ImageIcon className="w-3 h-3 inline ml-1 text-secondary-500" />
               )}
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Rating</p>
-            <p className="text-sm font-bold text-gray-900 dark:text-white">
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
               {originalProduct?.rating?.toFixed(1) || 'N/A'}
             </p>
           </div>
@@ -994,7 +985,7 @@ export default function EditProductPage() {
         {formData.variants.length > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-500" />
+              <Layers className="w-4 h-4 text-secondary-500" />
               Variant Images Summary
             </h3>
             <div className="flex flex-wrap gap-3">
@@ -1040,10 +1031,10 @@ export default function EditProductPage() {
             <button
               key={sectionId}
               onClick={() => setActiveSection(sectionId)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 focus-ring ${
                 activeSection === sectionId
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  ? 'bg-brand-600 text-white shadow-brand'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 border border-transparent'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -1060,13 +1051,13 @@ export default function EditProductPage() {
           {activeSection === 'basic' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-500" />
+                <Package className="w-5 h-5 text-brand-500" />
                 Basic Information
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Product Name <span className="text-red-500">*</span>
+                    Product Name <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1081,16 +1072,16 @@ export default function EditProductPage() {
                       }
                     }}
                     onBlur={(e) => handleBlur('name', e.target.value)}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
                       errors.name
-                        ? 'border-red-500 dark:border-red-500'
+                        ? 'border-brand-accent-500 dark:border-brand-accent-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter product name"
                     aria-invalid={!!errors.name}
                   />
                   {errors.name && (
-                    <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.name}
                     </p>
@@ -1099,7 +1090,7 @@ export default function EditProductPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    SKU <span className="text-red-500">*</span>
+                    SKU <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1117,16 +1108,16 @@ export default function EditProductPage() {
                       }
                     }}
                     onBlur={(e) => handleBlur('sku', e.target.value)}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
                       errors.sku
-                        ? 'border-red-500 dark:border-red-500'
+                        ? 'border-brand-accent-500 dark:border-brand-accent-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter SKU"
                     aria-invalid={!!errors.sku}
                   />
                   {errors.sku && (
-                    <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.sku}
                     </p>
@@ -1143,7 +1134,7 @@ export default function EditProductPage() {
                       setFormData({ ...formData, description: e.target.value })
                     }
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Enter product description"
                   />
                 </div>
@@ -1158,7 +1149,7 @@ export default function EditProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, barcode: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Enter barcode"
                   />
                 </div>
@@ -1173,7 +1164,7 @@ export default function EditProductPage() {
                       setFormData({ ...formData, notes: e.target.value })
                     }
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Internal notes about this product"
                   />
                 </div>
@@ -1189,7 +1180,7 @@ export default function EditProductPage() {
                           isActive: e.target.checked,
                         })
                       }
-                      className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 transition-colors duration-200"
+                      className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 dark:focus:ring-brand-400 bg-white dark:bg-gray-700 transition-colors duration-200"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">
                       Active
@@ -1205,7 +1196,7 @@ export default function EditProductPage() {
                           featured: e.target.checked,
                         })
                       }
-                      className="w-4 h-4 text-yellow-500 border-gray-300 dark:border-gray-600 rounded focus:ring-yellow-500 bg-white dark:bg-gray-700 transition-colors duration-200"
+                      className="w-4 h-4 text-brand-500 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-700 transition-colors duration-200"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">
                       Featured
@@ -1221,7 +1212,7 @@ export default function EditProductPage() {
                           isDigital: e.target.checked,
                         })
                       }
-                      className="w-4 h-4 text-purple-500 border-gray-300 dark:border-gray-600 rounded focus:ring-purple-500 bg-white dark:bg-gray-700 transition-colors duration-200"
+                      className="w-4 h-4 text-success-500 border-gray-300 dark:border-gray-600 rounded focus:ring-success-500 bg-white dark:bg-gray-700 transition-colors duration-200"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">
                       Digital Product
@@ -1236,13 +1227,13 @@ export default function EditProductPage() {
           {activeSection === 'pricing' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-green-500" />
+                <DollarSign className="w-5 h-5 text-success-500" />
                 Pricing
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Unit Price <span className="text-red-500">*</span>
+                    Unit Price <span className="text-brand-accent-500">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
@@ -1269,9 +1260,9 @@ export default function EditProductPage() {
                         }
                       }}
                       onBlur={(e) => handleBlur('unitPrice', e.target.value)}
-                      className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                      className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                         errors.unitPrice
-                          ? 'border-red-500 dark:border-red-500'
+                          ? 'border-brand-accent-500 dark:border-brand-accent-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="0.00"
@@ -1279,7 +1270,7 @@ export default function EditProductPage() {
                     />
                   </div>
                   {errors.unitPrice && (
-                    <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.unitPrice}
                     </p>
@@ -1302,7 +1293,7 @@ export default function EditProductPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, costPrice: e.target.value })
                       }
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                      className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                       placeholder="0.00"
                     />
                   </div>
@@ -1321,7 +1312,7 @@ export default function EditProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, taxRate: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                     placeholder="0"
                   />
                 </div>
@@ -1338,14 +1329,14 @@ export default function EditProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, weight: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                     placeholder="0.00"
                   />
                 </div>
 
                 {formData.unitPrice && (
-                  <div className="md:col-span-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+                  <div className="md:col-span-2 bg-brand-50 dark:bg-brand-950/20 rounded-lg p-4 border border-brand-200 dark:border-brand-800">
+                    <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300 mb-2">
                       Price Summary
                     </h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
@@ -1353,7 +1344,7 @@ export default function EditProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Unit Price:
                         </span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-2">
+                        <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
                           ${parseFloat(formData.unitPrice || '0').toFixed(2)}
                         </span>
                       </div>
@@ -1361,7 +1352,7 @@ export default function EditProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Cost Price:
                         </span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-2">
+                        <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
                           ${parseFloat(formData.costPrice || '0').toFixed(2)}
                         </span>
                       </div>
@@ -1369,7 +1360,7 @@ export default function EditProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Tax Rate:
                         </span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-2">
+                        <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
                           {formData.taxRate || 0}%
                         </span>
                       </div>
@@ -1377,7 +1368,7 @@ export default function EditProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Profit Margin:
                         </span>
-                        <span className="font-medium text-green-600 dark:text-green-400 ml-2">
+                        <span className="font-medium text-success-600 dark:text-success-400 ml-2 tabular-nums">
                           {formData.costPrice &&
                           parseFloat(formData.costPrice) > 0
                             ? `${(
@@ -1400,7 +1391,7 @@ export default function EditProductPage() {
           {activeSection === 'inventory' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-purple-500" />
+                <Layers className="w-5 h-5 text-secondary-500" />
                 Inventory
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1421,15 +1412,15 @@ export default function EditProductPage() {
                     }}
                     onBlur={(e) => handleBlur('minStock', e.target.value)}
                     min="0"
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                       errors.minStock
-                        ? 'border-red-500 dark:border-red-500'
+                        ? 'border-brand-accent-500 dark:border-brand-accent-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     aria-invalid={!!errors.minStock}
                   />
                   {errors.minStock && (
-                    <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.minStock}
                     </p>
@@ -1452,15 +1443,15 @@ export default function EditProductPage() {
                     }}
                     onBlur={(e) => handleBlur('maxStock', e.target.value)}
                     min="0"
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                       errors.maxStock
-                        ? 'border-red-500 dark:border-red-500'
+                        ? 'border-brand-accent-500 dark:border-brand-accent-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     aria-invalid={!!errors.maxStock}
                   />
                   {errors.maxStock && (
-                    <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.maxStock}
                     </p>
@@ -1468,17 +1459,17 @@ export default function EditProductPage() {
                 </div>
               </div>
 
-              <div className="mt-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
-                <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">
+              <div className="mt-4 bg-warning-50 dark:bg-warning-950/20 rounded-lg p-4 border border-warning-200 dark:border-warning-800">
+                <h4 className="text-sm font-medium text-warning-800 dark:text-warning-300 mb-2">
                   Inventory Settings
                 </h4>
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                <p className="text-sm text-warning-700 dark:text-warning-300 tabular-nums">
                   Products will be notified when stock falls below{' '}
                   <strong>{formData.minStock || 5}</strong> units.
                   {formData.maxStock &&
                     ` Maximum stock capacity is ${formData.maxStock} units.`}
                 </p>
-                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                <p className="text-sm text-warning-700 dark:text-warning-300 mt-1 tabular-nums">
                   Current stock: <strong>{mainStock}</strong> units
                   {variantStock > 0 && (
                     <>
@@ -1495,7 +1486,7 @@ export default function EditProductPage() {
           {activeSection === 'variants' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-orange-500" />
+                <Layers className="w-5 h-5 text-brand-500" />
                 Variants ({formData.variants.length})
               </h2>
 
@@ -1507,7 +1498,7 @@ export default function EditProductPage() {
                   </p>
                   <Link
                     href={`/admin/catalog/edit/${id}?addVariant=true`}
-                    className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    className="mt-4 inline-block px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors shadow-brand focus-ring"
                   >
                     <Plus className="w-4 h-4 inline mr-2" />
                     Add Variants
@@ -1520,7 +1511,7 @@ export default function EditProductPage() {
                     return (
                       <div
                         key={variant.id}
-                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-brand-50/30 dark:hover:bg-brand-950/10 transition-colors"
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
@@ -1546,17 +1537,17 @@ export default function EditProductPage() {
                                 <span className="font-mono">
                                   SKU: {variant.sku}
                                 </span>
-                                <span className="font-medium text-gray-900 dark:text-white">
+                                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                                   ${variant.price?.toFixed(2) || '0.00'}
                                 </span>
-                                <span>Stock: {variant.stock}</span>
+                                <span className="tabular-nums">Stock: {variant.stock}</span>
                                 {variant.barcode && (
                                   <span className="text-xs">
                                     Barcode: {variant.barcode}
                                   </span>
                                 )}
                                 {variant.inventoryId && (
-                                  <span className="text-xs text-blue-500 flex items-center gap-1">
+                                  <span className="text-xs text-brand-500 flex items-center gap-1">
                                     <Link2 className="w-3 h-3" />
                                     Inventory Linked
                                   </span>
@@ -1582,7 +1573,7 @@ export default function EditProductPage() {
                                       </div>
                                     ))}
                                   {variantImages.length > 4 && (
-                                    <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-500">
+                                    <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-500 tabular-nums">
                                       +{variantImages.length - 4}
                                     </div>
                                   )}
@@ -1594,8 +1585,8 @@ export default function EditProductPage() {
                             <span
                               className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                 variant.isActive
-                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                                  ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
+                                  : 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300'
                               }`}
                             >
                               {variant.isActive ? 'Active' : 'Inactive'}
@@ -1603,18 +1594,18 @@ export default function EditProductPage() {
                             <button
                               type="button"
                               onClick={() => handleEditVariant(variant)}
-                              className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                              className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded-lg transition-colors focus-ring"
                               title="Edit variant"
                             >
-                              <Edit className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                              <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteVariant(variant.id)}
-                              className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                              className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded-lg transition-colors focus-ring"
                               title="Delete variant"
                             >
-                              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              <Trash2 className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
                             </button>
                           </div>
                         </div>
@@ -1631,11 +1622,11 @@ export default function EditProductPage() {
                     className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
                     onClick={() => setShowVariantModal(false)}
                   />
-                  <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+                  <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
                     <button
                       type="button"
                       onClick={() => setShowVariantModal(false)}
-                      className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      className="absolute top-4 right-4 p-1 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                       aria-label="Close"
                     >
                       <X className="w-5 h-5 text-gray-500" />
@@ -1659,7 +1650,7 @@ export default function EditProductPage() {
                               name: e.target.value,
                             })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                         />
                       </div>
                       <div>
@@ -1675,7 +1666,7 @@ export default function EditProductPage() {
                               sku: e.target.value.toUpperCase(),
                             })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono transition-colors duration-200"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -1694,7 +1685,7 @@ export default function EditProductPage() {
                                 price: parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums transition-colors duration-200"
                           />
                         </div>
                         <div>
@@ -1711,7 +1702,7 @@ export default function EditProductPage() {
                                 stock: parseInt(e.target.value) || 0,
                               })
                             }
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums transition-colors duration-200"
                           />
                         </div>
                       </div>
@@ -1725,7 +1716,7 @@ export default function EditProductPage() {
                               isActive: e.target.checked,
                             })
                           }
-                          className="w-4 h-4 text-blue-600 rounded"
+                          className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                         />
                         <span className="text-sm text-gray-700 dark:text-gray-300">
                           Active
@@ -1737,7 +1728,7 @@ export default function EditProductPage() {
                       <button
                         type="button"
                         onClick={() => setShowVariantModal(false)}
-                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                       >
                         Cancel
                       </button>
@@ -1745,7 +1736,7 @@ export default function EditProductPage() {
                         type="button"
                         onClick={handleSaveVariant}
                         disabled={savingVariant}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors"
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors shadow-brand focus-ring"
                       >
                         {savingVariant ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -1765,7 +1756,7 @@ export default function EditProductPage() {
           {activeSection === 'classification' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <Tag className="w-5 h-5 text-orange-500" />
+                <Tag className="w-5 h-5 text-brand-500" />
                 Classification
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1778,7 +1769,7 @@ export default function EditProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, categoryId: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                   >
                     <option value="">Select Category</option>
                     {categories.map((cat) => (
@@ -1798,7 +1789,7 @@ export default function EditProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, supplierId: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                   >
                     <option value="">Select Supplier</option>
                     {suppliers.map((sup) => (
@@ -1820,14 +1811,14 @@ export default function EditProductPage() {
                         value={newTag}
                         onChange={(e) => setNewTag(e.target.value)}
                         onKeyDown={handleTagKeyDown}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                         placeholder="Add a tag"
                       />
                       {newTag && (
                         <button
                           type="button"
                           onClick={() => setNewTag('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring"
                           aria-label="Clear tag input"
                         >
                           <X className="w-4 h-4" />
@@ -1838,7 +1829,7 @@ export default function EditProductPage() {
                       type="button"
                       onClick={addTag}
                       disabled={!newTag.trim()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors whitespace-nowrap flex items-center gap-1"
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors whitespace-nowrap flex items-center gap-1 shadow-brand focus-ring"
                     >
                       <Plus className="w-4 h-4" />
                       Add
@@ -1849,13 +1840,13 @@ export default function EditProductPage() {
                       {formData.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm transition-colors duration-200"
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-brand-50 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300 rounded-full text-sm transition-colors duration-200"
                         >
                           {tag}
                           <button
                             type="button"
                             onClick={() => removeTag(tag)}
-                            className="hover:text-blue-900 dark:hover:text-blue-100 transition-colors"
+                            className="hover:text-brand-accent-600 dark:hover:text-brand-accent-400 transition-colors focus-ring"
                             aria-label={`Remove tag ${tag}`}
                           >
                             ×
@@ -1877,7 +1868,7 @@ export default function EditProductPage() {
           {activeSection === 'seo' && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <Eye className="w-5 h-5 text-indigo-500" />
+                <Eye className="w-5 h-5 text-secondary-500" />
                 SEO
               </h2>
               <div className="space-y-4">
@@ -1894,10 +1885,10 @@ export default function EditProductPage() {
                         seo: { ...prev.seo, title: e.target.value },
                       }))
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="SEO title (max 60 characters)"
                   />
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-1 tabular-nums">
                     {formData.seo.title.length}/60 characters
                   </p>
                 </div>
@@ -1915,10 +1906,10 @@ export default function EditProductPage() {
                       }))
                     }
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="SEO description (max 160 characters)"
                   />
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-1 tabular-nums">
                     {formData.seo.description.length}/160 characters
                   </p>
                 </div>
@@ -1936,7 +1927,7 @@ export default function EditProductPage() {
                         seo: { ...prev.seo, slug: e.target.value },
                       }))
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="custom-url-slug"
                   />
                   <p className="text-xs text-gray-400 mt-1">
@@ -1957,14 +1948,14 @@ export default function EditProductPage() {
                         value={newSeoKeyword}
                         onChange={(e) => setNewSeoKeyword(e.target.value)}
                         onKeyDown={handleSeoKeyDown}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                         placeholder="Add a keyword"
                       />
                       {newSeoKeyword && (
                         <button
                           type="button"
                           onClick={() => setNewSeoKeyword('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring"
                           aria-label="Clear keyword input"
                         >
                           <X className="w-4 h-4" />
@@ -1975,7 +1966,7 @@ export default function EditProductPage() {
                       type="button"
                       onClick={addSeoKeyword}
                       disabled={!newSeoKeyword.trim()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors whitespace-nowrap flex items-center gap-1"
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors whitespace-nowrap flex items-center gap-1 shadow-brand focus-ring"
                     >
                       <Plus className="w-4 h-4" />
                       Add
@@ -1990,13 +1981,13 @@ export default function EditProductPage() {
                       formData.seo.keywords.map((keyword) => (
                         <span
                           key={keyword}
-                          className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm transition-colors duration-200"
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-success-50 dark:bg-success-950/30 text-success-700 dark:text-success-300 rounded-full text-sm transition-colors duration-200"
                         >
                           {keyword}
                           <button
                             type="button"
                             onClick={() => removeSeoKeyword(keyword)}
-                            className="hover:text-red-600 transition-colors"
+                            className="hover:text-brand-accent-600 dark:hover:text-brand-accent-400 transition-colors focus-ring"
                             aria-label={`Remove keyword ${keyword}`}
                           >
                             ×
@@ -2007,15 +1998,15 @@ export default function EditProductPage() {
                   </div>
                 </div>
 
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+                <div className="bg-brand-50 dark:bg-brand-950/20 rounded-lg p-4 border border-brand-200 dark:border-brand-800">
+                  <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300 mb-2">
                     Search Engine Preview
                   </h4>
                   <div className="space-y-1">
-                    <p className="text-lg text-blue-600 hover:underline cursor-pointer">
+                    <p className="text-lg text-brand-600 hover:underline cursor-pointer">
                       {formData.seo.title || formData.name || 'Product Title'}
                     </p>
-                    <p className="text-sm text-green-700 dark:text-green-400">
+                    <p className="text-sm text-success-700 dark:text-success-400">
                       {formData.seo.slug
                         ? `https://example.com/products/${formData.seo.slug}`
                         : 'https://example.com/products/...'}
@@ -2033,14 +2024,14 @@ export default function EditProductPage() {
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6 flex flex-col sm:flex-row items-center justify-end gap-3">
             <Link
               href="/admin/catalog"
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center focus-ring"
             >
               Cancel
             </Link>
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
+              className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center shadow-brand focus-ring"
             >
               {saving ? (
                 <>
@@ -2067,14 +2058,14 @@ export default function EditProductPage() {
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-lg">
+                  <AlertTriangle className="w-6 h-6 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -2096,14 +2087,14 @@ export default function EditProductPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 bg-brand-accent-600 hover:bg-brand-accent-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-brand focus-ring"
                 >
                   {deleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />

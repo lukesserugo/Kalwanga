@@ -258,19 +258,20 @@ function StatCard({
   color: string;
 }) {
   const colors: Record<string, string> = {
-    blue: 'text-blue-600 dark:text-blue-400',
-    yellow: 'text-yellow-600 dark:text-yellow-400',
-    green: 'text-green-600 dark:text-green-400',
-    red: 'text-red-600 dark:text-red-400',
+    brand: 'text-brand-600 dark:text-brand-400',
+    'brand-accent': 'text-brand-accent-600 dark:text-brand-accent-400',
+    secondary: 'text-secondary-600 dark:text-secondary-400',
+    success: 'text-success-600 dark:text-success-400',
+    warning: 'text-warning-600 dark:text-warning-400',
+    danger: 'text-danger-600 dark:text-danger-400',
     gray: 'text-gray-600 dark:text-gray-400',
-    purple: 'text-purple-600 dark:text-purple-400',
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
       <p
-        className={`text-xl font-bold ${
+        className={`text-xl font-bold tabular-nums ${
           colors[color] || 'text-gray-900 dark:text-white'
         }`}
       >
@@ -295,7 +296,7 @@ function PaymentMethodBadge({
   return (
     <div className={`px-2 py-1 rounded-lg text-center ${color}`}>
       <p className="text-xs font-medium">{displayLabel}</p>
-      <p className="text-sm font-bold">{count}</p>
+      <p className="text-sm font-bold tabular-nums">{count}</p>
     </div>
   );
 }
@@ -307,12 +308,12 @@ function PaymentMethodBadge({
 const getStatusColor = (status: string): string => {
   const colors: Record<string, string> = {
     issued:
-      'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-    sent: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+      'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
+    sent: 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
     printed:
-      'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+      'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
     cancelled:
-      'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
+      'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
     void: 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
   };
   return (
@@ -323,17 +324,17 @@ const getStatusColor = (status: string): string => {
 
 const getPaymentMethodColor = (method: string): string => {
   const colors: Record<string, string> = {
-    CASH: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+    CASH: 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
     CREDIT_CARD:
-      'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+      'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
     DEBIT_CARD:
-      'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+      'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
     MOBILE_MONEY:
-      'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
+      'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
     BANK_TRANSFER:
-      'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400',
+      'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
     GIFT_CARD:
-      'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-400',
+      'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
   };
   return (
     colors[method] ||
@@ -885,7 +886,7 @@ export default function ReceiptsPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/sales')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-500" />
               </button>
@@ -903,7 +904,7 @@ export default function ReceiptsPage() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => fetchReceipts(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
@@ -916,7 +917,7 @@ export default function ReceiptsPage() {
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -930,30 +931,30 @@ export default function ReceiptsPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-          <StatCard title="Total" value={stats.total} color="blue" />
-          <StatCard title="Issued" value={stats.issued} color="green" />
-          <StatCard title="Sent" value={stats.sent} color="blue" />
-          <StatCard title="Printed" value={stats.printed} color="purple" />
-          <StatCard title="Cancelled" value={stats.cancelled} color="yellow" />
+          <StatCard title="Total" value={stats.total} color="brand" />
+          <StatCard title="Issued" value={stats.issued} color="success" />
+          <StatCard title="Sent" value={stats.sent} color="brand" />
+          <StatCard title="Printed" value={stats.printed} color="brand-accent" />
+          <StatCard title="Cancelled" value={stats.cancelled} color="warning" />
           <StatCard title="Void" value={stats.void} color="gray" />
           <StatCard
             title="Total Amount"
             value={formatCurrency(stats.totalAmount)}
-            color="blue"
+            color="brand"
           />
         </div>
 
         {/* Additional Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Average Receipt Amount
             </p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(stats.averageAmount)}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
               Payment Methods
             </p>
@@ -982,7 +983,8 @@ export default function ReceiptsPage() {
                 count={stats.byPaymentMethod.BANK_TRANSFER}
                 label="Bank"
               />
-              <PaymentMethodBadge                method="GIFT_CARD"
+              <PaymentMethodBadge
+                method="GIFT_CARD"
                 count={stats.byPaymentMethod.GIFT_CARD}
                 label="Gift"
               />
@@ -991,7 +993,7 @@ export default function ReceiptsPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -1000,13 +1002,13 @@ export default function ReceiptsPage() {
                 placeholder="Search by receipt #, customer..."
                 value={filters.search}
                 onChange={handleSearch}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
             <select
               value={filters.status}
               onChange={handleStatusChange}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="all">All Statuses</option>
               <option value="issued">Issued</option>
@@ -1019,17 +1021,17 @@ export default function ReceiptsPage() {
               type="date"
               value={filters.startDate}
               onChange={(e) => handleDateChange('startDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <button
               onClick={() => fetchReceipts()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filters
             </button>
@@ -1038,7 +1040,7 @@ export default function ReceiptsPage() {
 
         {/* List */}
         {receipts.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-12 text-center border border-gray-200 dark:border-gray-700">
+          <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">🧾</div>
             <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
               No Receipts Found
@@ -1059,11 +1061,11 @@ export default function ReceiptsPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all overflow-hidden border border-gray-200 dark:border-gray-700"
+                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                   >
                     <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-green-600 dark:text-green-400">
+                        <span className="font-mono font-bold text-success-600 dark:text-success-400 tabular-nums">
                           #{receipt.receiptNumber}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -1083,7 +1085,7 @@ export default function ReceiptsPage() {
                           {receipt.status.charAt(0).toUpperCase() +
                             receipt.status.slice(1)}
                         </span>
-                        <span className="font-bold text-gray-900 dark:text-white">
+                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(receipt.total)}
                         </span>
                       </div>
@@ -1101,7 +1103,7 @@ export default function ReceiptsPage() {
                               <MailIcon className="w-4 h-4" />
                               {receipt.customerEmail || 'N/A'}
                             </span>
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 tabular-nums">
                               <Package className="w-4 h-4" />
                               {receipt.items.length} items
                             </span>
@@ -1134,7 +1136,7 @@ export default function ReceiptsPage() {
                               setSelectedReceipt(receipt);
                               setShowDetailModal(true);
                             }}
-                            className="px-3 py-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                           >
                             <Eye className="w-4 h-4" />
                             Details
@@ -1142,7 +1144,7 @@ export default function ReceiptsPage() {
                           <button
                             onClick={() => handlePrintReceipt(receipt)}
                             disabled={processing}
-                            className="px-3 py-1.5 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                            className="px-3 py-1.5 text-brand-accent-600 dark:text-brand-accent-400 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
                           >
                             <Printer className="w-4 h-4" />
                             Print
@@ -1150,7 +1152,7 @@ export default function ReceiptsPage() {
                           <button
                             onClick={() => handleDownloadPdf(receipt)}
                             disabled={downloadingPdf}
-                            className="px-3 py-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50"
+                            className="px-3 py-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
                           >
                             <FilePdf className="w-4 h-4" />
                             PDF
@@ -1161,7 +1163,7 @@ export default function ReceiptsPage() {
                               setEmailAddress(receipt.customerEmail || '');
                               setShowEmailModal(true);
                             }}
-                            className="px-3 py-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                           >
                             <Mail className="w-4 h-4" />
                             Email
@@ -1170,7 +1172,7 @@ export default function ReceiptsPage() {
                             onClick={() =>
                               handleCopyReceiptNumber(receipt.receiptNumber)
                             }
-                            className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                           >
                             {copied ? (
                               <Check className="w-4 h-4" />
@@ -1194,7 +1196,7 @@ export default function ReceiptsPage() {
                     handlePageChange(Math.max(1, filters.page - 1))
                   }
                   disabled={filters.page === 1}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   <ChevronLeft className="w-4 h-4 inline" />
                   Previous
@@ -1215,9 +1217,9 @@ export default function ReceiptsPage() {
                       <button
                         key={pageNum}
                         onClick={() => handlePageChange(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors ${
+                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
                           filters.page === pageNum
-                            ? 'bg-green-600 text-white'
+                            ? 'bg-success-600 text-white'
                             : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                         }`}
                       >
@@ -1231,7 +1233,7 @@ export default function ReceiptsPage() {
                     handlePageChange(Math.min(totalPages, filters.page + 1))
                   }
                   disabled={filters.page === totalPages}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
                   <ChevronRight className="w-4 h-4 inline" />
@@ -1329,16 +1331,16 @@ function DetailModal({
 }: DetailModalProps) {
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700"
+        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 sidebar-scroll"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
               Receipt #{receiptData.receiptNumber}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1347,7 +1349,7 @@ function DetailModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           >
             <XCircle className="w-6 h-6 text-gray-500" />
           </button>
@@ -1386,11 +1388,11 @@ function DetailModal({
                       <span>
                         {item.productName} × {item.quantity}
                       </span>
-                      <span>{formatCurrency(item.total)}</span>
+                      <span className="tabular-nums">{formatCurrency(item.total)}</span>
                     </div>
                   ))}
                 {receiptData.items.length > 5 && (
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-400 tabular-nums">
                     + {receiptData.items.length - 5} more items
                   </p>
                 )}
@@ -1399,29 +1401,29 @@ function DetailModal({
               <div className="space-y-1">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
-                  <span>{formatCurrency(receiptData.subtotal)}</span>
+                  <span className="tabular-nums">{formatCurrency(receiptData.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Tax</span>
-                  <span>{formatCurrency(receiptData.tax)}</span>
+                  <span className="tabular-nums">{formatCurrency(receiptData.tax)}</span>
                 </div>
                 {receiptData.discount > 0 && (
-                  <div className="flex justify-between text-sm text-green-600">
+                  <div className="flex justify-between text-sm text-success-600 tabular-nums">
                     <span>Discount</span>
                     <span>-{formatCurrency(receiptData.discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span>{formatCurrency(receiptData.total)}</span>
+                  <span className="tabular-nums">{formatCurrency(receiptData.total)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Paid</span>
-                  <span>{formatCurrency(receiptData.paidAmount)}</span>
+                  <span className="tabular-nums">{formatCurrency(receiptData.paidAmount)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Change</span>
-                  <span>{formatCurrency(receiptData.changeAmount)}</span>
+                  <span className="tabular-nums">{formatCurrency(receiptData.changeAmount)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Payment</span>
@@ -1473,14 +1475,14 @@ function DetailModal({
             <button
               onClick={onPrint}
               disabled={processing}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               <Printer className="w-4 h-4" />
               Print
             </button>
             <button
               onClick={onEmail}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
             >
               <Mail className="w-4 h-4" />
               Email
@@ -1488,7 +1490,7 @@ function DetailModal({
             <button
               onClick={onDownloadPdf}
               disabled={downloadingPdf}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {downloadingPdf ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -1502,7 +1504,7 @@ function DetailModal({
               receiptData.status !== 'cancelled' && (
                 <button
                   onClick={onVoid}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
                 >
                   <XCircle className="w-4 h-4" />
                   Void
@@ -1510,7 +1512,7 @@ function DetailModal({
               )}
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
             >
               Close
             </button>
@@ -1544,7 +1546,7 @@ function EmailModal({
 }: EmailModalProps) {
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
       onClick={onClose}
     >
       <div
@@ -1559,13 +1561,13 @@ function EmailModal({
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Email Address <span className="text-red-500">*</span>
+            Email Address <span className="text-danger-500">*</span>
           </label>
           <input
             type="email"
             value={emailAddress}
             onChange={(e) => setEmailAddress(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             placeholder="Enter email address..."
             required
           />
@@ -1573,14 +1575,14 @@ function EmailModal({
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={processing || !emailAddress.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -1618,7 +1620,7 @@ function VoidModal({
 }: VoidModalProps) {
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
       onClick={onClose}
     >
       <div
@@ -1633,13 +1635,13 @@ function VoidModal({
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Reason for Voiding <span className="text-red-500">*</span>
+            Reason for Voiding <span className="text-danger-500">*</span>
           </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-danger-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             placeholder="Enter reason for voiding..."
             required
           />
@@ -1647,14 +1649,14 @@ function VoidModal({
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={processing || !reason.trim()}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? (
               <Loader2 className="w-4 h-4 animate-spin" />

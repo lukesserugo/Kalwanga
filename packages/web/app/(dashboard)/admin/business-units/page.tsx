@@ -195,7 +195,7 @@ export default function BusinessUnitsPage() {
 
   const getStatusBadge = (isActive: boolean) => {
     return isActive ? (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400">
         <CheckCircle className="w-3 h-3" />
         Active
       </span>
@@ -231,7 +231,7 @@ export default function BusinessUnitsPage() {
   if (loading && pagination.page === 1 && units.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400" />
       </div>
     );
   }
@@ -248,7 +248,7 @@ export default function BusinessUnitsPage() {
         </div>
         <Link
           href="/admin/business-units/new"
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors shadow-sm focus-ring"
         >
           <Plus className="w-4 h-4" />
           Add Business Unit
@@ -256,7 +256,7 @@ export default function BusinessUnitsPage() {
       </div>
 
       {/* Toolbar */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
+      <div className="card-brand p-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="flex-1 min-w-[180px]">
@@ -270,7 +270,7 @@ export default function BusinessUnitsPage() {
                   setSearch(e.target.value);
                   setPagination(prev => ({ ...prev, page: 1 }));
                 }}
-                className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-colors"
+                className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-colors"
               />
             </div>
           </div>
@@ -282,7 +282,7 @@ export default function BusinessUnitsPage() {
               setFilterStatus(e.target.value as any);
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className="px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white transition-colors"
+            className="px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white transition-colors"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>
@@ -293,7 +293,7 @@ export default function BusinessUnitsPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white transition-colors"
+            className="px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white transition-colors"
           >
             <option value="name">Sort by Name</option>
             <option value="createdAt">Sort by Created</option>
@@ -302,7 +302,7 @@ export default function BusinessUnitsPage() {
 
           <button
             onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
           >
             <ArrowUpDown className="w-4 h-4 text-gray-600 dark:text-gray-400" />
@@ -312,9 +312,9 @@ export default function BusinessUnitsPage() {
           <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 transition-colors ${
+              className={`p-2 transition-colors focus-ring ${
                 viewMode === 'grid' 
-                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
+                  ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400' 
                   : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
               }`}
               title="Grid view"
@@ -323,9 +323,9 @@ export default function BusinessUnitsPage() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-2 transition-colors border-l border-gray-300 dark:border-gray-600 ${
+              className={`p-2 transition-colors border-l border-gray-300 dark:border-gray-600 focus-ring ${
                 viewMode === 'list' 
-                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
+                  ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400' 
                   : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
               }`}
               title="List view"
@@ -338,7 +338,7 @@ export default function BusinessUnitsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
@@ -348,18 +348,18 @@ export default function BusinessUnitsPage() {
         {/* Bulk Actions */}
         {selectedIds.length > 0 && (
           <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-            <span className="text-sm text-gray-600 dark:text-gray-400">
+            <span className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
               {selectedIds.length} selected
             </span>
             <button
               onClick={handleBulkDelete}
-              className="px-3 py-1 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+              className="px-3 py-1 text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-colors focus-ring"
             >
               Delete Selected
             </button>
             <button
               onClick={() => setSelectedIds([])}
-              className="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
               Clear Selection
             </button>
@@ -369,7 +369,7 @@ export default function BusinessUnitsPage() {
 
       {/* Content */}
       {units.length === 0 && !loading ? (
-        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+        <div className="text-center py-12 card-brand">
           <Building className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">No Business Units Found</h3>
           <p className="text-gray-500 dark:text-gray-400">
@@ -378,7 +378,7 @@ export default function BusinessUnitsPage() {
           {!search && (
             <Link
               href="/admin/business-units/new"
-              className="inline-block mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="inline-block mt-4 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors focus-ring"
             >
               Create Business Unit
             </Link>
@@ -386,7 +386,7 @@ export default function BusinessUnitsPage() {
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="inline-block mt-4 text-blue-600 dark:text-blue-400 hover:underline"
+              className="inline-block mt-4 text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
             >
               Clear search
             </button>
@@ -398,9 +398,9 @@ export default function BusinessUnitsPage() {
           {units.map((unit) => (
             <div
               key={unit.id}
-              className={`group bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-all hover:shadow-md ${
+              className={`group bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-all hover:shadow-card-hover ${
                 selectedIds.includes(unit.id) 
-                  ? 'border-blue-500 ring-2 ring-blue-500/50' 
+                  ? 'border-brand-500 ring-2 ring-brand-500/50' 
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
               }`}
             >
@@ -410,15 +410,15 @@ export default function BusinessUnitsPage() {
                   type="checkbox"
                   checked={selectedIds.includes(unit.id)}
                   onChange={() => toggleSelect(unit.id)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-900 transition-colors"
+                  className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-900 transition-colors"
                 />
               </div>
 
               <div className="p-4 pt-2">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2.5 bg-blue-50 dark:bg-blue-900/30 rounded-xl flex-shrink-0">
-                      <span className="text-blue-600 dark:text-blue-400">
+                    <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 rounded-xl flex-shrink-0">
+                      <span className="text-brand-600 dark:text-brand-400">
                         {getTypeIcon(unit.type)}
                       </span>
                     </div>
@@ -447,7 +447,7 @@ export default function BusinessUnitsPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 pt-3 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 pt-3 border-t border-gray-100 dark:border-gray-700 tabular-nums">
                   <span className="flex items-center gap-1">
                     <Users className="w-3.5 h-3.5" />
                     {unit._count?.userBusinessUnits || unit._count?.users || 0}
@@ -471,14 +471,14 @@ export default function BusinessUnitsPage() {
                   <div className="flex gap-0.5">
                     <Link
                       href={`/admin/business-units/${unit.id}`}
-                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                       title="View Details"
                     >
                       <Eye className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     </Link>
                     <Link
                       href={`/admin/business-units/${unit.id}/edit`}
-                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                       title="Edit"
                     >
                       <Edit className="w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -486,13 +486,13 @@ export default function BusinessUnitsPage() {
                     <button
                       onClick={() => handleDelete(unit.id, unit.name)}
                       disabled={deletingId === unit.id}
-                      className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/20 rounded-lg transition-colors disabled:opacity-50 focus-ring"
                       title="Delete"
                     >
                       {deletingId === unit.id ? (
-                        <Loader2 className="w-4 h-4 text-red-500 animate-spin" />
+                        <Loader2 className="w-4 h-4 text-danger-500 animate-spin" />
                       ) : (
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-4 h-4 text-danger-500" />
                       )}
                     </button>
                   </div>
@@ -503,8 +503,8 @@ export default function BusinessUnitsPage() {
         </div>
       ) : (
         // List View
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="card-brand p-0 overflow-hidden">
+          <div className="overflow-x-auto sidebar-scroll">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -513,7 +513,7 @@ export default function BusinessUnitsPage() {
                       type="checkbox"
                       checked={selectedIds.length === units.length && units.length > 0}
                       onChange={toggleSelectAll}
-                      className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-900"
+                      className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-900"
                     />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name / Code</th>
@@ -529,7 +529,7 @@ export default function BusinessUnitsPage() {
                   <tr
                     key={unit.id}
                     className={`border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                      selectedIds.includes(unit.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      selectedIds.includes(unit.id) ? 'bg-brand-50 dark:bg-brand-900/20' : ''
                     } ${index % 2 === 0 ? 'bg-white dark:bg-transparent' : 'bg-gray-50/50 dark:bg-gray-800/50'}`}
                   >
                     <td className="px-4 py-3">
@@ -537,7 +537,7 @@ export default function BusinessUnitsPage() {
                         type="checkbox"
                         checked={selectedIds.includes(unit.id)}
                         onChange={() => toggleSelect(unit.id)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-900"
+                        className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-900"
                       />
                     </td>
                     <td className="px-4 py-3">
@@ -547,25 +547,25 @@ export default function BusinessUnitsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">{getStatusBadge(unit.isActive)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                       {unit._count?.userBusinessUnits || unit._count?.users || 0}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{unit._count?.products || 0}</td>
-                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 tabular-nums">{unit._count?.products || 0}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                       {new Date(unit.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <Link
                           href={`/admin/business-units/${unit.id}`}
-                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                           title="View"
                         >
                           <Eye className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                         </Link>
                         <Link
                           href={`/admin/business-units/${unit.id}/edit`}
-                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                           title="Edit"
                         >
                           <Edit className="w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -573,13 +573,13 @@ export default function BusinessUnitsPage() {
                         <button
                           onClick={() => handleDelete(unit.id, unit.name)}
                           disabled={deletingId === unit.id}
-                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                          className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/20 rounded-lg transition-colors disabled:opacity-50 focus-ring"
                           title="Delete"
                         >
                           {deletingId === unit.id ? (
-                            <Loader2 className="w-4 h-4 text-red-500 animate-spin" />
+                            <Loader2 className="w-4 h-4 text-danger-500 animate-spin" />
                           ) : (
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4 text-danger-500" />
                           )}
                         </button>
                       </div>
@@ -595,7 +595,7 @@ export default function BusinessUnitsPage() {
       {/* Pagination */}
       {pagination.totalPages > 1 && (
         <div className="flex flex-wrap items-center justify-between gap-4 mt-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
             {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} results
           </p>
@@ -603,17 +603,17 @@ export default function BusinessUnitsPage() {
             <button
               onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
               disabled={pagination.page === 1}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
             >
               <ChevronLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
             </button>
-            <span className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 tabular-nums">
               Page {pagination.page} of {pagination.totalPages}
             </span>
             <button
               onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
               disabled={pagination.page === pagination.totalPages}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
             >
               <ChevronRight className="w-4 h-4 text-gray-600 dark:text-gray-400" />
             </button>

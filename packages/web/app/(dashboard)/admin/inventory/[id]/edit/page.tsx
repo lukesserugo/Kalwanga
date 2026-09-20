@@ -1678,9 +1678,9 @@ export default function EditInventoryItemPage() {
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
     const base =
-      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
     return getFieldError(fieldName)
-      ? `${base} border-red-500 dark:border-red-500 focus:ring-red-500`
+      ? `${base} border-brand-accent-500 dark:border-brand-accent-500 focus:ring-brand-accent-500`
       : `${base} border-gray-300 dark:border-gray-600`;
   };
 
@@ -1708,7 +1708,7 @@ export default function EditInventoryItemPage() {
           </p>
           <button
             onClick={() => router.push('/login')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Go to Login
           </button>
@@ -1721,7 +1721,7 @@ export default function EditInventoryItemPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-6">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-brand-500 animate-spin mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">
             Loading item data...
           </p>
@@ -1738,7 +1738,7 @@ export default function EditInventoryItemPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={handleCancel}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Go back"
               disabled={submitting}
             >
@@ -1746,7 +1746,7 @@ export default function EditInventoryItemPage() {
             </button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Edit3 className="w-6 h-6 text-blue-500" />
+                <Edit3 className="w-6 h-6 text-brand-500" />
                 Edit Inventory Item
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -1755,7 +1755,7 @@ export default function EditInventoryItemPage() {
             </div>
           </div>
           {selectedBuName && (
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg text-sm text-green-700 dark:text-green-300">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-success-100 dark:bg-success-950/30 rounded-lg text-sm text-success-700 dark:text-success-300">
               <Building className="w-4 h-4" />
               <span>BU: {selectedBuName}</span>
             </div>
@@ -1767,7 +1767,7 @@ export default function EditInventoryItemPage() {
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Select Business Unit <span className="text-red-500">*</span>
+                Select Business Unit <span className="text-brand-accent-500">*</span>
               </label>
               <div className="relative">
                 <button
@@ -1776,7 +1776,7 @@ export default function EditInventoryItemPage() {
                     setShowBusinessUnitDropdown(!showBusinessUnitDropdown)
                   }
                   disabled={loadingBusinessUnits || submitting}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
                 >
                   <div className="flex items-center gap-2 truncate">
                     <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -1788,7 +1788,7 @@ export default function EditInventoryItemPage() {
                     ) : selectedBuName ? (
                       <span className="truncate">{selectedBuName}</span>
                     ) : businessUnitError ? (
-                      <span className="text-red-500 truncate">
+                      <span className="text-brand-accent-500 truncate">
                         {businessUnitError}
                       </span>
                     ) : (
@@ -1799,7 +1799,7 @@ export default function EditInventoryItemPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     {isValidBusinessUnitId(selectedBusinessUnitId) && (
-                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="w-2 h-2 rounded-full bg-success-500" />
                     )}
                     {showBusinessUnitDropdown ? (
                       <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -1810,7 +1810,7 @@ export default function EditInventoryItemPage() {
                 </button>
 
                 {showBusinessUnitDropdown && (
-                  <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto custom-scrollbar">
                     {loadingBusinessUnits ? (
                       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                         <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
@@ -1818,7 +1818,7 @@ export default function EditInventoryItemPage() {
                       </div>
                     ) : businessUnits.length === 0 ? (
                       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                        <AlertCircle className="w-5 h-5 mx-auto mb-2 text-yellow-500" />
+                        <AlertCircle className="w-5 h-5 mx-auto mb-2 text-warning-500" />
                         No business units available
                       </div>
                     ) : (
@@ -1835,9 +1835,9 @@ export default function EditInventoryItemPage() {
                               handleBusinessUnitSelect(bu.id)
                             }
                             disabled={!isActive}
-                            className={`w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                            className={`w-full px-4 py-2 text-left hover:bg-brand-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between focus-ring ${
                               isSelected
-                                ? 'bg-blue-50 dark:bg-blue-900/20'
+                                ? 'bg-brand-50 dark:bg-brand-950/20'
                                 : ''
                             } ${
                               !isActive
@@ -1849,7 +1849,7 @@ export default function EditInventoryItemPage() {
                               <p
                                 className={`text-sm font-medium truncate ${
                                   isSelected
-                                    ? 'text-blue-600 dark:text-blue-400'
+                                    ? 'text-brand-600 dark:text-brand-400'
                                     : 'text-gray-900 dark:text-white'
                                 }`}
                               >
@@ -1864,14 +1864,14 @@ export default function EditInventoryItemPage() {
                                   </span>
                                 )}
                                 {!isActive && (
-                                  <span className="text-red-500">
+                                  <span className="text-brand-accent-500">
                                     • Inactive
                                   </span>
                                 )}
                               </div>
                             </div>
                             {isSelected && (
-                              <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />
+                              <CheckCircle className="w-4 h-4 text-brand-500 flex-shrink-0 ml-2" />
                             )}
                           </button>
                         );
@@ -1881,7 +1881,7 @@ export default function EditInventoryItemPage() {
                 )}
               </div>
               {getFieldError('businessUnit') && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                   {getFieldError('businessUnit')}
                 </p>
               )}
@@ -1902,14 +1902,14 @@ export default function EditInventoryItemPage() {
 
         {/* Success / Error Banners */}
         {success && (
-          <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-6 bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+              <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                <p className="text-sm font-medium text-success-800 dark:text-success-200">
                   Success!
                 </p>
-                <p className="text-sm text-green-700 dark:text-green-300">
+                <p className="text-sm text-success-700 dark:text-success-300">
                   Item updated successfully.
                 </p>
               </div>
@@ -1917,13 +1917,13 @@ export default function EditInventoryItemPage() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => router.push(`/admin/inventory/${id}`)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-1"
+                className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm flex items-center gap-1 shadow-brand focus-ring"
               >
                 <Eye className="w-4 h-4" /> View Item
               </button>
               <button
                 onClick={() => router.push('/admin/inventory')}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1 focus-ring"
               >
                 <Package className="w-4 h-4" /> View Inventory
               </button>
@@ -1932,19 +1932,19 @@ export default function EditInventoryItemPage() {
         )}
 
         {error && !success && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+              <p className="text-sm font-medium text-brand-accent-800 dark:text-brand-accent-200">
                 Error
               </p>
-              <p className="text-sm text-red-700 dark:text-red-300 break-words">
+              <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300 break-words">
                 {error}
               </p>
             </div>
             <button
               onClick={() => setError(null)}
-              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              className="text-brand-accent-600 hover:text-brand-accent-800 dark:text-brand-accent-400 p-1 focus-ring"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
@@ -1960,14 +1960,14 @@ export default function EditInventoryItemPage() {
           {/* Basic Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Package className="w-5 h-5 text-blue-500" />
+              <Package className="w-5 h-5 text-brand-500" />
               Basic Information
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Item Name <span className="text-red-500">*</span>
+                  Item Name <span className="text-brand-accent-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1980,7 +1980,7 @@ export default function EditInventoryItemPage() {
                   disabled={submitting || success}
                 />
                 {getFieldError('name') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('name')}
                   </p>
                 )}
@@ -2005,14 +2005,14 @@ export default function EditInventoryItemPage() {
                     type="button"
                     onClick={handleRegenerateSKU}
                     disabled={submitting || success || !formData.name}
-                    className="px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+                    className="px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 flex items-center gap-1 focus-ring"
                     title="Generate SKU from name"
                   >
                     <Wand2 className="w-4 h-4" />
                   </button>
                 </div>
                 {getFieldError('sku') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('sku')}
                   </p>
                 )}
@@ -2076,14 +2076,14 @@ export default function EditInventoryItemPage() {
                       value={formData.category}
                       onChange={handleChange}
                       onBlur={handleBlur}
-                      className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600"
+                      className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 transition-colors"
                       placeholder="Enter custom category"
                       disabled={submitting || success}
                     />
                   )}
                 </div>
                 {getFieldError('category') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('category')}
                   </p>
                 )}
@@ -2099,7 +2099,7 @@ export default function EditInventoryItemPage() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   rows={3}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed resize-y"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed resize-y"
                   placeholder="Enter item description"
                   disabled={submitting || success}
                 />
@@ -2110,14 +2110,14 @@ export default function EditInventoryItemPage() {
           {/* Pricing & Stock */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-green-500" />
+              <DollarSign className="w-5 h-5 text-success-500" />
               Pricing & Stock
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Unit Price <span className="text-red-500">*</span>
+                  Unit Price <span className="text-brand-accent-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
@@ -2131,13 +2131,13 @@ export default function EditInventoryItemPage() {
                     onBlur={handleBlur}
                     step="0.01"
                     min="0"
-                    className={`${getInputClassName('unitPrice')} pl-8`}
+                    className={`${getInputClassName('unitPrice')} pl-8 tabular-nums`}
                     placeholder="0.00"
                     disabled={submitting || success}
                   />
                 </div>
                 {getFieldError('unitPrice') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('unitPrice')}
                   </p>
                 )}
@@ -2159,13 +2159,13 @@ export default function EditInventoryItemPage() {
                     onBlur={handleBlur}
                     step="0.01"
                     min="0"
-                    className={`${getInputClassName('costPrice')} pl-8`}
+                    className={`${getInputClassName('costPrice')} pl-8 tabular-nums`}
                     placeholder="0.00"
                     disabled={submitting || success}
                   />
                 </div>
                 {getFieldError('costPrice') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('costPrice')}
                   </p>
                 )}
@@ -2190,7 +2190,7 @@ export default function EditInventoryItemPage() {
                   ))}
                 </select>
                 {getFieldError('taxRate') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('taxRate')}
                   </p>
                 )}
@@ -2198,7 +2198,7 @@ export default function EditInventoryItemPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Quantity <span className="text-red-500">*</span>
+                  Quantity <span className="text-brand-accent-500">*</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <button
@@ -2212,7 +2212,7 @@ export default function EditInventoryItemPage() {
                     disabled={
                       submitting || success || formData.quantity <= 0
                     }
-                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                   >
                     <Minus className="w-4 h-4" />
                   </button>
@@ -2223,7 +2223,7 @@ export default function EditInventoryItemPage() {
                     onChange={handleChange}
                     onBlur={handleBlur}
                     min="0"
-                    className={getInputClassName('quantity')}
+                    className={`${getInputClassName('quantity')} tabular-nums`}
                     placeholder="0"
                     disabled={submitting || success}
                   />
@@ -2236,13 +2236,13 @@ export default function EditInventoryItemPage() {
                       }))
                     }
                     disabled={submitting || success}
-                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
                 {getFieldError('quantity') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('quantity')}
                   </p>
                 )}
@@ -2259,12 +2259,12 @@ export default function EditInventoryItemPage() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   min="0"
-                  className={getInputClassName('minStock')}
+                  className={`${getInputClassName('minStock')} tabular-nums`}
                   placeholder="5"
                   disabled={submitting || success}
                 />
                 {getFieldError('minStock') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('minStock')}
                   </p>
                 )}
@@ -2281,12 +2281,12 @@ export default function EditInventoryItemPage() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   min="0"
-                  className={getInputClassName('maxStock')}
+                  className={`${getInputClassName('maxStock')} tabular-nums`}
                   placeholder="100"
                   disabled={submitting || success}
                 />
                 {getFieldError('maxStock') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('maxStock')}
                   </p>
                 )}
@@ -2297,7 +2297,7 @@ export default function EditInventoryItemPage() {
           {/* Location & Supplier */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-orange-500" />
+              <MapPin className="w-5 h-5 text-brand-500" />
               Location & Supplier
             </h3>
 
@@ -2305,7 +2305,7 @@ export default function EditInventoryItemPage() {
               {/* Location */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Location <span className="text-red-500">*</span>
+                  Location <span className="text-brand-accent-500">*</span>
                 </label>
                 <select
                   name="location"
@@ -2364,7 +2364,7 @@ export default function EditInventoryItemPage() {
                   <button
                     type="button"
                     onClick={handleAddNewLocation}
-                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    className="text-brand-500 hover:underline inline-flex items-center gap-1 focus-ring"
                     disabled={submitting || success}
                   >
                     Create one
@@ -2372,7 +2372,7 @@ export default function EditInventoryItemPage() {
                   </button>
                 </p>
                 {getFieldError('location') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('location')}
                   </p>
                 )}
@@ -2416,7 +2416,7 @@ export default function EditInventoryItemPage() {
                   <button
                     type="button"
                     onClick={handleAddNewSupplier}
-                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    className="text-brand-500 hover:underline inline-flex items-center gap-1 focus-ring"
                     disabled={submitting || success}
                   >
                     Create one
@@ -2424,7 +2424,7 @@ export default function EditInventoryItemPage() {
                   </button>
                 </p>
                 {getFieldError('supplier') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('supplier')}
                   </p>
                 )}
@@ -2435,7 +2435,7 @@ export default function EditInventoryItemPage() {
           {/* Barcode & QR */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <Barcode className="w-5 h-5 text-purple-500" />
+              <Barcode className="w-5 h-5 text-secondary-500" />
               Barcode & QR Code
             </h3>
 
@@ -2473,7 +2473,7 @@ export default function EditInventoryItemPage() {
                       success ||
                       !formData.name
                     }
-                    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-1 whitespace-nowrap"
+                    className="px-3 py-2 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 transition-colors disabled:opacity-50 flex items-center gap-1 whitespace-nowrap shadow-brand focus-ring"
                     title="Generate a new barcode and QR code"
                   >
                     {generatingBarcode ? (
@@ -2488,12 +2488,12 @@ export default function EditInventoryItemPage() {
                       <button
                         type="button"
                         onClick={handleCopyBarcode}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                         title="Copy barcode"
                         disabled={submitting || success}
                       >
                         {copied ? (
-                          <Check className="w-4 h-4 text-green-500" />
+                          <Check className="w-4 h-4 text-success-500" />
                         ) : (
                           <Copy className="w-4 h-4" />
                         )}
@@ -2501,7 +2501,7 @@ export default function EditInventoryItemPage() {
                       <button
                         type="button"
                         onClick={() => setShowBarcode(!showBarcode)}
-                        className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1"
+                        className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1 focus-ring"
                         title="Show/hide barcode and QR"
                         disabled={submitting || success}
                       >
@@ -2514,22 +2514,22 @@ export default function EditInventoryItemPage() {
                   )}
                 </div>
                 {getFieldError('barcode') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('barcode')}
                   </p>
                 )}
                 {isBarcodeValid === false && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     Barcode is already in use
                   </p>
                 )}
                 {isBarcodeValid === true && formData.barcode && (
-                  <p className="mt-1 text-sm text-green-600 dark:text-green-400">
+                  <p className="mt-1 text-sm text-success-600 dark:text-success-400">
                     ✓ Barcode is available
                   </p>
                 )}
                 {barcodeSource === 'generated' && (
-                  <p className="mt-1 text-xs text-purple-600 dark:text-purple-400">
+                  <p className="mt-1 text-xs text-secondary-600 dark:text-secondary-400">
                     Auto-generated. The QR code will be finalized with the
                     inventory id after save.
                   </p>
@@ -2554,12 +2554,12 @@ export default function EditInventoryItemPage() {
                   onBlur={handleBlur}
                   step="0.01"
                   min="0"
-                  className={getInputClassName('weight')}
+                  className={`${getInputClassName('weight')} tabular-nums`}
                   placeholder="0.00"
                   disabled={submitting || success}
                 />
                 {getFieldError('weight') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('weight')}
                   </p>
                 )}
@@ -2610,7 +2610,7 @@ export default function EditInventoryItemPage() {
                     <button
                       type="button"
                       onClick={handleDownloadBarcode}
-                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1 focus-ring"
                       disabled={submitting || success}
                     >
                       <Download className="w-3 h-3" /> Barcode
@@ -2618,7 +2618,7 @@ export default function EditInventoryItemPage() {
                     <button
                       type="button"
                       onClick={handleDownloadQRCode}
-                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1 focus-ring"
                       disabled={submitting || success}
                     >
                       <Download className="w-3 h-3" /> QR Code
@@ -2626,7 +2626,7 @@ export default function EditInventoryItemPage() {
                     <button
                       type="button"
                       onClick={handlePrintBarcode}
-                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1 focus-ring"
                       disabled={submitting || success}
                     >
                       <Printer className="w-3 h-3" /> Print Both
@@ -2634,7 +2634,7 @@ export default function EditInventoryItemPage() {
                     <button
                       type="button"
                       onClick={() => setShowBarcode(false)}
-                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-ring"
                       disabled={submitting || success}
                     >
                       Hide
@@ -2659,7 +2659,7 @@ export default function EditInventoryItemPage() {
                 disabled={submitting || success}
               />
               {getFieldError('tags') && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                   {getFieldError('tags')}
                 </p>
               )}
@@ -2678,7 +2678,7 @@ export default function EditInventoryItemPage() {
                 onChange={handleChange}
                 onBlur={handleBlur}
                 rows={2}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed resize-y"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed resize-y"
                 placeholder="Additional notes about this item"
                 disabled={submitting || success}
               />
@@ -2705,7 +2705,7 @@ export default function EditInventoryItemPage() {
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(index)}
-                      className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                      className="absolute -top-2 -right-2 p-1 bg-brand-accent-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-brand-accent-600 focus-ring"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -2721,13 +2721,13 @@ export default function EditInventoryItemPage() {
                   value={imageInput}
                   onChange={(e) => setImageInput(e.target.value)}
                   placeholder="Enter image URL"
-                  className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600"
+                  className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 transition-colors"
                   disabled={submitting || success}
                 />
                 <button
                   type="button"
                   onClick={handleAddImage}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1"
+                  className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                 >
                   <Plus className="w-4 h-4" /> Add
                 </button>
@@ -2737,7 +2737,7 @@ export default function EditInventoryItemPage() {
                     setShowImageInput(false);
                     setImageInput('');
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
@@ -2746,7 +2746,7 @@ export default function EditInventoryItemPage() {
               <button
                 type="button"
                 onClick={() => setShowImageInput(true)}
-                className="px-4 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-2"
+                className="px-4 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700/50 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-2 focus-ring"
                 disabled={submitting || success}
               >
                 <Plus className="w-4 h-4" /> Add Image URL
@@ -2765,14 +2765,14 @@ export default function EditInventoryItemPage() {
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors">
+              <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-brand-50 dark:hover:bg-gray-600/30 hover:border-brand-300 dark:hover:border-brand-700 transition-colors">
                 <input
                   type="checkbox"
                   name="isActive"
                   checked={formData.isActive}
                   onChange={handleChange}
                   disabled={submitting || success}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-4 h-4 text-brand-600 rounded focus:ring-2 focus:ring-brand-500 disabled:opacity-50 transition-colors"
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -2784,18 +2784,18 @@ export default function EditInventoryItemPage() {
                 </div>
               </label>
 
-              <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors">
+              <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-brand-50 dark:hover:bg-gray-600/30 hover:border-brand-300 dark:hover:border-brand-700 transition-colors">
                 <input
                   type="checkbox"
                   name="featured"
                   checked={formData.featured}
                   onChange={handleChange}
                   disabled={submitting || success}
-                  className="w-4 h-4 text-yellow-500 rounded focus:ring-2 focus:ring-yellow-500 disabled:opacity-50"
+                  className="w-4 h-4 text-brand-500 rounded focus:ring-2 focus:ring-brand-500 disabled:opacity-50 transition-colors"
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                    <Star className="w-4 h-4 text-yellow-500" /> Featured
+                    <Star className="w-4 h-4 text-brand-500" /> Featured
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Show in featured section
@@ -2803,18 +2803,18 @@ export default function EditInventoryItemPage() {
                 </div>
               </label>
 
-              <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors">
+              <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-brand-50 dark:hover:bg-gray-600/30 hover:border-brand-300 dark:hover:border-brand-700 transition-colors">
                 <input
                   type="checkbox"
                   name="isDigital"
                   checked={formData.isDigital}
                   onChange={handleChange}
                   disabled={submitting || success}
-                  className="w-4 h-4 text-green-500 rounded focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                  className="w-4 h-4 text-success-500 rounded focus:ring-2 focus:ring-success-500 disabled:opacity-50 transition-colors"
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
-                    <Globe className="w-4 h-4 text-green-500" /> Digital
+                    <Globe className="w-4 h-4 text-success-500" /> Digital
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Digital product (no shipping)
@@ -2830,7 +2830,7 @@ export default function EditInventoryItemPage() {
               type="button"
               onClick={handleCancel}
               disabled={submitting || success}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50 focus-ring"
             >
               Cancel
             </button>
@@ -2842,7 +2842,7 @@ export default function EditInventoryItemPage() {
                 !isValidBusinessUnitId(selectedBusinessUnitId) ||
                 businessUnits.length === 0
               }
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
+              className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center shadow-brand focus-ring"
             >
               {submitting ? (
                 <>
@@ -2869,8 +2869,8 @@ export default function EditInventoryItemPage() {
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
                   isValidBusinessUnitId(selectedBusinessUnitId)
-                    ? 'bg-green-500'
-                    : 'bg-yellow-500'
+                    ? 'bg-success-500'
+                    : 'bg-warning-500'
                 }`}
               />
               {isValidBusinessUnitId(selectedBusinessUnitId)
@@ -2887,7 +2887,7 @@ export default function EditInventoryItemPage() {
                 <QrCode className="w-3 h-3" /> QR ready
               </span>
             )}
-            <span>ID: {id?.slice(0, 8)}...</span>
+            <span className="tabular-nums">ID: {id?.slice(0, 8)}...</span>
           </div>
         </form>
       </div>

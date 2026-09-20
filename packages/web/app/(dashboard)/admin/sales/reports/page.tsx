@@ -148,7 +148,7 @@ const reportService = {
     if (filters.startDate) queryParams.append('startDate', filters.startDate);
     if (filters.endDate) queryParams.append('endDate', filters.endDate);
     if (filters.businessUnitId) queryParams.append('businessUnitId', filters.businessUnitId);
-    
+
     const url = `/api/reports/sales?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -166,7 +166,7 @@ const reportService = {
     if (filters.startDate) queryParams.append('startDate', filters.startDate);
     if (filters.endDate) queryParams.append('endDate', filters.endDate);
     if (filters.businessUnitId) queryParams.append('businessUnitId', filters.businessUnitId);
-    
+
     const url = `/api/reports/sales/download?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -242,7 +242,7 @@ export default function SalesReportsPage() {
   const { isLoaded, isSignedIn } = useUser();
   const { user: authUser } = useAuth();
   const router = useRouter();
-  
+
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -372,7 +372,7 @@ export default function SalesReportsPage() {
         ...filters,
         format: exportFormat,
       });
-      
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -380,7 +380,7 @@ export default function SalesReportsPage() {
       a.download = `sales-report-${new Date().toISOString().split('T')[0]}.${extension}`;
       a.click();
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Report downloaded successfully');
       setShowExportModal(false);
     } catch (error: any) {
@@ -409,7 +409,7 @@ export default function SalesReportsPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/sales')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-500" />
               </button>
@@ -427,7 +427,7 @@ export default function SalesReportsPage() {
             <button
               onClick={() => generateReport()}
               disabled={generating}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -439,7 +439,7 @@ export default function SalesReportsPage() {
             <button
               onClick={() => setShowExportModal(true)}
               disabled={!reportData}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors disabled:opacity-50 focus-ring"
             >
               <Download className="w-4 h-4" />
               Export
@@ -448,7 +448,7 @@ export default function SalesReportsPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -457,7 +457,7 @@ export default function SalesReportsPage() {
               <select
                 value={filters.dateRange}
                 onChange={(e) => handleDateRangeChange(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
@@ -481,7 +481,7 @@ export default function SalesReportsPage() {
                     type="date"
                     value={filters.startDate}
                     onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
                 <div>
@@ -492,7 +492,7 @@ export default function SalesReportsPage() {
                     type="date"
                     value={filters.endDate}
                     onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
               </>
@@ -504,7 +504,7 @@ export default function SalesReportsPage() {
               <select
                 value={filters.reportType}
                 onChange={(e) => setFilters(prev => ({ ...prev, reportType: e.target.value as any }))}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="sales">Sales Report</option>
                 <option value="revenue">Revenue Report</option>
@@ -522,7 +522,7 @@ export default function SalesReportsPage() {
               <select
                 value={filters.groupBy}
                 onChange={(e) => setFilters(prev => ({ ...prev, groupBy: e.target.value as any }))}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="day">Daily</option>
                 <option value="week">Weekly</option>
@@ -542,43 +542,43 @@ export default function SalesReportsPage() {
               value={formatCurrency(reportData.summary.totalRevenue)}
               change={reportData.summary.growthRate}
               icon={DollarSign}
-              color="blue"
+              color="brand"
             />
             <SummaryCard
               title="Total Sales"
               value={reportData.summary.totalSales}
               icon={ShoppingBag}
-              color="green"
+              color="success"
             />
             <SummaryCard
               title="Average Ticket"
               value={formatCurrency(reportData.summary.averageTicket)}
               icon={TrendingUp}
-              color="purple"
+              color="secondary"
             />
             <SummaryCard
               title="Items Sold"
               value={reportData.summary.totalItems}
               icon={Package}
-              color="orange"
+              color="brand-accent"
             />
             <SummaryCard
               title="Customers"
               value={reportData.summary.uniqueCustomers}
               icon={Users}
-              color="indigo"
+              color="secondary"
             />
             <SummaryCard
               title="Total Tax"
               value={formatCurrency(reportData.summary.totalTax)}
               icon={FileText}
-              color="yellow"
+              color="warning"
             />
             <SummaryCard
               title="Total Discount"
               value={formatCurrency(reportData.summary.totalDiscount)}
               icon={TrendingDown}
-              color="red"
+              color="danger"
             />
           </div>
         )}
@@ -596,9 +596,9 @@ export default function SalesReportsPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border-b-2 focus-ring ${
                     activeTab === tab.id
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                      ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                       : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
@@ -651,20 +651,19 @@ export default function SalesReportsPage() {
 
 function SummaryCard({ title, value, change, icon: Icon, color }: any) {
   const colors: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    orange: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
-    indigo: 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
-    red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
+    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-600 dark:text-secondary-400',
+    success: 'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
+    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
+    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400',
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700"
+      className="card-brand p-4"
     >
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
@@ -672,9 +671,9 @@ function SummaryCard({ title, value, change, icon: Icon, color }: any) {
           <Icon className="w-4 h-4" />
         </div>
       </div>
-      <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{value}</p>
       {change !== undefined && change !== null && (
-        <div className={`flex items-center gap-1 mt-1 text-xs ${change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+        <div className={`flex items-center gap-1 mt-1 text-xs tabular-nums ${change >= 0 ? 'text-success-500' : 'text-danger-500'}`}>
           {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
           <span>{Math.abs(change)}% vs previous</span>
         </div>
@@ -687,27 +686,27 @@ function OverviewTab({ data }: { data: SalesReportData }) {
   return (
     <div className="space-y-6">
       {/* Payment Methods */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+      <div className="card-brand p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <CreditCard className="w-5 h-5 text-blue-500" />
+          <CreditCard className="w-5 h-5 text-brand-500" />
           Payment Methods
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {data.paymentMethods.map((method) => (
             <div key={method.method} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{method.method}</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">{formatCurrency(method.total)}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{method.count} transactions</p>
-              <p className="text-xs text-blue-600 dark:text-blue-400">{method.percentage}%</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(method.total)}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{method.count} transactions</p>
+              <p className="text-xs text-brand-600 dark:text-brand-400 tabular-nums">{method.percentage}%</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* Category Breakdown */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+      <div className="card-brand p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <PieChart className="w-5 h-5 text-green-500" />
+          <PieChart className="w-5 h-5 text-success-500" />
           Category Breakdown
         </h3>
         <div className="space-y-3">
@@ -718,14 +717,14 @@ function OverviewTab({ data }: { data: SalesReportData }) {
               </span>
               <div className="flex-1 h-4 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                  className="h-full bg-brand-500 rounded-full transition-all duration-500"
                   style={{ width: `${category.percentage}%` }}
                 />
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">
+              <span className="text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap tabular-nums">
                 {formatCurrency(category.revenue)}
               </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400 w-12 text-right">
+              <span className="text-sm text-gray-500 dark:text-gray-400 w-12 text-right tabular-nums">
                 {category.percentage}%
               </span>
             </div>
@@ -734,22 +733,22 @@ function OverviewTab({ data }: { data: SalesReportData }) {
       </div>
 
       {/* Hour Distribution */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+      <div className="card-brand p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-orange-500" />
+          <Clock className="w-5 h-5 text-brand-accent-500" />
           Hourly Distribution
         </h3>
         <div className="grid grid-cols-6 md:grid-cols-12 lg:grid-cols-24 gap-1">
           {data.hourDistribution.map((hour) => (
             <div key={hour.hour} className="text-center">
               <div
-                className="mx-auto rounded-sm bg-blue-600 dark:bg-blue-500 transition-all duration-500 hover:bg-blue-700 dark:hover:bg-blue-600"
+                className="mx-auto rounded-sm bg-brand-500 dark:bg-brand-400 transition-all duration-500 hover:bg-brand-600 dark:hover:bg-brand-500"
                 style={{
                   height: `${Math.max(4, (hour.revenue / Math.max(...data.hourDistribution.map(h => h.revenue))) * 100)}px`,
                   width: '100%',
                 }}
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{hour.hour}:00</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 tabular-nums">{hour.hour}:00</p>
             </div>
           ))}
         </div>
@@ -760,12 +759,12 @@ function OverviewTab({ data }: { data: SalesReportData }) {
 
 function TrendsTab({ data, groupBy }: { data: SalesReportData; groupBy: string }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-        <LineChart className="w-5 h-5 text-blue-500" />
+        <LineChart className="w-5 h-5 text-brand-500" />
         {getGroupByLabel(groupBy)} Trends
       </h3>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50">
             <tr>
@@ -795,17 +794,17 @@ function TrendsTab({ data, groupBy }: { data: SalesReportData; groupBy: string }
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
                     {trend.period}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(trend.revenue)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400">
+                  <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400 tabular-nums">
                     {trend.sales}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400">
+                  <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400 tabular-nums">
                     {formatCurrency(trend.average)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right">
-                    <span className={change >= 0 ? 'text-green-500' : 'text-red-500'}>
+                  <td className="px-4 py-3 text-sm text-right tabular-nums">
+                    <span className={change >= 0 ? 'text-success-500' : 'text-danger-500'}>
                       {change >= 0 ? '+' : ''}{change.toFixed(1)}%
                     </span>
                   </td>
@@ -821,12 +820,12 @@ function TrendsTab({ data, groupBy }: { data: SalesReportData; groupBy: string }
 
 function ProductsTab({ data }: { data: SalesReportData }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-        <Package className="w-5 h-5 text-green-500" />
+        <Package className="w-5 h-5 text-success-500" />
         Top Products
       </h3>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50">
             <tr>
@@ -852,18 +851,18 @@ function ProductsTab({ data }: { data: SalesReportData }) {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {data.topProducts.map((product, index) => (
               <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{index + 1}</td>
+                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 tabular-nums">{index + 1}</td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
                   {product.name}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{product.sku}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400">
+                <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400 tabular-nums">
                   {product.quantity}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white">
+                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white tabular-nums">
                   {formatCurrency(product.revenue)}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-blue-600 dark:text-blue-400">
+                <td className="px-4 py-3 text-sm text-right text-brand-600 dark:text-brand-400 tabular-nums">
                   {product.percentage}%
                 </td>
               </tr>
@@ -877,12 +876,12 @@ function ProductsTab({ data }: { data: SalesReportData }) {
 
 function CustomersTab({ data }: { data: SalesReportData }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-6">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-        <Users className="w-5 h-5 text-purple-500" />
+        <Users className="w-5 h-5 text-secondary-500" />
         Top Customers
       </h3>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50">
             <tr>
@@ -908,18 +907,18 @@ function CustomersTab({ data }: { data: SalesReportData }) {
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {data.topCustomers.map((customer, index) => (
               <tr key={customer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{index + 1}</td>
+                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 tabular-nums">{index + 1}</td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
                   {customer.name}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{customer.email}</td>
-                <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400">
+                <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400 tabular-nums">
                   {customer.orderCount}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white">
+                <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white tabular-nums">
                   {formatCurrency(customer.totalSpent)}
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-500 dark:text-gray-400">
+                <td className="px-4 py-3 text-sm text-right text-gray-500 dark:text-gray-400 tabular-nums">
                   {formatCurrency(customer.averageTicket)}
                 </td>
               </tr>
@@ -933,7 +932,7 @@ function CustomersTab({ data }: { data: SalesReportData }) {
 
 function ExportModal({ onClose, onExport, format, setFormat, downloading }: any) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Export Report
@@ -948,9 +947,9 @@ function ExportModal({ onClose, onExport, format, setFormat, downloading }: any)
                 <button
                   key={f}
                   onClick={() => setFormat(f)}
-                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors focus-ring ${
                     format === f
-                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                      ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
                       : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                   }`}
                 >
@@ -962,14 +961,14 @@ function ExportModal({ onClose, onExport, format, setFormat, downloading }: any)
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               Cancel
             </button>
             <button
               onClick={onExport}
               disabled={downloading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {downloading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

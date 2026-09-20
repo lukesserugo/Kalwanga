@@ -80,8 +80,8 @@ export function getPriorityMeta(priority: NotificationPriority) {
   return (
     NOTIFICATION_PRIORITY_METADATA[priority] ?? {
       label: 'Medium',
-      accent: 'bg-yellow-100 dark:bg-yellow-900/30',
-      text: 'text-yellow-700 dark:text-yellow-300',
+      accent: 'bg-warning-100 dark:bg-warning-900/30',
+      text: 'text-warning-700 dark:text-warning-300',
     }
   );
 }
@@ -143,7 +143,7 @@ function highlight(text: string, query: string): React.ReactNode {
     parts.push(
       <mark
         key={idx}
-        className="bg-orange-200 dark:bg-orange-950/60 text-orange-900 dark:text-orange-200 rounded px-0.5"
+        className="bg-brand-200 dark:bg-brand-900/60 text-brand-900 dark:text-brand-200 rounded px-0.5"
       >
         {text.slice(idx, idx + target.length)}
       </mark>,
@@ -223,7 +223,7 @@ function PayloadPreview({
       {chips.map((chip) => (
         <span
           key={chip.label}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-[11px] text-gray-700 dark:text-gray-300"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-2xs text-gray-700 dark:text-gray-300"
         >
           <span className="text-gray-400 dark:text-gray-500">
             {chip.label}:
@@ -289,13 +289,13 @@ export function NotificationItem({
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.15 }}
       onClick={handleClick}
-      className={`group relative bg-white dark:bg-gray-900 rounded-2xl border shadow-sm transition-all hover:shadow-md ${
+      className={`group relative bg-white dark:bg-gray-900 rounded-2xl border shadow-soft transition duration-250 hover:shadow-card-hover ${
         onOpen ? 'cursor-pointer' : ''
       } ${
         isUnread
-          ? 'border-l-4 border-l-orange-500 border-gray-200 dark:border-gray-800'
+          ? 'border-l-4 border-l-brand-500 border-gray-200 dark:border-gray-800'
           : 'border-gray-200 dark:border-gray-800'
-      } ${selected ? 'ring-2 ring-orange-400/50' : ''} ${className}`}
+      } ${selected ? 'ring-2 ring-brand-400/50' : ''} ${className}`}
     >
       <div className="flex items-start gap-3 p-4">
         {selectable && (
@@ -307,7 +307,7 @@ export function NotificationItem({
               type="checkbox"
               checked={selected}
               onChange={onToggleSelect}
-              className="w-4 h-4 rounded text-orange-500 border-gray-300 dark:border-gray-600 focus:ring-orange-500 bg-white dark:bg-gray-800"
+              className="w-4 h-4 rounded text-brand-500 border-gray-300 dark:border-gray-600 focus:ring-brand-500 bg-white dark:bg-gray-800 transition duration-250"
               aria-label={`Select notification: ${notification.title}`}
             />
           </label>
@@ -333,7 +333,7 @@ export function NotificationItem({
               {highlight(notification.title, searchQuery)}
             </p>
             <span
-              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-gradient-to-br ${
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold uppercase tracking-wide bg-gradient-to-br ${
                 meta?.accent ?? 'from-gray-500 to-gray-700'
               } text-white shrink-0`}
             >
@@ -341,14 +341,14 @@ export function NotificationItem({
             </span>
             {notification.priority !== 'MEDIUM' && (
               <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${priorityMeta.accent} ${priorityMeta.text} shrink-0`}
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold uppercase tracking-wide ${priorityMeta.accent} ${priorityMeta.text} shrink-0`}
               >
                 {priorityMeta.label}
               </span>
             )}
             {isUnread && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-semibold uppercase tracking-wide bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-badge-pop" />
                 New
               </span>
             )}
@@ -367,7 +367,7 @@ export function NotificationItem({
               />
             )}
 
-          <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-gray-400 dark:text-gray-500">
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-2xs tabular-nums text-gray-400 dark:text-gray-500">
             <span title={formatFullTimestamp(notification.createdAt)}>
               {formatRelativeTime(notification.createdAt)}
             </span>
@@ -386,7 +386,7 @@ export function NotificationItem({
                 <span>·</span>
                 <Link
                   href={notification.link}
-                  className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400 hover:underline font-medium"
+                  className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400 hover:underline font-medium transition duration-250 focus-ring rounded"
                   onClick={(e) => e.stopPropagation()}
                 >
                   Open <ExternalLink className="w-3 h-3" />
@@ -408,8 +408,9 @@ export function NotificationItem({
                   type="button"
                   onClick={onMarkRead}
                   disabled={working}
-                  className="p-2 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors disabled:opacity-50"
+                  className="p-2 rounded-lg text-success-600 dark:text-success-400 hover:bg-success-50 dark:hover:bg-success-900/30 transition duration-250 disabled:opacity-50 focus-ring"
                   title="Mark as read"
+                  aria-label="Mark as read"
                 >
                   {working ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -422,8 +423,9 @@ export function NotificationItem({
                   type="button"
                   onClick={onMarkUnread}
                   disabled={working}
-                  className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                  className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition duration-250 disabled:opacity-50 focus-ring"
                   title="Mark as unread"
+                  aria-label="Mark as unread"
                 >
                   {working ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -438,8 +440,9 @@ export function NotificationItem({
                 type="button"
                 onClick={onDelete}
                 disabled={working}
-                className="p-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
+                className="p-2 rounded-lg text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/30 transition duration-250 disabled:opacity-50 focus-ring"
                 title="Delete"
+                aria-label="Delete notification"
               >
                 {working ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

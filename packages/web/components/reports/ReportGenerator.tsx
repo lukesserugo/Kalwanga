@@ -36,14 +36,14 @@ export function ReportGenerator() {
   const [preview, setPreview] = useState(false);
 
   const reportTypes = [
-    { id: 'sales', label: 'Sales Report', icon: TrendingUp, color: 'blue' },
-    { id: 'inventory', label: 'Inventory Report', icon: Package, color: 'green' },
-    { id: 'customers', label: 'Customer Report', icon: Users, color: 'purple' },
-    { id: 'products', label: 'Product Report', icon: ShoppingBag, color: 'orange' },
+    { id: 'sales', label: 'Sales Report', icon: TrendingUp, color: 'primary' },
+    { id: 'inventory', label: 'Inventory Report', icon: Package, color: 'success' },
+    { id: 'customers', label: 'Customer Report', icon: Users, color: 'secondary' },
+    { id: 'products', label: 'Product Report', icon: ShoppingBag, color: 'brand' },
     { id: 'employees', label: 'Employee Report', icon: Users, color: 'indigo' },
     { id: 'payments', label: 'Payment Report', icon: DollarSign, color: 'teal' },
-    { id: 'financial', label: 'Financial Report', icon: FileText, color: 'red' },
-    { id: 'tax', label: 'Tax Report', icon: AlertCircle, color: 'yellow' },
+    { id: 'financial', label: 'Financial Report', icon: FileText, color: 'danger' },
+    { id: 'tax', label: 'Tax Report', icon: AlertCircle, color: 'warning' },
   ];
 
   const formats = [
@@ -104,15 +104,15 @@ export function ReportGenerator() {
   const TypeIcon = selectedType?.icon;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-container mx-auto animate-fade-in">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Report Generator</h1>
-          <p className="text-gray-600 mt-1">Generate and download business reports</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Report Generator</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Generate and download business reports</p>
         </div>
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+          className="btn-secondary"
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
@@ -121,13 +121,13 @@ export function ReportGenerator() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Configuration Panel */}
-        <div className="lg:col-span-1 bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Report Configuration</h2>
-          
+        <div className="lg:col-span-1 card-brand shadow-soft">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Report Configuration</h2>
+
           <div className="space-y-4">
             {/* Report Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Report Type *
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -137,14 +137,14 @@ export function ReportGenerator() {
                     <button
                       key={type.id}
                       onClick={() => setReportType(type.id)}
-                      className={`p-3 rounded-lg border-2 text-center transition-colors ${
+                      className={`p-3 rounded-xl border-2 text-center transition duration-250 focus-ring ${
                         reportType === type.id
-                          ? `border-${type.color}-600 bg-${type.color}-50 text-${type.color}-600`
-                          : 'border-gray-200 hover:border-gray-300'
+                          ? `border-${type.color}-600 bg-${type.color}-50 dark:bg-${type.color}-900/20 text-${type.color}-600 dark:text-${type.color}-400`
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
                       }`}
                     >
                       <Icon className="w-5 h-5 mx-auto mb-1" />
-                      <span className="text-xs font-medium block">{type.label}</span>
+                      <span className="text-2xs font-medium block">{type.label}</span>
                     </button>
                   );
                 })}
@@ -153,7 +153,7 @@ export function ReportGenerator() {
 
             {/* Format */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Format *
               </label>
               <div className="grid grid-cols-4 gap-2">
@@ -163,14 +163,14 @@ export function ReportGenerator() {
                     <button
                       key={f.id}
                       onClick={() => setFormat(f.id)}
-                      className={`p-2 rounded-lg border-2 text-center transition-colors ${
+                      className={`p-2 rounded-xl border-2 text-center transition duration-250 focus-ring ${
                         format === f.id
-                          ? 'border-blue-600 bg-blue-50 text-blue-600'
-                          : 'border-gray-200 hover:border-gray-300'
+                          ? 'border-brand-600 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
                       }`}
                     >
                       <Icon className="w-5 h-5 mx-auto" />
-                      <span className="text-xs font-medium block">{f.label}</span>
+                      <span className="text-2xs font-medium block">{f.label}</span>
                     </button>
                   );
                 })}
@@ -179,26 +179,26 @@ export function ReportGenerator() {
 
             {/* Date Range */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Date Range *
               </label>
               <div className="space-y-2">
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                   <input
                     type="date"
                     value={dateRange.startDate}
                     onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   />
                 </div>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                   <input
                     type="date"
                     value={dateRange.endDate}
                     onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   />
                 </div>
               </div>
@@ -208,7 +208,7 @@ export function ReportGenerator() {
             <button
               onClick={handleGenerate}
               disabled={generating}
-              className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full btn-brand disabled:opacity-50"
             >
               {generating ? (
                 <>
@@ -229,13 +229,13 @@ export function ReportGenerator() {
         <div className="lg:col-span-2 space-y-6">
           {/* Report Preview */}
           {preview && selectedReport && (
-            <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="card-brand shadow-soft animate-slide-down">
               <div className="flex justify-between items-center mb-4">
                 <div className="flex items-center gap-3">
-                  <FileText className="w-6 h-6 text-blue-600" />
+                  <FileText className="w-6 h-6 text-brand-600 dark:text-brand-400" />
                   <div>
-                    <h3 className="font-semibold text-gray-900">{selectedReport.name}</h3>
-                    <p className="text-sm text-gray-500">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{selectedReport.name}</h3>
+                    <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                       Generated: {new Date(selectedReport.generatedAt).toLocaleString()}
                     </p>
                   </div>
@@ -243,14 +243,14 @@ export function ReportGenerator() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleDownload(selectedReport)}
-                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 text-sm"
+                    className="btn-brand"
                   >
                     <Download className="w-4 h-4" />
                     Download
                   </button>
                   <button
                     onClick={() => handlePrint(selectedReport)}
-                    className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-1 text-sm"
+                    className="btn-secondary"
                   >
                     <Printer className="w-4 h-4" />
                     Print
@@ -258,17 +258,17 @@ export function ReportGenerator() {
                 </div>
               </div>
 
-              <div className="border rounded-lg overflow-hidden">
-                <div className="bg-gray-50 p-3 border-b">
+              <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                <div className="bg-gray-50 dark:bg-gray-700/50 p-3 border-b border-gray-200 dark:border-gray-700">
                   <div className="flex items-center gap-2 text-sm">
-                    <Filter className="w-4 h-4 text-gray-400" />
-                    <span className="text-gray-600">
+                    <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                    <span className="tabular-nums text-gray-600 dark:text-gray-400">
                       {selectedReport.period || `${dateRange.startDate} to ${dateRange.endDate}`}
                     </span>
                   </div>
                 </div>
-                <div className="p-4 max-h-96 overflow-y-auto">
-                  <pre className="text-sm font-mono bg-gray-50 p-4 rounded">
+                <div className="p-4 max-h-96 overflow-y-auto custom-scrollbar">
+                  <pre className="text-sm font-mono bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg text-gray-900 dark:text-gray-100">
                     {JSON.stringify(selectedReport.data, null, 2)}
                   </pre>
                 </div>
@@ -277,19 +277,19 @@ export function ReportGenerator() {
           )}
 
           {/* Report History */}
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="p-4 border-b">
-              <h3 className="font-semibold text-gray-900">Recent Reports</h3>
+          <div className="card-brand shadow-soft p-0 overflow-hidden">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Recent Reports</h3>
             </div>
-            <div className="divide-y">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {generatedReports.slice(0, 5).map((report) => (
-                <div key={report.id} className="p-4 hover:bg-gray-50 transition-colors">
+                <div key={report.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition duration-250">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <FileText className="w-5 h-5 text-blue-600" />
+                      <FileText className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                       <div>
-                        <p className="font-medium">{report.name}</p>
-                        <p className="text-sm text-gray-500">
+                        <p className="font-medium text-gray-900 dark:text-white">{report.name}</p>
+                        <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                           {new Date(report.generatedAt).toLocaleString()}
                         </p>
                       </div>
@@ -297,29 +297,32 @@ export function ReportGenerator() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => setSelectedReport(report)}
-                        className="p-1 hover:bg-gray-100 rounded"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
+                        aria-label={`Preview ${report.name}`}
                       >
-                        <Eye className="w-4 h-4 text-gray-600" />
+                        <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                       </button>
                       <button
                         onClick={() => handleDownload(report)}
-                        className="p-1 hover:bg-gray-100 rounded"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
+                        aria-label={`Download ${report.name}`}
                       >
-                        <Download className="w-4 h-4 text-gray-600" />
+                        <Download className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                       </button>
                       <button
                         onClick={() => handlePrint(report)}
-                        className="p-1 hover:bg-gray-100 rounded"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
+                        aria-label={`Print ${report.name}`}
                       >
-                        <Printer className="w-4 h-4 text-gray-600" />
+                        <Printer className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                       </button>
                     </div>
                   </div>
                 </div>
               ))}
               {generatedReports.length === 0 && (
-                <div className="p-8 text-center text-gray-500">
-                  <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                  <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
                   <p>No reports generated yet</p>
                   <p className="text-sm">Configure and generate your first report</p>
                 </div>

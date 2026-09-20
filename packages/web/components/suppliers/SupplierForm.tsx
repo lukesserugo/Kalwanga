@@ -533,9 +533,9 @@ export function SupplierForm({
 
   const getInputClassName = (field: keyof FormErrors): string => {
     const base =
-      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed';
+      'w-full px-3 py-2 border rounded-lg focus-visible:ring-2 focus-visible:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-250';
     return getFieldError(field)
-      ? `${base} border-red-500 dark:border-red-500`
+      ? `${base} border-danger-500 dark:border-danger-500`
       : `${base} border-gray-300 dark:border-gray-600`;
   };
 
@@ -546,7 +546,7 @@ export function SupplierForm({
   if (loadingData) {
     return (
       <div className="flex justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500 dark:text-brand-400" />
       </div>
     );
   }
@@ -562,9 +562,9 @@ export function SupplierForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* GENERAL ERROR BANNER */}
       {errors.general && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700 dark:text-red-300 flex-1">
+        <div className="bg-danger-50 dark:bg-danger-950/30 border border-danger-200 dark:border-danger-900 rounded-lg p-3 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-danger-700 dark:text-danger-300 flex-1">
             {errors.general}
           </p>
           <button
@@ -576,7 +576,7 @@ export function SupplierForm({
                 return next;
               })
             }
-            className="text-red-600 hover:text-red-800 dark:text-red-400 p-0.5"
+            className="text-danger-600 hover:text-danger-800 dark:text-danger-400 dark:hover:text-danger-300 p-0.5 focus-ring rounded"
             aria-label="Dismiss error"
           >
             ×
@@ -587,7 +587,7 @@ export function SupplierForm({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* NAME */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Supplier Name *
           </label>
           <input
@@ -602,7 +602,7 @@ export function SupplierForm({
             placeholder="Enter supplier name"
           />
           {getFieldError('name') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('name')}
             </p>
@@ -611,7 +611,7 @@ export function SupplierForm({
 
         {/* CONTACT PERSON */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Contact Person
           </label>
           <input
@@ -625,7 +625,7 @@ export function SupplierForm({
             placeholder="Enter contact person"
           />
           {getFieldError('contactPerson') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('contactPerson')}
             </p>
@@ -634,7 +634,7 @@ export function SupplierForm({
 
         {/* EMAIL */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Email
           </label>
           <input
@@ -648,7 +648,7 @@ export function SupplierForm({
             placeholder="Enter email"
           />
           {getFieldError('email') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('email')}
             </p>
@@ -657,7 +657,7 @@ export function SupplierForm({
 
         {/* PHONE */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Phone
           </label>
           <input
@@ -671,7 +671,7 @@ export function SupplierForm({
             placeholder="Enter phone"
           />
           {getFieldError('phone') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('phone')}
             </p>
@@ -680,7 +680,7 @@ export function SupplierForm({
 
         {/* ADDRESS */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Address
           </label>
           <input
@@ -694,7 +694,7 @@ export function SupplierForm({
             placeholder="Enter address"
           />
           {getFieldError('address') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('address')}
             </p>
@@ -703,7 +703,7 @@ export function SupplierForm({
 
         {/* TAX ID */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Tax ID
           </label>
           <input
@@ -717,7 +717,7 @@ export function SupplierForm({
             placeholder="Enter tax ID"
           />
           {getFieldError('taxId') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('taxId')}
             </p>
@@ -726,7 +726,7 @@ export function SupplierForm({
 
         {/* PAYMENT TERMS */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Payment Terms
           </label>
           <input
@@ -740,7 +740,7 @@ export function SupplierForm({
             placeholder="e.g., Net 30"
           />
           {getFieldError('paymentTerms') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('paymentTerms')}
             </p>
@@ -749,7 +749,7 @@ export function SupplierForm({
 
         {/* DELIVERY TERMS */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Delivery Terms
           </label>
           <input
@@ -763,7 +763,7 @@ export function SupplierForm({
             placeholder="e.g., FOB"
           />
           {getFieldError('deliveryTerms') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('deliveryTerms')}
             </p>
@@ -772,7 +772,7 @@ export function SupplierForm({
 
         {/* NOTES */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-2xs uppercase tracking-wider font-semibold text-gray-700 dark:text-gray-300 mb-1">
             Notes
           </label>
           <textarea
@@ -786,7 +786,7 @@ export function SupplierForm({
             placeholder="Additional notes"
           />
           {getFieldError('notes') && (
-            <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+            <p className="mt-1 text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
               {getFieldError('notes')}
             </p>
@@ -802,7 +802,7 @@ export function SupplierForm({
               checked={formData.isActive}
               onChange={handleChange}
               disabled={loading}
-              className="w-4 h-4 text-blue-600 rounded"
+              className="w-4 h-4 text-brand-600 rounded focus-ring"
             />
             <span className="text-sm text-gray-700 dark:text-gray-300">
               Active
@@ -812,13 +812,13 @@ export function SupplierForm({
       </div>
 
       {/* ACTIONS */}
-      <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
+      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-250 disabled:opacity-50 focus-ring"
           >
             Cancel
           </button>
@@ -826,7 +826,7 @@ export function SupplierForm({
         <button
           type="submit"
           disabled={submitDisabled}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="btn-brand shadow-brand focus-ring px-6 py-2 flex items-center gap-2"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />

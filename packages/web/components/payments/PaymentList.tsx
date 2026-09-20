@@ -316,8 +316,8 @@ export function PaymentList() {
       header: 'Payment',
       render: (payment: Payment) => (
         <div>
-          <p className="font-medium text-gray-900 dark:text-white">#{payment.id.slice(0, 8)}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="font-medium tabular-nums text-gray-900 dark:text-white">#{payment.id.slice(0, 8)}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             {new Date(payment.processedAt).toLocaleString()}
           </p>
         </div>
@@ -375,7 +375,7 @@ export function PaymentList() {
       key: 'amount',
       header: 'Amount',
       render: (payment: Payment) => (
-        <span className="font-bold text-gray-900 dark:text-white">
+        <span className="font-bold tabular-nums text-gray-900 dark:text-white">
           ${payment.amount.toFixed(2)}
         </span>
       ),
@@ -384,7 +384,7 @@ export function PaymentList() {
       key: 'sale',
       header: 'Sale',
       render: (payment: Payment) => (
-        <span className="text-sm text-gray-600 dark:text-gray-400">
+        <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
           {payment.sale?.receiptNumber || 'N/A'}
         </span>
       ),
@@ -393,7 +393,7 @@ export function PaymentList() {
       key: 'reference',
       header: 'Reference',
       render: (payment: Payment) => (
-        <span className="text-sm font-mono text-gray-500 dark:text-gray-400">
+        <span className="text-sm font-mono tabular-nums text-gray-500 dark:text-gray-400">
           {payment.reference || payment.transactionId || 'N/A'}
         </span>
       ),
@@ -404,7 +404,7 @@ export function PaymentList() {
       render: (payment: Payment) => {
         const StatusIcon = getStatusIcon(payment.status);
         return (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 bg-${getStatusColor(payment.status)}-100 text-${getStatusColor(payment.status)}-700 dark:bg-${getStatusColor(payment.status)}-900/30 dark:text-${getStatusColor(payment.status)}-300`}>
+          <span className={`px-2 py-1 rounded-full text-2xs font-medium inline-flex items-center gap-1 bg-${getStatusColor(payment.status)}-100 text-${getStatusColor(payment.status)}-700 dark:bg-${getStatusColor(payment.status)}-900/30 dark:text-${getStatusColor(payment.status)}-300`}>
             <StatusIcon className="w-3 h-3" />
             {payment.status}
           </span>
@@ -423,17 +423,19 @@ export function PaymentList() {
                 setRefundData({ amount: payment.amount, reason: '' });
                 setShowRefundModal(true);
               }}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
               title="Refund"
+              aria-label={`Refund payment ${payment.id.slice(0, 8)}`}
             >
-              <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <XCircle className="w-4 h-4 text-danger-600 dark:text-danger-400" />
             </button>
           )}
           <button
-            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+            className="p-1 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition duration-250 focus-ring"
             title="View Details"
+            aria-label={`View payment ${payment.id.slice(0, 8)} details`}
           >
-            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <Eye className="w-4 h-4 text-brand-600 dark:text-brand-400" />
           </button>
         </div>
       ),
@@ -446,7 +448,7 @@ export function PaymentList() {
   );
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-950 min-h-screen">
+    <div className="p-6 bg-gray-50 dark:bg-gray-950 min-h-screen animate-fade-in">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -456,13 +458,13 @@ export function PaymentList() {
         <div className="flex gap-2">
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-300"
+            className="btn-secondary"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
           <button
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            className="btn-brand"
           >
             <Download className="w-4 h-4" />
             Export
@@ -473,33 +475,33 @@ export function PaymentList() {
       {/* Summary Cards */}
       {summary && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand shadow-soft">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
               ${summary.totalAmount?.toFixed(2) || '0.00'}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand shadow-soft">
             <p className="text-sm text-gray-500 dark:text-gray-400">Total Transactions</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
               {summary.count || 0}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand shadow-soft">
             <p className="text-sm text-gray-500 dark:text-gray-400">Cash</p>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+            <p className="text-2xl font-bold tabular-nums text-success-600 dark:text-success-400">
               ${(summary.byMethod?.CASH || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand shadow-soft">
             <p className="text-sm text-gray-500 dark:text-gray-400">Card</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            <p className="text-2xl font-bold tabular-nums text-brand-600 dark:text-brand-400">
               ${((summary.byMethod?.CREDIT_CARD || 0) + (summary.byMethod?.DEBIT_CARD || 0)).toFixed(2)}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+          <div className="card-brand shadow-soft">
             <p className="text-sm text-gray-500 dark:text-gray-400">Mobile Money</p>
-            <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+            <p className="text-2xl font-bold tabular-nums text-secondary-600 dark:text-secondary-400">
               ${(summary.byMethod?.MOBILE_MONEY || 0).toFixed(2)}
             </p>
           </div>
@@ -507,24 +509,24 @@ export function PaymentList() {
       )}
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
+      <div className="card-brand shadow-soft mb-6">
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex-1 min-w-[200px]">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
               <input
                 type="text"
                 placeholder="Search by reference..."
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
               />
             </div>
           </div>
           <select
             value={filters.method}
             onChange={(e) => setFilters({ ...filters, method: e.target.value })}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           >
             <option value="">All Methods</option>
             <option value="CASH">Cash</option>
@@ -542,7 +544,7 @@ export function PaymentList() {
           <select
             value={filters.status}
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           >
             <option value="">All Status</option>
             <option value="PAID">Paid</option>
@@ -560,7 +562,7 @@ export function PaymentList() {
             <select
               value={filters.provider}
               onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
             >
               <option value="">All Providers</option>
               {providerOptions.map((provider) => (
@@ -574,14 +576,14 @@ export function PaymentList() {
             type="date"
             value={filters.startDate}
             onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums"
           />
           <span className="text-gray-500 dark:text-gray-400">to</span>
           <input
             type="date"
             value={filters.endDate}
             onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums"
           />
           <button
             onClick={() => {
@@ -594,7 +596,7 @@ export function PaymentList() {
                 endDate: '',
               });
             }}
-            className="px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+            className="px-3 py-2 text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring rounded"
           >
             Clear
           </button>
@@ -602,7 +604,7 @@ export function PaymentList() {
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-gray-700">
+      <div className="card-brand shadow-soft p-0 overflow-hidden">
         <Table
           columns={columns}
           data={payments}
@@ -626,8 +628,8 @@ export function PaymentList() {
         <div className="p-6">
           {selectedPayment && (
             <div className="mb-4 space-y-2">
-              <p className="font-medium text-gray-900 dark:text-white">Payment: #{selectedPayment.id.slice(0, 8)}</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="font-medium tabular-nums text-gray-900 dark:text-white">Payment: #{selectedPayment.id.slice(0, 8)}</p>
+              <p className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
                 Amount: ${selectedPayment.amount.toFixed(2)}
               </p>
               <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -652,7 +654,7 @@ export function PaymentList() {
                 step="0.01"
                 min="0"
                 max={selectedPayment?.amount}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums"
               />
             </div>
             <div>
@@ -663,7 +665,7 @@ export function PaymentList() {
                 value={refundData.reason}
                 onChange={(e) => setRefundData({ ...refundData, reason: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 resize-none"
                 placeholder="Reason for refund..."
               />
             </div>
@@ -671,13 +673,13 @@ export function PaymentList() {
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={() => setShowRefundModal(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               onClick={handleRefund}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl transition duration-250 flex items-center gap-2 focus-ring shadow-brand"
             >
               Process Refund
             </button>

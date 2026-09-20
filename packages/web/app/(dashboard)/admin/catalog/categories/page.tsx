@@ -39,7 +39,6 @@ export default function CategoriesPage() {
   const { user } = useAuth();
   const { canView, canCreate, canEdit, canDelete, canManage, isLoading: permissionLoading } = usePermission();
   
-  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const [categories, setCategories] = useState<Category[]>([]);
   const [filteredCategories, setFilteredCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,18 +59,15 @@ export default function CategoriesPage() {
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Permission checks
   const canViewCategories = canView(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
   const canCreateCategories = canCreate(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
   const canEditCategories = canEdit(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
   const canDeleteCategories = canDelete(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
 
-  // Set isClient to true once component mounts (client-side only)
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Load categories
   useEffect(() => {
     if (isClient && canViewCategories) {
       loadCategories();
@@ -105,7 +101,6 @@ export default function CategoriesPage() {
     toast.success('Categories refreshed');
   };
 
-  // Filter and sort categories
   useEffect(() => {
     let filtered = [...categories];
     
@@ -126,7 +121,6 @@ export default function CategoriesPage() {
     setFilteredCategories(filtered);
   }, [categories, searchQuery, sortOrder]);
 
-  // CRUD Handlers
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -136,7 +130,6 @@ export default function CategoriesPage() {
 
     setSubmitting(true);
     try {
-      // Convert null to undefined for API compatibility
       const description = formData.description?.trim() || undefined;
       const parentId = formData.parentId || undefined;
       
@@ -264,11 +257,10 @@ export default function CategoriesPage() {
 
   const categoryTree = useMemo(() => buildCategoryTree(filteredCategories), [filteredCategories, buildCategoryTree]);
 
-  // CONDITIONAL RETURNS
   if (permissionLoading || !isClient) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400"></div>
       </div>
     );
   }
@@ -285,7 +277,7 @@ export default function CategoriesPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -297,22 +289,21 @@ export default function CategoriesPage() {
   if (loading && categories.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400"></div>
       </div>
     );
   }
 
-  // Render Tree View
   const renderTree = (items: Category[], level = 0) => {
     return items.map(category => (
       <div key={category.id} style={{ marginLeft: `${Math.min(level * 24, 48)}px` }}>
-        <div className={`flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 group ${
-          selectedCategory?.id === category.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+        <div className={`flex items-center gap-2 p-2 rounded-lg hover:bg-brand-50/50 dark:hover:bg-brand-950/10 group ${
+          selectedCategory?.id === category.id ? 'bg-brand-50 dark:bg-brand-950/20' : ''
         }`}>
           {category.children && category.children.length > 0 && (
             <button
               onClick={() => toggleCategoryExpand(category.id)}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-transform"
+              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-transform focus-ring"
               aria-label={expandedCategories.has(category.id) ? 'Collapse' : 'Expand'}
             >
               <ChevronRight className={`w-4 h-4 transition-transform ${expandedCategories.has(category.id) ? 'rotate-90' : ''}`} />
@@ -323,7 +314,7 @@ export default function CategoriesPage() {
               type="checkbox"
               checked={selectedCategories.has(category.id)}
               onChange={() => toggleCategorySelection(category.id)}
-              className="rounded border-gray-300 dark:border-gray-600"
+              className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition-colors"
               aria-label={`Select ${category.name}`}
             />
           )}
@@ -331,12 +322,12 @@ export default function CategoriesPage() {
             className="flex-1 flex items-center gap-2 cursor-pointer"
             onClick={() => setSelectedCategory(category)}
           >
-            <Folder className={`w-5 h-5 ${category.isActive ? 'text-blue-500' : 'text-gray-400'}`} />
+            <Folder className={`w-5 h-5 ${category.isActive ? 'text-brand-500' : 'text-gray-400'}`} />
             <div>
               <span className={`font-medium ${category.isActive ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>
                 {category.name}
               </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 tabular-nums">
                 ({category.productCount || 0} products)
               </span>
               {category.description && (
@@ -347,7 +338,7 @@ export default function CategoriesPage() {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {category.featured && <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />}
+            {category.featured && <Star className="w-4 h-4 text-brand-500 fill-brand-500" />}
             {!category.isActive && <EyeOff className="w-4 h-4 text-gray-400" />}
             {canEditCategories && (
               <button
@@ -362,10 +353,10 @@ export default function CategoriesPage() {
                   });
                   setShowModal(true);
                 }}
-                className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                 title="Edit"
               >
-                <Edit className="w-4 h-4 text-blue-500" />
+                <Edit className="w-4 h-4 text-brand-500" />
               </button>
             )}
             {canDeleteCategories && (
@@ -374,10 +365,10 @@ export default function CategoriesPage() {
                   setSelectedCategory(category);
                   setShowDeleteModal(true);
                 }}
-                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                 title="Delete"
               >
-                <Trash2 className="w-4 h-4 text-red-500" />
+                <Trash2 className="w-4 h-4 text-brand-accent-500" />
               </button>
             )}
           </div>
@@ -391,7 +382,6 @@ export default function CategoriesPage() {
     ));
   };
 
-  // Render Grid View
   const renderGridView = () => {
     if (filteredCategories.length === 0) {
       return (
@@ -405,7 +395,7 @@ export default function CategoriesPage() {
                 setFormData({ name: '', description: '', parentId: '', isActive: true, featured: false });
                 setShowModal(true);
               }}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors inline-flex items-center gap-2"
+              className="mt-4 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors inline-flex items-center gap-2 shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add your first category
@@ -423,31 +413,31 @@ export default function CategoriesPage() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             whileHover={{ y: -4 }}
-            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-all"
+            className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800 transition-all"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex-shrink-0">
-                  <Folder className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div className="p-2 bg-brand-100 dark:bg-brand-950/30 rounded-lg flex-shrink-0">
+                  <Folder className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-medium text-gray-900 dark:text-white truncate">{category.name}</h3>
                   {category.description && (
                     <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{category.description}</p>
                   )}
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 tabular-nums">
                     {category.productCount || 0} products
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                 {category.featured && (
-                  <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                  <Star className="w-4 h-4 text-brand-500 fill-brand-500" />
                 )}
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                   category.isActive
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                    ? 'bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300'
+                    : 'bg-brand-accent-100 dark:bg-brand-accent-950/30 text-brand-accent-700 dark:text-brand-accent-300'
                 }`}>
                   {category.isActive ? 'Active' : 'Inactive'}
                 </span>
@@ -467,10 +457,10 @@ export default function CategoriesPage() {
                     });
                     setShowModal(true);
                   }}
-                  className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                  className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                   title="Edit category"
                 >
-                  <Edit className="w-4 h-4 text-blue-500" />
+                  <Edit className="w-4 h-4 text-brand-500" />
                 </button>
                 {canDeleteCategories && (
                   <button
@@ -478,10 +468,10 @@ export default function CategoriesPage() {
                       setSelectedCategory(category);
                       setShowDeleteModal(true);
                     }}
-                    className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                    className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                     title="Delete category"
                   >
-                    <Trash2 className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-brand-accent-500" />
                   </button>
                 )}
               </div>
@@ -492,7 +482,6 @@ export default function CategoriesPage() {
     );
   };
 
-  // Render List View
   const renderListView = () => {
     if (filteredCategories.length === 0) {
       return (
@@ -505,7 +494,7 @@ export default function CategoriesPage() {
 
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
               <tr>
@@ -515,7 +504,7 @@ export default function CategoriesPage() {
                       type="checkbox"
                       checked={selectedCategories.size === filteredCategories.length && filteredCategories.length > 0}
                       onChange={toggleAllSelection}
-                      className="rounded border-gray-300 dark:border-gray-600"
+                      className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition-colors"
                     />
                   </th>
                 )}
@@ -529,20 +518,20 @@ export default function CategoriesPage() {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredCategories.map((category) => (
-                <tr key={category.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                <tr key={category.id} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
                   {canDeleteCategories && (
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
                         checked={selectedCategories.has(category.id)}
                         onChange={() => toggleCategorySelection(category.id)}
-                        className="rounded border-gray-300 dark:border-gray-600"
+                        className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition-colors"
                       />
                     </td>
                   )}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Folder className={`w-4 h-4 ${category.isActive ? 'text-blue-500' : 'text-gray-400'}`} />
+                      <Folder className={`w-4 h-4 ${category.isActive ? 'text-brand-500' : 'text-gray-400'}`} />
                       <span className={`font-medium ${category.isActive ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>
                         {category.name}
                       </span>
@@ -551,16 +540,16 @@ export default function CategoriesPage() {
                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate">
                     {category.description || '-'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                     {category.productCount || 0}
                   </td>
                   <td className="px-4 py-3">
                     {canEditCategories ? (
                       <button
                         onClick={() => handleToggleStatus(category.id, !category.isActive)}
-                        className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                        className={`px-2 py-1 rounded-full text-xs font-medium transition-colors focus-ring ${
                           category.isActive
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50'
+                            ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-400 hover:bg-success-200 dark:hover:bg-success-950/50'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                         }`}
                       >
@@ -569,7 +558,7 @@ export default function CategoriesPage() {
                     ) : (
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         category.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
                           : 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-400'
                       }`}>
                         {category.isActive ? 'Active' : 'Inactive'}
@@ -578,7 +567,7 @@ export default function CategoriesPage() {
                   </td>
                   <td className="px-4 py-3">
                     {category.featured ? (
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                      <Star className="w-4 h-4 text-brand-500 fill-brand-500" />
                     ) : (
                       <StarOff className="w-4 h-4 text-gray-300" />
                     )}
@@ -590,7 +579,7 @@ export default function CategoriesPage() {
                           setSelectedCategory(category);
                           setShowDetailsModal(true);
                         }}
-                        className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="p-1.5 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                         title="View Details"
                       >
                         <Eye className="w-4 h-4 text-gray-500" />
@@ -608,10 +597,10 @@ export default function CategoriesPage() {
                             });
                             setShowModal(true);
                           }}
-                          className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                           title="Edit"
                         >
-                          <Edit className="w-4 h-4 text-blue-500" />
+                          <Edit className="w-4 h-4 text-brand-500" />
                         </button>
                       )}
                       {canDeleteCategories && (
@@ -620,10 +609,10 @@ export default function CategoriesPage() {
                             setSelectedCategory(category);
                             setShowDeleteModal(true);
                           }}
-                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                          className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                           title="Delete"
                         >
-                          <Trash2 className="w-4 h-4 text-red-500" />
+                          <Trash2 className="w-4 h-4 text-brand-accent-500" />
                         </button>
                       )}
                     </div>
@@ -640,23 +629,21 @@ export default function CategoriesPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 transition-colors duration-200">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Folder className="w-6 h-6 text-blue-500" />
+              <Folder className="w-6 h-6 text-brand-500" />
               Categories
             </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
               {categories.length} categories • Manage your product categories
             </p>
           </div>
           <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
-            {/* Refresh */}
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
               title="Refresh"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -669,7 +656,7 @@ export default function CategoriesPage() {
                   setFormData({ name: '', description: '', parentId: '', isActive: true, featured: false });
                   setShowModal(true);
                 }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg flex items-center gap-2 transition-colors shadow-brand focus-ring"
               >
                 <Plus className="w-4 h-4" />
                 Add Category
@@ -678,21 +665,19 @@ export default function CategoriesPage() {
           </div>
         </div>
 
-        {/* Error State */}
         {error && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">{error}</span>
+          <div className="mb-6 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-lg p-4 flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-brand-accent-500 flex-shrink-0" />
+            <span className="text-brand-accent-700 dark:text-brand-accent-300">{error}</span>
             <button
               onClick={() => loadCategories(false)}
-              className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors text-sm"
+              className="ml-auto px-3 py-1 bg-brand-accent-100 dark:bg-brand-accent-800/30 text-brand-accent-700 dark:text-brand-accent-300 rounded-lg hover:bg-brand-accent-200 dark:hover:bg-brand-accent-800/50 transition-colors text-sm focus-ring"
             >
               Retry
             </button>
           </div>
         )}
 
-        {/* Filters and Controls */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="flex-1 min-w-[200px]">
             <div className="relative">
@@ -702,12 +687,12 @@ export default function CategoriesPage() {
                 placeholder="Search categories..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -720,10 +705,10 @@ export default function CategoriesPage() {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 focus-ring ${
                   viewMode === mode
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-brand-600 text-white shadow-brand'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
                 }`}
               >
                 {mode === 'grid' && <Grid className="w-4 h-4" />}
@@ -736,17 +721,16 @@ export default function CategoriesPage() {
 
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
             title="Toggle sort order"
           >
             <ArrowUpDown className="w-4 h-4" />
           </button>
 
-          {/* Bulk Delete */}
           {selectedCategories.size > 0 && canDeleteCategories && (
             <button
               onClick={() => setShowBulkDeleteModal(true)}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+              className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 transition-colors flex items-center gap-2 shadow-brand focus-ring"
             >
               <Trash2 className="w-4 h-4" />
               Delete Selected ({selectedCategories.size})
@@ -754,7 +738,6 @@ export default function CategoriesPage() {
           )}
         </div>
 
-        {/* Categories Display */}
         {viewMode === 'tree' ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
             {filteredCategories.length === 0 ? (
@@ -774,9 +757,8 @@ export default function CategoriesPage() {
           renderListView()
         )}
 
-        {/* Pagination info */}
         {filteredCategories.length > 0 && filteredCategories.length < categories.length && (
-          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             Showing {filteredCategories.length} of {categories.length} categories
           </div>
         )}
@@ -791,11 +773,11 @@ export default function CategoriesPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <button
                 onClick={() => setShowModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
@@ -805,14 +787,14 @@ export default function CategoriesPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Category Name <span className="text-red-500">*</span>
+                    Category Name <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Enter category name"
                   />
                 </div>
@@ -824,7 +806,7 @@ export default function CategoriesPage() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Enter category description"
                   />
                 </div>
@@ -835,7 +817,7 @@ export default function CategoriesPage() {
                   <select
                     value={formData.parentId}
                     onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                   >
                     <option value="">None (Top Level)</option>
                     {categories
@@ -851,7 +833,7 @@ export default function CategoriesPage() {
                       type="checkbox"
                       checked={formData.isActive}
                       onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 transition-colors duration-200"
+                      className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 dark:focus:ring-brand-400 bg-white dark:bg-gray-700 transition-colors duration-200"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
                   </label>
@@ -860,7 +842,7 @@ export default function CategoriesPage() {
                       type="checkbox"
                       checked={formData.featured}
                       onChange={(e) => setFormData({ ...formData, featured: e.target.checked })}
-                      className="w-4 h-4 text-yellow-500 border-gray-300 dark:border-gray-600 rounded focus:ring-yellow-500 bg-white dark:bg-gray-700 transition-colors duration-200"
+                      className="w-4 h-4 text-brand-500 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-700 transition-colors duration-200"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Featured</span>
                   </label>
@@ -869,14 +851,14 @@ export default function CategoriesPage() {
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto"
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto"
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto shadow-brand focus-ring"
                   >
                     {submitting ? (
                       <>
@@ -907,13 +889,13 @@ export default function CategoriesPage() {
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-lg">
+                  <AlertTriangle className="w-6 h-6 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Category</h3>
@@ -923,12 +905,12 @@ export default function CategoriesPage() {
               <p className="text-gray-600 dark:text-gray-300 mb-6">
                 Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{selectedCategory.name}</strong>?
                 {selectedCategory.productCount && selectedCategory.productCount > 0 && (
-                  <span className="block mt-2 text-red-600">
+                  <span className="block mt-2 text-brand-accent-600">
                     ⚠️ This category has {selectedCategory.productCount} products. They will need to be reassigned.
                   </span>
                 )}
                 {selectedCategory.children && selectedCategory.children.length > 0 && (
-                  <span className="block mt-2 text-red-600">
+                  <span className="block mt-2 text-brand-accent-600">
                     ⚠️ This category has {selectedCategory.children.length} subcategories. They will need to be reassigned.
                   </span>
                 )}
@@ -936,13 +918,13 @@ export default function CategoriesPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleDelete(selectedCategory.id)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-accent-600 hover:bg-brand-accent-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete Category
@@ -966,13 +948,13 @@ export default function CategoriesPage() {
             >
               <button
                 onClick={() => setShowBulkDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-lg">
+                  <AlertTriangle className="w-6 h-6 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Selected Categories</h3>
@@ -986,13 +968,13 @@ export default function CategoriesPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowBulkDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleBulkDelete}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-accent-600 hover:bg-brand-accent-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete {selectedCategories.size} Categories
@@ -1012,18 +994,18 @@ export default function CategoriesPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <button
                 onClick={() => setShowDetailsModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Category Details</h3>
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-16 h-16 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-3xl">
+                  <div className="w-16 h-16 rounded-xl bg-gradient-to-r from-brand-500 to-brand-accent-500 flex items-center justify-center text-3xl">
                     📂
                   </div>
                   <div>
@@ -1034,13 +1016,13 @@ export default function CategoriesPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Products</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                    <p className="text-lg font-semibold text-gray-900 dark:text-white tabular-nums">
                       {selectedCategory.productCount || 0}
                     </p>
                   </div>
                   <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
-                    <p className={`text-lg font-semibold ${selectedCategory.isActive ? 'text-green-600' : 'text-gray-500'}`}>
+                    <p className={`text-lg font-semibold ${selectedCategory.isActive ? 'text-success-600' : 'text-gray-500'}`}>
                       {selectedCategory.isActive ? 'Active' : 'Inactive'}
                     </p>
                   </div>
@@ -1080,7 +1062,7 @@ export default function CategoriesPage() {
                     <p className="text-xs text-gray-500 dark:text-gray-400">Subcategories</p>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {selectedCategory.children.map(child => (
-                        <span key={child.id} className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                        <span key={child.id} className="text-xs bg-brand-100 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-full">
                           {child.name}
                         </span>
                       ))}
@@ -1090,7 +1072,7 @@ export default function CategoriesPage() {
                 <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => setShowDetailsModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                   >
                     Close
                   </button>
@@ -1108,7 +1090,7 @@ export default function CategoriesPage() {
                         });
                         setShowModal(true);
                       }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors shadow-brand focus-ring"
                     >
                       Edit Category
                     </button>
