@@ -27,7 +27,6 @@ import {
   Layers,
   Star,
   Image as ImageIcon,
-  TrendingUp,
   CheckCircle2,
   XCircle,
   Eye,
@@ -238,7 +237,7 @@ export default function AdminCategoriesPage() {
           </p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             Back to Inventory
           </button>
@@ -249,12 +248,12 @@ export default function AdminCategoriesPage() {
 
   // ---- Render ----
   return (
-    <div className="space-y-6 p-4 sm:p-6 max-w-[1600px] mx-auto">
+    <div className="space-y-6 p-4 sm:p-6 max-w-container mx-auto">
       {/* HEADER */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg">
+            <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-brand-gradient text-white shadow-lg">
               <FolderTree className="w-5 h-5" />
             </span>
             Categories
@@ -269,7 +268,7 @@ export default function AdminCategoriesPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             aria-label="Refresh"
             title="Refresh"
           >
@@ -284,9 +283,9 @@ export default function AdminCategoriesPage() {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 focus-ring ${
                   viewMode === mode
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-brand-500 text-white shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
                 aria-label={`${mode} view`}
@@ -307,7 +306,7 @@ export default function AdminCategoriesPage() {
             onClick={() =>
               setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
             }
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             aria-label="Toggle sort order"
             title={`Sort ${sortOrder === 'asc' ? 'Z-A' : 'A-Z'}`}
           >
@@ -317,7 +316,7 @@ export default function AdminCategoriesPage() {
           {canCreateCategories && (
             <button
               onClick={() => router.push('/admin/categories/create')}
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 flex items-center gap-2 transition-all shadow-sm hover:shadow"
+              className="px-4 py-2 bg-brand-gradient text-white rounded-lg hover:bg-brand-gradient-hover flex items-center gap-2 transition-all shadow-sm hover:shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Category
@@ -332,13 +331,13 @@ export default function AdminCategoriesPage() {
           icon={<FolderTree className="w-4 h-4" />}
           label="Total"
           value={stats.total}
-          tone="blue"
+          tone="brand"
         />
         <StatCard
           icon={<CheckCircle2 className="w-4 h-4" />}
           label="Active"
           value={stats.active}
-          tone="emerald"
+          tone="success"
         />
         <StatCard
           icon={<XCircle className="w-4 h-4" />}
@@ -350,24 +349,24 @@ export default function AdminCategoriesPage() {
           icon={<Star className="w-4 h-4" />}
           label="Featured"
           value={stats.featured}
-          tone="amber"
+          tone="warning"
         />
         <StatCard
           icon={<ImageIcon className="w-4 h-4" />}
           label="With image"
           value={stats.withImages}
-          tone="violet"
+          tone="secondary"
         />
         <StatCard
           icon={<Package className="w-4 h-4" />}
           label="Products"
           value={stats.totalProducts}
-          tone="indigo"
+          tone="brand-accent"
         />
       </div>
 
       {/* TOOLBAR */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
+      <div className="card-brand p-3 sm:p-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           {/* Search */}
           <div className="relative flex-1">
@@ -378,12 +377,12 @@ export default function AdminCategoriesPage() {
               placeholder="Search categories…  (press / to focus)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring rounded"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4" />
@@ -397,9 +396,9 @@ export default function AdminCategoriesPage() {
               <button
                 key={status}
                 onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all focus-ring ${
                   statusFilter === status
-                    ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-800 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >
@@ -454,7 +453,7 @@ export default function AdminCategoriesPage() {
 
       {/* Footer count */}
       {!loading && filteredCategories.length > 0 && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+        <p className="text-xs text-gray-500 dark:text-gray-400 text-center tabular-nums">
           Showing {filteredCategories.length} of {categories.length} categories
         </p>
       )}
@@ -485,42 +484,48 @@ interface StatCardProps {
   icon: React.ReactNode;
   label: string;
   value: number;
-  tone: 'blue' | 'emerald' | 'gray' | 'amber' | 'violet' | 'indigo';
+  tone:
+    | 'brand'
+    | 'brand-accent'
+    | 'secondary'
+    | 'success'
+    | 'warning'
+    | 'gray';
 }
 
 const TONES: Record<
   StatCardProps['tone'],
   { bg: string; text: string; iconBg: string }
 > = {
-  blue: {
-    bg: 'bg-blue-50 dark:bg-blue-900/20',
-    text: 'text-blue-700 dark:text-blue-300',
-    iconBg: 'bg-blue-100 dark:bg-blue-900/40',
+  brand: {
+    bg: 'bg-brand-50 dark:bg-brand-900/20',
+    text: 'text-brand-700 dark:text-brand-300',
+    iconBg: 'bg-brand-100 dark:bg-brand-900/40',
   },
-  emerald: {
-    bg: 'bg-emerald-50 dark:bg-emerald-900/20',
-    text: 'text-emerald-700 dark:text-emerald-300',
-    iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
+  'brand-accent': {
+    bg: 'bg-brand-accent-50 dark:bg-brand-accent-900/20',
+    text: 'text-brand-accent-700 dark:text-brand-accent-300',
+    iconBg: 'bg-brand-accent-100 dark:bg-brand-accent-900/40',
+  },
+  secondary: {
+    bg: 'bg-secondary-50 dark:bg-secondary-900/20',
+    text: 'text-secondary-700 dark:text-secondary-300',
+    iconBg: 'bg-secondary-100 dark:bg-secondary-900/40',
+  },
+  success: {
+    bg: 'bg-success-50 dark:bg-success-900/20',
+    text: 'text-success-700 dark:text-success-300',
+    iconBg: 'bg-success-100 dark:bg-success-900/40',
+  },
+  warning: {
+    bg: 'bg-warning-50 dark:bg-warning-900/20',
+    text: 'text-warning-700 dark:text-warning-300',
+    iconBg: 'bg-warning-100 dark:bg-warning-900/40',
   },
   gray: {
     bg: 'bg-gray-50 dark:bg-gray-800',
     text: 'text-gray-700 dark:text-gray-300',
     iconBg: 'bg-gray-100 dark:bg-gray-700',
-  },
-  amber: {
-    bg: 'bg-amber-50 dark:bg-amber-900/20',
-    text: 'text-amber-700 dark:text-amber-300',
-    iconBg: 'bg-amber-100 dark:bg-amber-900/40',
-  },
-  violet: {
-    bg: 'bg-violet-50 dark:bg-violet-900/20',
-    text: 'text-violet-700 dark:text-violet-300',
-    iconBg: 'bg-violet-100 dark:bg-violet-900/40',
-  },
-  indigo: {
-    bg: 'bg-indigo-50 dark:bg-indigo-900/20',
-    text: 'text-indigo-700 dark:text-indigo-300',
-    iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
   },
 };
 
@@ -598,10 +603,10 @@ function EmptyState({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center"
+      className="card-brand p-12 text-center"
     >
-      <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 mb-4">
-        <FolderTree className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+      <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-brand-gradient-soft mb-4">
+        <FolderTree className="w-10 h-10 text-brand-600 dark:text-brand-400" />
       </div>
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
         {isFiltered ? 'No matching categories' : 'No categories yet'}
@@ -615,7 +620,7 @@ function EmptyState({
         {isFiltered && (
           <button
             onClick={onClear}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             Clear filters
           </button>
@@ -623,7 +628,7 @@ function EmptyState({
         {canCreate && !isFiltered && (
           <button
             onClick={onCreate}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             <Plus className="w-4 h-4 mr-2" />
             Add Category
@@ -658,8 +663,8 @@ function CategoryList({
   onToggleStatus,
 }: CategoryListProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand p-0 overflow-hidden">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -701,7 +706,7 @@ function CategoryList({
                   <td className="px-4 py-3">
                     <button
                       onClick={() => onView(category)}
-                      className="flex items-center gap-3 text-left w-full"
+                      className="flex items-center gap-3 text-left w-full focus-ring rounded"
                     >
                       <CategoryAvatar
                         category={category}
@@ -714,7 +719,7 @@ function CategoryList({
                             {category.name}
                           </span>
                           {featured && (
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                            <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500 shrink-0" />
                           )}
                         </div>
                         <span className="text-xs text-gray-400 dark:text-gray-500 font-mono md:hidden">
@@ -745,12 +750,12 @@ function CategoryList({
                   {/* Products */}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                      <span className="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300 tabular-nums">
                         <Package className="w-3.5 h-3.5 text-gray-400" />
                         {productCount}
                       </span>
                       {childCount > 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500">
+                        <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500 tabular-nums">
                           <Layers className="w-3 h-3" />
                           {childCount}
                         </span>
@@ -763,16 +768,16 @@ function CategoryList({
                     <button
                       onClick={() => canEdit && onToggleStatus(category)}
                       disabled={!canEdit}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors focus-ring ${
                         category.isActive
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                           : 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400'
                       } ${canEdit ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
                           category.isActive
-                            ? 'bg-emerald-500'
+                            ? 'bg-success-500'
                             : 'bg-gray-400'
                         }`}
                       />
@@ -793,7 +798,7 @@ function CategoryList({
                           icon={<Edit className="w-4 h-4" />}
                           label="Edit"
                           onClick={() => onEdit(category)}
-                          tone="blue"
+                          tone="brand"
                         />
                       )}
                       {canDelete && (
@@ -801,7 +806,7 @@ function CategoryList({
                           icon={<Trash2 className="w-4 h-4" />}
                           label="Delete"
                           onClick={() => onDelete(category)}
-                          tone="red"
+                          tone="danger"
                         />
                       )}
                     </div>
@@ -820,20 +825,27 @@ interface IconButtonProps {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
-  tone?: 'default' | 'blue' | 'red';
+  tone?: 'default' | 'brand' | 'danger';
 }
 
-function IconButton({ icon, label, onClick, tone = 'default' }: IconButtonProps) {
+function IconButton({
+  icon,
+  label,
+  onClick,
+  tone = 'default',
+}: IconButtonProps) {
   const tones = {
     default:
       'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400',
-    blue: 'hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400',
-    red: 'hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400',
+    brand:
+      'hover:bg-brand-100 dark:hover:bg-brand-900/30 text-brand-600 dark:text-brand-400',
+    danger:
+      'hover:bg-danger-100 dark:hover:bg-danger-900/30 text-danger-600 dark:text-danger-400',
   };
   return (
     <button
       onClick={onClick}
-      className={`p-1.5 rounded-lg transition-colors ${tones[tone]}`}
+      className={`p-1.5 rounded-lg transition-colors focus-ring ${tones[tone]}`}
       title={label}
       aria-label={label}
     >
@@ -865,7 +877,7 @@ function DeleteModal({
   const willArchive = !hasBlockers && productCount > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -881,7 +893,7 @@ function DeleteModal({
       >
         <button
           onClick={onCancel}
-          className="absolute top-4 right-4 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          className="absolute top-4 right-4 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           aria-label="Close"
         >
           <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
@@ -916,9 +928,9 @@ function DeleteModal({
 
         {/* Impact preview */}
         {hasBlockers && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mb-4 flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-            <div className="text-sm text-red-700 dark:text-red-300">
+          <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl p-3 mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-danger-600 dark:text-danger-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-danger-700 dark:text-danger-300">
               <strong>Cannot delete.</strong> This category has {childCount}{' '}
               subcategor{childCount === 1 ? 'y' : 'ies'}. Move or delete them
               first.
@@ -927,9 +939,9 @@ function DeleteModal({
         )}
 
         {willArchive && (
-          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 mb-4 flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-            <div className="text-sm text-amber-700 dark:text-amber-300">
+          <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-3 mb-4 flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-warning-600 dark:text-warning-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-warning-700 dark:text-warning-300">
               This category has {productCount} product
               {productCount === 1 ? '' : 's'}. It will be{' '}
               <strong>archived (soft-deleted)</strong> instead of removed.
@@ -941,14 +953,14 @@ function DeleteModal({
           <button
             onClick={onCancel}
             disabled={deleting}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={deleting || hasBlockers}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-2 bg-danger-600 text-white rounded-lg text-sm font-medium hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
           >
             {deleting ? (
               <>

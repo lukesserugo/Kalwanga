@@ -241,10 +241,10 @@ export function ProductCard({
   const displayPrice = selectedVariant?.price ?? product?.unitPrice ?? 0;
 
   const stockStatus = (() => {
-    if (isOutOfStock) return { label: 'Out of Stock', color: 'bg-red-500' };
+    if (isOutOfStock) return { label: 'Out of Stock', color: 'bg-danger-500' };
     if (isLowStock)
-      return { label: `Only ${available} left`, color: 'bg-yellow-500' };
-    return { label: 'In Stock', color: 'bg-green-500' };
+      return { label: `Only ${available} left`, color: 'bg-warning-500' };
+    return { label: 'In Stock', color: 'bg-success-500' };
   })();
 
   // ============================================
@@ -388,13 +388,13 @@ export function ProductCard({
             key={star}
             className={`w-3.5 h-3.5 ${
               star <= Math.round(rating)
-                ? 'text-yellow-400 fill-current'
+                ? 'text-warning-400 fill-current'
                 : 'text-gray-300 dark:text-gray-600'
             }`}
           />
         ))}
         {rating > 0 && (
-          <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+          <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 ml-1">
             ({rating.toFixed(1)})
           </span>
         )}
@@ -409,13 +409,13 @@ export function ProductCard({
   if (!hasValidProductId) {
     return (
       <div
-        className={`bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 p-4 text-center ${className}`}
+        className={`card-brand shadow-soft p-4 text-center border-danger-200 dark:border-danger-800 ${className}`}
       >
-        <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+        <AlertCircle className="w-8 h-8 text-danger-500 mx-auto mb-2" />
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Invalid product data
         </p>
-        <p className="text-xs text-gray-400">Product ID is missing</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">Product ID is missing</p>
       </div>
     );
   }
@@ -430,7 +430,7 @@ export function ProductCard({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.05 }}
-        className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 group ${className}`}
+        className={`card-brand shadow-soft hover:shadow-card-hover transition duration-350 overflow-hidden group animate-fade-in ${className}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -454,25 +454,25 @@ export function ProductCard({
                 </div>
               )}
               {product.featured && (
-                <div className="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded flex items-center gap-1">
+                <div className="absolute top-2 left-2 px-2 py-1 bg-warning-500 text-white text-2xs rounded flex items-center gap-1">
                   <Star className="w-3 h-3 fill-current" />
                   Featured
                 </div>
               )}
               {isOutOfStock && (
-                <div className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white text-xs rounded">
+                <div className="absolute top-2 right-2 px-2 py-1 bg-danger-600 text-white text-2xs rounded">
                   Out of Stock
                 </div>
               )}
               {hasVariants && (
-                <div className="absolute bottom-2 left-2 px-2 py-1 bg-purple-500/80 text-white text-xs rounded flex items-center gap-1">
+                <div className="absolute bottom-2 left-2 px-2 py-1 bg-secondary-500/80 text-white text-2xs rounded flex items-center gap-1">
                   <Layers className="w-3 h-3" />
                   {totalVariantCount}
                   {hasVariantImages && <ImageIcon className="w-3 h-3" />}
                 </div>
               )}
               {isInventoryLinked && (
-                <div className="absolute top-12 left-2 px-2 py-1 bg-blue-500/80 text-white text-xs rounded flex items-center gap-1">
+                <div className="absolute top-12 left-2 px-2 py-1 bg-brand-500/80 text-white text-2xs rounded flex items-center gap-1">
                   <Link2 className="w-3 h-3" />
                 </div>
               )}
@@ -487,7 +487,7 @@ export function ProductCard({
           <div className="flex-1 p-4 flex flex-col">
             <div className="flex-1">
               <Link href={`/shop/${product.id}`}>
-                <h3 className="font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                <h3 className="font-semibold text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition duration-250">
                   {product.name}
                 </h3>
               </Link>
@@ -512,10 +512,10 @@ export function ProductCard({
                       key={v.id}
                       type="button"
                       onClick={(e) => handleVariantSelect(v.id, e)}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors ${
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs transition duration-250 focus-ring ${
                         selectedVariantId === v.id
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40'
+                          ? 'bg-brand-600 text-white'
+                          : 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 hover:bg-secondary-100 dark:hover:bg-secondary-900/40'
                       }`}
                     >
                       {v.images?.[0] && !imageErrors[v.images[0]] && (
@@ -527,12 +527,12 @@ export function ProductCard({
                         />
                       )}
                       {v.name}
-                      <span className="text-purple-400">•</span>
-                      {formatCurrency(v.price)}
+                      <span className="text-secondary-400">•</span>
+                      <span className="tabular-nums">{formatCurrency(v.price)}</span>
                     </button>
                   ))}
                   {totalVariantCount > 3 && (
-                    <span className="text-xs text-gray-400">
+                    <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
                       +{totalVariantCount - 3} more
                     </span>
                   )}
@@ -543,7 +543,7 @@ export function ProductCard({
                 {product.tags?.slice(0, 3).map((tag) => (
                   <span
                     key={tag}
-                    className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs"
+                    className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-2xs"
                   >
                     #{tag}
                   </span>
@@ -554,12 +554,12 @@ export function ProductCard({
             <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                  <span className="text-xl font-bold tabular-nums text-brand-600 dark:text-brand-400">
                     {formatCurrency(displayPrice)}
                   </span>
                   {selectedVariant &&
                     selectedVariant.price !== product.unitPrice && (
-                      <span className="text-xs text-gray-400 line-through ml-1">
+                      <span className="text-xs tabular-nums text-gray-400 dark:text-gray-500 line-through ml-1">
                         {formatCurrency(product.unitPrice)}
                       </span>
                     )}
@@ -570,10 +570,10 @@ export function ProductCard({
                       type="button"
                       onClick={handleAddToCart}
                       disabled={isOutOfStock || addingToCart}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition duration-250 flex items-center gap-1 focus-ring ${
                         isOutOfStock
                           ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          : 'btn-brand'
                       }`}
                     >
                       {addingToCart ? (
@@ -588,7 +588,7 @@ export function ProductCard({
                     <button
                       type="button"
                       onClick={handleEdit}
-                      className="p-1.5 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-lg transition-colors"
+                      className="p-1.5 text-warning-600 dark:text-warning-400 hover:bg-warning-50 dark:hover:bg-warning-900/30 rounded-lg transition duration-250 focus-ring"
                       title="Edit"
                       aria-label={`Edit ${product.name}`}
                     >
@@ -599,7 +599,7 @@ export function ProductCard({
                     <button
                       type="button"
                       onClick={handleDelete}
-                      className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                      className="p-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/30 rounded-lg transition duration-250 focus-ring"
                       title="Delete"
                       aria-label={`Delete ${product.name}`}
                     >
@@ -610,17 +610,17 @@ export function ProductCard({
               </div>
               <div className="mt-1 flex items-center gap-2 flex-wrap">
                 <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${stockStatus.color}`}
+                  className={`px-2 py-0.5 rounded-full text-2xs font-medium text-white ${stockStatus.color}`}
                 >
                   {stockStatus.label}
                 </span>
                 {variantStock > 0 && (
-                  <span className="text-xs text-gray-400">
+                  <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
                     +{variantStock} variant stock
                   </span>
                 )}
                 {product.isDigital && (
-                  <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
+                  <span className="px-2 py-0.5 bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-300 rounded-full text-2xs">
                     Digital
                   </span>
                 )}
@@ -642,7 +642,7 @@ export function ProductCard({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: index * 0.05 }}
-        className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 group ${className}`}
+        className={`card-brand shadow-soft hover:shadow-card-hover transition duration-350 overflow-hidden group animate-fade-in ${className}`}
       >
         <Link href={`/shop/${product.id}`} className="block">
           <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
@@ -660,12 +660,12 @@ export function ProductCard({
               </div>
             )}
             {isOutOfStock && (
-              <div className="absolute top-1 right-1 px-1.5 py-0.5 bg-red-600 text-white text-[10px] rounded">
+              <div className="absolute top-1 right-1 px-1.5 py-0.5 bg-danger-600 text-white text-2xs rounded">
                 Out of Stock
               </div>
             )}
             {hasVariants && (
-              <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-purple-500/80 text-white text-[10px] rounded flex items-center gap-0.5">
+              <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-secondary-500/80 text-white text-2xs rounded flex items-center gap-0.5">
                 <Layers className="w-2.5 h-2.5" />
                 {totalVariantCount}
               </div>
@@ -679,7 +679,7 @@ export function ProductCard({
             </h4>
           </Link>
           <div className="flex items-center justify-between mt-1">
-            <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+            <span className="text-sm font-bold tabular-nums text-brand-600 dark:text-brand-400">
               {formatCurrency(displayPrice)}
             </span>
             {showWishlist && (
@@ -694,7 +694,7 @@ export function ProductCard({
               type="button"
               onClick={handleAddToCart}
               disabled={addingToCart}
-              className="mt-2 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+              className="mt-2 w-full py-1.5 btn-brand text-xs disabled:opacity-50"
             >
               {addingToCart ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -719,7 +719,7 @@ export function ProductCard({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: index * 0.05 }}
-        className={`flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition-colors ${className}`}
+        className={`flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg transition duration-250 animate-fade-in ${className}`}
       >
         <Link href={`/shop/${product.id}`} className="flex-shrink-0">
           <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 overflow-hidden">
@@ -733,7 +733,7 @@ export function ProductCard({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <Package className="w-6 h-6 text-gray-300" />
+                <Package className="w-6 h-6 text-gray-300 dark:text-gray-600" />
               </div>
             )}
           </div>
@@ -744,11 +744,11 @@ export function ProductCard({
               {product.name}
             </p>
           </Link>
-          <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+          <p className="text-sm font-semibold tabular-nums text-brand-600 dark:text-brand-400">
             {formatCurrency(displayPrice)}
           </p>
           {hasVariants && (
-            <p className="text-xs text-purple-500 flex items-center gap-0.5">
+            <p className="text-2xs tabular-nums text-secondary-500 dark:text-secondary-400 flex items-center gap-0.5">
               <Layers className="w-3 h-3" />
               {totalVariantCount} variants
             </p>
@@ -762,7 +762,7 @@ export function ProductCard({
             type="button"
             onClick={handleAddToCart}
             disabled={addingToCart}
-            className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+            className="p-1.5 btn-brand disabled:opacity-50"
             title="Add to cart"
             aria-label={`Add ${product.name} to cart`}
           >
@@ -787,7 +787,7 @@ export function ProductCard({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: index * 0.05 }}
-        className={`relative bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden group ${className}`}
+        className={`relative card-brand shadow-card overflow-hidden group animate-fade-in ${className}`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -810,11 +810,11 @@ export function ProductCard({
 
             <div className="absolute bottom-0 left-0 right-0 p-4 text-white transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
               <h3 className="font-bold text-lg">{product.name}</h3>
-              <p className="text-white/80 text-sm">
+              <p className="text-white/80 text-sm tabular-nums">
                 {formatCurrency(displayPrice)}
               </p>
               {hasVariants && (
-                <p className="text-white/60 text-xs flex items-center gap-1">
+                <p className="text-white/60 text-2xs tabular-nums flex items-center gap-1">
                   <Layers className="w-3 h-3" />
                   {totalVariantCount} variants
                 </p>
@@ -825,7 +825,7 @@ export function ProductCard({
                     type="button"
                     onClick={handleAddToCart}
                     disabled={isOutOfStock || addingToCart}
-                    className="px-4 py-1.5 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium disabled:opacity-50"
+                    className="px-4 py-1.5 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition duration-250 text-sm font-medium disabled:opacity-50 focus-ring"
                   >
                     {addingToCart ? 'Adding...' : 'Add to Cart'}
                   </button>
@@ -834,7 +834,7 @@ export function ProductCard({
                   <button
                     type="button"
                     onClick={handleQuickView}
-                    className="px-4 py-1.5 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition-colors text-sm font-medium"
+                    className="px-4 py-1.5 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition duration-250 text-sm font-medium focus-ring"
                   >
                     Quick View
                   </button>
@@ -844,7 +844,7 @@ export function ProductCard({
           </div>
         </Link>
         {product.featured && (
-          <div className="absolute top-3 left-3 px-2 py-1 bg-yellow-500 text-white text-xs rounded flex items-center gap-1">
+          <div className="absolute top-3 left-3 px-2 py-1 bg-warning-500 text-white text-2xs rounded flex items-center gap-1">
             <Star className="w-3 h-3 fill-current" />
             Featured
           </div>
@@ -854,12 +854,12 @@ export function ProductCard({
             <WishlistButton
               productId={product.id}
               size="sm"
-              className="shadow-lg"
+              className="shadow-soft"
             />
           </div>
         )}
         {isOutOfStock && (
-          <div className="absolute bottom-3 right-3 px-2 py-1 bg-red-600 text-white text-xs rounded">
+          <div className="absolute bottom-3 right-3 px-2 py-1 bg-danger-600 text-white text-2xs rounded">
             Out of Stock
           </div>
         )}
@@ -876,7 +876,7 @@ export function ProductCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 group ${className}`}
+      className={`card-brand shadow-soft hover:shadow-card-hover transition duration-350 overflow-hidden group animate-fade-in ${className}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -899,35 +899,35 @@ export function ProductCard({
 
           {/* Badges */}
           {product.featured && (
-            <div className="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded flex items-center gap-1">
+            <div className="absolute top-2 left-2 px-2 py-1 bg-warning-500 text-white text-2xs rounded flex items-center gap-1">
               <Star className="w-3 h-3 fill-current" />
               Featured
             </div>
           )}
           {isOutOfStock && (
-            <div className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white text-xs rounded">
+            <div className="absolute top-2 right-2 px-2 py-1 bg-danger-600 text-white text-2xs rounded">
               Out of Stock
             </div>
           )}
           {isLowStock && !isOutOfStock && (
-            <div className="absolute top-2 right-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded">
+            <div className="absolute top-2 right-2 px-2 py-1 bg-warning-500 text-white text-2xs rounded">
               Low Stock
             </div>
           )}
           {product.isDigital && (
-            <div className="absolute bottom-2 left-2 px-2 py-1 bg-purple-600 text-white text-xs rounded">
+            <div className="absolute bottom-2 left-2 px-2 py-1 bg-secondary-600 text-white text-2xs rounded">
               Digital
             </div>
           )}
           {hasVariants && (
-            <div className="absolute bottom-2 right-2 px-2 py-1 bg-purple-500/80 text-white text-xs rounded flex items-center gap-1">
+            <div className="absolute bottom-2 right-2 px-2 py-1 bg-secondary-500/80 text-white text-2xs rounded flex items-center gap-1">
               <Layers className="w-3 h-3" />
               {totalVariantCount}
               {hasVariantImages && <ImageIcon className="w-3 h-3" />}
             </div>
           )}
           {isInventoryLinked && (
-            <div className="absolute top-12 left-2 px-2 py-1 bg-blue-500/80 text-white text-xs rounded flex items-center gap-1">
+            <div className="absolute top-12 left-2 px-2 py-1 bg-brand-500/80 text-white text-2xs rounded flex items-center gap-1">
               <Link2 className="w-3 h-3" />
             </div>
           )}
@@ -948,7 +948,7 @@ export function ProductCard({
               <button
                 type="button"
                 onClick={handleQuickView}
-                className="p-2 bg-white/90 hover:bg-white text-gray-800 rounded-full transition-colors"
+                className="p-2 bg-white/90 hover:bg-white text-gray-800 rounded-full transition duration-250 focus-ring"
                 title="Quick View"
                 aria-label={`Quick view ${product.name}`}
               >
@@ -960,7 +960,7 @@ export function ProductCard({
                 type="button"
                 onClick={handleAddToCart}
                 disabled={addingToCart}
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-colors disabled:opacity-50"
+                className="p-2 btn-brand rounded-full disabled:opacity-50"
                 title="Add to Cart"
                 aria-label={`Add ${product.name} to cart`}
               >
@@ -978,7 +978,7 @@ export function ProductCard({
       {/* Content */}
       <div className="p-4">
         <Link href={`/shop/${product.id}`}>
-          <h3 className="font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors line-clamp-1">
+          <h3 className="font-semibold text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition duration-250 line-clamp-1">
             {product.name}
           </h3>
         </Link>
@@ -1001,9 +1001,9 @@ export function ProductCard({
                   key={v.id}
                   type="button"
                   onClick={(e) => handleVariantSelect(v.id, e)}
-                  className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
+                  className={`px-2 py-0.5 rounded-full text-2xs transition duration-250 focus-ring ${
                     selectedVariantId === v.id
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-brand-600 text-white'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
@@ -1015,12 +1015,12 @@ export function ProductCard({
 
         <div className="mt-2 flex items-center justify-between">
           <div>
-            <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+            <span className="text-lg font-bold tabular-nums text-brand-600 dark:text-brand-400">
               {formatCurrency(displayPrice)}
             </span>
             {selectedVariant &&
               selectedVariant.price !== product.unitPrice && (
-                <span className="text-xs text-gray-400 line-through ml-1">
+                <span className="text-xs tabular-nums text-gray-400 dark:text-gray-500 line-through ml-1">
                   {formatCurrency(product.unitPrice)}
                 </span>
               )}
@@ -1030,7 +1030,7 @@ export function ProductCard({
               <button
                 type="button"
                 onClick={handleEdit}
-                className="p-1 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded transition-colors"
+                className="p-1 text-warning-600 dark:text-warning-400 hover:bg-warning-50 dark:hover:bg-warning-900/30 rounded transition duration-250 focus-ring"
                 title="Edit"
                 aria-label={`Edit ${product.name}`}
               >
@@ -1041,7 +1041,7 @@ export function ProductCard({
               <button
                 type="button"
                 onClick={handleDelete}
-                className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
+                className="p-1 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
                 title="Delete"
                 aria-label={`Delete ${product.name}`}
               >
@@ -1053,12 +1053,12 @@ export function ProductCard({
 
         <div className="mt-1 flex items-center gap-2 flex-wrap">
           <span
-            className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${stockStatus.color}`}
+            className={`px-2 py-0.5 rounded-full text-2xs font-medium text-white ${stockStatus.color}`}
           >
             {stockStatus.label}
           </span>
           {variantStock > 0 && (
-            <span className="text-xs text-gray-400">
+            <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
               +{variantStock} variant stock
             </span>
           )}
@@ -1070,13 +1070,13 @@ export function ProductCard({
             {product.tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded text-[10px]"
+                className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded text-2xs"
               >
                 #{tag}
               </span>
             ))}
             {product.tags.length > 2 && (
-              <span className="text-[10px] text-gray-400">
+              <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
                 +{product.tags.length - 2}
               </span>
             )}

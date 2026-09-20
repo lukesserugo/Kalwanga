@@ -432,7 +432,7 @@ export default function CreateSupplierPage() {
 
     if (companies.length === 0) {
       return (
-        <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-yellow-700 dark:text-yellow-300 text-sm">
+        <div className="flex items-center gap-2 px-3 py-2 bg-warning-50 dark:bg-warning-900/20 rounded-lg text-warning-700 dark:text-warning-300 text-sm">
           <AlertCircle className="w-4 h-4" />
           <span>No companies found. Please create a company first.</span>
         </div>
@@ -442,15 +442,15 @@ export default function CreateSupplierPage() {
     if (companies.length === 1) {
       const company = companies[0];
       return (
-        <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-          <Building className="w-4 h-4 text-green-600 dark:text-green-400" />
-          <span className="text-sm font-medium text-green-700 dark:text-green-300">
+        <div className="flex items-center gap-2 px-3 py-2 bg-success-50 dark:bg-success-900/20 rounded-lg border border-success-200 dark:border-success-800">
+          <Building className="w-4 h-4 text-success-600 dark:text-success-400" />
+          <span className="text-sm font-medium text-success-700 dark:text-success-300">
             {company.name}
           </span>
-          <code className="text-xs text-green-600 dark:text-green-400 font-mono bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+          <code className="text-xs text-success-600 dark:text-success-400 font-mono bg-success-100 dark:bg-success-900/30 px-2 py-0.5 rounded">
             {company.id.slice(0, 12)}...
           </code>
-          <span className="text-xs text-green-500">(Active)</span>
+          <span className="text-xs text-success-500">(Active)</span>
         </div>
       );
     }
@@ -462,7 +462,7 @@ export default function CreateSupplierPage() {
         <button
           type="button"
           onClick={() => setShowCompanyDropdown(!showCompanyDropdown)}
-          className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors min-w-[200px] w-full"
+          className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors min-w-[200px] w-full focus-ring"
         >
           <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
           <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
@@ -481,8 +481,8 @@ export default function CreateSupplierPage() {
         </button>
 
         {showCompanyDropdown && (
-          <div className="absolute left-0 mt-2 w-full min-w-[300px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
-            <div className="p-2 max-h-80 overflow-y-auto">
+          <div className="absolute left-0 mt-2 w-full min-w-[300px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-header overflow-hidden">
+            <div className="p-2 max-h-80 overflow-y-auto sidebar-scroll">
               <p className="text-xs text-gray-500 dark:text-gray-400 px-3 py-1 border-b border-gray-100 dark:border-gray-700 mb-1 flex items-center gap-2">
                 <Database className="w-3 h-3" />
                 Select Company
@@ -502,10 +502,10 @@ export default function CreateSupplierPage() {
                     }}
                     disabled={!isActive}
                     className={`
-                      w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between
+                      w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between focus-ring
                       ${
                         isSelected
-                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                          ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
                           : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }
                       ${
@@ -532,10 +532,10 @@ export default function CreateSupplierPage() {
                       </div>
                     </div>
                     {isSelected && (
-                      <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />
+                      <CheckCircle className="w-4 h-4 text-brand-500 flex-shrink-0 ml-2" />
                     )}
                     {!isActive && (
-                      <span className="text-xs text-red-500 flex-shrink-0 ml-2">
+                      <span className="text-xs text-danger-500 flex-shrink-0 ml-2">
                         (Inactive)
                       </span>
                     )}
@@ -903,9 +903,9 @@ export default function CreateSupplierPage() {
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
     const baseClass =
-      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed';
+      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed';
     const error = getFieldError(fieldName);
-    if (error) return `${baseClass} border-red-500 dark:border-red-500`;
+    if (error) return `${baseClass} border-danger-500 dark:border-danger-500`;
     return `${baseClass} border-gray-300 dark:border-gray-600`;
   };
 
@@ -916,7 +916,7 @@ export default function CreateSupplierPage() {
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <span key={`full-${i}`} className="text-yellow-400">
+          <span key={`full-${i}`} className="text-warning-400">
             ★
           </span>
         ))}
@@ -937,7 +937,7 @@ export default function CreateSupplierPage() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </div>
@@ -958,7 +958,7 @@ export default function CreateSupplierPage() {
         </p>
         <button
           onClick={() => router.push('/login')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors focus-ring"
         >
           Go to Login
         </button>
@@ -981,7 +981,7 @@ export default function CreateSupplierPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog/suppliers')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Suppliers
@@ -1005,7 +1005,7 @@ export default function CreateSupplierPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={handleCancel}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Go back"
               disabled={loading}
             >
@@ -1013,7 +1013,7 @@ export default function CreateSupplierPage() {
             </button>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Truck className="w-6 h-6 text-blue-500" />
+                <Truck className="w-6 h-6 text-brand-500" />
                 Add Supplier
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -1023,14 +1023,14 @@ export default function CreateSupplierPage() {
           </div>
           <div className="flex items-center gap-2">
             {hasValidCompany && companyId && selectedCompany && (
-              <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-1 rounded-full flex items-center gap-1">
+              <span className="text-xs bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300 px-2 py-1 rounded-full flex items-center gap-1">
                 <Building className="w-3 h-3" />
                 {selectedCompany.name}
               </span>
             )}
             <button
               onClick={handleCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 disabled:opacity-50 focus-ring"
               disabled={loading}
             >
               Cancel
@@ -1045,15 +1045,15 @@ export default function CreateSupplierPage() {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3"
+              className="mb-6 bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3"
             >
               <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                  <p className="text-sm font-medium text-success-800 dark:text-success-200">
                     Success!
                   </p>
-                  <p className="text-sm text-green-700 dark:text-green-300">
+                  <p className="text-sm text-success-700 dark:text-success-300">
                     Supplier created successfully.
                   </p>
                 </div>
@@ -1061,13 +1061,13 @@ export default function CreateSupplierPage() {
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={handleCreateAnother}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center gap-1"
+                  className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors text-sm flex items-center gap-1 focus-ring"
                 >
                   <Plus className="w-4 h-4" /> Add Another
                 </button>
                 <button
                   onClick={() => router.push('/admin/catalog/suppliers')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-1"
+                  className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors text-sm flex items-center gap-1 focus-ring"
                 >
                   <Truck className="w-4 h-4" /> View Suppliers
                 </button>
@@ -1076,7 +1076,7 @@ export default function CreateSupplierPage() {
                     onClick={() =>
                       router.push(`/admin/suppliers/${createdSupplierId}`)
                     }
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1 focus-ring"
                   >
                     <Eye className="w-4 h-4" /> View Supplier
                   </button>
@@ -1088,13 +1088,13 @@ export default function CreateSupplierPage() {
 
         {/* ERROR DISPLAY */}
         {errors.general && !success && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+              <p className="text-sm font-medium text-danger-800 dark:text-danger-200">
                 Error
               </p>
-              <p className="text-sm text-red-700 dark:text-red-300">
+              <p className="text-sm text-danger-700 dark:text-danger-300">
                 {errors.general}
               </p>
             </div>
@@ -1106,7 +1106,7 @@ export default function CreateSupplierPage() {
                   return next;
                 })
               }
-              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              className="text-danger-600 hover:text-danger-800 dark:text-danger-400 p-1 focus-ring"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1114,15 +1114,15 @@ export default function CreateSupplierPage() {
         )}
 
         {/* COMPANY SELECTION - FETCHED FROM DATABASE */}
-        <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="mb-6 card-brand p-4">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Company <span className="text-red-500">*</span>
+                Company <span className="text-danger-500">*</span>
               </label>
               <CompanySelector />
               {!hasValidCompany && (
-                <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   Please select or assign a company
                 </p>
@@ -1133,14 +1133,14 @@ export default function CreateSupplierPage() {
               </p>
             </div>
             {hasValidCompany && companyId && selectedCompany && (
-              <div className="flex-shrink-0 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2 border border-green-200 dark:border-green-800">
-                <p className="text-xs text-green-600 dark:text-green-400">
+              <div className="flex-shrink-0 bg-success-50 dark:bg-success-900/20 rounded-lg px-3 py-2 border border-success-200 dark:border-success-800">
+                <p className="text-xs text-success-600 dark:text-success-400">
                   Selected Company
                 </p>
-                <p className="text-sm font-medium text-green-700 dark:text-green-300 truncate max-w-[150px]">
+                <p className="text-sm font-medium text-success-700 dark:text-success-300 truncate max-w-[150px]">
                   {selectedCompany.name}
                 </p>
-                <code className="text-xs text-green-500 font-mono">
+                <code className="text-xs text-success-500 font-mono">
                   {companyId.slice(0, 12)}...
                 </code>
               </div>
@@ -1149,16 +1149,16 @@ export default function CreateSupplierPage() {
         </div>
 
         {/* INFO BANNER */}
-        <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-700 dark:text-blue-300">
+        <div className="mb-6 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-4 flex items-start gap-3">
+          <Info className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-brand-700 dark:text-brand-300">
             <p className="font-medium">Required Fields</p>
             <p className="mt-1">
-              Fields marked with <span className="text-red-500">*</span> are
+              Fields marked with <span className="text-danger-500">*</span> are
               required. All other fields are optional.
             </p>
             {!hasValidCompany && (
-              <p className="mt-1 text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+              <p className="mt-1 text-warning-600 dark:text-warning-400 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
                 Please select a company to continue.
               </p>
@@ -1169,19 +1169,19 @@ export default function CreateSupplierPage() {
         {/* FORM */}
         <form
           onSubmit={handleSubmit}
-          className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 space-y-6 transition-colors duration-200"
+          className="card-brand p-4 sm:p-6 space-y-6 transition-colors duration-200"
         >
           {/* BASIC INFORMATION SECTION */}
           <div>
             <button
               type="button"
               onClick={() => toggleSection('basic')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Info className="w-5 h-5 text-blue-500" />
+                <Info className="w-5 h-5 text-brand-500" />
                 Basic Information
-                <span className="text-sm text-red-500">*</span>
+                <span className="text-sm text-danger-500">*</span>
               </div>
               {expandedSections.basic ? (
                 <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -1202,7 +1202,7 @@ export default function CreateSupplierPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Supplier Name <span className="text-red-500">*</span>
+                        Supplier Name <span className="text-danger-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -1216,7 +1216,7 @@ export default function CreateSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('name') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('name')}
                         </p>
@@ -1238,7 +1238,7 @@ export default function CreateSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('contactPerson') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('contactPerson')}
                         </p>
@@ -1268,7 +1268,7 @@ export default function CreateSupplierPage() {
                         </div>
                       </div>
                       {getFieldError('rating') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('rating')}
                         </p>
@@ -1288,10 +1288,10 @@ export default function CreateSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('contact')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-blue-500" />
+                <Mail className="w-5 h-5 text-brand-500" />
                 Contact Information
               </div>
               {expandedSections.contact ? (
@@ -1329,7 +1329,7 @@ export default function CreateSupplierPage() {
                         />
                       </div>
                       {getFieldError('email') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('email')}
                         </p>
@@ -1354,7 +1354,7 @@ export default function CreateSupplierPage() {
                         />
                       </div>
                       {getFieldError('phone') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('phone')}
                         </p>
@@ -1379,7 +1379,7 @@ export default function CreateSupplierPage() {
                         />
                       </div>
                       {getFieldError('address') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('address')}
                         </p>
@@ -1404,7 +1404,7 @@ export default function CreateSupplierPage() {
                         />
                       </div>
                       {getFieldError('website') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('website')}
                         </p>
@@ -1424,10 +1424,10 @@ export default function CreateSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('business')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Building className="w-5 h-5 text-blue-500" />
+                <Building className="w-5 h-5 text-brand-500" />
                 Business Information
               </div>
               {expandedSections.business ? (
@@ -1462,7 +1462,7 @@ export default function CreateSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('taxId') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('taxId')}
                         </p>
@@ -1483,13 +1483,13 @@ export default function CreateSupplierPage() {
                           value={formData.creditLimit}
                           onChange={handleChange}
                           onBlur={handleBlur}
-                          className={`${getInputClassName('creditLimit')} pl-10`}
+                          className={`${getInputClassName('creditLimit')} pl-10 tabular-nums`}
                           placeholder="0.00"
                           disabled={loading || success}
                         />
                       </div>
                       {getFieldError('creditLimit') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('creditLimit')}
                         </p>
@@ -1515,7 +1515,7 @@ export default function CreateSupplierPage() {
                         ))}
                       </select>
                       {getFieldError('paymentTerms') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('paymentTerms')}
                         </p>
@@ -1541,7 +1541,7 @@ export default function CreateSupplierPage() {
                         ))}
                       </select>
                       {getFieldError('deliveryTerms') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('deliveryTerms')}
                         </p>
@@ -1563,7 +1563,7 @@ export default function CreateSupplierPage() {
                         disabled={loading || success}
                       />
                       {getFieldError('notes') && (
-                        <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-sm text-danger-500 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3" />
                           {getFieldError('notes')}
                         </p>
@@ -1583,10 +1583,10 @@ export default function CreateSupplierPage() {
             <button
               type="button"
               onClick={() => toggleSection('additional')}
-              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4"
+              className="w-full flex items-center justify-between text-lg font-semibold text-gray-900 dark:text-white mb-4 focus-ring rounded"
             >
               <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-blue-500" />
+                <Shield className="w-5 h-5 text-brand-500" />
                 Status & Configuration
               </div>
               {expandedSections.additional ? (
@@ -1612,12 +1612,12 @@ export default function CreateSupplierPage() {
                         name="isActive"
                         checked={formData.isActive}
                         onChange={handleChange}
-                        className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 transition-colors duration-200"
+                        className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 dark:focus:ring-brand-400 bg-white dark:bg-gray-700 transition-colors duration-200"
                         disabled={loading || success}
                       />
                       <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1">
                         {formData.isActive ? (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
+                          <CheckCircle className="w-4 h-4 text-success-500" />
                         ) : (
                           <XCircle className="w-4 h-4 text-gray-400" />
                         )}
@@ -1630,7 +1630,7 @@ export default function CreateSupplierPage() {
                         <span className="flex items-center gap-2">
                           <span
                             className={`w-1.5 h-1.5 rounded-full ${
-                              hasValidCompany ? 'bg-green-500' : 'bg-red-500'
+                              hasValidCompany ? 'bg-success-500' : 'bg-danger-500'
                             }`}
                           />
                           {hasValidCompany
@@ -1641,13 +1641,13 @@ export default function CreateSupplierPage() {
                             : '⚠️ No company selected'}
                         </span>
                         <span className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
                           {hasValidUser
                             ? `User: ${userId!.slice(0, 8)}...`
                             : '⚠️ No user ID'}
                         </span>
                         <span className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-secondary-500" />
                           {companies.length} Company
                           {companies.length !== 1 ? 'ies' : ''} available
                         </span>
@@ -1664,7 +1664,7 @@ export default function CreateSupplierPage() {
             <button
               type="button"
               onClick={handleCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50 focus-ring"
               disabled={loading}
             >
               Cancel
@@ -1672,7 +1672,7 @@ export default function CreateSupplierPage() {
             <button
               type="submit"
               disabled={submitDisabled}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
+              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center focus-ring"
             >
               {loading ? (
                 <>
@@ -1696,18 +1696,18 @@ export default function CreateSupplierPage() {
           {/* FORM FOOTER */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
             <span className="flex items-center gap-1">
-              <span className="text-red-500">*</span> Required fields
+              <span className="text-danger-500">*</span> Required fields
             </span>
             <div className="flex items-center gap-4 flex-wrap">
               <span className="flex items-center gap-2">
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    hasValidCompany ? 'bg-green-500' : 'bg-red-500'
+                    hasValidCompany ? 'bg-success-500' : 'bg-danger-500'
                   }`}
                 />
                 {hasValidCompany ? 'Company selected' : '⚠️ Company required'}
               </span>
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 tabular-nums">
                 <Database className="w-3 h-3" />
                 {companies.length} companies loaded
               </span>

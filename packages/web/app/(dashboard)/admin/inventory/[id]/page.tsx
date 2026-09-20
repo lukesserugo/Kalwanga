@@ -133,20 +133,20 @@ interface StockUpdateData {
 
 const getStockStatus = (available: number, reorderPoint: number) => {
   if (available <= 0)
-    return { status: 'out_of_stock', label: 'Out of Stock', color: 'red' };
+    return { status: 'out_of_stock', label: 'Out of Stock', color: 'danger' };
   if (available <= reorderPoint)
-    return { status: 'low_stock', label: 'Low Stock', color: 'yellow' };
-  return { status: 'in_stock', label: 'In Stock', color: 'green' };
+    return { status: 'low_stock', label: 'Low Stock', color: 'warning' };
+  return { status: 'in_stock', label: 'In Stock', color: 'success' };
 };
 
 const getStockStatusColor = (status: string) => {
   switch (status) {
     case 'out_of_stock':
-      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+      return 'bg-brand-accent-100 dark:bg-brand-accent-950/30 text-brand-accent-700 dark:text-brand-accent-300';
     case 'low_stock':
-      return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300';
+      return 'bg-warning-100 dark:bg-warning-950/30 text-warning-700 dark:text-warning-300';
     case 'in_stock':
-      return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+      return 'bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300';
     default:
       return 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300';
   }
@@ -171,10 +171,10 @@ const getTransactionTypeColor = (type: string) => {
   ];
 
   if (additions.includes(type)) {
-    return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+    return 'bg-success-100 text-success-800 dark:bg-success-950/30 dark:text-success-300';
   }
   if (removals.includes(type)) {
-    return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+    return 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-950/30 dark:text-brand-accent-300';
   }
   return 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300';
 };
@@ -759,7 +759,7 @@ export default function InventoryDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-brand-500 animate-spin mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">
             Loading inventory item...
           </p>
@@ -782,7 +782,7 @@ export default function InventoryDetailPage() {
           </p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Back to Inventory
           </button>
@@ -812,19 +812,19 @@ export default function InventoryDetailPage() {
     <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
       {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300 font-medium">
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300 font-medium">
               Error
             </p>
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className="text-sm text-brand-accent-600 dark:text-brand-accent-400">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded-lg transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded-lg transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -834,7 +834,7 @@ export default function InventoryDetailPage() {
         <div className="flex items-center gap-4 min-w-0">
           <button
             onClick={() => router.back()}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+            className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
             aria-label="Go back"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -855,12 +855,12 @@ export default function InventoryDetailPage() {
                 </span>
               )}
               {item.featured && (
-                <span className="px-2.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 text-xs font-medium rounded-full flex items-center gap-1 flex-shrink-0">
+                <span className="px-2.5 py-0.5 bg-warning-100 dark:bg-warning-950/30 text-warning-700 dark:text-warning-300 text-xs font-medium rounded-full flex items-center gap-1 flex-shrink-0">
                   <Star className="w-3 h-3" /> Featured
                 </span>
               )}
               {item.isDigital && (
-                <span className="px-2.5 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium rounded-full flex items-center gap-1 flex-shrink-0">
+                <span className="px-2.5 py-0.5 bg-brand-100 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300 text-xs font-medium rounded-full flex items-center gap-1 flex-shrink-0">
                   <Globe className="w-3 h-3" /> Digital
                 </span>
               )}
@@ -885,7 +885,7 @@ export default function InventoryDetailPage() {
         <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
           <button
             onClick={refreshItem}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
             aria-label="Refresh"
             disabled={refreshing}
           >
@@ -897,7 +897,7 @@ export default function InventoryDetailPage() {
             <>
               <button
                 onClick={() => setShowStockModal(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
               >
                 <Plus className="w-4 h-4" />
                 Update Stock
@@ -906,7 +906,7 @@ export default function InventoryDetailPage() {
                 onClick={() =>
                   router.push(`/admin/inventory/${item.id}/edit`)
                 }
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-2 transition-colors focus-ring"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -916,7 +916,7 @@ export default function InventoryDetailPage() {
           {canDelete && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="px-4 py-2 border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
+              className="px-4 py-2 border border-brand-accent-300 dark:border-brand-accent-600 text-brand-accent-600 dark:text-brand-accent-400 rounded-lg hover:bg-brand-accent-50 dark:hover:bg-brand-accent-950/20 flex items-center gap-2 transition-colors focus-ring"
             >
               <Trash2 className="w-4 h-4" />
               Delete
@@ -932,18 +932,18 @@ export default function InventoryDetailPage() {
             Current Stock
           </p>
           <p
-            className={`text-2xl font-bold ${
+            className={`text-2xl font-bold tabular-nums ${
               stockStatus.status === 'out_of_stock'
-                ? 'text-red-600 dark:text-red-400'
+                ? 'text-brand-accent-600 dark:text-brand-accent-400'
                 : stockStatus.status === 'low_stock'
-                ? 'text-yellow-600 dark:text-yellow-400'
-                : 'text-green-600 dark:text-green-400'
+                ? 'text-warning-600 dark:text-warning-400'
+                : 'text-success-600 dark:text-success-400'
             }`}
           >
             {item.quantity || 0}
           </p>
           {item.reserved && item.reserved > 0 && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 tabular-nums">
               ({item.reserved} reserved)
             </p>
           )}
@@ -952,10 +952,10 @@ export default function InventoryDetailPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Available
           </p>
-          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+          <p className="text-2xl font-bold text-brand-600 dark:text-brand-400 tabular-nums">
             {availableStock}
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 tabular-nums">
             Reorder at {item.reorderPoint || 5}
           </p>
         </div>
@@ -963,10 +963,10 @@ export default function InventoryDetailPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Unit Price
           </p>
-          <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+          <p className="text-2xl font-bold text-secondary-600 dark:text-secondary-400 tabular-nums">
             {formatCurrency(item.unitPrice || 0)}
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 tabular-nums">
             Total Value:{' '}
             {formatCurrency(
               (item.unitPrice || 0) * (item.quantity || 0)
@@ -978,16 +978,16 @@ export default function InventoryDetailPage() {
             Net Change
           </p>
           <p
-            className={`text-2xl font-bold ${
+            className={`text-2xl font-bold tabular-nums ${
               (item.stats?.netChange || 0) >= 0
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-red-600 dark:text-red-400'
+                ? 'text-success-600 dark:text-success-400'
+                : 'text-brand-accent-600 dark:text-brand-accent-400'
             }`}
           >
             {(item.stats?.netChange || 0) >= 0 ? '+' : ''}
             {item.stats?.netChange || 0}
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-gray-400 tabular-nums">
             In: {item.stats?.totalIn || 0} | Out: {item.stats?.totalOut || 0}
           </p>
         </div>
@@ -1021,11 +1021,11 @@ export default function InventoryDetailPage() {
                 {item.sku && (
                   <button
                     onClick={() => handleCopy(item.sku, 'SKU')}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     aria-label="Copy SKU"
                   >
                     {copied === 'SKU' ? (
-                      <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                      <CheckCircle className="w-3.5 h-3.5 text-success-500" />
                     ) : (
                       <Copy className="w-3.5 h-3.5 text-gray-400" />
                     )}
@@ -1046,11 +1046,11 @@ export default function InventoryDetailPage() {
                     onClick={() =>
                       handleCopy(item.barcode || '', 'Barcode')
                     }
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     aria-label="Copy barcode"
                   >
                     {copied === 'Barcode' ? (
-                      <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                      <CheckCircle className="w-3.5 h-3.5 text-success-500" />
                     ) : (
                       <Copy className="w-3.5 h-3.5 text-gray-400" />
                     )}
@@ -1062,7 +1062,7 @@ export default function InventoryDetailPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Unit Price
               </p>
-              <p className="font-medium text-gray-900 dark:text-white">
+              <p className="font-medium text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(item.unitPrice || 0)}
               </p>
             </div>
@@ -1081,7 +1081,7 @@ export default function InventoryDetailPage() {
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Reorder Point
               </p>
-              <p className="text-gray-900 dark:text-white">
+              <p className="text-gray-900 dark:text-white tabular-nums">
                 {item.reorderPoint || 5}
               </p>
             </div>
@@ -1091,7 +1091,7 @@ export default function InventoryDetailPage() {
               </p>
               <div className="flex items-center gap-2">
                 <Weight className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <p className="text-gray-900 dark:text-white">
+                <p className="text-gray-900 dark:text-white tabular-nums">
                   {item.weight ? `${item.weight.toFixed(3)} kg` : 'N/A'}
                 </p>
               </div>
@@ -1102,7 +1102,7 @@ export default function InventoryDetailPage() {
               </p>
               <div className="flex items-center gap-2">
                 <Percent className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <p className="text-gray-900 dark:text-white">
+                <p className="text-gray-900 dark:text-white tabular-nums">
                   {item.taxRate ? `${item.taxRate}%` : '0%'}
                 </p>
               </div>
@@ -1209,7 +1209,7 @@ export default function InventoryDetailPage() {
           {hasImages && (
             <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                <ImageIcon className="w-4 h-4 text-blue-500" />
+                <ImageIcon className="w-4 h-4 text-brand-500" />
                 Images ({images.length})
               </p>
               <div className="flex flex-wrap gap-3">
@@ -1220,7 +1220,7 @@ export default function InventoryDetailPage() {
                       setSelectedImage(image);
                       setShowImageModal(true);
                     }}
-                    className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600 hover:ring-2 hover:ring-blue-500 hover:border-blue-500 transition-all group"
+                    className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600 hover:ring-2 hover:ring-brand-500 hover:border-brand-500 transition-all group focus-ring"
                   >
                     <img
                       src={image}
@@ -1252,7 +1252,7 @@ export default function InventoryDetailPage() {
 
           <button
             onClick={() => window.print()}
-            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors text-left"
+            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-3 transition-colors text-left focus-ring"
           >
             <Printer className="w-4 h-4 text-gray-500" />
             <span>Print Details</span>
@@ -1267,7 +1267,7 @@ export default function InventoryDetailPage() {
                 )}&code=EAN-13&dpi=96`;
                 window.open(barcodeUrl, '_blank');
               }}
-              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors text-left"
+              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-3 transition-colors text-left focus-ring"
             >
               <Barcode className="w-4 h-4 text-gray-500" />
               <span>View Barcode</span>
@@ -1277,7 +1277,7 @@ export default function InventoryDetailPage() {
           <button
             onClick={generateQRCode}
             disabled={generatingQR}
-            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors text-left disabled:opacity-50"
+            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-3 transition-colors text-left disabled:opacity-50 focus-ring"
           >
             {generatingQR ? (
               <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
@@ -1290,10 +1290,10 @@ export default function InventoryDetailPage() {
           {item.barcode && (
             <button
               onClick={() => handleCopy(item.barcode || '', 'Barcode')}
-              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors text-left"
+              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-3 transition-colors text-left focus-ring"
             >
               {copied === 'Barcode' ? (
-                <CheckCircle className="w-4 h-4 text-green-500" />
+                <CheckCircle className="w-4 h-4 text-success-500" />
               ) : (
                 <Copy className="w-4 h-4 text-gray-500" />
               )}
@@ -1304,10 +1304,10 @@ export default function InventoryDetailPage() {
           {item.sku && (
             <button
               onClick={() => handleCopy(item.sku, 'SKU')}
-              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors text-left"
+              className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-3 transition-colors text-left focus-ring"
             >
               {copied === 'SKU' ? (
-                <CheckCircle className="w-4 h-4 text-green-500" />
+                <CheckCircle className="w-4 h-4 text-success-500" />
               ) : (
                 <Copy className="w-4 h-4 text-gray-500" />
               )}
@@ -1333,11 +1333,11 @@ export default function InventoryDetailPage() {
             <Clock className="w-5 h-5 text-gray-400" />
             Transaction History
           </h3>
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-gray-500 tabular-nums">
             {transactions.length} transactions
           </span>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar">
           {transactions.length === 0 ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400">
               <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
@@ -1368,7 +1368,7 @@ export default function InventoryDetailPage() {
                 {transactions.slice(0, 50).map((transaction) => (
                   <tr
                     key={transaction.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                    className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors"
                   >
                     <td className="px-4 py-3">
                       <span
@@ -1381,10 +1381,10 @@ export default function InventoryDetailPage() {
                       </span>
                     </td>
                     <td
-                      className={`px-4 py-3 font-medium ${
+                      className={`px-4 py-3 font-medium tabular-nums ${
                         transaction.quantity > 0
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
+                          ? 'text-success-600 dark:text-success-400'
+                          : 'text-brand-accent-600 dark:text-brand-accent-400'
                       }`}
                     >
                       {transaction.quantity > 0 ? '+' : ''}
@@ -1406,7 +1406,7 @@ export default function InventoryDetailPage() {
             </table>
           )}
           {transactions.length > 50 && (
-            <div className="px-6 py-3 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
+            <div className="px-6 py-3 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 tabular-nums">
               Showing 50 of {transactions.length} transactions
             </div>
           )}
@@ -1433,7 +1433,7 @@ export default function InventoryDetailPage() {
                 </h3>
                 <button
                   onClick={() => setShowStockModal(false)}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                   aria-label="Close"
                 >
                   <X className="w-5 h-5 text-gray-500" />
@@ -1453,7 +1453,7 @@ export default function InventoryDetailPage() {
                         transactionType: e.target.value as any,
                       })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                   >
                     <option value="ADJUSTMENT_IN">
                       Add Stock (Adjustment In)
@@ -1486,7 +1486,7 @@ export default function InventoryDetailPage() {
                       })
                     }
                     min="1"
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white tabular-nums transition-colors"
                   />
                 </div>
 
@@ -1503,19 +1503,19 @@ export default function InventoryDetailPage() {
                       })
                     }
                     rows={2}
-                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white resize-none transition-colors"
                     placeholder="Reason for stock update..."
                   />
                 </div>
 
                 <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/30 p-3 rounded-lg">
-                  <Info className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  <Info className="w-4 h-4 text-brand-500 flex-shrink-0" />
                   <span>
-                    Current stock: <strong>{item.quantity || 0}</strong>
+                    Current stock: <strong className="tabular-nums">{item.quantity || 0}</strong>
                   </span>
                   <span className="mx-2">|</span>
                   <span>
-                    Available: <strong>{availableStock}</strong>
+                    Available: <strong className="tabular-nums">{availableStock}</strong>
                   </span>
                 </div>
               </div>
@@ -1523,14 +1523,14 @@ export default function InventoryDetailPage() {
               <div className="flex gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowStockModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleUpdateStock}
                   disabled={updatingStock || stockUpdate.quantity <= 0}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                  className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-brand focus-ring"
                 >
                   {updatingStock ? (
                     <>
@@ -1565,8 +1565,8 @@ export default function InventoryDetailPage() {
               className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6"
             >
               <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                <div className="w-16 h-16 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
                   Delete Inventory Item
@@ -1581,14 +1581,14 @@ export default function InventoryDetailPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowDeleteModal(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                    className="flex-1 px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors shadow-brand focus-ring"
                   >
                     {deleting ? (
                       <>
@@ -1629,7 +1629,7 @@ export default function InventoryDetailPage() {
                 </h3>
                 <button
                   onClick={() => setShowQRCode(false)}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                   aria-label="Close"
                 >
                   <X className="w-5 h-5 text-gray-500" />
@@ -1669,14 +1669,14 @@ export default function InventoryDetailPage() {
                       document.body.removeChild(link);
                     }
                   }}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 transition-colors"
+                  className="flex-1 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center justify-center gap-2 transition-colors shadow-brand focus-ring"
                 >
                   <Download className="w-4 h-4" />
                   Download
                 </button>
                 <button
                   onClick={() => setShowQRCode(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Close
                 </button>
@@ -1702,7 +1702,7 @@ export default function InventoryDetailPage() {
             >
               <button
                 onClick={() => setShowImageModal(false)}
-                className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors"
+                className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors focus-ring"
                 aria-label="Close image"
               >
                 <X className="w-8 h-8" />

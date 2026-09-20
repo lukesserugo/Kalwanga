@@ -430,7 +430,7 @@ export default function AdminProductDetailPage() {
             .sku { color: #666; font-size: 12px; margin: 0 0 15px 0; }
             .barcode-img { max-width: 300px; margin: 10px 0; }
             .qr-img { max-width: 120px; margin: 10px 0; }
-            .price { font-size: 20px; font-weight: bold; color: #2563eb; margin: 5px 0; }
+            .price { font-size: 20px; font-weight: bold; color: #EA580C; margin: 5px 0; }
             .info { margin-top: 10px; font-size: 12px; color: #666; }
             .info span { margin: 0 8px; }
             @media print {
@@ -459,7 +459,7 @@ export default function AdminProductDetailPage() {
               ${product.category?.name ? `<span>| ${product.category.name}</span>` : ''}
             </div>
             <div class="no-print" style="margin-top: 15px; font-size: 12px; color: #999;">
-              <button onclick="window.print()" style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">Print</button>
+              <button onclick="window.print()" style="padding: 8px 16px; background: #EA580C; color: white; border: none; border-radius: 4px; cursor: pointer;">Print</button>
               <button onclick="window.close()" style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;">Close</button>
             </div>
           </div>
@@ -606,7 +606,7 @@ export default function AdminProductDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading product...
           </p>
@@ -630,7 +630,7 @@ export default function AdminProductDetailPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -642,8 +642,8 @@ export default function AdminProductDetailPage() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
-        <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-          <AlertCircle className="w-12 h-12 text-red-500" />
+        <div className="w-24 h-24 bg-danger-100 dark:bg-danger-900/20 rounded-full flex items-center justify-center mb-4">
+          <AlertCircle className="w-12 h-12 text-danger-500" />
         </div>
         <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
           {error === 'Product not found'
@@ -659,7 +659,7 @@ export default function AdminProductDetailPage() {
           {error !== 'Product not found' && (
             <button
               onClick={() => loadProduct(true)}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              className="px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
             >
               <Loader2 className="w-4 h-4" />
               Retry
@@ -667,7 +667,7 @@ export default function AdminProductDetailPage() {
           )}
           <button
             onClick={() => router.push('/admin/catalog')}
-            className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+            className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 focus-ring"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Catalog
@@ -686,7 +686,7 @@ export default function AdminProductDetailPage() {
         </h2>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -707,7 +707,7 @@ export default function AdminProductDetailPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/admin/catalog')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Back to catalog"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -734,7 +734,7 @@ export default function AdminProductDetailPage() {
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                   {product.name}
                   {product.featured && (
-                    <span className="text-sm text-yellow-500">
+                    <span className="text-sm text-brand-500">
                       <Star className="w-4 h-4 fill-current inline" />
                     </span>
                   )}
@@ -750,7 +750,7 @@ export default function AdminProductDetailPage() {
                     aria-label="Copy SKU"
                   >
                     {copied ? (
-                      <Check className="w-4 h-4 text-green-600" />
+                      <Check className="w-4 h-4 text-success-600" />
                     ) : (
                       <Copy className="w-4 h-4" />
                     )}
@@ -773,20 +773,20 @@ export default function AdminProductDetailPage() {
                   <span
                     className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                       product.isActive
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                        : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                     }`}
                   >
                     {product.isActive ? 'Active' : 'Inactive'}
                   </span>
                   {isLinkedToInventory && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 flex items-center gap-1">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 flex items-center gap-1">
                       <Link2 className="w-3 h-3" />
                       Linked to Inventory
                     </span>
                   )}
                   {product.rating && product.rating > 0 && (
-                    <span className="flex items-center gap-1 text-yellow-500">
+                    <span className="flex items-center gap-1 text-brand-500">
                       <Star className="w-4 h-4 fill-current" />
                       {product.rating.toFixed(1)} ({product.reviewCount || 0})
                     </span>
@@ -799,7 +799,7 @@ export default function AdminProductDetailPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Refresh product"
             >
               <RefreshCw
@@ -809,11 +809,11 @@ export default function AdminProductDetailPage() {
 
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Toggle theme"
             >
               {isDark ? (
-                <Sun className="w-5 h-5 text-yellow-500" />
+                <Sun className="w-5 h-5 text-warning-500" />
               ) : (
                 <Moon className="w-5 h-5 text-gray-600" />
               )}
@@ -821,7 +821,7 @@ export default function AdminProductDetailPage() {
 
             <button
               onClick={handleShare}
-              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Share product"
             >
               <Share2 className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -830,17 +830,17 @@ export default function AdminProductDetailPage() {
             {canManageBarcodes && (
               <button
                 onClick={handleGenerateBarcode}
-                className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
                 aria-label="View Barcode"
               >
-                <QrCode className="w-5 h-5 text-blue-500" />
+                <QrCode className="w-5 h-5 text-brand-500" />
               </button>
             )}
 
             {isLinkedToInventory && canEditProducts && (
               <button
                 onClick={() => setShowUnlinkModal(true)}
-                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white rounded-lg flex items-center gap-2 transition-colors focus-ring"
                 title="Unlink from inventory"
               >
                 <Unlink className="w-4 h-4" />
@@ -851,7 +851,7 @@ export default function AdminProductDetailPage() {
             {canEditProducts && (
               <Link
                 href={`/admin/catalog/edit/${product.id}`}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg flex items-center gap-2 transition-colors focus-ring"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -860,7 +860,7 @@ export default function AdminProductDetailPage() {
             {canDeleteProducts && (
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg flex items-center gap-2 transition-colors focus-ring"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -871,17 +871,17 @@ export default function AdminProductDetailPage() {
 
         {/* Status alerts */}
         {isOutOfStock && (
-          <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">
+          <div className="mb-6 p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+            <span className="text-danger-700 dark:text-danger-300">
               This product is out of stock.
             </span>
           </div>
         )}
         {isLowStock && !isOutOfStock && (
-          <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
-            <span className="text-yellow-700 dark:text-yellow-300">
+          <div className="mb-6 p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning-500 flex-shrink-0" />
+            <span className="text-warning-700 dark:text-warning-300">
               Low stock alert. Only {availableStock} units remaining.
             </span>
           </div>
@@ -891,7 +891,7 @@ export default function AdminProductDetailPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard
             icon={DollarSign}
-            color="blue"
+            color="brand"
             label="Unit Price"
             value={formatCurrency(product.unitPrice)}
             subtext={
@@ -907,17 +907,17 @@ export default function AdminProductDetailPage() {
             icon={Package}
             color={
               availableStock <= 0
-                ? 'red'
+                ? 'danger'
                 : isLowStock
-                ? 'yellow'
-                : 'green'
+                ? 'warning'
+                : 'success'
             }
             label="In Stock"
             value={String(availableStock)}
           />
           <StatCard
             icon={Layers}
-            color="purple"
+            color="secondary"
             label="Variants"
             value={String(totalVariants)}
             subtext={
@@ -926,7 +926,7 @@ export default function AdminProductDetailPage() {
           />
           <StatCard
             icon={ShoppingBag}
-            color="orange"
+            color="brand-accent"
             label="Total Sales"
             value={String(product._count?.saleItems || 0)}
           />
@@ -934,15 +934,15 @@ export default function AdminProductDetailPage() {
 
         {/* Inventory link */}
         {isLinkedToInventory && (
-          <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+          <div className="mb-6 p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-sm text-brand-700 dark:text-brand-300">
               <Link2 className="w-4 h-4" />
               <span>
                 This product is linked to an inventory item. Stock is
                 managed from inventory.
               </span>
             </div>
-            <span className="text-xs font-mono text-blue-600 dark:text-blue-400">
+            <span className="text-xs font-mono text-brand-600 dark:text-brand-400">
               Inventory ID: {product.inventoryId}
             </span>
           </div>
@@ -956,9 +956,9 @@ export default function AdminProductDetailPage() {
                 <button
                   key={id}
                   onClick={() => setActiveTab(id)}
-                  className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 border-b-2 font-medium text-sm transition-colors capitalize whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 border-b-2 font-medium text-sm transition-colors capitalize whitespace-nowrap focus-ring ${
                     activeTab === id
-                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                      ? 'border-brand-500 text-brand-600 dark:text-brand-400'
                       : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
@@ -984,8 +984,8 @@ export default function AdminProductDetailPage() {
                           key={`${image.slice(0, 32)}-${index}`}
                           className={`w-20 h-20 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
                             selectedImageIndex === index
-                              ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50'
-                              : 'border-gray-200 dark:border-gray-600 hover:border-blue-400'
+                              ? 'border-brand-500 ring-2 ring-brand-500 ring-opacity-50'
+                              : 'border-gray-200 dark:border-gray-600 hover:border-brand-400'
                           }`}
                           onClick={() => {
                             setSelectedImageIndex(index);
@@ -1091,7 +1091,7 @@ export default function AdminProductDetailPage() {
                         <DetailRow
                           label="Inventory Status"
                           value={
-                            <span className="text-blue-600 dark:text-blue-400 inline-flex items-center gap-1">
+                            <span className="text-brand-600 dark:text-brand-400 inline-flex items-center gap-1">
                               <Link2 className="w-3 h-3" />
                               Linked
                             </span>
@@ -1111,7 +1111,7 @@ export default function AdminProductDetailPage() {
                       {product.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium"
+                          className="px-2.5 py-1 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 rounded-full text-xs font-medium"
                         >
                           {tag}
                         </span>
@@ -1126,7 +1126,7 @@ export default function AdminProductDetailPage() {
                       <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
                         Attributes
                       </h3>
-                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto">
+                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto sidebar-scroll">
                         <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all font-mono">
                           {JSON.stringify(product.attributes, null, 2)}
                         </pre>
@@ -1144,7 +1144,7 @@ export default function AdminProductDetailPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Total Stock
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                       {inventory?.quantity || 0}
                     </p>
                   </div>
@@ -1152,7 +1152,7 @@ export default function AdminProductDetailPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Reserved
                     </p>
-                    <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                    <p className="text-2xl font-bold text-warning-600 dark:text-warning-400 tabular-nums">
                       {inventory?.reserved || 0}
                     </p>
                   </div>
@@ -1161,12 +1161,12 @@ export default function AdminProductDetailPage() {
                       Available
                     </p>
                     <p
-                      className={`text-2xl font-bold ${
+                      className={`text-2xl font-bold tabular-nums ${
                         availableStock <= 0
-                          ? 'text-red-600 dark:text-red-400'
+                          ? 'text-danger-600 dark:text-danger-400'
                           : isLowStock
-                          ? 'text-yellow-600 dark:text-yellow-400'
-                          : 'text-green-600 dark:text-green-400'
+                          ? 'text-warning-600 dark:text-warning-400'
+                          : 'text-success-600 dark:text-success-400'
                       }`}
                     >
                       {availableStock}
@@ -1175,15 +1175,15 @@ export default function AdminProductDetailPage() {
                 </div>
 
                 {isLinkedToInventory && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 flex items-center gap-2 mb-2">
+                  <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300 flex items-center gap-2 mb-2">
                       <Link2 className="w-4 h-4" />
                       Inventory Link
                     </h4>
-                    <div className="space-y-1 text-sm text-blue-700 dark:text-blue-300">
+                    <div className="space-y-1 text-sm text-brand-700 dark:text-brand-300">
                       <p>
                         Inventory ID:{' '}
-                        <code className="bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded text-xs">
+                        <code className="bg-brand-100 dark:bg-brand-900/50 px-2 py-0.5 rounded text-xs font-mono">
                           {product.inventoryId}
                         </code>
                       </p>
@@ -1197,8 +1197,8 @@ export default function AdminProductDetailPage() {
                 )}
 
                 {totalVariants > 0 && (
-                  <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
-                    <h4 className="text-sm font-medium text-purple-800 dark:text-purple-300 mb-2 flex items-center gap-2">
+                  <div className="bg-secondary-50 dark:bg-secondary-900/20 border border-secondary-200 dark:border-secondary-800 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-secondary-800 dark:text-secondary-300 mb-2 flex items-center gap-2">
                       <GitBranch className="w-4 h-4" />
                       Variant Stock Summary
                     </h4>
@@ -1207,7 +1207,7 @@ export default function AdminProductDetailPage() {
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           Total Variants
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
                           {totalVariants}
                         </p>
                       </div>
@@ -1215,7 +1215,7 @@ export default function AdminProductDetailPage() {
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           Active Variants
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
                           {activeVariants}
                         </p>
                       </div>
@@ -1223,7 +1223,7 @@ export default function AdminProductDetailPage() {
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           Variant Stock
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
                           {totalVariantStock}
                         </p>
                       </div>
@@ -1231,7 +1231,7 @@ export default function AdminProductDetailPage() {
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           Total Combined
                         </span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                        <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
                           {(inventory?.quantity || 0) + totalVariantStock}
                         </p>
                       </div>
@@ -1239,11 +1239,11 @@ export default function AdminProductDetailPage() {
                   </div>
                 )}
 
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">
+                <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg p-4">
+                  <h4 className="text-sm font-medium text-warning-800 dark:text-warning-300 mb-2">
                     Inventory Settings
                   </h4>
-                  <div className="space-y-1 text-sm text-yellow-700 dark:text-yellow-300">
+                  <div className="space-y-1 text-sm text-warning-700 dark:text-warning-300">
                     <p>
                       Reorder Point:{' '}
                       {inventory?.reorderPoint || product.minStock || 5}
@@ -1293,17 +1293,19 @@ export default function AdminProductDetailPage() {
                                 <span className="font-mono">
                                   SKU: {variant.sku}
                                 </span>
-                                <span className="font-medium text-gray-900 dark:text-white">
+                                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                                   {formatCurrency(variant.price)}
                                 </span>
-                                <span>Stock: {variant.stock}</span>
+                                <span className="tabular-nums">
+                                  Stock: {variant.stock}
+                                </span>
                                 {variant.barcode && (
-                                  <span className="text-xs">
+                                  <span className="text-xs font-mono">
                                     Barcode: {variant.barcode}
                                   </span>
                                 )}
                                 {variant.inventoryId && (
-                                  <span className="text-xs text-blue-500 flex items-center gap-1">
+                                  <span className="text-xs text-brand-500 flex items-center gap-1">
                                     <Link2 className="w-3 h-3" />
                                     Inventory Linked
                                   </span>
@@ -1356,8 +1358,8 @@ export default function AdminProductDetailPage() {
                             <span
                               className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                                 variant.isActive
-                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                                  ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                                  : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                               }`}
                             >
                               {variant.isActive ? 'Active' : 'Inactive'}
@@ -1365,19 +1367,19 @@ export default function AdminProductDetailPage() {
                             {canEditProducts && (
                               <button
                                 onClick={() => handleEditVariant(variant)}
-                                className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-lg transition-colors focus-ring"
                                 title="Edit variant"
                               >
-                                <Edit className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                               </button>
                             )}
                             {canDeleteProducts && (
                               <button
                                 onClick={() => handleDeleteVariant(variant.id)}
-                                className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded-lg transition-colors focus-ring"
                                 title="Delete variant"
                               >
-                                <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                                <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
                               </button>
                             )}
                           </div>
@@ -1394,7 +1396,7 @@ export default function AdminProductDetailPage() {
                     {canEditProducts && (
                       <Link
                         href={`/admin/catalog/edit/${product.id}`}
-                        className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                        className="mt-4 inline-block px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors focus-ring"
                       >
                         Add Variants
                       </Link>
@@ -1412,7 +1414,7 @@ export default function AdminProductDetailPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Total Orders
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                       {product._count?.orderItems || 0}
                     </p>
                   </div>
@@ -1420,7 +1422,7 @@ export default function AdminProductDetailPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Total Sale Items
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                       {product._count?.saleItems || 0}
                     </p>
                   </div>
@@ -1440,7 +1442,7 @@ export default function AdminProductDetailPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Average Rating
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                       {product.rating?.toFixed(1) || 'N/A'}
                     </p>
                   </div>
@@ -1448,7 +1450,7 @@ export default function AdminProductDetailPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       Total Reviews
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                       {product._count?.reviews || 0}
                     </p>
                   </div>
@@ -1464,7 +1466,7 @@ export default function AdminProductDetailPage() {
 
         {/* EDIT VARIANT MODAL */}
         {showEditVariantModal && editingVariant && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
               onClick={() => setShowEditVariantModal(false)}
@@ -1472,7 +1474,7 @@ export default function AdminProductDetailPage() {
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
               <button
                 onClick={() => setShowEditVariantModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Close"
               >
                 <X className="w-5 h-5 text-gray-500" />
@@ -1496,7 +1498,7 @@ export default function AdminProductDetailPage() {
                         name: e.target.value,
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
                 <div>
@@ -1512,7 +1514,7 @@ export default function AdminProductDetailPage() {
                         sku: e.target.value.toUpperCase(),
                       })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1531,7 +1533,7 @@ export default function AdminProductDetailPage() {
                           price: parseFloat(e.target.value) || 0,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
                     />
                   </div>
                   <div>
@@ -1548,7 +1550,7 @@ export default function AdminProductDetailPage() {
                           stock: parseInt(e.target.value) || 0,
                         })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white tabular-nums"
                     />
                   </div>
                 </div>
@@ -1562,7 +1564,7 @@ export default function AdminProductDetailPage() {
                         isActive: e.target.checked,
                       })
                     }
-                    className="w-4 h-4 text-blue-600 rounded"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500"
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300">
                     Active
@@ -1573,14 +1575,14 @@ export default function AdminProductDetailPage() {
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   onClick={() => setShowEditVariantModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveVariant}
                   disabled={savingVariant}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors focus-ring"
                 >
                   {savingVariant ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1596,7 +1598,7 @@ export default function AdminProductDetailPage() {
 
         {/* BARCODE MODAL */}
         {showBarcodeModal && product && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
               onClick={() => setShowBarcodeModal(false)}
@@ -1604,18 +1606,18 @@ export default function AdminProductDetailPage() {
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
               <button
                 onClick={() => setShowBarcodeModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Close"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
 
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
                   {product.barcode ? (
-                    <QrCode className="w-6 h-6 text-blue-600" />
+                    <QrCode className="w-6 h-6 text-brand-600" />
                   ) : (
-                    <Barcode className="w-6 h-6 text-blue-600" />
+                    <Barcode className="w-6 h-6 text-brand-600" />
                   )}
                 </div>
                 <div>
@@ -1630,7 +1632,7 @@ export default function AdminProductDetailPage() {
 
               {generatingBarcode ? (
                 <div className="flex flex-col items-center justify-center py-8">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                  <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                     Generating barcode...
                   </p>
@@ -1687,21 +1689,21 @@ export default function AdminProductDetailPage() {
                         navigator.clipboard.writeText(barcodeInfo.barcode);
                         toast.success('Barcode copied');
                       }}
-                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
                     >
                       <Copy className="w-4 h-4" />
                       Copy
                     </button>
                     <button
                       onClick={handleDownloadBarcode}
-                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
                     >
                       <Download className="w-4 h-4" />
                       Download
                     </button>
                     <button
                       onClick={handlePrintBarcode}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm"
+                      className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 text-sm focus-ring"
                     >
                       <Printer className="w-4 h-4" />
                       Print
@@ -1716,7 +1718,7 @@ export default function AdminProductDetailPage() {
                   </p>
                   <button
                     onClick={handleGenerateBarcode}
-                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
                   >
                     Generate Barcode
                   </button>
@@ -1728,10 +1730,10 @@ export default function AdminProductDetailPage() {
 
         {/* IMAGE LIGHTBOX */}
         {showLightbox && product.images && product.images.length > 0 && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/90 p-4">
             <button
               onClick={() => setShowLightbox(false)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
+              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors focus-ring"
               aria-label="Close"
             >
               <X className="w-8 h-8" />
@@ -1740,7 +1742,7 @@ export default function AdminProductDetailPage() {
               onClick={() =>
                 setSelectedImageIndex((prev) => Math.max(0, prev - 1))
               }
-              className={`absolute left-4 text-white hover:text-gray-300 transition-colors ${
+              className={`absolute left-4 text-white hover:text-gray-300 transition-colors focus-ring ${
                 selectedImageIndex === 0
                   ? 'opacity-50 cursor-not-allowed'
                   : ''
@@ -1766,7 +1768,7 @@ export default function AdminProductDetailPage() {
                   Math.min(product.images.length - 1, prev + 1)
                 )
               }
-              className={`absolute right-4 text-white hover:text-gray-300 transition-colors ${
+              className={`absolute right-4 text-white hover:text-gray-300 transition-colors focus-ring ${
                 selectedImageIndex === product.images.length - 1
                   ? 'opacity-50 cursor-not-allowed'
                   : ''
@@ -1776,7 +1778,7 @@ export default function AdminProductDetailPage() {
             >
               <ChevronRight className="w-8 h-8" />
             </button>
-            <div className="absolute bottom-8 text-white text-sm">
+            <div className="absolute bottom-8 text-white text-sm tabular-nums">
               {selectedImageIndex + 1} / {product.images.length}
             </div>
           </div>
@@ -1784,7 +1786,7 @@ export default function AdminProductDetailPage() {
 
         {/* DELETE MODAL */}
         {showDeleteModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
               onClick={() => setShowDeleteModal(false)}
@@ -1792,14 +1794,14 @@ export default function AdminProductDetailPage() {
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                  <AlertTriangle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1821,14 +1823,14 @@ export default function AdminProductDetailPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
                 >
                   {deleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1844,7 +1846,7 @@ export default function AdminProductDetailPage() {
 
         {/* UNLINK MODAL */}
         {showUnlinkModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
               onClick={() => setShowUnlinkModal(false)}
@@ -1852,14 +1854,14 @@ export default function AdminProductDetailPage() {
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowUnlinkModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                  <Unlink className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                <div className="p-2 bg-warning-100 dark:bg-warning-900/30 rounded-lg">
+                  <Unlink className="w-6 h-6 text-warning-600 dark:text-warning-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -1881,14 +1883,14 @@ export default function AdminProductDetailPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowUnlinkModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleUnlinkFromInventory}
                   disabled={unlinking}
-                  className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 bg-warning-600 hover:bg-warning-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
                 >
                   {unlinking ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1912,7 +1914,13 @@ export default function AdminProductDetailPage() {
 
 interface StatCardProps {
   icon: React.ElementType;
-  color: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'orange';
+  color:
+    | 'brand'
+    | 'brand-accent'
+    | 'secondary'
+    | 'success'
+    | 'warning'
+    | 'danger';
   label: string;
   value: string;
   subtext?: string;
@@ -1920,16 +1928,18 @@ interface StatCardProps {
 }
 
 const STAT_COLORS: Record<StatCardProps['color'], string> = {
-  blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
-  green:
-    'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400',
-  yellow:
-    'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400',
-  red: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
-  purple:
-    'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
-  orange:
-    'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400',
+  brand:
+    'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400',
+  'brand-accent':
+    'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-600 dark:text-brand-accent-400',
+  secondary:
+    'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-600 dark:text-secondary-400',
+  success:
+    'bg-success-100 dark:bg-success-900/30 text-success-600 dark:text-success-400',
+  warning:
+    'bg-warning-100 dark:bg-warning-900/30 text-warning-600 dark:text-warning-400',
+  danger:
+    'bg-danger-100 dark:bg-danger-900/30 text-danger-600 dark:text-danger-400',
 };
 
 function StatCard({
@@ -1942,9 +1952,9 @@ function StatCard({
 }: StatCardProps) {
   const toneClass =
     subtextTone === 'positive'
-      ? 'text-green-600 dark:text-green-400'
+      ? 'text-success-600 dark:text-success-400'
       : subtextTone === 'negative'
-      ? 'text-red-600 dark:text-red-400'
+      ? 'text-danger-600 dark:text-danger-400'
       : 'text-gray-500 dark:text-gray-400';
 
   return (
@@ -1955,11 +1965,11 @@ function StatCard({
         </div>
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">
+          <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
             {value}
           </p>
           {subtext && (
-            <p className={`text-xs ${toneClass}`}>{subtext}</p>
+            <p className={`text-xs ${toneClass} tabular-nums`}>{subtext}</p>
           )}
         </div>
       </div>
@@ -1982,19 +1992,17 @@ function DetailRow({
 }: DetailRowProps) {
   const toneClass =
     tone === 'positive'
-      ? 'text-green-600 dark:text-green-400'
+      ? 'text-success-600 dark:text-success-400'
       : tone === 'negative'
-      ? 'text-red-600 dark:text-red-400'
+      ? 'text-danger-600 dark:text-danger-400'
       : tone === 'warning'
-      ? 'text-yellow-600 dark:text-yellow-400'
+      ? 'text-warning-600 dark:text-warning-400'
       : 'text-gray-900 dark:text-white';
 
   return (
     <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
       <span className="text-gray-600 dark:text-gray-400">{label}</span>
-      <span
-        className={`${emphasize ? 'font-medium' : ''} ${toneClass}`}
-      >
+      <span className={`${emphasize ? 'font-medium' : ''} ${toneClass}`}>
         {value}
       </span>
     </div>

@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\companies\reports\page.tsx
+// packages/web/app/(dashboard)/admin/companies/reports/page.tsx
 
 'use client';
 
@@ -222,7 +222,7 @@ export default function CompanyReportsPage() {
             type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 focus-ring"
           >
             <ArrowPathIcon
               className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
@@ -232,7 +232,7 @@ export default function CompanyReportsPage() {
           <button
             type="button"
             onClick={handleExport}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-brand-500 text-white rounded-lg hover:bg-brand-600 focus-ring"
           >
             <ArrowDownTrayIcon className="w-4 h-4" />
             Export CSV
@@ -241,7 +241,7 @@ export default function CompanyReportsPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand p-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <FunnelIcon className="w-4 h-4" />
@@ -264,9 +264,9 @@ export default function CompanyReportsPage() {
                 key={opt.key}
                 type="button"
                 onClick={() => setRange(opt.key)}
-                className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                className={`px-3 py-1.5 text-xs rounded-full border transition-colors focus-ring ${
                   range === opt.key
-                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                    ? 'bg-brand-50 dark:bg-brand-900/20 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300'
                     : 'bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
                 }`}
               >
@@ -283,14 +283,14 @@ export default function CompanyReportsPage() {
                 type="date"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
-                className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               />
               <span className="text-xs text-gray-400">to</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
-                className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                className="px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               />
             </div>
           )}
@@ -301,13 +301,13 @@ export default function CompanyReportsPage() {
               type="checkbox"
               checked={includeInactive}
               onChange={(e) => setIncludeInactive(e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+              className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
             />
             Include inactive
           </label>
 
           {reports?.period && (
-            <span className="ml-auto text-[11px] text-gray-400 dark:text-gray-500">
+            <span className="ml-auto text-3xs text-gray-400 dark:text-gray-500 tabular-nums">
               {reports.period.startDate
                 ? new Date(reports.period.startDate).toLocaleDateString()
                 : '…'}{' '}
@@ -337,8 +337,8 @@ export default function CompanyReportsPage() {
 
       {/* Error / empty */}
       {!loading && !reports && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <ExclamationTriangleIcon className="w-10 h-10 mx-auto text-yellow-500" />
+        <div className="card-brand p-12 text-center">
+          <ExclamationTriangleIcon className="w-10 h-10 mx-auto text-warning-500" />
           <p className="mt-3 text-gray-900 dark:text-white font-medium">
             Could not load reports
           </p>
@@ -348,7 +348,7 @@ export default function CompanyReportsPage() {
           <button
             type="button"
             onClick={() => fetchReports()}
-            className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm bg-brand-500 text-white rounded-lg hover:bg-brand-600 focus-ring"
           >
             <ArrowPathIcon className="w-4 h-4" />
             Retry
@@ -415,11 +415,11 @@ export default function CompanyReportsPage() {
 
           {/* Charts row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <div className="lg:col-span-2 card-brand p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <ChartBarIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <ChartBarIcon className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                     Company Growth
                   </h2>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -430,11 +430,11 @@ export default function CompanyReportsPage() {
               <CompanyGrowthChart data={reports.companiesByMonth} />
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-5">
+            <div className="card-brand p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <ChartPieIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    <ChartPieIcon className="w-5 h-5 text-secondary-600 dark:text-secondary-400" />
                     By Currency
                   </h2>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -447,13 +447,13 @@ export default function CompanyReportsPage() {
           </div>
 
           {/* Table */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="card-brand p-0 overflow-hidden">
             <div className="p-5 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">
                   Companies
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
                   {reports.companies.length}{' '}
                   {reports.companies.length === 1 ? 'company' : 'companies'}
                 </p>
@@ -463,7 +463,7 @@ export default function CompanyReportsPage() {
           </div>
 
           {/* Footer meta */}
-          <div className="text-center text-xs text-gray-400 dark:text-gray-500">
+          <div className="text-center text-xs text-gray-400 dark:text-gray-500 tabular-nums">
             Generated at {new Date(reports.generatedAt).toLocaleString()}
           </div>
         </>
@@ -471,4 +471,3 @@ export default function CompanyReportsPage() {
     </div>
   );
 }
-

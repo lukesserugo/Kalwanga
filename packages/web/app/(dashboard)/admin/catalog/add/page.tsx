@@ -59,12 +59,6 @@ interface InventoryItem {
   businessUnitId?: string;
 }
 
-/**
- * The local editable variant shape. It mirrors only the fields the
- * form actually manages. The backend's `createProduct` service
- * accepts this shape directly — it does NOT require `id`, `productId`,
- * `createdAt`, or `updatedAt`.
- */
 interface Variant {
   id?: string;
   name: string;
@@ -99,14 +93,6 @@ interface BarcodeDisplayData {
   format: string;
 }
 
-/**
- * The payload sent to `productService.createProductFromInventory`.
- *
- * ✅ This type is deliberately NOT `Partial<Product>` — the form
- *    produces create-shaped variants (no `id`, no `productId`, no
- *    timestamps), which `ProductVariant` requires. Using a dedicated
- *    interface avoids the TS2345 mismatch.
- */
 interface ProductPayload {
   name: string;
   sku: string;
@@ -406,7 +392,6 @@ export default function AddProductPage() {
   const { user } = useAuth();
   const { canCreate, canManage, isLoading: permissionLoading } = usePermission();
 
-  // ── State ──────────────────────────────────
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -423,11 +408,9 @@ export default function AddProductPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 
-  // ── Edit mode ──────────────────────────────
   const [isEditMode, setIsEditMode] = useState(false);
   const [productId, setProductId] = useState<string | null>(null);
 
-  // ── Barcode ────────────────────────────────
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -438,7 +421,6 @@ export default function AddProductPage() {
   const [barcodeLength, setBarcodeLength] = useState(12);
   const [includeQR, setIncludeQR] = useState(true);
 
-  // ── Inventory selection ────────────────────
   const [selectedInventory, setSelectedInventory] = useState<InventoryItem | null>(null);
   const [searchInventoryQuery, setSearchInventoryQuery] = useState('');
   const [showInventoryPicker, setShowInventoryPicker] = useState(false);
@@ -446,14 +428,11 @@ export default function AddProductPage() {
   const [businessUnitId, setBusinessUnitId] = useState<string>('');
   const [inventoryLoadError, setInventoryLoadError] = useState<string | null>(null);
 
-  // ── Auto SKU ───────────────────────────────
   const [autoGenerateSKU, setAutoGenerateSKU] = useState(true);
 
-  // ── Image upload ───────────────────────────
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
 
-  // ── Form ───────────────────────────────────
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -490,10 +469,6 @@ export default function AddProductPage() {
 
   const autoSelectedRef = useRef(false);
 
-  // ============================================
-  // FETCHERS
-  // ============================================
-
   const fetchCategories = useCallback(async () => {
     try {
       const data = await categoryService.getAllCategories({
@@ -526,7 +501,6 @@ export default function AddProductPage() {
         setInventoryLoading(true);
         setInventoryLoadError(null);
 
-        // ✅ Read the BU from localStorage — validated against placeholders.
         const buId = resolveBusinessUnitIdFromStorage() || 'default';
 
         const params: Record<string, any> = {
@@ -613,7 +587,6 @@ export default function AddProductPage() {
     try {
       setLoadingData(true);
 
-      // ✅ Resolve the BU from the canonical storage key chain.
       const buId = resolveBusinessUnitIdFromStorage() || '';
       setBusinessUnitId(buId);
 
@@ -629,10 +602,6 @@ export default function AddProductPage() {
       setLoadingData(false);
     }
   }, [fetchCategories, fetchSuppliers, fetchInventoryItems]);
-
-  // ============================================
-  // EDIT MODE — load product
-  // ============================================
 
   const loadProductForEdit = useCallback(
     async (id: string) => {
@@ -733,10 +702,6 @@ export default function AddProductPage() {
     [router]
   );
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -765,10 +730,6 @@ export default function AddProductPage() {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, canCreateProducts]);
-
-  // ============================================
-  // SKU GENERATION
-  // ============================================
 
   const handleNameChange = useCallback(
     (value: string) => {
@@ -801,10 +762,6 @@ export default function AddProductPage() {
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.name]);
-
-  // ============================================
-  // IMAGE UPLOAD
-  // ============================================
 
   const handleImageUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -900,10 +857,6 @@ export default function AddProductPage() {
     [formData.images]
   );
 
-  // ============================================
-  // VARIANT IMAGE UPLOAD
-  // ============================================
-
   const handleVariantImageUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
@@ -968,10 +921,6 @@ export default function AddProductPage() {
       images: (prev.images || []).filter((_, i) => i !== index),
     }));
   }, []);
-
-  // ============================================
-  // BARCODE
-  // ============================================
 
   const handleGenerateBarcode = useCallback(async () => {
     if (!formData.name) {
@@ -1080,10 +1029,6 @@ export default function AddProductPage() {
     }
   }, [formData.barcode]);
 
-  // ============================================
-  // INVENTORY SELECTION
-  // ============================================
-
   const handleSelectInventory = useCallback((item: InventoryItem) => {
     setSelectedInventory(item);
     autoSelectedRef.current = true;
@@ -1110,10 +1055,6 @@ export default function AddProductPage() {
     setShowInventoryPicker(true);
     fetchInventoryItems();
   }, [fetchInventoryItems]);
-
-  // ============================================
-  // VARIANTS
-  // ============================================
 
   const handleAddVariant = useCallback(() => {
     if (variants.length >= MAX_VARIANTS) {
@@ -1162,10 +1103,6 @@ export default function AddProductPage() {
     toast.info('Variant removed');
   }, []);
 
-  // ============================================
-  // TAGS / SEO
-  // ============================================
-
   const addTag = useCallback(() => {
     const trimmed = newTag.trim();
     if (trimmed && !formData.tags.includes(trimmed)) {
@@ -1201,10 +1138,6 @@ export default function AddProductPage() {
       },
     }));
   }, []);
-
-  // ============================================
-  // VALIDATION
-  // ============================================
 
   const validateField = useCallback(
     (name: string, value: any): string => {
@@ -1270,10 +1203,6 @@ export default function AddProductPage() {
     [validateField]
   );
 
-  // ============================================
-  // SUBMIT
-  // ============================================
-
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -1315,9 +1244,6 @@ export default function AddProductPage() {
         return;
       }
 
-      // ✅ Resolve the BU one last time. Prefer the caller's
-      //    `businessUnitId` state (set in `fetchData`), then a fresh
-      //    localStorage read, then the selected inventory's BU.
       const resolvedBusinessUnitId =
         (isRealBusinessUnitId(businessUnitId) ? businessUnitId : null) ||
         resolveBusinessUnitIdFromStorage() ||
@@ -1336,7 +1262,6 @@ export default function AddProductPage() {
       setLoading(true);
 
       try {
-        // Tags
         const tagsArray: string[] = Array.isArray(formData.tags)
           ? formData.tags
               .flatMap((tag: any) =>
@@ -1349,7 +1274,6 @@ export default function AddProductPage() {
               .filter(Boolean)
           : [];
 
-        // Main images
         let processedImages: string[] = [];
         const mainImages = Array.isArray(formData.images) ? formData.images : [];
         for (const img of mainImages) {
@@ -1360,9 +1284,6 @@ export default function AddProductPage() {
           processedImages = [PLACEHOLDER_IMAGE];
         }
 
-        // Variants — build a plain array of the local `Variant` shape.
-        // The service type `ProductPayload.variants` is `Variant[]`, not
-        // `ProductVariant[]`, so this is a clean assignment.
         const processedVariants: Variant[] = variants.map((v) => {
           let cleanVariantImages: string[] = [];
           const variantImages = Array.isArray(v.images) ? v.images : [];
@@ -1393,7 +1314,6 @@ export default function AddProductPage() {
             ? formData.categoryId
             : undefined;
 
-        // ✅ Typed as our own `ProductPayload` — no more TS2345.
         const productData: ProductPayload = {
           name: formData.name.trim(),
           sku: formData.sku.trim().toUpperCase(),
@@ -1428,18 +1348,6 @@ export default function AddProductPage() {
           businessUnitId: resolvedBusinessUnitId,
           createdBy: user?.id || 'system',
         };
-
-        console.log('📤 Creating product from inventory:', {
-          inventoryId: formData.inventoryId,
-          businessUnitId: resolvedBusinessUnitId,
-          productData: {
-            ...productData,
-            images: productData.images.map((img, i) => {
-              const size = Math.round(img.length / 1024);
-              return `[Image ${i + 1}: ${size}KB]`;
-            }),
-          },
-        });
 
         await productService.createProductFromInventory(
           formData.inventoryId,
@@ -1484,10 +1392,6 @@ export default function AddProductPage() {
     ]
   );
 
-  // ============================================
-  // IMAGE GALLERY
-  // ============================================
-
   const renderImageGallery = () => {
     if (formData.images.length === 0) {
       return (
@@ -1497,7 +1401,7 @@ export default function AddProductPage() {
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
             Upload images to see them here
           </p>
-          <label className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg cursor-pointer transition-colors">
+          <label className="mt-4 inline-block px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg cursor-pointer transition-colors shadow-brand focus-ring">
             <Upload className="w-4 h-4 inline mr-2" />
             Upload Images
             <input
@@ -1539,9 +1443,9 @@ export default function AddProductPage() {
               key={index}
               className={`relative w-24 h-24 rounded-lg overflow-hidden border-2 ${
                 previewImage === image
-                  ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50'
+                  ? 'border-brand-500 ring-2 ring-brand-500 ring-opacity-50'
                   : 'border-gray-200 dark:border-gray-600'
-              } group hover:border-blue-400 transition-all`}
+              } group hover:border-brand-400 transition-all`}
             >
               <img
                 src={image}
@@ -1555,7 +1459,7 @@ export default function AddProductPage() {
                 <button
                   type="button"
                   onClick={() => setMainImage(index)}
-                  className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  className="p-1 bg-brand-600 text-white rounded hover:bg-brand-700 transition-colors focus-ring"
                   title="Set as main image"
                 >
                   <Eye className="w-3 h-3" />
@@ -1563,25 +1467,25 @@ export default function AddProductPage() {
                 <button
                   type="button"
                   onClick={() => removeImage(index)}
-                  className="p-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  className="p-1 bg-brand-accent-600 text-white rounded hover:bg-brand-accent-700 transition-colors focus-ring"
                   title="Remove image"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </div>
               {previewImage === image && (
-                <div className="absolute top-1 left-1 bg-blue-500 text-white text-[8px] px-1 py-0.5 rounded">
+                <div className="absolute top-1 left-1 bg-brand-500 text-white text-[8px] px-1 py-0.5 rounded">
                   MAIN
                 </div>
               )}
-              <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[8px] px-1 py-0.5 rounded">
+              <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[8px] px-1 py-0.5 rounded tabular-nums">
                 #{index + 1}
               </div>
             </div>
           ))}
 
           {formData.images.length < MAX_IMAGES && (
-            <label className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400">
+            <label className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 dark:hover:border-brand-400 transition-colors cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-brand-500 dark:hover:text-brand-400 focus-ring">
               {uploadingImages ? (
                 <Loader2 className="w-6 h-6 animate-spin" />
               ) : (
@@ -1604,11 +1508,11 @@ export default function AddProductPage() {
         </div>
 
         <div className="text-xs text-gray-500 dark:text-gray-400">
-          <p>
+          <p className="tabular-nums">
             {formData.images.length} of {MAX_IMAGES} images uploaded
           </p>
           {uploadingImages && (
-            <p className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+            <p className="text-brand-600 dark:text-brand-400 flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
               Processing images...
             </p>
@@ -1618,15 +1522,11 @@ export default function AddProductPage() {
     );
   };
 
-  // ============================================
-  // RENDER GATES
-  // ============================================
-
   if (permissionLoading || !isClient) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </div>
@@ -1647,7 +1547,7 @@ export default function AddProductPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -1660,7 +1560,7 @@ export default function AddProductPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading inventory data...
           </p>
@@ -1669,19 +1569,14 @@ export default function AddProductPage() {
     );
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 transition-colors duration-200">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/admin/catalog')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Back to catalog"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -1699,23 +1594,22 @@ export default function AddProductPage() {
           </div>
           <Link
             href="/admin/catalog"
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
           >
             Cancel
           </Link>
         </div>
 
-        {/* Inventory selection */}
         <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Select Inventory Item <span className="text-red-500">*</span>
+                Select Inventory Item <span className="text-brand-accent-500">*</span>
               </label>
 
               {selectedInventory ? (
-                <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                  <Database className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                <div className="flex items-center gap-3 p-3 bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800 rounded-lg">
+                  <Database className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 dark:text-white truncate">
                       {selectedInventory.name}
@@ -1723,7 +1617,7 @@ export default function AddProductPage() {
                     <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                       <span>SKU: {selectedInventory.sku}</span>
                       <span>•</span>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 tabular-nums">
                         Stock: {selectedInventory.quantity}
                       </span>
                       <span>•</span>
@@ -1734,7 +1628,7 @@ export default function AddProductPage() {
                     <button
                       type="button"
                       onClick={clearSelectedInventory}
-                      className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      className="px-3 py-1.5 text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-950/20 rounded-lg transition-colors focus-ring"
                     >
                       Change
                     </button>
@@ -1748,7 +1642,7 @@ export default function AddProductPage() {
                       setShowInventoryPicker(true);
                       fetchInventoryItems();
                     }}
-                    className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center justify-center gap-2 shadow-brand focus-ring"
                   >
                     <Database className="w-4 h-4" />
                     Browse Inventory Items
@@ -1756,7 +1650,7 @@ export default function AddProductPage() {
                   <button
                     type="button"
                     onClick={() => router.push('/admin/inventory/add')}
-                    className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 flex items-center gap-2"
+                    className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 flex items-center gap-2 focus-ring"
                   >
                     <Plus className="w-4 h-4" />
                     New Inventory
@@ -1765,13 +1659,13 @@ export default function AddProductPage() {
               )}
 
               {errors.inventoryId && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400 flex items-center gap-1">
                   <AlertCircle className="w-4 h-4" />
                   {errors.inventoryId}
                 </p>
               )}
               {inventoryLoadError && !selectedInventory && (
-                <p className="mt-1 text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                <p className="mt-1 text-sm text-warning-600 dark:text-warning-400 flex items-center gap-1">
                   <AlertTriangle className="w-4 h-4" />
                   {inventoryLoadError}
                 </p>
@@ -1783,19 +1677,18 @@ export default function AddProductPage() {
           </div>
         </div>
 
-        {/* Inventory picker modal */}
         {showInventoryPicker && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                  <Database className="w-5 h-5 text-blue-600" />
+                  <Database className="w-5 h-5 text-brand-600" />
                   Select Inventory Item
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowInventoryPicker(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                  className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg focus-ring"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1811,13 +1704,13 @@ export default function AddProductPage() {
                       setSearchInventoryQuery(e.target.value);
                       fetchInventoryItems(e.target.value);
                     }}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                   />
                 </div>
-                <div className="max-h-96 overflow-y-auto space-y-2">
+                <div className="max-h-96 overflow-y-auto space-y-2 custom-scrollbar">
                   {inventoryLoading ? (
                     <div className="text-center py-8">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
+                      <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
                       <p className="mt-2 text-gray-500 dark:text-gray-400">
                         Loading inventory...
                       </p>
@@ -1834,7 +1727,7 @@ export default function AddProductPage() {
                       <button
                         type="button"
                         onClick={() => router.push('/admin/inventory/add')}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto"
+                        className="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 mx-auto shadow-brand focus-ring"
                       >
                         <Plus className="w-4 h-4" />
                         Create Inventory Item
@@ -1846,9 +1739,9 @@ export default function AddProductPage() {
                         key={item.id}
                         type="button"
                         onClick={() => handleSelectInventory(item)}
-                        className={`w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border ${
+                        className={`w-full text-left p-3 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 transition-colors border focus-ring ${
                           selectedInventory?.id === item.id
-                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                            ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20'
                             : 'border-gray-200 dark:border-gray-700'
                         }`}
                       >
@@ -1861,10 +1754,10 @@ export default function AddProductPage() {
                               <span>SKU: {item.sku}</span>
                               <span>•</span>
                               <span
-                                className={`font-medium ${
+                                className={`font-medium tabular-nums ${
                                   item.quantity > 0
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : 'text-red-600 dark:text-red-400'
+                                    ? 'text-success-600 dark:text-success-400'
+                                    : 'text-brand-accent-600 dark:text-brand-accent-400'
                                 }`}
                               >
                                 Stock: {item.quantity}
@@ -1880,9 +1773,9 @@ export default function AddProductPage() {
                             </div>
                           </div>
                           {selectedInventory?.id === item.id ? (
-                            <CheckCircle className="w-5 h-5 text-blue-600" />
+                            <CheckCircle className="w-5 h-5 text-brand-600" />
                           ) : (
-                            <span className="text-sm text-blue-600 dark:text-blue-400">
+                            <span className="text-sm text-brand-600 dark:text-brand-400">
                               Select →
                             </span>
                           )}
@@ -1892,7 +1785,7 @@ export default function AddProductPage() {
                   )}
                 </div>
                 {inventoryItems.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400">
+                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 tabular-nums">
                     {inventoryItems.length} inventory item
                     {inventoryItems.length !== 1 ? 's' : ''} available
                   </div>
@@ -1902,19 +1795,18 @@ export default function AddProductPage() {
           </div>
         )}
 
-        {/* Barcode modal */}
         {showBarcodeModal && barcodeData && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden">
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center gap-2">
-                  <QrCode className="w-5 h-5 text-blue-600" />
+                  <QrCode className="w-5 h-5 text-brand-600" />
                   Barcode / QR Code
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowBarcodeModal(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                  className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg focus-ring"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1961,10 +1853,10 @@ export default function AddProductPage() {
                     <button
                       type="button"
                       onClick={handleCopyBarcode}
-                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2"
+                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-brand-50 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2 focus-ring"
                     >
                       {copied ? (
-                        <Check className="w-4 h-4 text-green-500" />
+                        <Check className="w-4 h-4 text-success-500" />
                       ) : (
                         <Copy className="w-4 h-4" />
                       )}
@@ -1978,7 +1870,7 @@ export default function AddProductPage() {
                         link.href = barcodeData.barcodeUrl;
                         link.click();
                       }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
                     >
                       <Download className="w-4 h-4" />
                       Download
@@ -1990,9 +1882,8 @@ export default function AddProductPage() {
           </div>
         )}
 
-        {/* Tabs + Form */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
-          <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto">
+          <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto custom-scrollbar">
             <nav className="flex gap-2 sm:gap-4 py-2">
               {[
                 { id: 'basic', label: 'Basic Info', icon: Info },
@@ -2006,10 +1897,10 @@ export default function AddProductPage() {
                   key={id}
                   type="button"
                   onClick={() => setActiveTab(id)}
-                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex items-center gap-2 ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex items-center gap-2 focus-ring ${
                     activeTab === id
-                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      ? 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-brand-50 dark:hover:bg-gray-700'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -2020,11 +1911,10 @@ export default function AddProductPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6">
-            {/* BASIC */}
             {activeTab === 'basic' && (
               <div className="space-y-6">
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                <div className="bg-brand-50 dark:bg-brand-950/20 rounded-lg p-4 border border-brand-200 dark:border-brand-800">
+                  <p className="text-sm text-brand-700 dark:text-brand-300 flex items-center gap-2">
                     <Info className="w-4 h-4" />
                     This product will be linked to inventory:{' '}
                     <strong>{selectedInventory?.name || 'None selected'}</strong>
@@ -2033,7 +1923,7 @@ export default function AddProductPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Product Name <span className="text-red-500">*</span>
+                    Product Name <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -2042,15 +1932,15 @@ export default function AddProductPage() {
                     value={formData.name}
                     onChange={(e) => handleNameChange(e.target.value)}
                     onBlur={(e) => handleBlur('name', e.target.value)}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
                       errors.name
-                        ? 'border-red-500 dark:border-red-500'
+                        ? 'border-brand-accent-500 dark:border-brand-accent-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter product name"
                   />
                   {errors.name && (
-                    <p className="mt-1 text-sm text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.name}
                     </p>
@@ -2059,7 +1949,7 @@ export default function AddProductPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    SKU <span className="text-red-500">*</span>
+                    SKU <span className="text-brand-accent-500">*</span>
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -2076,9 +1966,9 @@ export default function AddProductPage() {
                         }
                       }}
                       onBlur={(e) => handleBlur('sku', e.target.value)}
-                      className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                      className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
                         errors.sku
-                          ? 'border-red-500 dark:border-red-500'
+                          ? 'border-brand-accent-500 dark:border-brand-accent-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="Auto-generated from product name"
@@ -2091,7 +1981,7 @@ export default function AddProductPage() {
                         setAutoGenerateSKU(true);
                         toast.success('SKU generated');
                       }}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
+                      className="px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                       title="Generate SKU"
                     >
                       <Wand2 className="w-4 h-4" />
@@ -2103,7 +1993,7 @@ export default function AddProductPage() {
                       id="autoGenerateSKU"
                       checked={autoGenerateSKU}
                       onChange={(e) => setAutoGenerateSKU(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-700"
+                      className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-700 transition-colors"
                     />
                     <label
                       htmlFor="autoGenerateSKU"
@@ -2113,7 +2003,7 @@ export default function AddProductPage() {
                     </label>
                   </div>
                   {errors.sku && (
-                    <p className="mt-1 text-sm text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.sku}
                     </p>
@@ -2130,7 +2020,7 @@ export default function AddProductPage() {
                       setFormData({ ...formData, description: e.target.value })
                     }
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Enter product description"
                   />
                 </div>
@@ -2152,9 +2042,9 @@ export default function AddProductPage() {
                         }
                       }}
                       onBlur={(e) => handleBlur('barcode', e.target.value)}
-                      className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                      className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
                         errors.barcode
-                          ? 'border-red-500 dark:border-red-500'
+                          ? 'border-brand-accent-500 dark:border-brand-accent-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="Enter barcode or generate"
@@ -2163,7 +2053,7 @@ export default function AddProductPage() {
                       type="button"
                       onClick={handleGenerateBarcode}
                       disabled={generatingBarcode}
-                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                      className="px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                       title="Generate barcode"
                     >
                       {generatingBarcode ? (
@@ -2174,7 +2064,7 @@ export default function AddProductPage() {
                     </button>
                   </div>
                   {errors.barcode && (
-                    <p className="mt-1 text-sm text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400 flex items-center gap-1">
                       <AlertCircle className="w-4 h-4" />
                       {errors.barcode}
                     </p>
@@ -2198,7 +2088,7 @@ export default function AddProductPage() {
                           toast.info(`Category selected: ${name}`);
                         }
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                     >
                       <option value="">Select Category</option>
                       {categories.map((cat) => (
@@ -2208,13 +2098,13 @@ export default function AddProductPage() {
                       ))}
                     </select>
                     {formData.categoryId && (
-                      <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                      <p className="mt-1 text-xs text-success-600 dark:text-success-400">
                         ✓ Category selected:{' '}
                         {categories.find((c) => c.id === formData.categoryId)?.name}
                       </p>
                     )}
                     {errors.categoryId && (
-                      <p className="mt-1 text-sm text-red-500 dark:text-red-400 flex items-center gap-1">
+                      <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400 flex items-center gap-1">
                         <AlertCircle className="w-4 h-4" />
                         {errors.categoryId}
                       </p>
@@ -2229,7 +2119,7 @@ export default function AddProductPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, supplierId: e.target.value })
                       }
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                     >
                       <option value="">Select Supplier</option>
                       {suppliers.map((sup) => (
@@ -2256,14 +2146,14 @@ export default function AddProductPage() {
                           addTag();
                         }
                       }}
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                       placeholder="Add a tag (press Enter to add)"
                     />
                     <button
                       type="button"
                       onClick={addTag}
                       disabled={!newTag.trim()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-brand focus-ring"
                     >
                       Add
                     </button>
@@ -2272,13 +2162,13 @@ export default function AddProductPage() {
                     {formData.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm"
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-brand-50 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300 rounded-full text-sm"
                       >
                         {tag}
                         <button
                           type="button"
                           onClick={() => removeTag(tag)}
-                          className="hover:text-blue-900 dark:hover:text-blue-100"
+                          className="hover:text-brand-accent-600 dark:hover:text-brand-accent-400 focus-ring"
                         >
                           ×
                         </button>
@@ -2295,7 +2185,7 @@ export default function AddProductPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, isActive: e.target.checked })
                       }
-                      className="w-4 h-4 text-blue-600 rounded dark:bg-gray-700 dark:border-gray-600"
+                      className="w-4 h-4 text-brand-600 rounded dark:bg-gray-700 dark:border-gray-600 focus:ring-brand-500 transition-colors"
                     />
                     <span className="text-sm">Active</span>
                   </label>
@@ -2306,7 +2196,7 @@ export default function AddProductPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, featured: e.target.checked })
                       }
-                      className="w-4 h-4 text-yellow-500 rounded dark:bg-gray-700 dark:border-gray-600"
+                      className="w-4 h-4 text-brand-500 rounded dark:bg-gray-700 dark:border-gray-600 focus:ring-brand-500 transition-colors"
                     />
                     <span className="text-sm flex items-center gap-1">
                       <Star className="w-3.5 h-3.5" /> Featured
@@ -2319,7 +2209,7 @@ export default function AddProductPage() {
                       onChange={(e) =>
                         setFormData({ ...formData, isDigital: e.target.checked })
                       }
-                      className="w-4 h-4 text-purple-500 rounded dark:bg-gray-700 dark:border-gray-600"
+                      className="w-4 h-4 text-secondary-500 rounded dark:bg-gray-700 dark:border-gray-600 focus:ring-secondary-500 transition-colors"
                     />
                     <span className="text-sm">Digital Product</span>
                   </label>
@@ -2327,11 +2217,10 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* PRICING */}
             {activeTab === 'pricing' && (
               <div className="space-y-6">
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+                <div className="bg-warning-50 dark:bg-warning-950/20 rounded-lg p-4 border border-warning-200 dark:border-warning-800">
+                  <p className="text-sm text-warning-700 dark:text-warning-300 flex items-center gap-2">
                     <Info className="w-4 h-4" />
                     Pricing is inherited from the linked inventory item. Changes here
                     will update the inventory price.
@@ -2341,7 +2230,7 @@ export default function AddProductPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Unit Price <span className="text-red-500">*</span>
+                      Unit Price <span className="text-brand-accent-500">*</span>
                     </label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
@@ -2358,16 +2247,16 @@ export default function AddProductPage() {
                           setFormData({ ...formData, unitPrice: e.target.value })
                         }
                         onBlur={(e) => handleBlur('unitPrice', e.target.value)}
-                        className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                        className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                           errors.unitPrice
-                            ? 'border-red-500 dark:border-red-500'
+                            ? 'border-brand-accent-500 dark:border-brand-accent-500'
                             : 'border-gray-300 dark:border-gray-600'
                         }`}
                         placeholder="0.00"
                       />
                     </div>
                     {errors.unitPrice && (
-                      <p className="mt-1 text-sm text-red-500 dark:text-red-400">
+                      <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400">
                         {errors.unitPrice}
                       </p>
                     )}
@@ -2388,7 +2277,7 @@ export default function AddProductPage() {
                         onChange={(e) =>
                           setFormData({ ...formData, costPrice: e.target.value })
                         }
-                        className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                        className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                         placeholder="0.00"
                       />
                     </div>
@@ -2408,14 +2297,14 @@ export default function AddProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, taxRate: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                     placeholder="0.00"
                   />
                 </div>
 
                 {formData.unitPrice && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+                  <div className="bg-brand-50 dark:bg-brand-950/20 rounded-lg p-4 border border-brand-200 dark:border-brand-800">
+                    <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300 mb-2">
                       Price Summary
                     </h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
@@ -2423,7 +2312,7 @@ export default function AddProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Unit Price:
                         </span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-2">
+                        <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
                           ${parseFloat(formData.unitPrice || '0').toFixed(2)}
                         </span>
                       </div>
@@ -2431,7 +2320,7 @@ export default function AddProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Cost Price:
                         </span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-2">
+                        <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
                           ${parseFloat(formData.costPrice || '0').toFixed(2)}
                         </span>
                       </div>
@@ -2439,7 +2328,7 @@ export default function AddProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Profit Margin:
                         </span>
-                        <span className="font-medium text-green-600 dark:text-green-400 ml-2">
+                        <span className="font-medium text-success-600 dark:text-success-400 ml-2 tabular-nums">
                           {formData.costPrice &&
                           parseFloat(formData.costPrice) > 0
                             ? `${(
@@ -2455,7 +2344,7 @@ export default function AddProductPage() {
                         <span className="text-gray-600 dark:text-gray-400">
                           Tax Rate:
                         </span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-2">
+                        <span className="font-medium text-gray-900 dark:text-white ml-2 tabular-nums">
                           {formData.taxRate || 0}%
                         </span>
                       </div>
@@ -2465,12 +2354,11 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* INVENTORY */}
             {activeTab === 'inventory' && (
               <div className="space-y-6">
                 {selectedInventory && (
-                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
-                    <h4 className="text-sm font-medium text-green-800 dark:text-green-300 flex items-center gap-2 mb-3">
+                  <div className="bg-success-50 dark:bg-success-950/20 rounded-lg p-4 border border-success-200 dark:border-success-800">
+                    <h4 className="text-sm font-medium text-success-800 dark:text-success-300 flex items-center gap-2 mb-3">
                       <CheckCircle className="w-4 h-4" />
                       Linked Inventory Item
                     </h4>
@@ -2490,10 +2378,10 @@ export default function AddProductPage() {
                       <div>
                         <span className="text-gray-600 dark:text-gray-400">Stock:</span>
                         <span
-                          className={`font-medium ml-1 block ${
+                          className={`font-medium ml-1 block tabular-nums ${
                             selectedInventory.quantity > 0
-                              ? 'text-green-600 dark:text-green-400'
-                              : 'text-red-600 dark:text-red-400'
+                              ? 'text-success-600 dark:text-success-400'
+                              : 'text-brand-accent-600 dark:text-brand-accent-400'
                           }`}
                         >
                           {selectedInventory.quantity} units
@@ -2528,15 +2416,15 @@ export default function AddProductPage() {
                         </div>
                       )}
                     </div>
-                    <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-3 pt-3 border-t border-success-200 dark:border-success-700 text-xs text-gray-500 dark:text-gray-400">
                       Stock changes to this product will update the linked inventory.
                     </div>
                   </div>
                 )}
 
                 {!selectedInventory && (
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+                  <div className="bg-warning-50 dark:bg-warning-950/20 rounded-lg p-4 border border-warning-200 dark:border-warning-800">
+                    <p className="text-sm text-warning-700 dark:text-warning-300 flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
                       Please select an inventory item from the top of the page.
                     </p>
@@ -2557,15 +2445,15 @@ export default function AddProductPage() {
                       }
                       onBlur={(e) => handleBlur('minStock', e.target.value)}
                       min="0"
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                         errors.minStock
-                          ? 'border-red-500 dark:border-red-500'
+                          ? 'border-brand-accent-500 dark:border-brand-accent-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="0"
                     />
                     {errors.minStock && (
-                      <p className="mt-1 text-sm text-red-500 dark:text-red-400 flex items-center gap-1">
+                      <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400 flex items-center gap-1">
                         <AlertCircle className="w-4 h-4" />
                         {errors.minStock}
                       </p>
@@ -2584,15 +2472,15 @@ export default function AddProductPage() {
                       }
                       onBlur={(e) => handleBlur('maxStock', e.target.value)}
                       min="0"
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums ${
                         errors.maxStock
-                          ? 'border-red-500 dark:border-red-500'
+                          ? 'border-brand-accent-500 dark:border-brand-accent-500'
                           : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="0"
                     />
                     {errors.maxStock && (
-                      <p className="mt-1 text-sm text-red-500 dark:text-red-400 flex items-center gap-1">
+                      <p className="mt-1 text-sm text-brand-accent-500 dark:text-brand-accent-400 flex items-center gap-1">
                         <AlertCircle className="w-4 h-4" />
                         {errors.maxStock}
                       </p>
@@ -2612,19 +2500,17 @@ export default function AddProductPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, weight: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                     placeholder="0.00"
                   />
                 </div>
               </div>
             )}
 
-            {/* IMAGES */}
             {activeTab === 'images' && (
               <div className="space-y-6">{renderImageGallery()}</div>
             )}
 
-            {/* VARIANTS */}
             {activeTab === 'variants' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
@@ -2632,7 +2518,7 @@ export default function AddProductPage() {
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                       Product Variants
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                       {variants.length} of {MAX_VARIANTS} variants configured
                     </p>
                   </div>
@@ -2640,10 +2526,10 @@ export default function AddProductPage() {
                     type="button"
                     onClick={() => setShowVariantForm(true)}
                     disabled={variants.length >= MAX_VARIANTS}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                    className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors focus-ring ${
                       variants.length >= MAX_VARIANTS
                         ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand'
                     }`}
                   >
                     <Plus className="w-4 h-4" />
@@ -2666,7 +2552,7 @@ export default function AddProductPage() {
                     {variants.map((variant, index) => (
                       <div
                         key={variant.id || index}
-                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-brand-50/30 dark:hover:bg-brand-950/10 transition-colors"
                       >
                         <div className="flex items-center justify-between">
                           <div>
@@ -2675,8 +2561,8 @@ export default function AddProductPage() {
                             </p>
                             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                               <span>SKU: {variant.sku}</span>
-                              <span>Price: ${variant.price.toFixed(2)}</span>
-                              <span>Stock: {variant.stock}</span>
+                              <span className="tabular-nums">Price: ${variant.price.toFixed(2)}</span>
+                              <span className="tabular-nums">Stock: {variant.stock}</span>
                               {variant.barcode && (
                                 <span>Barcode: {variant.barcode}</span>
                               )}
@@ -2686,17 +2572,17 @@ export default function AddProductPage() {
                             <button
                               type="button"
                               onClick={() => handleGenerateVariantBarcode(index)}
-                              className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                              className="p-2 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded-lg transition-colors focus-ring"
                               title="Generate barcode"
                             >
-                              <Barcode className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                              <Barcode className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                             </button>
                             <button
                               type="button"
                               onClick={() => removeVariant(index)}
-                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                              className="p-2 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded-lg transition-colors focus-ring"
                             >
-                              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              <Trash2 className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
                             </button>
                           </div>
                         </div>
@@ -2733,19 +2619,19 @@ export default function AddProductPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Name <span className="text-red-500">*</span>
+                          Name <span className="text-brand-accent-500">*</span>
                         </label>
                         <input
                           type="text"
                           value={newVariant.name}
                           onChange={(e) => handleVariantNameChange(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                           placeholder="e.g., Large, Red"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          SKU <span className="text-red-500">*</span>
+                          SKU <span className="text-brand-accent-500">*</span>
                         </label>
                         <div className="flex gap-2">
                           <input
@@ -2757,7 +2643,7 @@ export default function AddProductPage() {
                                 sku: e.target.value.toUpperCase(),
                               })
                             }
-                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                             placeholder="Auto-generated"
                           />
                           <button
@@ -2769,7 +2655,7 @@ export default function AddProductPage() {
                               );
                               setNewVariant((prev) => ({ ...prev, sku: newSKU }));
                             }}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
                             title="Generate SKU"
                           >
                             <Wand2 className="w-4 h-4" />
@@ -2778,7 +2664,7 @@ export default function AddProductPage() {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Price <span className="text-red-500">*</span>
+                          Price <span className="text-brand-accent-500">*</span>
                         </label>
                         <div className="relative">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
@@ -2795,7 +2681,7 @@ export default function AddProductPage() {
                                 price: parseFloat(e.target.value) || 0,
                               })
                             }
-                            className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                            className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                             placeholder="0.00"
                           />
                         </div>
@@ -2814,7 +2700,7 @@ export default function AddProductPage() {
                               stock: parseInt(e.target.value) || 0,
                             })
                           }
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 tabular-nums"
                           placeholder="0"
                         />
                       </div>
@@ -2843,14 +2729,14 @@ export default function AddProductPage() {
                               <button
                                 type="button"
                                 onClick={() => removeVariantImage(index)}
-                                className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 hover:bg-red-700 transition-colors"
+                                className="absolute top-1 right-1 bg-brand-accent-600 text-white rounded-full p-0.5 hover:bg-brand-accent-700 transition-colors focus-ring"
                               >
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
                           ))}
                         {(newVariant.images?.length || 0) < MAX_VARIANT_IMAGES && (
-                          <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
+                          <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 dark:hover:border-brand-400 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-brand-500 dark:hover:text-brand-400 transition-colors focus-ring">
                             <Upload className="w-5 h-5" />
                             <span className="text-[10px] mt-1">Upload</span>
                             <input
@@ -2873,14 +2759,14 @@ export default function AddProductPage() {
                       <button
                         type="button"
                         onClick={() => setShowVariantForm(false)}
-                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors"
+                        className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 text-gray-700 dark:text-gray-300 transition-colors focus-ring"
                       >
                         Cancel
                       </button>
                       <button
                         type="button"
                         onClick={handleAddVariant}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors shadow-brand focus-ring"
                       >
                         Add Variant
                       </button>
@@ -2890,7 +2776,6 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* SEO */}
             {activeTab === 'seo' && (
               <div className="space-y-6">
                 <div>
@@ -2906,10 +2791,10 @@ export default function AddProductPage() {
                         seo: { ...prev.seo, title: e.target.value },
                       }))
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="SEO title"
                   />
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 tabular-nums">
                     {formData.seo.title.length}/60 characters
                   </p>
                 </div>
@@ -2926,10 +2811,10 @@ export default function AddProductPage() {
                       }))
                     }
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="SEO description"
                   />
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 tabular-nums">
                     {formData.seo.description.length}/160 characters
                   </p>
                 </div>
@@ -2946,7 +2831,7 @@ export default function AddProductPage() {
                         seo: { ...prev.seo, slug: e.target.value },
                       }))
                     }
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="custom-url-slug"
                   />
                 </div>
@@ -2965,14 +2850,14 @@ export default function AddProductPage() {
                           addSeoKeyword();
                         }
                       }}
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                       placeholder="Add a keyword"
                     />
                     <button
                       type="button"
                       onClick={addSeoKeyword}
                       disabled={!newSeoKeyword.trim()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-brand focus-ring"
                     >
                       Add
                     </button>
@@ -2981,13 +2866,13 @@ export default function AddProductPage() {
                     {formData.seo.keywords.map((keyword) => (
                       <span
                         key={keyword}
-                        className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm"
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-success-50 dark:bg-success-950/30 text-success-700 dark:text-success-300 rounded-full text-sm"
                       >
                         {keyword}
                         <button
                           type="button"
                           onClick={() => removeSeoKeyword(keyword)}
-                          className="hover:text-red-600 dark:hover:text-red-400"
+                          className="hover:text-brand-accent-600 dark:hover:text-brand-accent-400 focus-ring"
                         >
                           ×
                         </button>
@@ -2998,18 +2883,17 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* ACTIONS */}
             <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
               <Link
                 href="/admin/catalog"
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center transition-colors duration-200"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center transition-colors duration-200 focus-ring"
               >
                 Cancel
               </Link>
               <button
                 type="submit"
                 disabled={loading || !selectedInventory}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 w-full sm:w-auto justify-center"
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 w-full sm:w-auto justify-center shadow-brand focus-ring"
               >
                 {loading ? (
                   <>

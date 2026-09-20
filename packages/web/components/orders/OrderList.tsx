@@ -67,17 +67,17 @@ interface PaginatedResponse<T> {
 
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   COMPLETED:
-    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
   PROCESSING:
-    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
   PENDING:
-    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+    'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
   CANCELLED:
-    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
   REFUNDED:
-    'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
   ON_HOLD:
-    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+    'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
 };
 
 const STATUS_BADGE_FALLBACK =
@@ -258,7 +258,7 @@ export function OrderList() {
       header: 'Order',
       render: (order: Order) => (
         <div>
-          <p className="font-medium text-gray-900 dark:text-white">
+          <p className="font-medium tabular-nums text-gray-900 dark:text-white">
             #{order.orderNumber}
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -289,7 +289,7 @@ export function OrderList() {
       key: 'items',
       header: 'Items',
       render: (order: Order) => (
-        <span className="text-gray-700 dark:text-gray-300">
+        <span className="tabular-nums text-gray-700 dark:text-gray-300">
           {order.items?.length || 0} items
         </span>
       ),
@@ -299,11 +299,11 @@ export function OrderList() {
       header: 'Total',
       render: (order: Order) => (
         <div>
-          <p className="font-bold text-gray-900 dark:text-white">
+          <p className="font-bold tabular-nums text-gray-900 dark:text-white">
             ${order.total.toFixed(2)}
           </p>
           {order.discount > 0 && (
-            <p className="text-sm text-green-600 dark:text-green-400">
+            <p className="text-sm tabular-nums text-success-600 dark:text-success-400">
               -${order.discount.toFixed(2)}
             </p>
           )}
@@ -318,7 +318,7 @@ export function OrderList() {
         const badgeClasses = getStatusBadgeClasses(order.status);
         return (
           <span
-            className={`px-2 py-1 rounded-full text-xs font-medium inline-flex items-center gap-1 ${badgeClasses}`}
+            className={`px-2 py-1 rounded-full text-2xs font-medium inline-flex items-center gap-1 ${badgeClasses}`}
           >
             <StatusIcon className="w-3 h-3" />
             {order.status}
@@ -333,10 +333,11 @@ export function OrderList() {
         <div className="flex items-center gap-2">
           <Link
             href={`/admin/orders/${order.id}`}
-            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+            className="p-1 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition duration-250 focus-ring"
             title="View order"
+            aria-label={`View order ${order.orderNumber}`}
           >
-            <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <Eye className="w-4 h-4 text-brand-600 dark:text-brand-400" />
           </Link>
 
           <button
@@ -345,8 +346,9 @@ export function OrderList() {
               setNewStatus(order.status);
               setShowStatusModal(true);
             }}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
             title="Update status"
+            aria-label={`Update status for order ${order.orderNumber}`}
           >
             <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
           </button>
@@ -358,10 +360,11 @@ export function OrderList() {
                 setCancelReason('');
                 setShowCancelModal(true);
               }}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition duration-250 focus-ring"
               title="Cancel order"
+              aria-label={`Cancel order ${order.orderNumber}`}
             >
-              <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <XCircle className="w-4 h-4 text-danger-600 dark:text-danger-400" />
             </button>
           )}
 
@@ -369,10 +372,11 @@ export function OrderList() {
             <button
               onClick={() => handleConvert(order.id)}
               disabled={processing}
-              className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors disabled:opacity-50"
+              className="p-1 hover:bg-success-100 dark:hover:bg-success-900/30 rounded transition duration-250 focus-ring disabled:opacity-50"
               title="Convert to Sale"
+              aria-label={`Convert order ${order.orderNumber} to sale`}
             >
-              <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+              <TrendingUp className="w-4 h-4 text-success-600 dark:text-success-400" />
             </button>
           )}
         </div>
@@ -385,7 +389,7 @@ export function OrderList() {
   // ============================================
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-200">
+    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen transition duration-250 animate-fade-in">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -399,7 +403,7 @@ export function OrderList() {
 
         <Link
           href="/admin/orders/create"
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors"
+          className="btn-brand"
         >
           <Plus className="w-4 h-4" />
           Create Order
@@ -407,7 +411,7 @@ export function OrderList() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6 transition-colors duration-200">
+      <div className="card-brand shadow-soft mb-6">
         <div className="flex flex-wrap gap-4 items-center">
           <div className="flex-1 min-w-[200px]">
             <div className="relative">
@@ -419,7 +423,7 @@ export function OrderList() {
                 onChange={(e) =>
                   setFilters((prev) => ({ ...prev, search: e.target.value }))
                 }
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250"
               />
             </div>
           </div>
@@ -429,7 +433,7 @@ export function OrderList() {
             onChange={(e) =>
               setFilters((prev) => ({ ...prev, startDate: e.target.value }))
             }
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums"
           />
           <span className="text-gray-500 dark:text-gray-400">to</span>
           <input
@@ -438,14 +442,14 @@ export function OrderList() {
             onChange={(e) =>
               setFilters((prev) => ({ ...prev, endDate: e.target.value }))
             }
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums"
           />
           <select
             value={filters.status}
             onChange={(e) =>
               setFilters((prev) => ({ ...prev, status: e.target.value }))
             }
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250"
           >
             <option value="">All Status</option>
             <option value="PENDING">Pending</option>
@@ -459,7 +463,7 @@ export function OrderList() {
       </div>
 
       {/* Table */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
+      <div className="card-brand shadow-soft p-0 overflow-hidden">
         <Table columns={columns} data={orders} loading={loading} />
         <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           <Pagination
@@ -478,13 +482,13 @@ export function OrderList() {
         onClose={() => setShowCancelModal(false)}
         title="Cancel Order"
       >
-        <div className="p-6 bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div className="p-6 bg-white dark:bg-gray-800 transition duration-250">
           {selectedOrder && (
             <div className="mb-4">
-              <p className="font-medium text-gray-900 dark:text-white">
+              <p className="font-medium tabular-nums text-gray-900 dark:text-white">
                 Order: #{selectedOrder.orderNumber}
               </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
                 Total: ${selectedOrder.total.toFixed(2)}
               </p>
             </div>
@@ -497,21 +501,21 @@ export function OrderList() {
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               rows={3}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 resize-none"
               placeholder="Reason for cancellation..."
             />
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={() => setShowCancelModal(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               onClick={handleCancel}
               disabled={processing || !cancelReason.trim()}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex items-center gap-2"
+              className="px-4 py-2 bg-gradient-to-r from-danger-600 to-brand-accent-500 hover:from-danger-700 hover:to-brand-accent-600 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition duration-250 flex items-center gap-2 focus-ring shadow-brand"
             >
               {processing && <Loader2 className="w-4 h-4 animate-spin" />}
               Cancel Order
@@ -526,10 +530,10 @@ export function OrderList() {
         onClose={() => setShowStatusModal(false)}
         title="Update Order Status"
       >
-        <div className="p-6 bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div className="p-6 bg-white dark:bg-gray-800 transition duration-250">
           {selectedOrder && (
             <div className="mb-4">
-              <p className="font-medium text-gray-900 dark:text-white">
+              <p className="font-medium tabular-nums text-gray-900 dark:text-white">
                 Order: #{selectedOrder.orderNumber}
               </p>
               <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -544,7 +548,7 @@ export function OrderList() {
             <select
               value={newStatus}
               onChange={(e) => setNewStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250"
             >
               <option value="">Select Status</option>
               <option value="PENDING">Pending</option>
@@ -557,14 +561,14 @@ export function OrderList() {
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={() => setShowStatusModal(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+              className="btn-secondary"
             >
               Cancel
             </button>
             <button
               onClick={handleStatusUpdate}
               disabled={processing || !newStatus}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex items-center gap-2"
+              className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {processing && <Loader2 className="w-4 h-4 animate-spin" />}
               Update Status

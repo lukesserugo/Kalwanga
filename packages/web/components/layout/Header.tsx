@@ -459,9 +459,9 @@ export default function Header({
 
   return (
     <header
-      className={`sticky top-0 z-40 transition-all duration-300 ${
+      className={`sticky top-0 z-header transition-all duration-300 ${
         scrolled
-          ? 'bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow-md'
+          ? 'bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow-soft'
           : 'bg-white dark:bg-gray-900'
       } border-b border-gray-200 dark:border-gray-800`}
     >
@@ -470,7 +470,7 @@ export default function Header({
         <div className="flex items-center gap-1 min-w-0 flex-shrink-0">
           <button
             onClick={onMenuClick}
-            className="lg:hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="lg:hidden p-2 rounded-full hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
             aria-label="Toggle menu"
           >
             <Bars3Icon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
@@ -479,16 +479,16 @@ export default function Header({
           <Link
             href={isDashboardPage ? '/dashboard' : '/'}
             prefetch={false}
-            className="flex items-center gap-2 px-2"
+            className="flex items-center gap-2 px-2 focus-ring rounded-lg"
           >
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
+            <div className="w-8 h-8 bg-brand-gradient rounded-lg flex items-center justify-center shadow-brand">
               <span className="text-white font-bold text-sm">P</span>
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-base font-bold text-gray-900 dark:text-white leading-tight">
+              <h1 className="text-base font-bold text-brand-gradient leading-tight">
                 POS System
               </h1>
-              <p className="text-[10px] text-gray-500 dark:text-gray-400 -mt-0.5">
+              <p className="text-2xs text-gray-500 dark:text-gray-400 -mt-0.5">
                 Point of Sale
               </p>
             </div>
@@ -501,11 +501,11 @@ export default function Header({
             <div
               className={`relative group transition-all duration-200 ${
                 isFocused
-                  ? 'ring-2 ring-blue-500 shadow-sm'
+                  ? 'ring-2 ring-brand-500 shadow-soft'
                   : 'ring-1 ring-gray-300 dark:ring-gray-700'
               } rounded-full overflow-hidden`}
             >
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-brand-500 transition-colors" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -520,12 +520,12 @@ export default function Header({
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-12 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
+                  className="absolute right-12 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors focus-ring"
                 >
                   <XMarkIcon className="w-4 h-4 text-gray-400" />
                 </button>
               ) : (
-                <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden lg:block px-1.5 py-0.5 text-[10px] font-mono text-gray-400 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded">
+                <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden lg:block px-1.5 py-0.5 text-2xs font-mono text-gray-400 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded">
                   Ctrl K
                 </kbd>
               )}
@@ -545,10 +545,10 @@ export default function Header({
                     key={item.href}
                     href={item.href}
                     prefetch={false}
-                    className={`flex items-center px-3 py-2 rounded-full text-sm font-medium transition-colors ${
+                    className={`flex items-center px-3 py-2 rounded-full text-sm font-medium transition-colors focus-ring ${
                       isActive
-                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                        ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-800'
                     }`}
                   >
                     <Icon className="w-4 h-4 mr-1.5" />
@@ -563,10 +563,10 @@ export default function Header({
                     setIsMegaMenuOpen(!isMegaMenuOpen);
                     setIsProfileOpen(false);
                   }}
-                  className={`flex items-center px-3 py-2 rounded-full text-sm font-medium transition-colors ${
+                  className={`flex items-center px-3 py-2 rounded-full text-sm font-medium transition-colors focus-ring ${
                     isMegaMenuOpen
-                      ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-800'
                   }`}
                 >
                   <Squares2X2Icon className="w-4 h-4 mr-1.5" />
@@ -585,7 +585,7 @@ export default function Header({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.98 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2 w-[880px] max-h-[70vh] overflow-y-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50"
+                      className="absolute right-0 mt-2 w-[880px] max-h-[70vh] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover border border-gray-200 dark:border-gray-700 z-toast custom-scrollbar"
                     >
                       <div className="p-6">
                         <div className="grid grid-cols-4 gap-6">
@@ -601,21 +601,21 @@ export default function Header({
                                 <div
                                   className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${
                                     isActive
-                                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                                      ? 'bg-brand-50 dark:bg-brand-900/20'
                                       : ''
                                   }`}
                                 >
                                   <GroupIcon
                                     className={`w-5 h-5 ${
                                       isActive
-                                        ? 'text-blue-600 dark:text-blue-400'
+                                        ? 'text-brand-600 dark:text-brand-400'
                                         : 'text-gray-500 dark:text-gray-400'
                                     }`}
                                   />
                                   <h3
                                     className={`text-sm font-semibold ${
                                       isActive
-                                        ? 'text-blue-700 dark:text-blue-300'
+                                        ? 'text-brand-700 dark:text-brand-300'
                                         : 'text-gray-900 dark:text-white'
                                     }`}
                                   >
@@ -637,16 +637,16 @@ export default function Header({
                                           onClick={() =>
                                             setIsMegaMenuOpen(false)
                                           }
-                                          className={`group flex items-start gap-2 px-2 py-2 rounded-lg transition-all duration-150 ${
+                                          className={`group flex items-start gap-2 px-2 py-2 rounded-lg transition-all duration-150 focus-ring ${
                                             isItemActive
-                                              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                                              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
+                                              ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
+                                              : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
                                           }`}
                                         >
                                           <ItemIcon
                                             className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
                                               isItemActive
-                                                ? 'text-blue-600 dark:text-blue-400'
+                                                ? 'text-brand-600 dark:text-brand-400'
                                                 : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'
                                             }`}
                                           />
@@ -654,7 +654,7 @@ export default function Header({
                                             <p
                                               className={`text-sm font-medium ${
                                                 isItemActive
-                                                  ? 'text-blue-700 dark:text-blue-300'
+                                                  ? 'text-brand-700 dark:text-brand-300'
                                                   : 'text-gray-700 dark:text-gray-300'
                                               }`}
                                             >
@@ -667,7 +667,7 @@ export default function Header({
                                             )}
                                           </div>
                                           {isItemActive && (
-                                            <span className="w-1.5 h-1.5 bg-blue-600 rounded-full flex-shrink-0 mt-1.5" />
+                                            <span className="w-1.5 h-1.5 bg-brand-500 rounded-full flex-shrink-0 mt-1.5" />
                                           )}
                                         </Link>
                                       </li>
@@ -684,7 +684,7 @@ export default function Header({
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-gray-500 dark:text-gray-400">
                             Press{' '}
-                            <kbd className="px-1.5 py-0.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-[10px] font-mono">
+                            <kbd className="px-1.5 py-0.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-2xs font-mono">
                               Esc
                             </kbd>{' '}
                             to close
@@ -693,7 +693,7 @@ export default function Header({
                             href="/admin/settings"
                             prefetch={false}
                             onClick={() => setIsMegaMenuOpen(false)}
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium flex items-center gap-1"
+                            className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 font-medium flex items-center gap-1 focus-ring rounded"
                           >
                             <Cog6ToothIcon className="w-3.5 h-3.5" />
                             Settings
@@ -711,11 +711,11 @@ export default function Header({
 
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="p-2 rounded-full hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
             aria-label="Toggle theme"
           >
             {isDark ? (
-              <SunIcon className="w-5 h-5 text-yellow-400" />
+              <SunIcon className="w-5 h-5 text-warning-400" />
             ) : (
               <MoonIcon className="w-5 h-5 text-gray-600" />
             )}
@@ -723,7 +723,7 @@ export default function Header({
 
           <button
             onClick={() => setIsSearchOpen(true)}
-            className="md:hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="md:hidden p-2 rounded-full hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
             aria-label="Search"
           >
             <MagnifyingGlassIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -732,7 +732,7 @@ export default function Header({
           {isDashboardPage && (
             <button
               onClick={() => setIsMegaMenuOpen(!isMegaMenuOpen)}
-              className="lg:hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="lg:hidden p-2 rounded-full hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
               aria-label="Menu"
             >
               <Squares2X2Icon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -741,18 +741,7 @@ export default function Header({
 
           {/*
             Notifications — powered by the shared NotificationBell.
-
-            Replaces the previous in-house bell. The shared component
-            owns its own state, dropdown, SSE subscription, and API
-            calls, so the Header no longer needs:
-              - useNotification() (unreadCount, notifications)
-              - isNotificationsOpen state
-              - notificationsRef (outside-click target)
-              - the entire local <AnimatePresence> dropdown block
-              - the local "close notifications on outside click" branch
-
-            All of those are now the bell's concern. The Header only
-            renders the bell in the same slot where the old one lived.
+            (unchanged — component owns its own styles)
           */}
           <NotificationBell />
 
@@ -763,10 +752,10 @@ export default function Header({
                 setIsProfileOpen(!isProfileOpen);
                 setIsMegaMenuOpen(false);
               }}
-              className="flex items-center gap-1 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="flex items-center gap-1 p-1 rounded-full hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
               aria-label="Profile"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold text-xs shadow-sm">
+              <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-xs shadow-brand">
                 {getInitials()}
               </div>
             </button>
@@ -778,11 +767,11 @@ export default function Header({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 overflow-hidden"
+                  className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover border border-gray-200 dark:border-gray-700 z-toast overflow-hidden"
                 >
-                  <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+                  <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-brand-50 to-secondary-50 dark:from-brand-900/20 dark:to-secondary-900/20">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold text-sm shadow-md">
+                      <div className="w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-sm shadow-brand">
                         {getInitials()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -803,7 +792,7 @@ export default function Header({
                           <Link
                             href="/dashboard"
                             prefetch={false}
-                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <ChartBarIcon className="w-4 h-4" />
@@ -814,7 +803,7 @@ export default function Header({
                           <Link
                             href="/admin/shifts"
                             prefetch={false}
-                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <ClockIcon className="w-4 h-4" />
@@ -824,7 +813,7 @@ export default function Header({
                         <Link
                           href="/admin/sales"
                           prefetch={false}
-                          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                           onClick={() => setIsProfileOpen(false)}
                         >
                           <CurrencyDollarIcon className="w-4 h-4" />
@@ -834,7 +823,7 @@ export default function Header({
                           <Link
                             href="/admin/orders"
                             prefetch={false}
-                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <ClipboardDocumentListIcon className="w-4 h-4" />
@@ -844,7 +833,7 @@ export default function Header({
                         <Link
                           href="/admin/catalog"
                           prefetch={false}
-                          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                           onClick={() => setIsProfileOpen(false)}
                         >
                           <CubeIcon className="w-4 h-4" />
@@ -853,7 +842,7 @@ export default function Header({
                         <Link
                           href="/admin/inventory"
                           prefetch={false}
-                          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                           onClick={() => setIsProfileOpen(false)}
                         >
                           <ClipboardDocumentListIcon className="w-4 h-4" />
@@ -863,7 +852,7 @@ export default function Header({
                           <Link
                             href="/admin/users"
                             prefetch={false}
-                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <UsersIcon className="w-4 h-4" />
@@ -877,7 +866,7 @@ export default function Header({
                     <Link
                       href="/shop"
                       prefetch={false}
-                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                       onClick={() => setIsProfileOpen(false)}
                     >
                       <ShoppingCartIcon className="w-4 h-4" />
@@ -886,7 +875,7 @@ export default function Header({
                     <Link
                       href="/settings"
                       prefetch={false}
-                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                       onClick={() => setIsProfileOpen(false)}
                     >
                       <Cog6ToothIcon className="w-4 h-4" />
@@ -897,7 +886,7 @@ export default function Header({
                         setIsProfileOpen(false);
                         handleSignOut();
                       }}
-                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors w-full text-left"
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 transition-colors w-full text-left focus-ring"
                     >
                       <ArrowRightOnRectangleIcon className="w-4 h-4" />
                       Sign Out
@@ -917,12 +906,12 @@ export default function Header({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-white dark:bg-gray-900 md:hidden"
+            className="fixed inset-0 z-modal bg-white dark:bg-gray-900 md:hidden animate-fade-in"
           >
             <div className="flex items-center gap-3 p-4">
               <button
                 onClick={() => setIsSearchOpen(false)}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-2 rounded-full hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
               >
                 <XMarkIcon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
               </button>
@@ -934,7 +923,7 @@ export default function Header({
                     placeholder="Search products..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
                     autoFocus
                   />
                 </div>
@@ -957,7 +946,7 @@ export default function Header({
                         setIsSearchOpen(false);
                         setSearchQuery('');
                       }}
-                      className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                      className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                     >
                       {item}
                     </button>
@@ -974,7 +963,7 @@ export default function Header({
         {isMegaMenuOpen && (
           <>
             <div
-              className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+              className="fixed inset-0 z-drawer bg-black/50 backdrop-blur-sm lg:hidden"
               onClick={() => setIsMegaMenuOpen(false)}
             />
             <motion.div
@@ -982,7 +971,7 @@ export default function Header({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 right-0 z-50 w-[320px] bg-white dark:bg-gray-900 shadow-2xl lg:hidden overflow-y-auto"
+              className="fixed inset-y-0 right-0 z-modal w-[320px] bg-white dark:bg-gray-900 shadow-card-hover lg:hidden overflow-y-auto sidebar-scroll"
             >
               <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -990,7 +979,7 @@ export default function Header({
                 </h2>
                 <button
                   onClick={() => setIsMegaMenuOpen(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  className="p-2 hover:bg-orange-50 dark:hover:bg-gray-800 rounded-lg transition-colors focus-ring"
                 >
                   <XMarkIcon className="w-5 h-5" />
                 </button>
@@ -1009,7 +998,7 @@ export default function Header({
                       <div
                         className={`flex items-center gap-2 mb-3 ${
                           isActive
-                            ? 'text-blue-600 dark:text-blue-400'
+                            ? 'text-brand-600 dark:text-brand-400'
                             : 'text-gray-900 dark:text-white'
                         }`}
                       >
@@ -1029,10 +1018,10 @@ export default function Header({
                                 href={item.href}
                                 prefetch={false}
                                 onClick={() => setIsMegaMenuOpen(false)}
-                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors focus-ring ${
                                   isItemActive
-                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                                    ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300'
+                                    : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-800'
                                 }`}
                               >
                                 <ItemIcon className="w-4 h-4" />

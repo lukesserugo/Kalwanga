@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartActions.tsx
-
 'use client';
 
 import React from 'react';
@@ -17,11 +15,6 @@ export interface CartActionsProps {
   hasItems?: boolean;
   hasSavedCart?: boolean;
   disabled?: boolean;
-  /**
-   * When false (guest cart), the "Sync Inventory" and "Save for later"
-   * buttons are hidden because those endpoints aren't implemented for
-   * guest carts. Defaults to true.
-   */
   supportsAdvancedActions?: boolean;
 }
 
@@ -50,15 +43,15 @@ export function CartActions({
     baseButton +
     ' border border-gray-300 dark:border-gray-600 ' +
     'text-gray-700 dark:text-gray-300 ' +
-    'hover:bg-gray-50 dark:hover:bg-gray-700 ' +
-    'focus:ring-gray-400';
+    'hover:bg-orange-50 dark:hover:bg-gray-700 ' +
+    'focus:ring-brand-400';
 
   const dangerButton =
     baseButton +
-    ' text-red-600 dark:text-red-400 ' +
-    'border border-red-300 dark:border-red-800 ' +
-    'hover:bg-red-50 dark:hover:bg-red-900/20 ' +
-    'focus:ring-red-500';
+    ' text-danger-600 dark:text-danger-400 ' +
+    'border border-danger-300 dark:border-danger-800 ' +
+    'hover:bg-danger-50 dark:hover:bg-danger-900/20 ' +
+    'focus:ring-danger-500';
 
   return (
     <div className="flex flex-wrap gap-2">

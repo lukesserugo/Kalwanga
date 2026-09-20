@@ -1,5 +1,3 @@
-// packages/web/components/categories/CategoryGrid.tsx
-
 'use client';
 
 import React from 'react';
@@ -8,19 +6,13 @@ import { FolderTree, Plus } from 'lucide-react';
 import { Category } from '../../types/category';
 import { CategoryCard } from './CategoryCard';
 
-// ============================================
-// TYPES
-// ============================================
-
 interface CategoryGridProps {
   categories: Category[];
   onEdit?: (category: Category) => void;
   onDelete?: (category: Category) => void;
   onView?: (category: Category) => void;
   onToggleStatus?: (category: Category) => void;
-  /** Forwarded to cards. Defaults to true. */
   canEdit?: boolean;
-  /** Forwarded to cards. Defaults to true. */
   canDelete?: boolean;
   isLoading?: boolean;
   className?: string;
@@ -29,13 +21,8 @@ interface CategoryGridProps {
   columns?: 2 | 3 | 4 | 5;
   showCreateButton?: boolean;
   onCreateClick?: () => void;
-  /** Card variant forwarded to every card. Defaults to "default". */
   cardVariant?: 'default' | 'featured' | 'compact' | 'minimal';
 }
-
-// ============================================
-// LAYOUT
-// ============================================
 
 const COLUMN_CLASSES: Record<NonNullable<CategoryGridProps['columns']>, string> = {
   2: 'grid-cols-1 sm:grid-cols-2',
@@ -43,10 +30,6 @@ const COLUMN_CLASSES: Record<NonNullable<CategoryGridProps['columns']>, string> 
   4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
   5: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
 };
-
-// ============================================
-// ANIMATION
-// ============================================
 
 const CONTAINER_VARIANTS = {
   hidden: { opacity: 0 },
@@ -64,10 +47,6 @@ const ITEM_VARIANTS = {
     transition: { duration: 0.3, ease: 'easeOut' as const },
   },
 };
-
-// ============================================
-// COMPONENT
-// ============================================
 
 export function CategoryGrid({
   categories,
@@ -88,12 +67,10 @@ export function CategoryGrid({
 }: CategoryGridProps) {
   const columnClass = COLUMN_CLASSES[columns];
 
-  // ---- Loading skeleton ----
   if (isLoading) {
     return <CategoryGridSkeleton columns={columns} className={className} />;
   }
 
-  // ---- Empty state ----
   if (categories.length === 0) {
     return (
       <EmptyState
@@ -105,7 +82,6 @@ export function CategoryGrid({
     );
   }
 
-  // ---- Grid ----
   return (
     <motion.div
       initial="hidden"
@@ -119,7 +95,6 @@ export function CategoryGrid({
           variants={ITEM_VARIANTS}
           className="h-full"
         >
-          {/* Card owns its own hover lift — the wrapper does not */}
           <CategoryCard
             category={category}
             variant={cardVariant}
@@ -135,12 +110,6 @@ export function CategoryGrid({
   );
 }
 
-// ============================================
-// SUB-COMPONENTS
-// ============================================
-
-// ---- Skeleton ----
-
 interface SkeletonProps {
   columns: NonNullable<CategoryGridProps['columns']>;
   className: string;
@@ -148,7 +117,7 @@ interface SkeletonProps {
 
 function CategoryGridSkeleton({ columns, className }: SkeletonProps) {
   const columnClass = COLUMN_CLASSES[columns];
-  const count = columns * 2; // two rows of placeholders
+  const count = columns * 2;
 
   return (
     <div className={`grid ${columnClass} gap-4 ${className}`}>
@@ -160,13 +129,8 @@ function CategoryGridSkeleton({ columns, className }: SkeletonProps) {
           transition={{ delay: Math.min(i * 0.04, 0.3) }}
           className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-pulse"
         >
-          {/* Accent strip placeholder */}
           <div className="h-1 bg-gray-200 dark:bg-gray-700" />
-
-          {/* Avatar area */}
           <div className="relative h-32 bg-gray-100 dark:bg-gray-700/50" />
-
-          {/* Body */}
           <div className="p-4 space-y-3">
             <div className="h-4 w-3/4 bg-gray-200 dark:bg-gray-700 rounded" />
             <div className="h-3 w-1/2 bg-gray-200 dark:bg-gray-700 rounded" />
@@ -184,8 +148,6 @@ function CategoryGridSkeleton({ columns, className }: SkeletonProps) {
     </div>
   );
 }
-
-// ---- Empty state ----
 
 interface EmptyStateProps {
   message: string;
@@ -217,9 +179,9 @@ function EmptyState({
           repeatDelay: 1.6,
           ease: 'easeInOut',
         }}
-        className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 mb-5"
+        className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-100 to-secondary-100 dark:from-brand-900/30 dark:to-secondary-900/30 mb-5"
       >
-        <FolderTree className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+        <FolderTree className="w-10 h-10 text-brand-600 dark:text-brand-400" />
       </motion.div>
 
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -234,7 +196,7 @@ function EmptyState({
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={onCreateClick}
-          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-medium shadow-sm hover:shadow transition-all"
+          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-brand-gradient text-white rounded-xl text-sm font-medium shadow-brand hover:shadow-brand-lg transition-all focus-ring"
         >
           <Plus className="w-4 h-4" />
           Create Category

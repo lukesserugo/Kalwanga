@@ -80,20 +80,20 @@ const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
 };
 
 const PROVIDER_CONFIGS: Record<string, { icon: string; name: string; color: string }> = {
-  STRIPE: { icon: '💳', name: 'Stripe', color: 'blue' },
-  PAYPAL: { icon: '💸', name: 'PayPal', color: 'blue' },
+  STRIPE: { icon: '💳', name: 'Stripe', color: 'primary' },
+  PAYPAL: { icon: '💸', name: 'PayPal', color: 'primary' },
   FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan' },
   PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky' },
   SQUARE: { icon: '⬜', name: 'Square', color: 'gray' },
-  CASH: { icon: '💰', name: 'Cash', color: 'green' },
-  MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'orange' },
+  CASH: { icon: '💰', name: 'Cash', color: 'success' },
+  MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'brand' },
   BANK_TRANSFER: { icon: '🏦', name: 'Bank Transfer', color: 'indigo' },
-  GIFT_CARD: { icon: '🎁', name: 'Gift Card', color: 'pink' },
-  LOYALTY_POINTS: { icon: '⭐', name: 'Loyalty Points', color: 'yellow' },
-  MTN: { icon: '📱', name: 'MTN Mobile Money', color: 'yellow' },
-  AIRTEL: { icon: '📱', name: 'Airtel Money', color: 'red' },
-  TIGO: { icon: '📱', name: 'Tigo Pesa', color: 'blue' },
-  VODAFONE: { icon: '📱', name: 'Vodafone Cash', color: 'red' },
+  GIFT_CARD: { icon: '🎁', name: 'Gift Card', color: 'brand' },
+  LOYALTY_POINTS: { icon: '⭐', name: 'Loyalty Points', color: 'warning' },
+  MTN: { icon: '📱', name: 'MTN Mobile Money', color: 'warning' },
+  AIRTEL: { icon: '📱', name: 'Airtel Money', color: 'danger' },
+  TIGO: { icon: '📱', name: 'Tigo Pesa', color: 'primary' },
+  VODAFONE: { icon: '📱', name: 'Vodafone Cash', color: 'danger' },
 };
 
 // ============================================
@@ -267,7 +267,7 @@ export function PaymentMethodSelector({
 
   // Filter enabled methods
   const enabledMethods = availableMethods.filter(m => m.enabled);
-  const filteredMethods = showAll 
+  const filteredMethods = showAll
     ? enabledMethods
     : enabledMethods.slice(0, 6);
 
@@ -275,8 +275,8 @@ export function PaymentMethodSelector({
 
   const getProviderImageUrl = (method: PaymentMethod): string => {
     if (!method.providerImageUrl) return '';
-    return isDark && method.providerDarkImageUrl 
-      ? method.providerDarkImageUrl 
+    return isDark && method.providerDarkImageUrl
+      ? method.providerDarkImageUrl
       : method.providerImageUrl;
   };
 
@@ -316,16 +316,16 @@ export function PaymentMethodSelector({
   };
 
   return (
-    <div className={className}>
+    <div className={`${className} animate-fade-in`}>
       <div className="space-y-6">
         {/* Selected Method Display */}
         {selected && (
-          <div className={`p-4 rounded-xl border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 ${
-            isDark ? 'border-blue-400' : 'border-blue-500'
-          } transition-all`}>
+          <div className={`p-4 rounded-2xl border-2 border-brand-500 bg-brand-50 dark:bg-brand-900/20 transition duration-250 ${
+            isDark ? 'border-brand-400' : 'border-brand-500'
+          }`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl bg-blue-100 dark:bg-blue-900/30`}>
+                <div className={`p-3 rounded-xl bg-brand-100 dark:bg-brand-900/30`}>
                   {selected.icon}
                 </div>
                 <div>
@@ -334,7 +334,7 @@ export function PaymentMethodSelector({
                       {selected.name}
                     </p>
                     {selected.recommended && (
-                      <span className="text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-0.5 rounded">
+                      <span className="text-2xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 px-2 py-0.5 rounded-md">
                         Recommended
                       </span>
                     )}
@@ -358,14 +358,14 @@ export function PaymentMethodSelector({
                           />
                         </div>
                       ) : null}
-                      <span className={`text-xs ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                      <span className={`text-xs ${isDark ? 'text-brand-400' : 'text-brand-600'}`}>
                         Powered by {selected.providerName}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
-              <CheckCircle className="w-6 h-6 text-blue-500" />
+              <CheckCircle className="w-6 h-6 text-brand-500" />
             </div>
           </div>
         )}
@@ -376,7 +376,7 @@ export function PaymentMethodSelector({
             <p className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
               Available Payment Methods
             </p>
-            <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <span className={`text-2xs tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               {enabledMethods.length} methods
             </span>
           </div>
@@ -396,20 +396,20 @@ export function PaymentMethodSelector({
                   onClick={() => !isComingSoon && onSelect(method.id)}
                   onMouseEnter={() => setHoveredMethod(method.id)}
                   onMouseLeave={() => setHoveredMethod(null)}
-                  className={`p-4 border-2 rounded-xl text-center transition-all relative ${
+                  className={`p-4 border-2 rounded-2xl text-center transition duration-250 relative focus-ring ${
                     isSelected
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md scale-[1.02]'
+                      ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-brand scale-[1.02]'
                       : isComingSoon
                         ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 cursor-not-allowed'
-                        : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md'
+                        : 'border-gray-200 dark:border-gray-600 hover:border-brand-300 dark:hover:border-brand-500 hover:shadow-card-hover'
                   } ${!method.enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                   disabled={!method.enabled || isComingSoon}
                 >
                   <div className="flex flex-col items-center gap-2">
                     {/* Provider Logo or Icon */}
-                    <div className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                    <div className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition duration-250 ${
                       isSelected
-                        ? 'bg-blue-100 dark:bg-blue-900/30'
+                        ? 'bg-brand-100 dark:bg-brand-900/30'
                         : isHovered && !isComingSoon
                           ? 'bg-gray-100 dark:bg-gray-700'
                           : 'bg-gray-100 dark:bg-gray-700/50'
@@ -439,7 +439,7 @@ export function PaymentMethodSelector({
 
                     <span className={`text-sm font-medium ${
                       isSelected
-                        ? 'text-blue-600 dark:text-blue-400'
+                        ? 'text-brand-600 dark:text-brand-400'
                         : isComingSoon
                           ? 'text-gray-400 dark:text-gray-500'
                           : 'text-gray-700 dark:text-gray-300'
@@ -448,29 +448,29 @@ export function PaymentMethodSelector({
                     </span>
 
                     {method.popular && !isComingSoon && (
-                      <span className="absolute top-2 right-2 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 px-1.5 py-0.5 rounded">
+                      <span className="absolute top-2 right-2 text-2xs font-medium bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300 px-1.5 py-0.5 rounded-md">
                         Popular
                       </span>
                     )}
 
                     {method.recommended && !isComingSoon && (
-                      <span className="absolute top-2 left-2 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                      <span className="absolute top-2 left-2 text-2xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 px-1.5 py-0.5 rounded-md">
                         Best
                       </span>
                     )}
 
                     {isComingSoon && (
-                      <span className="absolute top-2 right-2 text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 px-1.5 py-0.5 rounded">
+                      <span className="absolute top-2 right-2 text-2xs font-medium bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300 px-1.5 py-0.5 rounded-md">
                         Soon
                       </span>
                     )}
 
                     {isSelected && (
-                      <CheckCircle className="w-4 h-4 text-blue-500 absolute bottom-2 right-2" />
+                      <CheckCircle className="w-4 h-4 text-brand-500 absolute bottom-2 right-2" />
                     )}
 
                     {showProviderInfo && method.providerName && !isComingSoon && (
-                      <span className={`text-[10px] ${isSelected ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                      <span className={`text-2xs ${isSelected ? 'text-brand-500' : 'text-gray-400 dark:text-gray-500'}`}>
                         {method.providerName}
                       </span>
                     )}
@@ -483,9 +483,9 @@ export function PaymentMethodSelector({
           {enabledMethods.length > 6 && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className={`mt-4 text-sm flex items-center gap-1 ${
-                isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
-              } transition-colors`}
+              className={`mt-4 text-sm flex items-center gap-1 transition duration-250 focus-ring rounded ${
+                isDark ? 'text-brand-400 hover:text-brand-300' : 'text-brand-600 hover:text-brand-700'
+              }`}
             >
               {showAll ? (
                 <>
@@ -505,18 +505,18 @@ export function PaymentMethodSelector({
         {/* Security Badge */}
         <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400 pt-3 border-t border-gray-200 dark:border-gray-700">
           <span className="flex items-center gap-1">
-            <Shield className="w-3 h-3 text-green-500" />
+            <Shield className="w-3 h-3 text-success-500" />
             Secure
           </span>
           <span className="flex items-center gap-1">
-            <Lock className="w-3 h-3 text-blue-500" />
+            <Lock className="w-3 h-3 text-brand-500" />
             Encrypted
           </span>
           <span className="flex items-center gap-1">
-            <Zap className="w-3 h-3 text-orange-500" />
+            <Zap className="w-3 h-3 text-brand-500" />
             Instant
           </span>
-          <span className="flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500">
+          <span className="flex items-center gap-1 text-2xs text-gray-400 dark:text-gray-500">
             <Info className="w-3 h-3" />
             All transactions are secure
           </span>

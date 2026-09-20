@@ -1,18 +1,23 @@
-// providers/AppProviders.tsx - Single provider wrapper
 'use client';
 
-import { ToastProvider } from '../../components/common/Toast';
+import { useEffect } from 'react';
+import { toast, ToastContainer } from '../../utils/toast-manager';
 import { ThemeProvider } from './ThemeProvider';
 import { SidebarProvider } from './SidebarProvider';
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    toast.setDefaultDuration(5000);
+    toast.setMaxToasts(5);
+    // toast.setDefaultPosition('top-right');
+  }, []);
+
   return (
     <ThemeProvider>
-      <ToastProvider>
-        <SidebarProvider>
-          {children}
-        </SidebarProvider>
-      </ToastProvider>
+      <SidebarProvider>
+        {children}
+        <ToastContainer position="top-right" />
+      </SidebarProvider>
     </ThemeProvider>
   );
 }

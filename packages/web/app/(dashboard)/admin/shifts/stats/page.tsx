@@ -64,14 +64,14 @@ export default function ShiftStatsPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/admin/shifts')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
               aria-label="Back to Shifts"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-2">
-                <BarChart3 className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              <div className="bg-secondary-50 dark:bg-secondary-900/30 rounded-lg p-2">
+                <BarChart3 className="h-5 w-5 text-secondary-600 dark:text-secondary-400" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -114,7 +114,7 @@ export default function ShiftStatsPage() {
 
         {/* Top cashiers table — derived from stats.topCashiers */}
         {stats?.topCashiers && stats.topCashiers.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="card-brand p-0 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="font-semibold text-gray-900 dark:text-white">
                 Top Cashiers
@@ -123,7 +123,7 @@ export default function ShiftStatsPage() {
                 Ranked by total revenue this period
               </p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto sidebar-scroll">
               <table className="w-full">
                 <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                   <tr>
@@ -149,14 +149,14 @@ export default function ShiftStatsPage() {
                     >
                       <td className="px-6 py-3">
                         <span
-                          className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold tabular-nums ${
                             index === 0
-                              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                              ? 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300'
                               : index === 1
                               ? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
                               : index === 2
-                              ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                              : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+                              ? 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300'
+                              : 'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300'
                           }`}
                         >
                           {index + 1}
@@ -165,10 +165,10 @@ export default function ShiftStatsPage() {
                       <td className="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white">
                         {cashier.userName}
                       </td>
-                      <td className="px-6 py-3 text-sm text-right text-gray-600 dark:text-gray-300">
+                      <td className="px-6 py-3 text-sm text-right text-gray-600 dark:text-gray-300 tabular-nums">
                         {cashier.shiftCount}
                       </td>
-                      <td className="px-6 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white">
+                      <td className="px-6 py-3 text-sm text-right font-semibold text-gray-900 dark:text-white tabular-nums">
                         {formatCurrencySafe(cashier.totalRevenue)}
                       </td>
                     </tr>

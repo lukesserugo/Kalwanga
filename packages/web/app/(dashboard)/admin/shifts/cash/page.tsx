@@ -172,14 +172,14 @@ export default function ShiftCashPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/admin/shifts')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
               aria-label="Back to Shifts"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-2">
-                <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
+              <div className="bg-success-50 dark:bg-success-900/30 rounded-lg p-2">
+                <DollarSign className="h-5 w-5 text-success-600 dark:text-success-400" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -217,12 +217,12 @@ export default function ShiftCashPage() {
         </div>
 
         {/* Info banner */}
-        <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+        <Card className="p-4 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
           <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-800 dark:text-blue-200">
+            <AlertCircle className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-brand-800 dark:text-brand-200">
               <p className="font-medium">Cash transactions</p>
-              <p className="mt-1 text-blue-700 dark:text-blue-300">
+              <p className="mt-1 text-brand-700 dark:text-brand-300">
                 Cash additions and removals are logged against the open
                 shift session. Only registers with an active session can
                 receive cash transactions.
@@ -244,7 +244,7 @@ export default function ShiftCashPage() {
             </p>
             <Button
               onClick={() => router.push('/admin/shifts/registers/manage')}
-              className="mt-4 bg-blue-600 text-white hover:bg-blue-700"
+              className="mt-4 bg-brand-500 text-white hover:bg-brand-600"
             >
               <Plus className="w-4 h-4 mr-2" />
               Go to Registers
@@ -294,7 +294,7 @@ export default function ShiftCashPage() {
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Current Balance
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                       {formatCurrency(register.cashBalance || 0)}
                     </p>
                   </div>
@@ -305,7 +305,7 @@ export default function ShiftCashPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => openCashModal(register, 'add')}
-                      className="flex-1 border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                      className="flex-1 border-success-300 dark:border-success-700 text-success-600 dark:text-success-400 hover:bg-success-50 dark:hover:bg-success-900/20"
                     >
                       <Plus className="w-4 h-4 mr-1" />
                       Add Cash
@@ -314,7 +314,7 @@ export default function ShiftCashPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => openCashModal(register, 'remove')}
-                      className="flex-1 border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                      className="flex-1 border-warning-300 dark:border-warning-700 text-warning-600 dark:text-warning-400 hover:bg-warning-50 dark:hover:bg-warning-900/20"
                     >
                       <Minus className="w-4 h-4 mr-1" />
                       Remove
@@ -394,8 +394,8 @@ export default function ShiftCashPage() {
               disabled={submitting || !cashAmount || parseFloat(cashAmount) <= 0}
               className={`text-white ${
                 cashModal?.type === 'add'
-                  ? 'bg-green-600 hover:bg-green-700'
-                  : 'bg-orange-600 hover:bg-orange-700'
+                  ? 'bg-success-600 hover:bg-success-700'
+                  : 'bg-warning-600 hover:bg-warning-700'
               }`}
             >
               {submitting

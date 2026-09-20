@@ -89,19 +89,19 @@ const SupplierStatsCards: React.FC<{ stats: SupplierStats; loading?: boolean }> 
   }
 
   const cards = [
-    { label: 'Total Suppliers', value: stats.total, icon: Truck, color: 'blue' },
-    { label: 'Active', value: stats.active, icon: Check, color: 'green' },
-    { label: 'Inactive', value: stats.inactive, icon: X, color: 'red' },
-    { label: 'With Products', value: stats.withProducts, icon: Package, color: 'purple' },
-    { label: 'Avg. Rating', value: stats.averageRating > 0 ? stats.averageRating.toFixed(1) : 'N/A', icon: Star, color: 'yellow' },
+    { label: 'Total Suppliers', value: stats.total, icon: Truck, color: 'brand' },
+    { label: 'Active', value: stats.active, icon: Check, color: 'success' },
+    { label: 'Inactive', value: stats.inactive, icon: X, color: 'danger' },
+    { label: 'With Products', value: stats.withProducts, icon: Package, color: 'brand-accent' },
+    { label: 'Avg. Rating', value: stats.averageRating > 0 ? stats.averageRating.toFixed(1) : 'N/A', icon: Star, color: 'warning' },
   ];
 
   const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
+    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
+    success: 'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
+    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
+    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400',
   };
 
   return (
@@ -114,15 +114,15 @@ const SupplierStatsCards: React.FC<{ stats: SupplierStats; loading?: boolean }> 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow"
+            className="card-brand p-4 hover:shadow-card-hover transition-shadow"
           >
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{card.label}</p>
-              <div className={`p-1.5 rounded-lg ${colorClasses[card.color] || colorClasses.blue}`}>
+              <div className={`p-1.5 rounded-lg ${colorClasses[card.color] || colorClasses.brand}`}>
                 <Icon className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{card.value}</p>
           </motion.div>
         );
       })}
@@ -165,7 +165,7 @@ const SupplierFilters: React.FC<{
   ];
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+    <div className="card-brand p-4">
       <div className="flex flex-wrap gap-3">
         <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -175,7 +175,7 @@ const SupplierFilters: React.FC<{
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             disabled={loading}
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
           />
         </div>
 
@@ -184,7 +184,7 @@ const SupplierFilters: React.FC<{
             value={sortBy}
             onChange={(e) => onSortByChange(e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>Sort by {opt.label}</option>
@@ -194,7 +194,7 @@ const SupplierFilters: React.FC<{
           <button
             onClick={onSortOrderToggle}
             disabled={loading}
-            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 focus-ring"
             aria-label={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
           >
             {sortOrder === 'asc' ? '↑' : '↓'}
@@ -206,9 +206,9 @@ const SupplierFilters: React.FC<{
                 key={opt.value}
                 onClick={() => onStatusFilterChange(opt.value as 'all' | 'active' | 'inactive')}
                 disabled={loading}
-                className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                className={`px-3 py-1 text-xs rounded-lg transition-colors focus-ring ${
                   statusFilter === opt.value
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 } disabled:opacity-50`}
               >
@@ -234,18 +234,18 @@ const SupplierCard: React.FC<{
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
     const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <Star key={`full-${i}`} className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+          <Star key={`full-${i}`} className="w-3 h-3 text-warning-400 fill-warning-400" />
         ))}
-        {hasHalfStar && <StarHalf className="w-3 h-3 text-yellow-400 fill-yellow-400" />}
+        {hasHalfStar && <StarHalf className="w-3 h-3 text-warning-400 fill-warning-400" />}
         {[...Array(emptyStars)].map((_, i) => (
           <Star key={`empty-${i}`} className="w-3 h-3 text-gray-300 dark:text-gray-600" />
         ))}
         {rating > 0 && (
-          <span className="text-xs text-gray-500 ml-1">{rating.toFixed(1)}</span>
+          <span className="text-xs text-gray-500 ml-1 tabular-nums">{rating.toFixed(1)}</span>
         )}
       </div>
     );
@@ -256,13 +256,13 @@ const SupplierCard: React.FC<{
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ y: -4 }}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-all cursor-pointer"
+      className="card-brand p-4 hover:shadow-card-hover transition-all cursor-pointer"
       onClick={() => onView(supplier.id)}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex-shrink-0">
-            <Truck className="w-5 h-5 text-blue-500" />
+          <div className="p-2 bg-brand-50 dark:bg-brand-900/20 rounded-lg flex-shrink-0">
+            <Truck className="w-5 h-5 text-brand-500" />
           </div>
           <div className="min-w-0">
             <h4 className="font-medium text-gray-900 dark:text-white truncate">{supplier.name}</h4>
@@ -279,7 +279,7 @@ const SupplierCard: React.FC<{
               </div>
             )}
             {supplier.companyName && (
-              <div className="flex items-center gap-1 text-xs text-indigo-400 dark:text-indigo-500">
+              <div className="flex items-center gap-1 text-xs text-secondary-400 dark:text-secondary-500">
                 <Database className="w-3 h-3" />
                 <span>{supplier.companyName}</span>
               </div>
@@ -290,19 +290,19 @@ const SupplierCard: React.FC<{
           {canEdit && (
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(supplier.id); }}
-              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+              className="p-1 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition-colors focus-ring"
               aria-label="Edit supplier"
             >
-              <Edit className="w-4 h-4 text-blue-500" />
+              <Edit className="w-4 h-4 text-brand-500" />
             </button>
           )}
           {canDelete && (
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(supplier); }}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition-colors focus-ring"
               aria-label="Delete supplier"
             >
-              <Trash2 className="w-4 h-4 text-red-500" />
+              <Trash2 className="w-4 h-4 text-danger-500" />
             </button>
           )}
         </div>
@@ -337,20 +337,20 @@ const SupplierCard: React.FC<{
         </div>
         <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
           {supplier.productCount !== undefined && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 tabular-nums">
               <Package className="w-3 h-3" />
               {supplier.productCount}
             </span>
           )}
           {supplier.totalSpent !== undefined && supplier.totalSpent > 0 && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 tabular-nums">
               <DollarSign className="w-3 h-3" />
               {supplier.totalSpent.toFixed(2)}
             </span>
           )}
           <span className={`px-2 py-0.5 rounded-full ${
             supplier.isActive
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
               : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
           }`}>
             {supplier.isActive ? 'Active' : 'Inactive'}
@@ -373,13 +373,13 @@ const SupplierTable: React.FC<{
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
     const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <Star key={`full-${i}`} className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+          <Star key={`full-${i}`} className="w-3 h-3 text-warning-400 fill-warning-400" />
         ))}
-        {hasHalfStar && <StarHalf className="w-3 h-3 text-yellow-400 fill-yellow-400" />}
+        {hasHalfStar && <StarHalf className="w-3 h-3 text-warning-400 fill-warning-400" />}
         {[...Array(emptyStars)].map((_, i) => (
           <Star key={`empty-${i}`} className="w-3 h-3 text-gray-300 dark:text-gray-600" />
         ))}
@@ -388,8 +388,8 @@ const SupplierTable: React.FC<{
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand p-0 overflow-hidden">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -405,8 +405,8 @@ const SupplierTable: React.FC<{
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {suppliers.map((supplier) => (
-              <tr 
-                key={supplier.id} 
+              <tr
+                key={supplier.id}
                 className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
                 onClick={() => onView(supplier.id)}
               >
@@ -441,8 +441,8 @@ const SupplierTable: React.FC<{
                 <td className="px-4 py-3">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     supplier.isActive
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                      ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                      : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                   }`}>
                     {supplier.isActive ? 'Active' : 'Inactive'}
                   </span>
@@ -451,7 +451,7 @@ const SupplierTable: React.FC<{
                   <div className="flex items-center justify-end gap-1">
                     <button
                       onClick={() => onView(supplier.id)}
-                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                       title="View"
                     >
                       <Eye className="w-4 h-4 text-gray-500" />
@@ -459,19 +459,19 @@ const SupplierTable: React.FC<{
                     {canEdit && (
                       <button
                         onClick={() => onEdit(supplier.id)}
-                        className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                        className="p-1 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition-colors focus-ring"
                         title="Edit"
                       >
-                        <Edit className="w-4 h-4 text-blue-500" />
+                        <Edit className="w-4 h-4 text-brand-500" />
                       </button>
                     )}
                     {canDelete && (
                       <button
                         onClick={() => onDelete(supplier)}
-                        className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                        className="p-1 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition-colors focus-ring"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-4 h-4 text-danger-500" />
                       </button>
                     )}
                   </div>
@@ -492,15 +492,15 @@ const SupplierTable: React.FC<{
 export default function DashboardSuppliersPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { 
-    canView, 
-    canManage, 
+  const {
+    canView,
+    canManage,
     canEdit,
     canDelete,
     canCreate,
     isLoading: permissionLoading
   } = usePermission();
-  
+
   // State
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -541,7 +541,7 @@ export default function DashboardSuppliersPage() {
     try {
       const response: any = await api.get('/companies');
       let companiesData: Company[] = [];
-      
+
       if (response) {
         if (Array.isArray(response)) {
           companiesData = response;
@@ -558,10 +558,10 @@ export default function DashboardSuppliersPage() {
           companiesData = response.companies;
         }
       }
-      
+
       const activeCompanies = companiesData.filter((c: Company) => c.isActive !== false);
       setCompanies(activeCompanies);
-      
+
       // Store company ID if not already stored
       if (activeCompanies.length > 0 && !localStorage.getItem('companyId')) {
         const firstCompany = activeCompanies[0];
@@ -587,9 +587,9 @@ export default function DashboardSuppliersPage() {
     try {
       if (showLoading) setLoading(true);
       setError(null);
-      
+
       const result = await supplierService.getAllSuppliers({ limit: 100 });
-      
+
       let suppliersData: any[] = [];
       if (result && typeof result === 'object') {
         if ('data' in result && Array.isArray(result.data)) {
@@ -598,7 +598,7 @@ export default function DashboardSuppliersPage() {
           suppliersData = result;
         }
       }
-      
+
       // Map suppliers with company information
       const mappedSuppliers: Supplier[] = suppliersData.map((item: any) => {
         const company = companies.find((c: Company) => c.id === item.companyId);
@@ -628,19 +628,19 @@ export default function DashboardSuppliersPage() {
           creditLimit: item.creditLimit || null,
         };
       });
-      
+
       setSuppliers(mappedSuppliers);
-      
+
       // Calculate stats
       const active = mappedSuppliers.filter(s => s.isActive).length;
       const inactive = mappedSuppliers.filter(s => !s.isActive).length;
       const withProducts = mappedSuppliers.filter(s => (s.productCount || 0) > 0).length;
       const ratings = mappedSuppliers.filter(s => s.rating && s.rating > 0);
-      const averageRating = ratings.length > 0 
-        ? ratings.reduce((sum, s) => sum + (s.rating || 0), 0) / ratings.length 
+      const averageRating = ratings.length > 0
+        ? ratings.reduce((sum, s) => sum + (s.rating || 0), 0) / ratings.length
         : 0;
       const totalSpent = mappedSuppliers.reduce((sum, s) => sum + (s.totalSpent || 0), 0);
-      
+
       setStats({
         total: mappedSuppliers.length,
         active,
@@ -649,7 +649,7 @@ export default function DashboardSuppliersPage() {
         averageRating,
         totalSpent,
       });
-      
+
     } catch (error) {
       console.error('Failed to load suppliers:', error);
       setError('Failed to load suppliers. Please try again.');
@@ -688,18 +688,18 @@ export default function DashboardSuppliersPage() {
   const filteredSuppliers = useMemo(() => {
     let filtered = suppliers.filter(s => {
       // Search filter
-      const matchesSearch = 
+      const matchesSearch =
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (s.contactPerson && s.contactPerson.toLowerCase().includes(searchQuery.toLowerCase())) ||
         s.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (s.companyName && s.companyName.toLowerCase().includes(searchQuery.toLowerCase()));
-      
+
       // Status filter
-      const matchesStatus = 
+      const matchesStatus =
         statusFilter === 'all' ||
         (statusFilter === 'active' && s.isActive) ||
         (statusFilter === 'inactive' && !s.isActive);
-      
+
       return matchesSearch && matchesStatus;
     });
 
@@ -746,7 +746,7 @@ export default function DashboardSuppliersPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading suppliers...</p>
         </div>
       </div>
@@ -766,7 +766,7 @@ export default function DashboardSuppliersPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -781,18 +781,18 @@ export default function DashboardSuppliersPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Truck className="w-6 h-6 text-blue-500" />
+            <Truck className="w-6 h-6 text-brand-500" />
             Suppliers
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
             <span>{suppliers.length} suppliers</span>
             <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              <span className="w-2 h-2 rounded-full bg-success-500"></span>
               {stats.active} active
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+              <span className="w-2 h-2 rounded-full bg-danger-500"></span>
               {stats.inactive} inactive
             </span>
             {stats.withProducts > 0 && (
@@ -805,13 +805,13 @@ export default function DashboardSuppliersPage() {
               <>
                 <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
                 <span className="flex items-center gap-1">
-                  <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                  <Star className="w-3 h-3 text-warning-400 fill-warning-400" />
                   {stats.averageRating.toFixed(1)} avg rating
                 </span>
               </>
             )}
             <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-            <span className="flex items-center gap-1 text-indigo-500">
+            <span className="flex items-center gap-1 text-secondary-500">
               <Database className="w-3 h-3" />
               {companies.length} companies
             </span>
@@ -820,7 +820,7 @@ export default function DashboardSuppliersPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             aria-label="Toggle view mode"
           >
             {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
@@ -828,7 +828,7 @@ export default function DashboardSuppliersPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             aria-label="Refresh suppliers"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -836,7 +836,7 @@ export default function DashboardSuppliersPage() {
           {canCreateSuppliers && (
             <button
               onClick={goToCreateSupplier}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 transition-colors focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Supplier
@@ -850,12 +850,12 @@ export default function DashboardSuppliersPage() {
 
       {/* Error State */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+          <span className="text-danger-700 dark:text-danger-300">{error}</span>
           <button
             onClick={() => loadSuppliers(false)}
-            className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors text-sm"
+            className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-800/30 text-danger-700 dark:text-danger-300 rounded-lg hover:bg-danger-200 dark:hover:bg-danger-800/50 transition-colors text-sm focus-ring"
           >
             Retry
           </button>
@@ -877,18 +877,18 @@ export default function DashboardSuppliersPage() {
 
       {/* Suppliers Grid/List */}
       {filteredSuppliers.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div className="card-brand p-12 text-center">
           <Truck className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No suppliers found</h3>
           <p className="text-gray-500 dark:text-gray-400 mt-2">
-            {searchQuery || statusFilter !== 'all' 
+            {searchQuery || statusFilter !== 'all'
               ? 'Try adjusting your filters or search terms'
               : 'Add your first supplier to get started'}
           </p>
           {canCreateSuppliers && !searchQuery && statusFilter === 'all' && (
             <button
               onClick={goToCreateSupplier}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+              className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors inline-flex items-center gap-2 focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Supplier
@@ -929,7 +929,7 @@ export default function DashboardSuppliersPage() {
       {/* Delete Modal */}
       <AnimatePresence>
         {showDeleteModal && supplierToDelete && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
@@ -939,13 +939,13 @@ export default function DashboardSuppliersPage() {
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                  <AlertCircle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Supplier</h3>
@@ -955,12 +955,12 @@ export default function DashboardSuppliersPage() {
               <p className="text-gray-600 dark:text-gray-300 mb-6">
                 Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{supplierToDelete.name}</strong>?
                 {supplierToDelete.productCount && supplierToDelete.productCount > 0 && (
-                  <span className="block mt-2 text-red-600">
+                  <span className="block mt-2 text-danger-600">
                     ⚠️ This supplier has {supplierToDelete.productCount} associated product{supplierToDelete.productCount !== 1 ? 's' : ''}.
                   </span>
                 )}
                 {supplierToDelete.totalSpent && supplierToDelete.totalSpent > 0 && (
-                  <span className="block mt-1 text-yellow-600">
+                  <span className="block mt-1 text-warning-600">
                     💰 Total purchases: ${supplierToDelete.totalSpent.toFixed(2)}
                   </span>
                 )}
@@ -968,14 +968,14 @@ export default function DashboardSuppliersPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                  className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 transition-colors flex items-center gap-2 disabled:opacity-50 focus-ring"
                 >
                   {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                   {deleting ? 'Deleting...' : 'Delete Supplier'}
@@ -988,11 +988,11 @@ export default function DashboardSuppliersPage() {
 
       {/* Footer Info */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400 dark:text-gray-500">
-        <span>
+        <span className="tabular-nums">
           Showing {filteredSuppliers.length} of {suppliers.length} suppliers
           {statusFilter !== 'all' && ` (filtered by ${statusFilter})`}
         </span>
-        <span>
+        <span className="tabular-nums">
           Last updated: {new Date().toLocaleTimeString()}
         </span>
       </div>

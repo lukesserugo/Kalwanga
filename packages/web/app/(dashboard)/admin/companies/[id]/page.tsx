@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\companies\[id]\page.tsx
+// packages/web/app/(dashboard)/admin/companies/[id]/page.tsx
 
 'use client';
 
@@ -163,7 +163,7 @@ export default function CompanyDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400" />
       </div>
     );
   }
@@ -182,7 +182,7 @@ export default function CompanyDetailPage() {
           <button
             type="button"
             onClick={() => router.push('/admin/companies')}
-            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            className="mt-4 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors focus-ring"
           >
             Back to Companies
           </button>
@@ -199,14 +199,14 @@ export default function CompanyDetailPage() {
           <button
             type="button"
             onClick={() => router.push('/admin/companies')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Back to companies"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           </button>
           <div>
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-xl">
+              <div className="p-2 bg-brand-50 dark:bg-brand-900/30 rounded-xl">
                 {company.logo ? (
                   <img
                     src={company.logo}
@@ -214,7 +214,7 @@ export default function CompanyDetailPage() {
                     className="w-10 h-10 rounded-full object-cover"
                   />
                 ) : (
-                  <Building className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  <Building className="w-6 h-6 text-brand-600 dark:text-brand-400" />
                 )}
               </div>
               <div>
@@ -228,12 +228,12 @@ export default function CompanyDetailPage() {
                   <button
                     type="button"
                     onClick={() => copyToClipboard(company.email, 'Email')}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     title="Copy email"
                     aria-label="Copy email"
                   >
                     {copied === 'Email' ? (
-                      <Check className="w-3 h-3 text-green-500" />
+                      <Check className="w-3 h-3 text-success-500" />
                     ) : (
                       <Copy className="w-3 h-3 text-gray-400" />
                     )}
@@ -245,7 +245,7 @@ export default function CompanyDetailPage() {
           <span
             className={`px-3 py-1 rounded-full text-sm font-medium ${
               company.isActive
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
                 : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
             }`}
           >
@@ -256,10 +256,10 @@ export default function CompanyDetailPage() {
           <button
             type="button"
             onClick={() => copyToClipboard(company.id, 'Company ID')}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2 text-sm"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2 text-sm focus-ring"
           >
             {copied === 'Company ID' ? (
-              <Check className="w-4 h-4 text-green-500" />
+              <Check className="w-4 h-4 text-success-500" />
             ) : (
               <Copy className="w-4 h-4 text-gray-500" />
             )}
@@ -269,7 +269,7 @@ export default function CompanyDetailPage() {
           <Link
             href={`/admin/companies/${company.id}/edit`}
             prefetch={false}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
           >
             <Edit className="w-4 h-4" />
             Edit
@@ -278,7 +278,7 @@ export default function CompanyDetailPage() {
             type="button"
             onClick={handleDelete}
             disabled={deleting}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {deleting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -302,7 +302,7 @@ export default function CompanyDetailPage() {
       {/* Info Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* Company Information */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand p-6">
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
             Company Information
           </h3>
@@ -315,11 +315,11 @@ export default function CompanyDetailPage() {
               <button
                 type="button"
                 onClick={() => copyToClipboard(company.email, 'Email')}
-                className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Copy email"
               >
                 {copied === 'Email' ? (
-                  <Check className="w-3 h-3 text-green-500" />
+                  <Check className="w-3 h-3 text-success-500" />
                 ) : (
                   <Copy className="w-3 h-3 text-gray-400" />
                 )}
@@ -333,11 +333,11 @@ export default function CompanyDetailPage() {
               <button
                 type="button"
                 onClick={() => copyToClipboard(company.phone, 'Phone')}
-                className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Copy phone"
               >
                 {copied === 'Phone' ? (
-                  <Check className="w-3 h-3 text-green-500" />
+                  <Check className="w-3 h-3 text-success-500" />
                 ) : (
                   <Copy className="w-3 h-3 text-gray-400" />
                 )}
@@ -369,11 +369,11 @@ export default function CompanyDetailPage() {
               <button
                 type="button"
                 onClick={() => copyToClipboard(company.id, 'Company ID')}
-                className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 aria-label="Copy company ID"
               >
                 {copied === 'Company ID' ? (
-                  <Check className="w-3 h-3 text-green-500" />
+                  <Check className="w-3 h-3 text-success-500" />
                 ) : (
                   <Copy className="w-3 h-3 text-gray-400" />
                 )}
@@ -383,7 +383,7 @@ export default function CompanyDetailPage() {
         </div>
 
         {/* Additional Info */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand p-6">
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
             Additional Information
           </h3>
@@ -424,13 +424,13 @@ export default function CompanyDetailPage() {
 
       {/* Business Units Section */}
       {company.businessUnits && company.businessUnits.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6">
+        <div className="card-brand p-6 mt-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
                 Business Units
               </h3>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 tabular-nums">
                 {company.businessUnits.length} active business unit
                 {company.businessUnits.length > 1 ? 's' : ''}
               </p>
@@ -439,7 +439,7 @@ export default function CompanyDetailPage() {
             <Link
               href={`/admin/business-units/new?companyId=${company.id}`}
               prefetch={false}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm"
+              className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Unit
@@ -449,7 +449,7 @@ export default function CompanyDetailPage() {
             {company.businessUnits.map((unit) => (
               <div
                 key={unit.id}
-                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-blue-500 transition-colors"
+                className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-brand-500 transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div>
@@ -463,7 +463,7 @@ export default function CompanyDetailPage() {
                       <span
                         className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                           unit.isActive
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
                         }`}
                       >
@@ -479,12 +479,12 @@ export default function CompanyDetailPage() {
                     onClick={() =>
                       copyToClipboard(unit.id, 'Business Unit ID')
                     }
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     title="Copy ID"
                     aria-label="Copy business unit ID"
                   >
                     {copied === 'Business Unit ID' ? (
-                      <Check className="w-3.5 h-3.5 text-green-500" />
+                      <Check className="w-3.5 h-3.5 text-success-500" />
                     ) : (
                       <Copy className="w-3.5 h-3.5 text-gray-400" />
                     )}
@@ -495,7 +495,7 @@ export default function CompanyDetailPage() {
                     {unit.address}
                   </p>
                 )}
-                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                   <span>{unit._count?.products || 0} Products</span>
                   {/* ✅ canonical type uses `userBusinessUnits`, not `users` */}
                   <span>{unit._count?.userBusinessUnits || 0} Users</span>
@@ -508,7 +508,7 @@ export default function CompanyDetailPage() {
       )}
 
       {/* Quick Actions */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6">
+      <div className="card-brand p-6 mt-6">
         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
           Quick Actions
         </h3>
@@ -517,9 +517,9 @@ export default function CompanyDetailPage() {
           <Link
             href={`/admin/business-units/new?companyId=${company.id}`}
             prefetch={false}
-            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors focus-ring"
           >
-            <Briefcase className="w-6 h-6 text-blue-500 mx-auto mb-2" />
+            <Briefcase className="w-6 h-6 text-brand-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Add Business Unit
             </span>
@@ -527,9 +527,9 @@ export default function CompanyDetailPage() {
           <Link
             href={`/admin/users/new?companyId=${company.id}`}
             prefetch={false}
-            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors focus-ring"
           >
-            <Users className="w-6 h-6 text-green-500 mx-auto mb-2" />
+            <Users className="w-6 h-6 text-success-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Add User
             </span>
@@ -537,7 +537,7 @@ export default function CompanyDetailPage() {
           <Link
             href={`/admin/companies/${company.id}/settings`}
             prefetch={false}
-            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors focus-ring"
           >
             <Settings className="w-6 h-6 text-gray-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -547,9 +547,9 @@ export default function CompanyDetailPage() {
           <Link
             href={`/admin/reports?companyId=${company.id}`}
             prefetch={false}
-            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors focus-ring"
           >
-            <TrendingUp className="w-6 h-6 text-purple-500 mx-auto mb-2" />
+            <TrendingUp className="w-6 h-6 text-secondary-500 mx-auto mb-2" />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Reports
             </span>
@@ -558,26 +558,26 @@ export default function CompanyDetailPage() {
       </div>
 
       {/* Company ID Helper for Supplier Creation */}
-      <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-4">
+      <div className="mt-6 bg-brand-50 dark:bg-brand-900/20 rounded-xl border border-brand-200 dark:border-brand-800 p-4">
         <div className="flex items-start gap-3">
-          <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-            <Info className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+            <Info className="w-5 h-5 text-brand-600 dark:text-brand-400" />
           </div>
           <div className="flex-1">
-            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">
+            <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300">
               Company ID Ready
             </h4>
-            <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
+            <p className="text-sm text-brand-700 dark:text-brand-400 mt-1">
               Use this Company ID when creating suppliers:
             </p>
             <div className="flex items-center gap-2 mt-2">
-              <code className="px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg text-xs font-mono text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700">
+              <code className="px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg text-xs font-mono text-brand-800 dark:text-brand-300 border border-brand-200 dark:border-brand-700">
                 {company.id}
               </code>
               <button
                 type="button"
                 onClick={() => copyToClipboard(company.id, 'Company ID')}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm"
+                className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm focus-ring"
               >
                 {copied === 'Company ID' ? (
                   <>

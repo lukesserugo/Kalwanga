@@ -49,8 +49,8 @@ export function OnboardingChecklist({
       {/* Completed summary row */}
       {completedIds.length > 0 && (
         <div className="px-3 py-2.5">
-          <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-            <CheckCircleIcon className="w-4 h-4 text-emerald-500" />
+          <p className="text-2xs tabular-nums text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+            <CheckCircleIcon className="w-4 h-4 text-success-500" />
             {completedIds.length} step
             {completedIds.length === 1 ? '' : 's'} completed
           </p>
@@ -76,8 +76,8 @@ export function OnboardingChecklist({
       {/* Skipped summary row */}
       {skippedIds.length > 0 && (
         <div className="px-3 py-2.5">
-          <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-            <MinusCircleIcon className="w-4 h-4 text-purple-500" />
+          <p className="text-2xs tabular-nums text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+            <MinusCircleIcon className="w-4 h-4 text-secondary-500" />
             {skippedIds.length} step
             {skippedIds.length === 1 ? '' : 's'} skipped
           </p>
@@ -106,8 +106,8 @@ function ActiveStepRow({
 }) {
   const dot = isCurrent ? (
     <span className="relative flex items-center justify-center w-5 h-5 flex-shrink-0">
-      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60" />
-      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-60" />
+      <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-500" />
     </span>
   ) : (
     <span className="flex items-center justify-center w-5 h-5 flex-shrink-0">
@@ -117,9 +117,9 @@ function ActiveStepRow({
 
   const body = (
     <div
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition duration-250 ${
         isCurrent
-          ? 'bg-blue-50 dark:bg-blue-900/20'
+          ? 'bg-brand-50 dark:bg-brand-900/20'
           : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'
       }`}
     >
@@ -128,26 +128,26 @@ function ActiveStepRow({
         <p
           className={`text-sm truncate ${
             isCurrent
-              ? 'font-semibold text-blue-700 dark:text-blue-300'
+              ? 'font-semibold text-brand-700 dark:text-brand-300'
               : 'text-gray-700 dark:text-gray-300'
           }`}
         >
           {step.displayPosition}. {step.name}
           {isOptional && (
-            <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-400">
+            <span className="ml-2 text-2xs uppercase tracking-wider text-gray-400 dark:text-gray-500 eyebrow">
               optional
             </span>
           )}
         </p>
         {!isCurrent && (
-          <p className="text-[11px] text-gray-400 mt-0.5 truncate">
+          <p className="text-2xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
             {step.reason}
           </p>
         )}
       </div>
       <ChevronRightIcon
         className={`w-4 h-4 flex-shrink-0 ${
-          isCurrent ? 'text-blue-500' : 'text-gray-300 dark:text-gray-600'
+          isCurrent ? 'text-brand-500 dark:text-brand-400' : 'text-gray-300 dark:text-gray-600'
         }`}
       />
     </div>
@@ -161,7 +161,7 @@ function ActiveStepRow({
   return (
     <Link
       href={`/onboarding/step/${step.id}?from=guide`}
-      className="block"
+      className="block focus-ring rounded-lg"
       onClick={onNavigate}
     >
       {body}

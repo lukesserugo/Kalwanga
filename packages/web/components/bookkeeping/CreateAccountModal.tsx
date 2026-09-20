@@ -89,9 +89,9 @@ export default function CreateAccountModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 animate-fade-in">
       <div
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -101,7 +101,7 @@ export default function CreateAccountModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            className="p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           >
             <XMarkIcon className="w-5 h-5 text-gray-500" />
           </button>
@@ -117,7 +117,7 @@ export default function CreateAccountModal({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="e.g., 1300"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-brand font-mono tabular-nums"
               autoFocus
             />
           </div>
@@ -131,7 +131,7 @@ export default function CreateAccountModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Prepaid Expenses"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="input-brand"
             />
           </div>
 
@@ -143,7 +143,7 @@ export default function CreateAccountModal({
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                className="input-brand"
               >
                 {TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -160,7 +160,7 @@ export default function CreateAccountModal({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                className="input-brand"
               >
                 {CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -172,7 +172,7 @@ export default function CreateAccountModal({
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+            <div className="p-3 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg text-sm text-danger-700 dark:text-danger-400 animate-slide-down">
               {error}
             </div>
           )}
@@ -182,14 +182,14 @@ export default function CreateAccountModal({
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="btn-secondary focus-ring disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg text-sm disabled:opacity-50 transition-all focus-ring"
             >
               {submitting ? 'Saving…' : isEdit ? 'Update' : 'Create'}
             </button>

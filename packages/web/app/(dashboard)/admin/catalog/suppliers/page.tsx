@@ -74,19 +74,16 @@ export default function DashboardSuppliersPage() {
   const [sortBy, setSortBy] = useState<'name' | 'rating' | 'createdAt'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  // Permission checks using PermissionResource enum
   const canViewSuppliers = canView(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
   const canManageSuppliers = canManage(PermissionResource.SUPPLIER);
   const canEditSuppliers = canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
   const canDeleteSuppliers = canDelete(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
   const canCreateSuppliers = canCreate(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
 
-  // Set isClient to true once component mounts
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Load suppliers - only on client side and if user has permission
   useEffect(() => {
     if (isClient && canViewSuppliers) {
       loadSuppliers();
@@ -151,14 +148,12 @@ export default function DashboardSuppliersPage() {
       return;
     }
     
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
       toast.error('Please enter a valid email address');
       return;
     }
 
-    // Validate phone format (basic)
     const phoneRegex = /^[\+\d\s\-\(\)]{7,20}$/;
     if (!phoneRegex.test(formData.phone)) {
       toast.error('Please enter a valid phone number');
@@ -168,7 +163,6 @@ export default function DashboardSuppliersPage() {
     setSubmitting(true);
     try {
       if (editingSupplier) {
-        // ✅ FIX: Only include fields that have values (filter out null/undefined)
         const updateData: Record<string, any> = {
           name: formData.name,
           email: formData.email,
@@ -176,7 +170,6 @@ export default function DashboardSuppliersPage() {
           isActive: formData.isActive,
         };
         
-        // Only add optional fields if they have values
         if (formData.address && formData.address.trim() !== '') {
           updateData.address = formData.address;
         }
@@ -196,7 +189,6 @@ export default function DashboardSuppliersPage() {
         await supplierService.updateSupplier(editingSupplier.id, updateData);
         toast.success('Supplier updated successfully');
       } else {
-        // ✅ FIX: Only include fields that have values
         const createData: Record<string, any> = {
           name: formData.name,
           email: formData.email,
@@ -206,7 +198,6 @@ export default function DashboardSuppliersPage() {
           userId: 'default',
         };
         
-        // Only add optional fields if they have values
         if (formData.address && formData.address.trim() !== '') {
           createData.address = formData.address;
         }
@@ -277,14 +268,14 @@ export default function DashboardSuppliersPage() {
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <Star key={`full-${i}`} className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+          <Star key={`full-${i}`} className="w-3 h-3 text-brand-400 fill-brand-400" />
         ))}
-        {hasHalfStar && <StarHalf className="w-3 h-3 text-yellow-400 fill-yellow-400" />}
+        {hasHalfStar && <StarHalf className="w-3 h-3 text-brand-400 fill-brand-400" />}
         {[...Array(emptyStars)].map((_, i) => (
           <Star key={`empty-${i}`} className="w-3 h-3 text-gray-300 dark:text-gray-600" />
         ))}
         {rating > 0 && (
-          <span className="text-xs text-gray-500 ml-1">{rating.toFixed(1)}</span>
+          <span className="text-xs text-gray-500 ml-1 tabular-nums">{rating.toFixed(1)}</span>
         )}
       </div>
     );
@@ -300,13 +291,13 @@ export default function DashboardSuppliersPage() {
             onMouseEnter={() => setHoverRating(star)}
             onMouseLeave={() => setHoverRating(0)}
             onClick={() => setRating(star)}
-            className="p-1 hover:scale-110 transition-transform focus:outline-none"
+            className="p-1 hover:scale-110 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded"
             aria-label={`Rate ${star} stars`}
           >
             <Star
               className={`w-6 h-6 ${
                 star <= (hoverRating || rating)
-                  ? 'text-yellow-400 fill-yellow-400'
+                  ? 'text-brand-400 fill-brand-400'
                   : 'text-gray-300 dark:text-gray-600'
               } transition-colors`}
             />
@@ -319,7 +310,6 @@ export default function DashboardSuppliersPage() {
     );
   };
 
-  // Filter and sort suppliers
   const filteredSuppliers = useMemo(() => {
     let filtered = suppliers.filter(s =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -327,7 +317,6 @@ export default function DashboardSuppliersPage() {
       s.email.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    // Sort
     filtered.sort((a, b) => {
       let comparison = 0;
       switch (sortBy) {
@@ -349,16 +338,14 @@ export default function DashboardSuppliersPage() {
     return filtered;
   }, [suppliers, searchQuery, sortBy, sortOrder]);
 
-  // Loading state
   if (permissionLoading || !isClient || (loading && suppliers.length === 0)) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
       </div>
     );
   }
 
-  // Permission check AFTER all hooks
   if (!canViewSuppliers) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
@@ -371,7 +358,7 @@ export default function DashboardSuppliersPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
         >
           Back to Catalog
         </button>
@@ -385,17 +372,17 @@ export default function DashboardSuppliersPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Truck className="w-6 h-6 text-blue-500" />
+            <Truck className="w-6 h-6 text-brand-500" />
             Suppliers
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
             {suppliers.length} suppliers • Manage your product suppliers
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
             aria-label="Toggle view mode"
           >
             {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
@@ -403,7 +390,7 @@ export default function DashboardSuppliersPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             aria-label="Refresh suppliers"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -415,7 +402,7 @@ export default function DashboardSuppliersPage() {
                 resetForm();
                 setShowAddModal(true);
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+              className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Supplier
@@ -426,12 +413,12 @@ export default function DashboardSuppliersPage() {
 
       {/* Error State */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300">{error}</span>
+        <div className="bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-500 flex-shrink-0" />
+          <span className="text-brand-accent-700 dark:text-brand-accent-300">{error}</span>
           <button
             onClick={() => loadSuppliers(false)}
-            className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors text-sm"
+            className="ml-auto px-3 py-1 bg-brand-accent-100 dark:bg-brand-accent-800/30 text-brand-accent-700 dark:text-brand-accent-300 rounded-lg hover:bg-brand-accent-200 dark:hover:bg-brand-accent-800/50 transition-colors text-sm focus-ring"
           >
             Retry
           </button>
@@ -448,14 +435,14 @@ export default function DashboardSuppliersPage() {
               placeholder="Search suppliers by name, contact, or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors"
             />
           </div>
           <div className="flex items-center gap-2">
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as 'name' | 'rating' | 'createdAt')}
-              className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0"
+              className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 transition-colors"
             >
               <option value="name">Sort by Name</option>
               <option value="rating">Sort by Rating</option>
@@ -463,7 +450,7 @@ export default function DashboardSuppliersPage() {
             </select>
             <button
               onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600 transition-colors focus-ring"
               aria-label={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
             >
               {sortOrder === 'asc' ? '↑' : '↓'}
@@ -487,7 +474,7 @@ export default function DashboardSuppliersPage() {
                 resetForm();
                 setShowAddModal(true);
               }}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+              className="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors inline-flex items-center gap-2 shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Supplier
@@ -502,12 +489,12 @@ export default function DashboardSuppliersPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ y: -4 }}
-              className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-all"
+              className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800 transition-all"
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex-shrink-0">
-                    <Truck className="w-5 h-5 text-blue-500" />
+                  <div className="p-2 bg-brand-50 dark:bg-brand-950/20 rounded-lg flex-shrink-0">
+                    <Truck className="w-5 h-5 text-brand-500" />
                   </div>
                   <div className="min-w-0">
                     <h4 className="font-medium text-gray-900 dark:text-white truncate">{supplier.name}</h4>
@@ -538,10 +525,10 @@ export default function DashboardSuppliersPage() {
                           setRating(supplier.rating || 0);
                           setShowAddModal(true);
                         }}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                         aria-label="Edit supplier"
                       >
-                        <Edit className="w-4 h-4 text-gray-500" />
+                        <Edit className="w-4 h-4 text-brand-500" />
                       </button>
                     )}
                     {canDeleteSuppliers && (
@@ -550,10 +537,10 @@ export default function DashboardSuppliersPage() {
                           setSupplierToDelete(supplier);
                           setShowDeleteModal(true);
                         }}
-                        className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                        className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                         aria-label="Delete supplier"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-4 h-4 text-brand-accent-500" />
                       </button>
                     )}
                   </div>
@@ -583,14 +570,14 @@ export default function DashboardSuppliersPage() {
                 </div>
                 <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                   {supplier.productCount !== undefined && (
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 tabular-nums">
                       <Package className="w-3 h-3" />
                       {supplier.productCount}
                     </span>
                   )}
                   <span className={`px-2 py-0.5 rounded-full ${
                     supplier.isActive
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                      ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
                       : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
                   }`}>
                     {supplier.isActive ? 'Active' : 'Inactive'}
@@ -602,7 +589,7 @@ export default function DashboardSuppliersPage() {
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -617,7 +604,7 @@ export default function DashboardSuppliersPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <tr key={supplier.id} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Truck className="w-4 h-4 text-gray-400" />
@@ -631,8 +618,8 @@ export default function DashboardSuppliersPage() {
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         supplier.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
+                          : 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300'
                       }`}>
                         {supplier.isActive ? 'Active' : 'Inactive'}
                       </span>
@@ -656,9 +643,9 @@ export default function DashboardSuppliersPage() {
                               setRating(supplier.rating || 0);
                               setShowAddModal(true);
                             }}
-                            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                            className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                           >
-                            <Edit className="w-4 h-4 text-blue-500" />
+                            <Edit className="w-4 h-4 text-brand-500" />
                           </button>
                         )}
                         {canDeleteSuppliers && (
@@ -667,9 +654,9 @@ export default function DashboardSuppliersPage() {
                               setSupplierToDelete(supplier);
                               setShowDeleteModal(true);
                             }}
-                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                           >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4 text-brand-accent-500" />
                           </button>
                         )}
                       </div>
@@ -680,7 +667,7 @@ export default function DashboardSuppliersPage() {
             </table>
           </div>
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <span className="text-sm text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
               Showing {filteredSuppliers.length} of {suppliers.length} suppliers
             </span>
           </div>
@@ -696,11 +683,11 @@ export default function DashboardSuppliersPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 custom-scrollbar"
             >
               <button
                 onClick={() => { setShowAddModal(false); setEditingSupplier(null); }}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -710,37 +697,37 @@ export default function DashboardSuppliersPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Supplier Name <span className="text-red-500">*</span>
+                    Supplier Name <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter supplier name"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email <span className="text-red-500">*</span>
+                    Email <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter email"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Phone <span className="text-red-500">*</span>
+                    Phone <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter phone number"
                   />
                 </div>
@@ -752,7 +739,7 @@ export default function DashboardSuppliersPage() {
                     type="text"
                     value={formData.contactPerson}
                     onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter contact person"
                   />
                 </div>
@@ -764,7 +751,7 @@ export default function DashboardSuppliersPage() {
                     type="text"
                     value={formData.address}
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter address"
                   />
                 </div>
@@ -776,7 +763,7 @@ export default function DashboardSuppliersPage() {
                     type="text"
                     value={formData.taxId}
                     onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter tax ID"
                   />
                 </div>
@@ -788,7 +775,7 @@ export default function DashboardSuppliersPage() {
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors resize-y"
                     placeholder="Additional notes about the supplier"
                   />
                 </div>
@@ -804,7 +791,7 @@ export default function DashboardSuppliersPage() {
                       type="checkbox"
                       checked={formData.isActive}
                       onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                     />
                     <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
                   </label>
@@ -813,14 +800,14 @@ export default function DashboardSuppliersPage() {
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => { setShowAddModal(false); setEditingSupplier(null); }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSubmit}
                   disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-brand focus-ring"
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   {editingSupplier ? 'Update' : 'Create'}
@@ -844,13 +831,13 @@ export default function DashboardSuppliersPage() {
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5" />
               </button>
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                <div className="p-2 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-lg">
+                  <AlertCircle className="w-6 h-6 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Supplier</h3>
@@ -860,7 +847,7 @@ export default function DashboardSuppliersPage() {
               <p className="text-gray-600 dark:text-gray-300 mb-6">
                 Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{supplierToDelete.name}</strong>?
                 {supplierToDelete.productCount && supplierToDelete.productCount > 0 && (
-                  <span className="block mt-2 text-red-600">
+                  <span className="block mt-2 text-brand-accent-600">
                     ⚠️ This supplier has {supplierToDelete.productCount} associated products.
                   </span>
                 )}
@@ -868,13 +855,13 @@ export default function DashboardSuppliersPage() {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 transition-colors flex items-center gap-2 shadow-brand focus-ring"
                 >
                   <Trash2 className="w-4 h-4" />
                   Delete Supplier

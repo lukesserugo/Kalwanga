@@ -7,7 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { userService } from '../../../../../../services/userService';
 import { toast } from 'react-hot-toast';
-import { 
+import {
   ArrowLeft, Activity, Search, Filter, Download, RefreshCw,
   Loader2, AlertCircle, CheckCircle, XCircle, ChevronLeft,
   ChevronRight, Calendar, Clock, User, Shield, Key, Mail,
@@ -69,11 +69,11 @@ interface ActivityStats {
 
 // Stats Card Component - Fixed to use bgColor instead of color
 const StatsCard = ({ title, value, icon, bgColor, subtitle }: any) => (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+  <div className="card-brand p-4 hover:shadow-card-hover transition-shadow">
     <div className="flex items-center justify-between">
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{title}</p>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{value}</p>
         {subtitle && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtitle}</p>}
       </div>
       <div className={`p-3 rounded-lg ${bgColor || 'bg-gray-100 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400'} flex-shrink-0`}>
@@ -85,33 +85,33 @@ const StatsCard = ({ title, value, icon, bgColor, subtitle }: any) => (
 
 const ACTION_TYPES = [
   { value: 'all', label: 'All Actions', icon: <Activity className="w-4 h-4" />, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400' },
-  { value: 'LOGIN', label: 'Login', icon: <LogIn className="w-4 h-4" />, color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' },
-  { value: 'LOGOUT', label: 'Logout', icon: <LogOut className="w-4 h-4" />, color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' },
-  { value: 'CREATE', label: 'Create', icon: <FileText className="w-4 h-4" />, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
-  { value: 'UPDATE', label: 'Update', icon: <Edit className="w-4 h-4" />, color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  { value: 'DELETE', label: 'Delete', icon: <Trash2 className="w-4 h-4" />, color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
-  { value: 'ROLE_CHANGE', label: 'Role Change', icon: <Shield className="w-4 h-4" />, color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' },
-  { value: 'PERMISSION_CHANGE', label: 'Permission Change', icon: <Key className="w-4 h-4" />, color: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400' },
-  { value: 'PASSWORD_CHANGE', label: 'Password Change', icon: <Lock className="w-4 h-4" />, color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400' },
-  { value: 'PROFILE_UPDATE', label: 'Profile Update', icon: <User className="w-4 h-4" />, color: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400' },
-  { value: 'SETTINGS_CHANGE', label: 'Settings Change', icon: <Settings className="w-4 h-4" />, color: 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400' },
-  { value: 'EXPORT', label: 'Export', icon: <Download className="w-4 h-4" />, color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400' },
-  { value: 'IMPORT', label: 'Import', icon: <UploadCloud className="w-4 h-4" />, color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  { value: 'LOGIN', label: 'Login', icon: <LogIn className="w-4 h-4" />, color: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400' },
+  { value: 'LOGOUT', label: 'Logout', icon: <LogOut className="w-4 h-4" />, color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400' },
+  { value: 'CREATE', label: 'Create', icon: <FileText className="w-4 h-4" />, color: 'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400' },
+  { value: 'UPDATE', label: 'Update', icon: <Edit className="w-4 h-4" />, color: 'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400' },
+  { value: 'DELETE', label: 'Delete', icon: <Trash2 className="w-4 h-4" />, color: 'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400' },
+  { value: 'ROLE_CHANGE', label: 'Role Change', icon: <Shield className="w-4 h-4" />, color: 'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400' },
+  { value: 'PERMISSION_CHANGE', label: 'Permission Change', icon: <Key className="w-4 h-4" />, color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-900/30 dark:text-brand-accent-400' },
+  { value: 'PASSWORD_CHANGE', label: 'Password Change', icon: <Lock className="w-4 h-4" />, color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400' },
+  { value: 'PROFILE_UPDATE', label: 'Profile Update', icon: <User className="w-4 h-4" />, color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-900/30 dark:text-brand-accent-400' },
+  { value: 'SETTINGS_CHANGE', label: 'Settings Change', icon: <Settings className="w-4 h-4" />, color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400' },
+  { value: 'EXPORT', label: 'Export', icon: <Download className="w-4 h-4" />, color: 'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400' },
+  { value: 'IMPORT', label: 'Import', icon: <UploadCloud className="w-4 h-4" />, color: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400' },
 ];
 
 const STATUS_TYPES = [
   { value: 'all', label: 'All Status', color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400' },
-  { value: 'success', label: 'Success', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' },
-  { value: 'failed', label: 'Failed', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
-  { value: 'pending', label: 'Pending', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' },
+  { value: 'success', label: 'Success', color: 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400' },
+  { value: 'failed', label: 'Failed', color: 'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400' },
+  { value: 'pending', label: 'Pending', color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400' },
 ];
 
 const SEVERITY_TYPES = [
   { value: 'all', label: 'All Severity', color: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-400' },
-  { value: 'info', label: 'Info', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' },
-  { value: 'warning', label: 'Warning', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' },
-  { value: 'error', label: 'Error', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
-  { value: 'critical', label: 'Critical', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' },
+  { value: 'info', label: 'Info', color: 'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400' },
+  { value: 'warning', label: 'Warning', color: 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400' },
+  { value: 'error', label: 'Error', color: 'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400' },
+  { value: 'critical', label: 'Critical', color: 'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400' },
 ];
 
 const DEVICE_TYPES = [
@@ -125,7 +125,7 @@ export default function UserActivityPage() {
   const params = useParams();
   const userId = params?.id as string;
   const { can, isSuperAdmin, isAdmin } = useAuth();
-  
+
   // State management
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,7 +157,7 @@ export default function UserActivityPage() {
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'all'>('all');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
-  
+
   // Refs
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -174,7 +174,7 @@ export default function UserActivityPage() {
       setDebouncedSearch(filters.search);
       setCurrentPage(1);
     }, 500);
-    
+
     return () => {
       if (searchTimeout.current) {
         clearTimeout(searchTimeout.current);
@@ -189,7 +189,7 @@ export default function UserActivityPage() {
         setShowExportMenu(false);
       }
     };
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
@@ -211,23 +211,23 @@ export default function UserActivityPage() {
     try {
       if (showLoading) setLoading(true);
       setError(null);
-      
+
       const params: any = {
         page: currentPage,
         limit: pageSize,
         sortBy: sortConfig.key,
         sortOrder: sortConfig.direction,
       };
-      
+
       if (debouncedSearch) params.search = debouncedSearch;
       if (filters.action !== 'all') params.action = filters.action;
       if (filters.status !== 'all') params.status = filters.status;
       if (filters.severity !== 'all') params.severity = filters.severity;
       if (filters.dateFrom) params.dateFrom = filters.dateFrom;
       if (filters.dateTo) params.dateTo = filters.dateTo;
-      
+
       const response = await userService.getUserActivity(userId, params);
-      
+
       if (response && response.data) {
         setActivities(response.data);
         setTotalActivities(response.total || response.data.length);
@@ -236,7 +236,7 @@ export default function UserActivityPage() {
     } catch (error: any) {
       console.error('Failed to load activities:', error);
       setError(error?.message || 'Failed to load activities');
-      
+
       const mockActivities = generateMockActivities();
       setActivities(mockActivities);
       setTotalActivities(mockActivities.length);
@@ -263,13 +263,13 @@ export default function UserActivityPage() {
     const severities: ('info' | 'warning' | 'error' | 'critical')[] = ['info', 'warning', 'error', 'critical'];
     const devices = ['desktop', 'mobile', 'tablet'];
     const mockActivities: ActivityLog[] = [];
-    
+
     for (let i = 0; i < 50; i++) {
       const action = actions[Math.floor(Math.random() * actions.length)];
       const status = statuses[Math.floor(Math.random() * statuses.length)];
       const severity = severities[Math.floor(Math.random() * severities.length)];
       const device = devices[Math.floor(Math.random() * devices.length)];
-      
+
       mockActivities.push({
         id: `activity_${i}_${Date.now()}`,
         userId,
@@ -290,7 +290,7 @@ export default function UserActivityPage() {
         },
       });
     }
-    
+
     return mockActivities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   };
 
@@ -300,21 +300,21 @@ export default function UserActivityPage() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    
+
     const byAction: Record<string, number> = {};
     const byStatus: Record<string, number> = {};
     const bySeverity: Record<string, number> = {};
     const byDevice: Record<string, number> = {};
-    
+
     activities.forEach(activity => {
       byAction[activity.action] = (byAction[activity.action] || 0) + 1;
       byStatus[activity.status || 'unknown'] = (byStatus[activity.status || 'unknown'] || 0) + 1;
       bySeverity[activity.severity || 'info'] = (bySeverity[activity.severity || 'info'] || 0) + 1;
       byDevice[activity.device || 'unknown'] = (byDevice[activity.device || 'unknown'] || 0) + 1;
     });
-    
+
     const successCount = activities.filter(a => a.status === 'success').length;
-    
+
     return {
       total: activities.length,
       today: activities.filter(a => new Date(a.timestamp) >= today).length,
@@ -345,7 +345,7 @@ export default function UserActivityPage() {
   const handleDateRangeChange = (range: 'today' | 'week' | 'month' | 'all') => {
     setDateRange(range);
     const now = new Date();
-    
+
     switch (range) {
       case 'today':
         setFilters(prev => ({
@@ -394,11 +394,11 @@ export default function UserActivityPage() {
         'Location': activity.location,
         'Resource': activity.resource,
       }));
-      
+
       let content: string;
       let mimeType: string;
       let extension: string;
-      
+
       if (format === 'csv') {
         const headers = Object.keys(exportData[0] || {});
         content = [
@@ -412,7 +412,7 @@ export default function UserActivityPage() {
         mimeType = 'application/json';
         extension = 'json';
       }
-      
+
       const blob = new Blob([content], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -422,7 +422,7 @@ export default function UserActivityPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success(`Activity log exported as ${format.toUpperCase()}`);
     } catch (error) {
       console.error('Failed to export:', error);
@@ -492,7 +492,7 @@ export default function UserActivityPage() {
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
-    
+
     if (days > 0) return `${days}d ago`;
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
@@ -512,7 +512,7 @@ export default function UserActivityPage() {
         </p>
         <button
           onClick={() => router.push('/admin/users')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Users
@@ -525,7 +525,7 @@ export default function UserActivityPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
         <p className="mt-4 text-gray-500 dark:text-gray-400">Loading activity log...</p>
       </div>
     );
@@ -538,14 +538,14 @@ export default function UserActivityPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push(`/admin/users/${userId}`)}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
             aria-label="Back to user"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
-              <Activity className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500 flex-shrink-0" />
+              <Activity className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500 flex-shrink-0" />
               <span>User Activity Log</span>
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 hidden sm:block">
@@ -558,14 +558,14 @@ export default function UserActivityPage() {
           <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode('table')}
-              className={`p-2 transition-colors ${viewMode === 'table' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+              className={`p-2 transition-colors focus-ring ${viewMode === 'table' ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               aria-label="Table view"
             >
               <Table className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('cards')}
-              className={`p-2 transition-colors ${viewMode === 'cards' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+              className={`p-2 transition-colors focus-ring ${viewMode === 'cards' ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               aria-label="Card view"
             >
               <Grid className="w-4 h-4" />
@@ -576,7 +576,7 @@ export default function UserActivityPage() {
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={exporting}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm focus-ring"
             >
               {exporting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -587,7 +587,7 @@ export default function UserActivityPage() {
               <ChevronDown className="w-4 h-4" />
             </button>
             {showExportMenu && (
-              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10">
+              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-header">
                 <button
                   onClick={() => handleExport('csv')}
                   className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors flex items-center gap-2"
@@ -606,7 +606,7 @@ export default function UserActivityPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -616,15 +616,15 @@ export default function UserActivityPage() {
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300 text-sm flex-1">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
+          <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0" />
+          <span className="text-danger-700 dark:text-danger-300 text-sm flex-1">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-danger-100 dark:hover:bg-danger-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss error"
           >
-            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <XCircle className="w-5 h-5 text-danger-600 dark:text-danger-400" />
           </button>
         </div>
       )}
@@ -636,31 +636,31 @@ export default function UserActivityPage() {
             title="Total Activities"
             value={stats.total}
             icon={<Activity className="w-5 h-5" />}
-            bgColor="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+            bgColor="bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400"
           />
           <StatsCard
             title="Today"
             value={stats.today}
             icon={<Calendar className="w-5 h-5" />}
-            bgColor="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+            bgColor="bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400"
           />
           <StatsCard
             title="This Week"
             value={stats.thisWeek}
             icon={<Clock className="w-5 h-5" />}
-            bgColor="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
+            bgColor="bg-warning-100 text-warning-600 dark:bg-warning-900/30 dark:text-warning-400"
           />
           <StatsCard
             title="Success Rate"
             value={`${stats.successRate.toFixed(1)}%`}
             icon={<TrendingUp className="w-5 h-5" />}
-            bgColor="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+            bgColor="bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400"
           />
         </div>
       )}
 
       {/* Search and Filters */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand p-4">
         <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3">
           <div className="flex-1 min-w-[200px] w-full sm:w-auto relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -669,29 +669,29 @@ export default function UserActivityPage() {
               placeholder="Search activities..."
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
             />
             {filters.search && (
               <button
                 onClick={() => handleFilterChange('search', '')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                 aria-label="Clear search"
               >
                 <X className="w-4 h-4 text-gray-400" />
               </button>
             )}
           </div>
-          
+
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors flex-shrink-0 ${
-              showFilters ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            className={`p-2 border rounded-lg transition-colors flex-shrink-0 focus-ring ${
+              showFilters ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
             }`}
             aria-label="Toggle filters"
           >
             <Filter className="w-4 h-4" />
           </button>
-          
+
           {(filters.action !== 'all' || filters.status !== 'all' || filters.severity !== 'all' || filters.dateFrom || filters.dateTo || filters.search) && (
             <button
               onClick={() => {
@@ -706,7 +706,7 @@ export default function UserActivityPage() {
                 setDateRange('all');
                 setCurrentPage(1);
               }}
-              className="px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center gap-1"
+              className="px-3 py-2 text-sm text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-colors flex items-center gap-1 focus-ring"
             >
               <FilterX className="w-4 h-4" />
               <span className="hidden sm:inline">Clear</span>
@@ -783,9 +783,9 @@ export default function UserActivityPage() {
             <button
               key={range.value}
               onClick={() => handleDateRangeChange(range.value as any)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors focus-ring ${
                 dateRange === range.value
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-brand-500 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
@@ -797,8 +797,8 @@ export default function UserActivityPage() {
 
       {/* Activity List - Table View */}
       {viewMode === 'table' ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="card-brand p-0 overflow-hidden">
+          <div className="overflow-x-auto sidebar-scroll">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
                 <tr>
@@ -843,7 +843,7 @@ export default function UserActivityPage() {
                     const actionDetails = getActionDetails(activity.action);
                     const statusDetails = getStatusDetails(activity.status || 'success');
                     const severityDetails = getSeverityDetails(activity.severity || 'info');
-                    
+
                     return (
                       <tr key={activity.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                         <td className="px-4 py-3">
@@ -853,7 +853,7 @@ export default function UserActivityPage() {
                           <div className="text-xs text-gray-500 dark:text-gray-400">
                             {formatTime(activity.timestamp)}
                           </div>
-                          <div className="text-xs text-gray-400 dark:text-gray-500">
+                          <div className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                             {getTimeAgo(activity.timestamp)}
                           </div>
                         </td>
@@ -919,7 +919,7 @@ export default function UserActivityPage() {
                               setSelectedActivity(activity);
                               setShowDetailModal(true);
                             }}
-                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                             title="View details"
                           >
                             <Eye className="w-4 h-4 text-gray-500" />
@@ -936,25 +936,25 @@ export default function UserActivityPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <span className="text-sm text-gray-500 dark:text-gray-400 text-center sm:text-left">
+              <span className="text-sm text-gray-500 dark:text-gray-400 text-center sm:text-left tabular-nums">
                 Showing {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, totalActivities)} of {totalActivities} activities
               </span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1}
-                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
                   aria-label="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                   Page {currentPage} of {totalPages}
                 </span>
                 <button
                   onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages}
-                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
                   aria-label="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -967,7 +967,7 @@ export default function UserActivityPage() {
         // Card View
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {activities.length === 0 ? (
-            <div className="col-span-full bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+            <div className="col-span-full card-brand p-12 text-center">
               <Activity className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-2" />
               <p className="text-gray-500 dark:text-gray-400">No activities found</p>
               <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
@@ -980,11 +980,11 @@ export default function UserActivityPage() {
             activities.map((activity) => {
               const actionDetails = getActionDetails(activity.action);
               const statusDetails = getStatusDetails(activity.status || 'success');
-              
+
               return (
                 <div
                   key={activity.id}
-                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  className="card-brand p-4 hover:shadow-card-hover transition-shadow cursor-pointer focus-ring"
                   onClick={() => {
                     setSelectedActivity(activity);
                     setShowDetailModal(true);
@@ -1015,11 +1015,11 @@ export default function UserActivityPage() {
                       {statusDetails.label}
                     </span>
                   </div>
-                  
+
                   <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2">
                     {activity.description}
                   </p>
-                  
+
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     {activity.device && (
                       <span className="flex items-center gap-1">
@@ -1051,18 +1051,18 @@ export default function UserActivityPage() {
 
       {/* Activity Detail Modal */}
       {showDetailModal && selectedActivity && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="fixed inset-0 z-modal overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
             <div className="fixed inset-0 bg-black/50" onClick={() => setShowDetailModal(false)} />
-            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+            <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto sidebar-scroll">
               <button
                 onClick={() => setShowDetailModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors z-10 focus-ring"
                 aria-label="Close modal"
               >
                 <XCircle className="w-6 h-6 text-gray-500 dark:text-gray-400" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-3 rounded-lg ${getActionDetails(selectedActivity.action).color}`}>
                   {getActionDetails(selectedActivity.action).icon}
@@ -1146,7 +1146,7 @@ export default function UserActivityPage() {
               <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Close
                 </button>
@@ -1155,7 +1155,7 @@ export default function UserActivityPage() {
                     navigator.clipboard.writeText(JSON.stringify(selectedActivity, null, 2));
                     toast.success('Activity details copied to clipboard');
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
                 >
                   <Copy className="w-4 h-4" />
                   Copy Details

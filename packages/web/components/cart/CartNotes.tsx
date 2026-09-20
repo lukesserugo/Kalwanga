@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartNotes.tsx
-
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -10,22 +8,10 @@ import { guestCartService } from '../../services/guestCartService';
 import { useAuth } from '../../hooks/useAuth';
 
 interface CartNotesProps {
-  /**
-   * Notes currently on the cart. When this prop changes (e.g., after
-   * a refresh), the internal state syncs to it.
-   */
   initialNotes?: string;
-  /**
-   * Called after a successful save. Receives the trimmed notes that
-   * were persisted.
-   */
   onNotesUpdated?: (notes: string) => void;
   disabled?: boolean;
   className?: string;
-  /**
-   * Optional maximum length. Matches the backend's validation. When
-   * omitted, the textarea has no artificial cap.
-   */
   maxLength?: number;
 }
 
@@ -49,9 +35,6 @@ export function CartNotes({
     [isAuthenticated],
   );
 
-  // Sync external changes (e.g., a parent refresh) into local state,
-  // but only when the user isn't mid-edit. If they are editing, we
-  // don't want to blow away what they typed.
   useEffect(() => {
     if (!isEditing) {
       setNotes(initialNotes);
@@ -59,18 +42,11 @@ export function CartNotes({
     }
   }, [initialNotes, isEditing]);
 
-  // Reset the "Saved" confirmation after a short delay. Uses a proper
-  // effect so an unmount during the timeout doesn't set state on a
-  // dead component.
   useEffect(() => {
     if (saveState !== 'saved') return;
     const t = setTimeout(() => setSaveState('idle'), 2000);
     return () => clearTimeout(t);
   }, [saveState]);
-
-  // ============================================
-  // HANDLERS
-  // ============================================
 
   const handleEdit = useCallback(() => {
     if (disabled) return;
@@ -88,7 +64,6 @@ export function CartNotes({
 
     const trimmed = tempNotes.trim();
 
-    // No-op if nothing changed. Just close the editor.
     if (trimmed === notes.trim()) {
       setIsEditing(false);
       return;
@@ -111,7 +86,6 @@ export function CartNotes({
         err?.message ||
         'Failed to update notes';
       toast.error(message);
-      // Restore the editable state so the user can retry.
       setSaveState('idle');
     }
   }, [
@@ -145,13 +119,8 @@ export function CartNotes({
       ? maxLength - tempNotes.length
       : null;
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className={`space-y-2 ${className}`}>
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <FileText className="w-5 h-5 text-gray-400 shrink-0" />
@@ -159,7 +128,7 @@ export function CartNotes({
             Order Notes
           </span>
           {justSaved && (
-            <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+            <span className="inline-flex items-center gap-1 text-xs text-success-600 dark:text-success-400">
               <Check className="w-3.5 h-3.5" />
               Saved
             </span>
@@ -170,14 +139,13 @@ export function CartNotes({
           <button
             type="button"
             onClick={handleEdit}
-            className="text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 transition-colors shrink-0"
+            className="text-sm font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 transition-colors shrink-0 focus-ring rounded"
           >
             {notes ? 'Edit' : 'Add Note'}
           </button>
         )}
       </div>
 
-      {/* Body */}
       {isEditing ? (
         <div className="space-y-2">
           <textarea
@@ -189,7 +157,7 @@ export function CartNotes({
             rows={3}
             maxLength={maxLength}
             autoFocus
-            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 resize-none transition-all"
+            className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 resize-none transition-all"
           />
 
           <div className="flex flex-wrap items-center gap-2">
@@ -197,7 +165,7 @@ export function CartNotes({
               type="button"
               onClick={() => void handleSave()}
               disabled={disabled || isSaving}
-              className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
+              className="px-3 py-1.5 bg-brand-gradient hover:shadow-brand-lg text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2 shadow-brand focus-ring"
             >
               {isSaving ? (
                 <>
@@ -213,17 +181,17 @@ export function CartNotes({
               type="button"
               onClick={handleCancel}
               disabled={disabled || isSaving}
-              className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 text-gray-700 dark:text-gray-300"
+              className="btn-secondary focus-ring disabled:opacity-50"
             >
               Cancel
             </button>
 
-            <span className="text-xs text-gray-400 ml-auto">
-              <kbd className="px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px] font-mono">
+            <span className="text-2xs text-gray-400 ml-auto">
+              <kbd className="px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-2xs font-mono">
                 Ctrl
               </kbd>
               {' + '}
-              <kbd className="px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px] font-mono">
+              <kbd className="px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-2xs font-mono">
                 Enter
               </kbd>
               {' to save'}
@@ -233,7 +201,7 @@ export function CartNotes({
               <span
                 className={`text-xs tabular-nums ${
                   remainingChars < 20
-                    ? 'text-red-500'
+                    ? 'text-danger-500'
                     : 'text-gray-400'
                 }`}
               >
@@ -247,7 +215,7 @@ export function CartNotes({
           type="button"
           onClick={handleEdit}
           disabled={disabled}
-          className="w-full text-left p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg min-h-[60px] hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:cursor-default disabled:hover:bg-gray-50 dark:disabled:hover:bg-gray-700/50"
+          className="w-full text-left p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg min-h-[60px] hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors disabled:cursor-default disabled:hover:bg-gray-50 dark:disabled:hover:bg-gray-700/50 focus-ring"
           aria-label={notes ? 'Edit order notes' : 'Add order notes'}
         >
           {notes ? (

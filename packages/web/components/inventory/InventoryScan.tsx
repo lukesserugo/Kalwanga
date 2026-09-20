@@ -1,34 +1,17 @@
-// D:\Projects\Kalwanga\packages\web\components\inventory\InventoryScan.tsx
-
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Scan,
-  Search,
-  Package,
-  CheckCircle,
-  AlertCircle,
-  XCircle,
-  Loader2,
-  RefreshCw,
-  Edit,
-  RefreshCcw,
-  Eye,
-  Barcode,
-  Clock,
-  X,
+  Scan, Search, Package, CheckCircle, AlertCircle,
+  XCircle, Loader2, RefreshCw, Edit, RefreshCcw,
+  Eye, Barcode, Clock, X,
 } from 'lucide-react';
 import { usePermission } from '../../hooks/usePermission';
 import { inventoryService } from '../../services/inventoryService';
 import { toast } from '../../utils/toast-manager';
 import { formatCurrency } from '../../utils/formatters';
-
-// ============================================
-// TYPES
-// ============================================
 
 export interface ScannedItem {
   id: string;
@@ -60,49 +43,16 @@ export interface ScanHistoryEntry {
 }
 
 export interface InventoryScanProps {
-  /**
-   * Business unit scope for lookups. When omitted, the component reads
-   * `selectedBusinessUnitId` / `businessUnitId` from localStorage —
-   * the same keys the inventory dashboard writes.
-   */
   businessUnitId?: string;
-
-  /** Minimum length before a scan fires. Defaults to 4. */
   minCodeLength?: number;
-
-  /** Debounce window in ms for hardware scanners. Defaults to 150. */
   scanDebounceMs?: number;
-
-  /** Maximum entries kept in the history list. Defaults to 20. */
   historyLimit?: number;
-
-  /**
-   * Called after a successful lookup. Useful for parent components
-   * that want to react to a scan (e.g. add the item to a cart).
-   */
   onScanSuccess?: (item: ScannedItem) => void;
-
-  /** Called when a lookup fails or returns no item. */
   onScanError?: (code: string, message: string) => void;
-
-  /**
-   * When true, hides the internal "View / Edit / Adjust" buttons so
-   * the parent can supply its own actions. Defaults to false.
-   */
   hideDefaultActions?: boolean;
-
-  /**
-   * When true, hides the scan history list. Defaults to false.
-   */
   hideHistory?: boolean;
-
-  /** Optional className for the outer wrapper. */
   className?: string;
 }
-
-// ============================================
-// COMPONENT
-// ============================================
 
 export function InventoryScan({
   businessUnitId: businessUnitIdProp,
@@ -132,21 +82,10 @@ export function InventoryScan({
   const inputRef = useRef<HTMLInputElement>(null);
   const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ────────────────────────────────────────────────────────────
-  // Effective business unit ID
-  //
-  // Caller-supplied takes precedence. Otherwise we fall back to
-  // localStorage, which is where the inventory dashboard persists
-  // the user's current selection.
-  // ────────────────────────────────────────────────────────────
   const businessUnitId = businessUnitIdProp || storedBusinessUnitId;
 
-  // ────────────────────────────────────────────────────────────
-  // Read the stored business unit on mount, and again whenever
-  // storage changes (another tab may have switched it).
-  // ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (businessUnitIdProp) return; // caller owns it
+    if (businessUnitIdProp) return;
 
     const read = () => {
       try {
@@ -182,11 +121,7 @@ export function InventoryScan({
     return () => window.removeEventListener('storage', onStorage);
   }, [businessUnitIdProp]);
 
-  // ────────────────────────────────────────────────────────────
-  // Autofocus the input on mount and after every scan
-  // ────────────────────────────────────────────────────────────
   const focusInput = useCallback(() => {
-    // requestAnimationFrame so we focus after React commits
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
@@ -197,22 +132,11 @@ export function InventoryScan({
     focusInput();
   }, [focusInput]);
 
-  // ────────────────────────────────────────────────────────────
-  // Refocus whenever the user clicks anywhere on the page.
-  //
-  // Hardware scanners type into whatever has focus, and clicks are
-  // common on a page like this. Without this, the scanner goes
-  // nowhere after the first stray click.
-  // ────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleClick = () => focusInput();
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, [focusInput]);
-
-  // ============================================
-  // SCAN LOGIC
-  // ============================================
 
   const handleScan = useCallback(
     async (code: string) => {
@@ -232,8 +156,6 @@ export function InventoryScan({
       setScanError(null);
 
       try {
-        // Try barcode first, then SKU. Both are scoped to the
-        // current business unit.
         let item: any = null;
 
         try {
@@ -242,8 +164,7 @@ export function InventoryScan({
             businessUnitId
           );
         } catch {
-          // 404 is expected when the code isn't a barcode. Fall
-          // through to SKU.
+          /* fall through to SKU */
         }
 
         if (!item) {
@@ -253,7 +174,7 @@ export function InventoryScan({
               businessUnitId
             );
           } catch {
-            // Same — 404 means it's not a SKU either.
+            /* 404 means not a SKU either */
           }
         }
 
@@ -278,7 +199,6 @@ export function InventoryScan({
           return;
         }
 
-        // Normalise whatever shape the API returned.
         const scanned: ScannedItem = {
           id: item.id,
           name: item.name || item.product?.name || 'Unknown item',
@@ -325,9 +245,7 @@ export function InventoryScan({
         onScanSuccess?.(scanned);
       } catch (error: any) {
         const message =
-          error?.response?.data?.message ||
-          error?.message ||
-          'Scan failed';
+          error?.response?.data?.message || error?.message || 'Scan failed';
         setScanError(message);
         setLastScanned(null);
         setHistory((prev) =>
@@ -359,10 +277,6 @@ export function InventoryScan({
     ]
   );
 
-  // ────────────────────────────────────────────────────────────
-  // Hardware scanners type the code fast, then send Enter. The
-  // debounce keeps us from firing on every keystroke.
-  // ────────────────────────────────────────────────────────────
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setBarcode(value);
@@ -376,9 +290,6 @@ export function InventoryScan({
     }, scanDebounceMs);
   };
 
-  // ────────────────────────────────────────────────────────────
-  // Manual Enter: same as scan, but immediate.
-  // ────────────────────────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -392,16 +303,11 @@ export function InventoryScan({
     }
   };
 
-  // Cleanup the debounce timer on unmount.
   useEffect(() => {
     return () => {
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     };
   }, []);
-
-  // ============================================
-  // ACTION HANDLERS
-  // ============================================
 
   const handleViewItem = () => {
     if (lastScanned) router.push(`/admin/inventory/${lastScanned.id}`);
@@ -436,16 +342,12 @@ export function InventoryScan({
     toast.success('History cleared');
   };
 
-  // ============================================
-  // PERMISSION GATE
-  // ============================================
-
   if (permissionsLoading) {
     return (
       <div
         className={`flex flex-col items-center justify-center min-h-[40vh] ${className}`}
       >
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
           Checking permissions…
         </p>
@@ -471,16 +373,12 @@ export function InventoryScan({
     );
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className={`space-y-6 ${className}`}>
       {!businessUnitId && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-yellow-800 dark:text-yellow-200">
+        <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-warning-800 dark:text-warning-200">
             <p className="font-medium">No business unit selected</p>
             <p className="mt-1">
               Go to the inventory dashboard and pick a business unit before
@@ -490,8 +388,7 @@ export function InventoryScan({
         </div>
       )}
 
-      {/* Scan input */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card-brand">
         <div className="max-w-2xl mx-auto">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -503,51 +400,49 @@ export function InventoryScan({
               onKeyDown={handleKeyDown}
               placeholder="Scan barcode or type SKU…"
               disabled={scanning || !businessUnitId}
-              className="w-full pl-12 pr-12 py-4 text-lg bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all disabled:opacity-50"
+              className="w-full pl-12 pr-12 py-4 text-lg bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all disabled:opacity-50 font-mono tabular-nums"
               autoComplete="off"
               autoFocus
               spellCheck={false}
             />
             {scanning && (
               <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
               </div>
             )}
           </div>
 
-          <p className="mt-2 text-xs text-center text-gray-400 dark:text-gray-500">
+          <p className="mt-2 text-2xs text-center text-gray-400 dark:text-gray-500">
             Hardware scanners work automatically. Press Enter to submit
             manually. Press Escape to clear.
           </p>
         </div>
       </div>
 
-      {/* Error banner */}
       <AnimatePresence>
         {scanError && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3"
+            className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-start gap-3 animate-slide-down"
           >
-            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <XCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+              <p className="text-sm font-medium text-danger-800 dark:text-danger-200">
                 {scanError}
               </p>
             </div>
             <button
               onClick={() => setScanError(null)}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-800/50 rounded transition-colors flex-shrink-0"
+              className="p-1 hover:bg-danger-100 dark:hover:bg-danger-800/50 rounded transition-colors flex-shrink-0 focus-ring"
             >
-              <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <X className="w-4 h-4 text-danger-600 dark:text-danger-400" />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Result card */}
       <AnimatePresence mode="wait">
         {lastScanned && (
           <motion.div
@@ -555,19 +450,17 @@ export function InventoryScan({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+            className="card-brand !p-0 overflow-hidden animate-slide-up"
           >
-            {/* Result header */}
-            <div className="bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800 px-6 py-3 flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-              <span className="font-medium text-green-800 dark:text-green-200">
+            <div className="bg-success-50 dark:bg-success-900/20 border-b border-success-200 dark:border-success-800 px-6 py-3 flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
+              <span className="font-medium text-success-800 dark:text-success-200">
                 Item found
               </span>
             </div>
 
             <div className="p-6">
               <div className="flex flex-col sm:flex-row gap-6">
-                {/* Image */}
                 <div className="w-full sm:w-32 h-32 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                   {lastScanned.images && lastScanned.images.length > 0 ? (
                     <img
@@ -580,7 +473,6 @@ export function InventoryScan({
                   )}
                 </div>
 
-                {/* Details */}
                 <div className="flex-1 space-y-3">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -600,18 +492,18 @@ export function InventoryScan({
                         Stock
                       </p>
                       <p
-                        className={`font-bold text-lg ${
+                        className={`font-bold text-lg tabular-nums ${
                           lastScanned.stock === 0
-                            ? 'text-red-600 dark:text-red-400'
+                            ? 'text-danger-600 dark:text-danger-400'
                             : lastScanned.stock <=
                               (lastScanned.reorderPoint ?? 5)
-                            ? 'text-yellow-600 dark:text-yellow-400'
-                            : 'text-green-600 dark:text-green-400'
+                            ? 'text-warning-600 dark:text-warning-400'
+                            : 'text-success-600 dark:text-success-400'
                         }`}
                       >
                         {lastScanned.stock}
                       </p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-2xs text-gray-400 tabular-nums">
                         {lastScanned.reserved > 0
                           ? `${lastScanned.available} available`
                           : 'all available'}
@@ -622,7 +514,7 @@ export function InventoryScan({
                       <p className="text-gray-500 dark:text-gray-400">
                         Price
                       </p>
-                      <p className="font-bold text-lg text-gray-900 dark:text-white">
+                      <p className="font-bold text-lg text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(lastScanned.price)}
                       </p>
                     </div>
@@ -648,19 +540,18 @@ export function InventoryScan({
                 </div>
               </div>
 
-              {/* Actions */}
               {!hideDefaultActions && (
                 <div className="flex flex-wrap gap-2 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={handleViewItem}
-                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center gap-2 transition-colors text-sm"
+                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-600 flex items-center gap-2 transition-colors text-sm focus-ring"
                   >
                     <Eye className="w-4 h-4" />
                     View
                   </button>
                   <button
                     onClick={handleEditItem}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors text-sm"
+                    className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg flex items-center gap-2 transition-all text-sm focus-ring"
                   >
                     <Edit className="w-4 h-4" />
                     Edit
@@ -668,7 +559,7 @@ export function InventoryScan({
                   {canAdjustInventory() && (
                     <button
                       onClick={handleAdjustItem}
-                      className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center gap-2 transition-colors text-sm"
+                      className="px-4 py-2 bg-warning-600 text-white rounded-lg hover:bg-warning-700 flex items-center gap-2 transition-colors text-sm focus-ring"
                     >
                       <RefreshCcw className="w-4 h-4" />
                       Adjust Stock
@@ -677,7 +568,7 @@ export function InventoryScan({
                   {lastScanned.barcode && (
                     <button
                       onClick={handlePrintBarcode}
-                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center gap-2 transition-colors text-sm"
+                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-600 flex items-center gap-2 transition-colors text-sm focus-ring"
                     >
                       <Barcode className="w-4 h-4" />
                       Print Barcode
@@ -690,43 +581,42 @@ export function InventoryScan({
         )}
       </AnimatePresence>
 
-      {/* Scan history */}
       {!hideHistory && history.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="card-brand !p-0 overflow-hidden">
           <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-gray-400" />
               <h3 className="font-medium text-gray-900 dark:text-white">
                 Scan History
               </h3>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
+              <span className="text-2xs text-gray-500 dark:text-gray-400 tabular-nums">
                 ({history.length})
               </span>
             </div>
             <button
               onClick={clearHistory}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-danger-600 dark:hover:text-danger-400 transition-colors focus-ring rounded"
             >
               Clear
             </button>
           </div>
-          <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-96 overflow-y-auto">
+          <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-96 overflow-y-auto custom-scrollbar">
             {history.map((entry) => (
               <div
                 key={entry.id}
-                className="px-6 py-3 flex items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                className="px-6 py-3 flex items-center justify-between gap-4 hover:bg-orange-50 dark:hover:bg-gray-700/50 transition-colors"
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   {entry.success ? (
-                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                    <CheckCircle className="w-4 h-4 text-success-500 flex-shrink-0" />
                   ) : (
-                    <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    <XCircle className="w-4 h-4 text-danger-500 flex-shrink-0" />
                   )}
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                       {entry.item?.name || entry.code}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    <p className="text-2xs text-gray-500 dark:text-gray-400 truncate tabular-nums">
                       {entry.success ? (
                         <>
                           {entry.code} · Stock: {entry.item?.stock}
@@ -738,13 +628,13 @@ export function InventoryScan({
                   </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="text-xs text-gray-400">
+                  <span className="text-2xs text-gray-400 tabular-nums">
                     {new Date(entry.timestamp).toLocaleTimeString()}
                   </span>
                   {entry.item && (
                     <button
                       onClick={() => handleViewItemById(entry.item!.id)}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                      className="p-1 hover:bg-orange-50 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                       title="View item"
                     >
                       <Eye className="w-4 h-4 text-gray-500" />
@@ -752,7 +642,7 @@ export function InventoryScan({
                   )}
                   <button
                     onClick={() => handleRescan(entry.code)}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                    className="p-1 hover:bg-orange-50 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                     title="Rescan"
                   >
                     <RefreshCw className="w-4 h-4 text-gray-500" />
@@ -764,9 +654,8 @@ export function InventoryScan({
         </div>
       )}
 
-      {/* Empty state */}
       {!hideHistory && history.length === 0 && !lastScanned && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div className="card-brand !p-12 text-center">
           <Scan className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             Ready to scan

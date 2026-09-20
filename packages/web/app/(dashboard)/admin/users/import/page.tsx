@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { userService } from '../../../../../services/userService';
 import { toast } from 'react-hot-toast';
-import { 
+import {
   ArrowLeft, Upload, Download, FileSpreadsheet, FileText,
   Loader2, AlertCircle, CheckCircle, XCircle, Save,
   RefreshCw, Copy, Check, X, Info, AlertTriangle,
@@ -91,11 +91,11 @@ interface ImportHistory {
 
 // Stats Card Component
 const StatsCard = ({ title, value, icon, color, subtitle }: any) => (
-  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+  <div className="card-brand p-4 hover:shadow-card-hover transition-shadow">
     <div className="flex items-center justify-between">
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">{title}</p>
-        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{value}</p>
         {subtitle && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtitle}</p>}
       </div>
       <div className={`p-3 rounded-lg ${color} flex-shrink-0`}>
@@ -194,7 +194,7 @@ const IMPORT_TEMPLATES: ImportTemplate[] = [
 export default function UserImportPage() {
   const router = useRouter();
   const { can, isSuperAdmin, isAdmin } = useAuth();
-  
+
   // State management
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -223,7 +223,7 @@ export default function UserImportPage() {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
-  
+
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -236,10 +236,10 @@ export default function UserImportPage() {
     let currentRow: string[] = [];
     let currentField = '';
     let inQuotes = false;
-    
+
     for (let i = 0; i < content.length; i++) {
       const char = content[i];
-      
+
       if (char === '"') {
         if (inQuotes && content[i + 1] === '"') {
           currentField += '"';
@@ -263,14 +263,14 @@ export default function UserImportPage() {
         currentField += char;
       }
     }
-    
+
     if (currentField || currentRow.length > 0) {
       currentRow.push(currentField.trim());
       if (currentRow.some(field => field !== '')) {
         rows.push(currentRow);
       }
     }
-    
+
     return rows;
   }, []);
 
@@ -278,20 +278,20 @@ export default function UserImportPage() {
   const validateImportData = useCallback((rows: string[][], headers: string[]): ImportUser[] => {
     const users: ImportUser[] = [];
     const emailSet = new Set<string>();
-    
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const userData: Record<string, any> = {};
       const errors: string[] = [];
       const warnings: string[] = [];
-      
+
       // Map row data
       headers.forEach((header, index) => {
         if (row[index] !== undefined) {
           userData[header] = row[index];
         }
       });
-      
+
       // Validate email
       const email = userData.email || '';
       if (!email) {
@@ -301,21 +301,21 @@ export default function UserImportPage() {
       } else if (emailSet.has(email.toLowerCase())) {
         errors.push(`Duplicate email in file: ${email}`);
       }
-      
+
       if (email && !emailSet.has(email.toLowerCase())) {
         emailSet.add(email.toLowerCase());
       }
-      
+
       // Validate first name
       if (!userData.firstName) {
         errors.push('First name is required');
       }
-      
+
       // Validate last name
       if (!userData.lastName) {
         errors.push('Last name is required');
       }
-      
+
       // Validate role
       const role = ROLE_MAPPING[userData.role] || null;
       if (!userData.role) {
@@ -324,12 +324,12 @@ export default function UserImportPage() {
         errors.push(`Invalid role: ${userData.role}`);
         warnings.push(`Role "${userData.role}" not recognized, defaulting to USER`);
       }
-      
+
       // Validate phone (if provided)
       if (userData.phoneNumber && !/^[+]?[\d\s-()]+$/.test(userData.phoneNumber)) {
         warnings.push(`Phone number format may be invalid: ${userData.phoneNumber}`);
       }
-      
+
       // Validate permissions (if provided)
       if (userData.permissions) {
         const permissions = userData.permissions.split(';').map((p: string) => p.trim());
@@ -338,7 +338,7 @@ export default function UserImportPage() {
           warnings.push('Some permissions may be invalid');
         }
       }
-      
+
       // Determine status
       let status: ImportUser['status'] = 'valid';
       if (errors.length > 0) {
@@ -346,7 +346,7 @@ export default function UserImportPage() {
       } else if (warnings.length > 0) {
         status = 'warning';
       }
-      
+
       users.push({
         id: `import_${i}_${Date.now()}`,
         email: userData.email || '',
@@ -367,7 +367,7 @@ export default function UserImportPage() {
         rowNumber: i + 2,
       });
     }
-    
+
     return users;
   }, []);
 
@@ -377,45 +377,45 @@ export default function UserImportPage() {
       setLoading(true);
       setError(null);
       setSuccessMessage(null);
-      
+
       setSelectedFile(file);
       setFileName(file.name);
-      
+
       // Read file content
       const content = await readFileContent(file);
       setFileContent(content);
-      
+
       // Parse CSV
       const rows = parseCSV(content);
-      
+
       if (rows.length < 2) {
         setError('File must contain at least a header row and one data row');
         return;
       }
-      
+
       const headers = rows[0];
       const dataRows = rows.slice(1);
-      
+
       // Validate headers
       const missingHeaders = REQUIRED_HEADERS.filter(h => !headers.includes(h));
       if (missingHeaders.length > 0) {
         setError(`Missing required headers: ${missingHeaders.join(', ')}`);
         return;
       }
-      
+
       // Auto-map columns
       const mapping: Record<string, string> = {};
       headers.forEach(header => {
         mapping[header] = header;
       });
       setColumnMapping(mapping);
-      
+
       // Validate data
       const validatedUsers = validateImportData(dataRows, headers);
       setImportUsers(validatedUsers);
       setShowPreview(true);
       setShowValidation(true);
-      
+
       // Show summary
       const summary = getImportSummary(validatedUsers);
       if (summary.invalid > 0) {
@@ -423,7 +423,7 @@ export default function UserImportPage() {
       } else if (summary.valid > 0) {
         toast.success(`${summary.valid} users validated successfully`);
       }
-      
+
     } catch (error: any) {
       console.error('Failed to process file:', error);
       setError(error?.message || 'Failed to process file');
@@ -457,11 +457,11 @@ export default function UserImportPage() {
       duplicates: 0,
       readyToImport: users.filter(u => u.status === 'valid' || u.status === 'warning').length,
     };
-    
+
     // Check for duplicates against existing users
     const emails = new Set(users.map(u => u.email.toLowerCase()));
     summary.duplicates = users.length - emails.size;
-    
+
     return summary;
   }, []);
 
@@ -469,7 +469,7 @@ export default function UserImportPage() {
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
       const file = files[0];
@@ -494,23 +494,23 @@ export default function UserImportPage() {
   // Handle import
   const handleImport = useCallback(async () => {
     const validUsers = importUsers.filter(u => u.status === 'valid' || u.status === 'warning');
-    
+
     if (validUsers.length === 0) {
       setError('No valid users to import');
       toast.error('No valid users to import');
       return;
     }
-    
+
     setImporting(true);
     setImportProgress(0);
-    
+
     try {
       let successCount = 0;
       let failedCount = 0;
-      
+
       for (let i = 0; i < validUsers.length; i++) {
         const user = validUsers[i];
-        
+
         try {
           await userService.createUser({
             email: user.email,
@@ -524,7 +524,7 @@ export default function UserImportPage() {
             permissions: user.permissions,
             companyId: user.companyId,
           });
-          
+
           successCount++;
         } catch (error: any) {
           console.error(`Failed to import user ${user.email}:`, error);
@@ -532,11 +532,11 @@ export default function UserImportPage() {
           user.status = 'invalid';
           user.errors.push(error?.message || 'Failed to import');
         }
-        
+
         // Update progress
         setImportProgress(Math.round(((i + 1) / validUsers.length) * 100));
       }
-      
+
       // Update history
       const historyEntry: ImportHistory = {
         id: `history_${Date.now()}`,
@@ -548,9 +548,9 @@ export default function UserImportPage() {
         status: failedCount === 0 ? 'completed' : failedCount < validUsers.length ? 'partial' : 'failed',
         importedBy: 'Current User',
       };
-      
+
       setImportHistory(prev => [historyEntry, ...prev]);
-      
+
       if (failedCount === 0) {
         toast.success(`Successfully imported ${successCount} users`);
         setSuccessMessage(`Successfully imported ${successCount} users`);
@@ -564,7 +564,7 @@ export default function UserImportPage() {
         toast.error('Failed to import users');
         setError('Failed to import users');
       }
-      
+
       // Reset
       setImportUsers([]);
       setSelectedFile(null);
@@ -572,7 +572,7 @@ export default function UserImportPage() {
       setFileContent('');
       setShowPreview(false);
       setShowValidation(false);
-      
+
     } catch (error: any) {
       console.error('Import failed:', error);
       setError(error?.message || 'Import failed');
@@ -588,13 +588,13 @@ export default function UserImportPage() {
     try {
       const headers = template.headers;
       const exampleRows = template.exampleData;
-      
+
       let csvContent = headers.join(',') + '\n';
       exampleRows.forEach(row => {
         const values = headers.map(h => row[h] || '');
         csvContent += values.join(',') + '\n';
       });
-      
+
       const blob = new Blob([csvContent], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -604,7 +604,7 @@ export default function UserImportPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success(`Downloaded ${template.name} template`);
     } catch (error) {
       console.error('Failed to download template:', error);
@@ -645,34 +645,34 @@ export default function UserImportPage() {
   // Filter and sort users with pagination
   const filteredUsers = useMemo(() => {
     let filtered = importUsers;
-    
+
     if (filterStatus !== 'all') {
       filtered = filtered.filter(u => u.status === filterStatus);
     }
-    
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(u => 
+      filtered = filtered.filter(u =>
         u.email.toLowerCase().includes(query) ||
         u.firstName.toLowerCase().includes(query) ||
         u.lastName.toLowerCase().includes(query) ||
         `${u.firstName} ${u.lastName}`.toLowerCase().includes(query)
       );
     }
-    
+
     const sorted = [...filtered].sort((a: any, b: any) => {
       const aValue = a[sortConfig.key];
       const bValue = b[sortConfig.key];
-      
+
       if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortConfig.direction === 'asc' 
-          ? aValue.localeCompare(bValue) 
+        return sortConfig.direction === 'asc'
+          ? aValue.localeCompare(bValue)
           : bValue.localeCompare(aValue);
       }
-      
+
       return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
     });
-    
+
     return sorted;
   }, [importUsers, filterStatus, searchQuery, sortConfig]);
 
@@ -687,12 +687,12 @@ export default function UserImportPage() {
   // Get status badge
   const getStatusBadge = useCallback((status: ImportUser['status']) => {
     const badges = {
-      valid: { icon: <CheckCircle className="w-3 h-3" />, label: 'Valid', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-700' },
-      invalid: { icon: <XCircle className="w-3 h-3" />, label: 'Invalid', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-700' },
-      warning: { icon: <AlertTriangle className="w-3 h-3" />, label: 'Warning', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700' },
-      duplicate: { icon: <Copy className="w-3 h-3" />, label: 'Duplicate', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-700' },
+      valid: { icon: <CheckCircle className="w-3 h-3" />, label: 'Valid', className: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400 border-success-200 dark:border-success-700' },
+      invalid: { icon: <XCircle className="w-3 h-3" />, label: 'Invalid', className: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400 border-danger-200 dark:border-danger-700' },
+      warning: { icon: <AlertTriangle className="w-3 h-3" />, label: 'Warning', className: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400 border-warning-200 dark:border-warning-700' },
+      duplicate: { icon: <Copy className="w-3 h-3" />, label: 'Duplicate', className: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-400 border-secondary-200 dark:border-secondary-700' },
     };
-    
+
     const badge = badges[status];
     return (
       <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${badge.className}`}>
@@ -715,7 +715,7 @@ export default function UserImportPage() {
         </p>
         <button
           onClick={() => router.push('/admin/users')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Users
@@ -733,14 +733,14 @@ export default function UserImportPage() {
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <button
             onClick={() => router.push('/admin/users')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
             aria-label="Back to users"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
-              <Upload className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500 flex-shrink-0" />
+              <Upload className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500 flex-shrink-0" />
               <span>Import Users</span>
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 hidden sm:block">
@@ -751,7 +751,7 @@ export default function UserImportPage() {
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm focus-ring"
           >
             <History className="w-4 h-4" />
             <span className="hidden sm:inline">Import History</span>
@@ -761,30 +761,30 @@ export default function UserImportPage() {
 
       {/* Success Message */}
       {successMessage && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex items-center gap-2 animate-slideIn">
-          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-          <span className="text-green-700 dark:text-green-300 text-sm flex-1">{successMessage}</span>
+        <div className="bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 rounded-lg p-3 flex items-center gap-2 animate-slideIn">
+          <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
+          <span className="text-success-700 dark:text-success-300 text-sm flex-1">{successMessage}</span>
           <button
             onClick={() => setSuccessMessage(null)}
-            className="p-1 hover:bg-green-100 dark:hover:bg-green-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-success-100 dark:hover:bg-success-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss"
           >
-            <XCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <XCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
           </button>
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300 text-sm flex-1">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3 animate-slideIn">
+          <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0" />
+          <span className="text-danger-700 dark:text-danger-300 text-sm flex-1">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800 rounded transition-colors flex-shrink-0"
+            className="p-1 hover:bg-danger-100 dark:hover:bg-danger-800 rounded transition-colors flex-shrink-0 focus-ring"
             aria-label="Dismiss error"
           >
-            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <XCircle className="w-5 h-5 text-danger-600 dark:text-danger-400" />
           </button>
         </div>
       )}
@@ -795,48 +795,48 @@ export default function UserImportPage() {
           title="Total Users"
           value={summary.total}
           icon={<Users className="w-5 h-5" />}
-          color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+          color="bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400"
         />
         <StatsCard
           title="Valid"
           value={summary.valid}
           icon={<CheckCircle className="w-5 h-5" />}
-          color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+          color="bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400"
         />
         <StatsCard
           title="Invalid"
           value={summary.invalid}
           icon={<XCircle className="w-5 h-5" />}
-          color="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+          color="bg-danger-100 text-danger-600 dark:bg-danger-900/30 dark:text-danger-400"
         />
         <StatsCard
           title="Warnings"
           value={summary.warnings}
           icon={<AlertTriangle className="w-5 h-5" />}
-          color="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
+          color="bg-warning-100 text-warning-600 dark:bg-warning-900/30 dark:text-warning-400"
         />
         <StatsCard
           title="Ready to Import"
           value={summary.readyToImport}
           icon={<UserPlus className="w-5 h-5" />}
-          color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+          color="bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400"
           subtitle={`${summary.total > 0 ? Math.round((summary.readyToImport / summary.total) * 100) : 0}% ready`}
         />
       </div>
 
       {/* Template Download */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+      <div className="card-brand p-4 sm:p-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Download className="w-5 h-5 text-blue-500" />
+          <Download className="w-5 h-5 text-brand-500" />
           Download Template
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {IMPORT_TEMPLATES.map(template => (
             <div
               key={template.id}
-              className={`border rounded-lg p-4 cursor-pointer transition-all hover:shadow-md ${
+              className={`border rounded-lg p-4 cursor-pointer transition-all hover:shadow-card-hover ${
                 selectedTemplate === template.id
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20'
                   : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
               }`}
               onClick={() => {
@@ -845,7 +845,7 @@ export default function UserImportPage() {
               }}
             >
               <div className="flex items-center gap-3 mb-2">
-                <div className={`p-2 rounded-lg ${selectedTemplate === template.id ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}>
+                <div className={`p-2 rounded-lg ${selectedTemplate === template.id ? 'bg-brand-500 text-white' : 'bg-gray-100 dark:bg-gray-700'}`}>
                   {template.format === 'csv' ? (
                     <FileText className="w-4 h-4" />
                   ) : (
@@ -854,7 +854,7 @@ export default function UserImportPage() {
                 </div>
                 <div>
                   <h4 className="font-medium text-gray-900 dark:text-white">{template.name}</h4>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{template.headers.length} columns</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{template.headers.length} columns</p>
                 </div>
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-400">{template.description}</p>
@@ -863,7 +863,7 @@ export default function UserImportPage() {
                   e.stopPropagation();
                   handleDownloadTemplate(template);
                 }}
-                className="mt-3 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-1"
+                className="mt-3 px-3 py-1.5 bg-brand-500 text-white rounded-lg text-sm hover:bg-brand-600 transition-colors flex items-center gap-1 focus-ring"
               >
                 <Download className="w-4 h-4" />
                 Download
@@ -887,8 +887,8 @@ export default function UserImportPage() {
         onDrop={handleDrop}
         className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
           isDragging
-            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-            : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'
+            ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20'
+            : 'border-gray-300 dark:border-gray-600 hover:border-brand-400'
         }`}
       >
         <input
@@ -898,11 +898,11 @@ export default function UserImportPage() {
           onChange={handleFileInputChange}
           className="hidden"
         />
-        
+
         <div className="flex flex-col items-center">
           {fileName ? (
             <>
-              <FileSpreadsheet className="w-16 h-16 text-green-500 mb-4" />
+              <FileSpreadsheet className="w-16 h-16 text-success-500 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">{fileName}</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 File loaded successfully
@@ -910,7 +910,7 @@ export default function UserImportPage() {
               <div className="flex flex-wrap gap-2 mt-4 justify-center">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors text-sm focus-ring"
                 >
                   Change File
                 </button>
@@ -923,7 +923,7 @@ export default function UserImportPage() {
                     setShowPreview(false);
                     setShowValidation(false);
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm focus-ring"
                 >
                   Remove
                 </button>
@@ -943,7 +943,7 @@ export default function UserImportPage() {
               </p>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
               >
                 Browse Files
               </button>
@@ -954,61 +954,61 @@ export default function UserImportPage() {
 
       {/* Preview and Validation */}
       {showPreview && importUsers.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="card-brand p-0 overflow-hidden">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Eye className="w-5 h-5 text-blue-500" />
+                <Eye className="w-5 h-5 text-brand-500" />
                 Preview and Validation
               </h3>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPreviewMode('table')}
-                  className={`p-1.5 rounded transition-colors ${previewMode === 'table' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                  className={`p-1.5 rounded transition-colors focus-ring ${previewMode === 'table' ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                   aria-label="Table view"
                 >
                   <Table className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setPreviewMode('cards')}
-                  className={`p-1.5 rounded transition-colors ${previewMode === 'cards' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                  className={`p-1.5 rounded transition-colors focus-ring ${previewMode === 'cards' ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                   aria-label="Card view"
                 >
                   <Grid className="w-4 h-4" />
                 </button>
               </div>
             </div>
-            
+
             {/* Filter buttons */}
             <div className="flex flex-wrap gap-2 mt-3">
               <button
                 onClick={() => setFilterStatus('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  filterStatus === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors focus-ring ${
+                  filterStatus === 'all' ? 'bg-brand-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
               >
                 All ({summary.total})
               </button>
               <button
                 onClick={() => setFilterStatus('valid')}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  filterStatus === 'valid' ? 'bg-green-600 text-white' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/50'
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors focus-ring ${
+                  filterStatus === 'valid' ? 'bg-success-600 text-white' : 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400 hover:bg-success-200 dark:hover:bg-success-800/50'
                 }`}
               >
                 Valid ({summary.valid})
               </button>
               <button
                 onClick={() => setFilterStatus('invalid')}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  filterStatus === 'invalid' ? 'bg-red-600 text-white' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800/50'
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors focus-ring ${
+                  filterStatus === 'invalid' ? 'bg-danger-600 text-white' : 'bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400 hover:bg-danger-200 dark:hover:bg-danger-800/50'
                 }`}
               >
                 Invalid ({summary.invalid})
               </button>
               <button
                 onClick={() => setFilterStatus('warning')}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  filterStatus === 'warning' ? 'bg-yellow-600 text-white' : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-200 dark:hover:bg-yellow-800/50'
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors focus-ring ${
+                  filterStatus === 'warning' ? 'bg-warning-600 text-white' : 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400 hover:bg-warning-200 dark:hover:bg-warning-800/50'
                 }`}
               >
                 Warnings ({summary.warnings})
@@ -1025,12 +1025,12 @@ export default function UserImportPage() {
                 placeholder="Search users..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                 >
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
@@ -1040,7 +1040,7 @@ export default function UserImportPage() {
 
           {/* Table View */}
           {previewMode === 'table' ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto sidebar-scroll">
               <table className="w-full">
                 <thead className="bg-gray-50 dark:bg-gray-700/50">
                   <tr>
@@ -1049,7 +1049,7 @@ export default function UserImportPage() {
                         type="checkbox"
                         checked={selectedUsers.size === filteredUsers.length && filteredUsers.length > 0}
                         onChange={handleSelectAll}
-                        className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500"
                       />
                     </th>
                     <th className="p-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Row</th>
@@ -1069,13 +1069,13 @@ export default function UserImportPage() {
                           checked={selectedUsers.has(user.id)}
                           onChange={() => handleSelectUser(user.id)}
                           disabled={user.status === 'invalid'}
-                          className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                          className="rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 disabled:opacity-50"
                         />
                       </td>
-                      <td className="p-3 text-sm text-gray-500 dark:text-gray-400">{user.rowNumber || '-'}</td>
+                      <td className="p-3 text-sm text-gray-500 dark:text-gray-400 tabular-nums">{user.rowNumber || '-'}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
                             {user.firstName?.[0]}{user.lastName?.[0]}
                           </div>
                           <div className="min-w-0">
@@ -1090,7 +1090,7 @@ export default function UserImportPage() {
                         {user.email}
                       </td>
                       <td className="p-3 hidden md:table-cell">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400">
                           {user.role}
                         </span>
                       </td>
@@ -1099,24 +1099,24 @@ export default function UserImportPage() {
                         {user.errors.length > 0 && (
                           <div className="space-y-0.5">
                             {user.errors.slice(0, 1).map((error, i) => (
-                              <p key={i} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                              <p key={i} className="text-xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
                                 <XCircle className="w-3 h-3" /> {error}
                               </p>
                             ))}
                             {user.errors.length > 1 && (
-                              <p className="text-xs text-red-600 dark:text-red-400">+{user.errors.length - 1} more</p>
+                              <p className="text-xs text-danger-600 dark:text-danger-400 tabular-nums">+{user.errors.length - 1} more</p>
                             )}
                           </div>
                         )}
                         {user.warnings.length > 0 && user.errors.length === 0 && (
                           <div className="space-y-0.5">
                             {user.warnings.slice(0, 1).map((warning, i) => (
-                              <p key={i} className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                              <p key={i} className="text-xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
                                 <AlertTriangle className="w-3 h-3" /> {warning}
                               </p>
                             ))}
                             {user.warnings.length > 1 && (
-                              <p className="text-xs text-yellow-600 dark:text-yellow-400">+{user.warnings.length - 1} more</p>
+                              <p className="text-xs text-warning-600 dark:text-warning-400 tabular-nums">+{user.warnings.length - 1} more</p>
                             )}
                           </div>
                         )}
@@ -1125,28 +1125,28 @@ export default function UserImportPage() {
                   ))}
                 </tbody>
               </table>
-              
+
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between p-4 border-t border-gray-200 dark:border-gray-700">
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                  <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                     Showing {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredUsers.length)} of {filteredUsers.length}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                       Page {currentPage} of {totalPages}
                     </span>
                     <button
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
@@ -1158,10 +1158,10 @@ export default function UserImportPage() {
             /* Card View */
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {paginatedUsers.map(user => (
-                <div key={user.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div key={user.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-card-hover transition-shadow">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-medium flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white font-medium flex-shrink-0">
                         {user.firstName?.[0]}{user.lastName?.[0]}
                       </div>
                       <div className="min-w-0">
@@ -1174,7 +1174,7 @@ export default function UserImportPage() {
                     {getStatusBadge(user.status)}
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400">
                       {user.role}
                     </span>
                     {user.phoneNumber && (
@@ -1182,27 +1182,27 @@ export default function UserImportPage() {
                         <Phone className="w-3 h-3" /> {user.phoneNumber}
                       </span>
                     )}
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                    <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                       Row {user.rowNumber || '-'}
                     </span>
                   </div>
                   {(user.errors.length > 0 || user.warnings.length > 0) && (
                     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                       {user.errors.slice(0, 2).map((error, i) => (
-                        <p key={i} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                        <p key={i} className="text-xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
                           <XCircle className="w-3 h-3" /> {error}
                         </p>
                       ))}
                       {user.errors.length > 2 && (
-                        <p className="text-xs text-red-600 dark:text-red-400">+{user.errors.length - 2} more errors</p>
+                        <p className="text-xs text-danger-600 dark:text-danger-400 tabular-nums">+{user.errors.length - 2} more errors</p>
                       )}
                       {user.warnings.slice(0, 2).map((warning, i) => (
-                        <p key={i} className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                        <p key={i} className="text-xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" /> {warning}
                         </p>
                       ))}
                       {user.warnings.length > 2 && (
-                        <p className="text-xs text-yellow-600 dark:text-yellow-400">+{user.warnings.length - 2} more warnings</p>
+                        <p className="text-xs text-warning-600 dark:text-warning-400 tabular-nums">+{user.warnings.length - 2} more warnings</p>
                       )}
                     </div>
                   )}
@@ -1216,7 +1216,7 @@ export default function UserImportPage() {
       {/* Import Actions */}
       {importUsers.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
+          <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             {selectedUsers.size} user{selectedUsers.size !== 1 ? 's' : ''} selected
           </span>
           <div className="flex flex-wrap items-center gap-2">
@@ -1229,14 +1229,14 @@ export default function UserImportPage() {
                 setShowPreview(false);
                 setShowValidation(false);
               }}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm focus-ring"
             >
               Cancel
             </button>
             <button
               onClick={handleImport}
               disabled={importing || summary.readyToImport === 0}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 disabled:opacity-50 text-sm focus-ring"
             >
               {importing ? (
                 <>
@@ -1256,14 +1256,14 @@ export default function UserImportPage() {
 
       {/* Import Progress Bar */}
       {importing && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-600 dark:text-gray-400">Importing users...</span>
-            <span className="text-sm font-medium text-gray-900 dark:text-white">{importProgress}%</span>
+            <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">{importProgress}%</span>
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-brand-500 h-2 rounded-full transition-all duration-300"
               style={{ width: `${importProgress}%` }}
             />
           </div>
@@ -1272,9 +1272,9 @@ export default function UserImportPage() {
 
       {/* Import History */}
       {showHistory && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6">
+        <div className="card-brand p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <History className="w-5 h-5 text-blue-500" />
+            <History className="w-5 h-5 text-brand-500" />
             Import History
           </h3>
           {importHistory.length === 0 ? (
@@ -1283,7 +1283,7 @@ export default function UserImportPage() {
               <p className="text-gray-500 dark:text-gray-400">No import history</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-80 overflow-y-auto">
+            <div className="space-y-3 max-h-80 overflow-y-auto sidebar-scroll">
               {importHistory.map(history => (
                 <div key={history.id} className="flex flex-wrap items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors gap-2">
                   <div className="min-w-0">
@@ -1293,15 +1293,15 @@ export default function UserImportPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                    <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap tabular-nums">
                       {history.successCount}/{history.totalRows} successful
                     </span>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      history.status === 'completed' 
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
-                        : history.status === 'partial' 
-                        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      history.status === 'completed'
+                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400'
+                        : history.status === 'partial'
+                        ? 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400'
+                        : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400'
                     }`}>
                       {history.status}
                     </span>

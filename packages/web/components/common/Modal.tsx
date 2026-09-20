@@ -1,6 +1,6 @@
 // src/components/common/Modal.tsx
 import React, { useEffect, useRef } from 'react';
-import { X } from 'lucide-react'; // Add this import
+import { X } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -57,30 +57,33 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50"
+      className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
       onClick={handleClickOutside}
     >
       <div
         ref={modalRef}
-        className={`bg-white rounded-xl shadow-xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
+        className={`bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
       >
         {/* Header */}
         {(title || true) && (
-          <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
             {title && (
-              <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                {title}
+              </h2>
             )}
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded-lg transition-colors ml-auto"
+              className="p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors ml-auto focus-ring"
+              aria-label="Close modal"
             >
-              <X className="w-5 h-5 text-gray-500" />
+              <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
         )}
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
           {children}
         </div>
       </div>

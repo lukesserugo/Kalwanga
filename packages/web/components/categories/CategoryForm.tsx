@@ -1,5 +1,3 @@
-// packages/web/components/categories/CategoryForm.tsx
-
 'use client';
 
 import React, {
@@ -25,9 +23,7 @@ import {
   ArrowUpDown,
   Search as SearchIcon,
   ChevronDown,
-  Check,
   Sparkles,
-  ChevronRight,
   Star,
   Info,
   ExternalLink,
@@ -38,20 +34,12 @@ import { categoryService } from '../../services/categoryService';
 import { toast } from '../../utils/toast-manager';
 import { CategoryAvatar } from './CategoryAvatar';
 
-// ============================================
-// TYPES
-// ============================================
-
 interface CategoryFormProps {
-  /** Legacy prop — the form will fetch the category itself. */
   categoryId?: string;
-  /** Modern prop — pre-fetched category. Takes precedence over categoryId. */
   initialData?: Category | null;
-  /** Required for create mode when neither initialData nor categoryId is set. */
   businessUnitId?: string;
   onSuccess?: (category?: Category) => void;
   onCancel?: () => void;
-  /** Fired as submission starts/stops so parents can disable navigation. */
   onSubmittingChange?: (submitting: boolean) => void;
 }
 
@@ -73,10 +61,6 @@ interface FormData {
 type FieldKey = keyof FormData;
 type FormErrors = Partial<Record<FieldKey, string>>;
 
-// ============================================
-// CONSTANTS & HELPERS
-// ============================================
-
 const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HEX_REGEX = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 const URL_REGEX = /^https?:\/\//i;
@@ -95,30 +79,10 @@ const DEFAULT_COLORS = [
 ];
 
 const COMMON_ICONS = [
-  '👕',
-  '👟',
-  '👜',
-  '💻',
-  '📱',
-  '🎧',
-  '📚',
-  '🏠',
-  '🍔',
-  '☕',
-  '🧴',
-  '🧸',
-  '🎮',
-  '⚽',
-  '🎨',
-  '🔧',
-  '💊',
-  '🌱',
-  '🐾',
-  '🎁',
-  '🚗',
-  '💄',
-  '👶',
-  '🍕',
+  '👕', '👟', '👜', '💻', '📱', '🎧',
+  '📚', '🏠', '🍔', '☕', '🧴', '🧸',
+  '🎮', '⚽', '🎨', '🔧', '💊', '🌱',
+  '🐾', '🎁', '🚗', '💄', '👶', '🍕',
 ];
 
 function slugify(value: string): string {
@@ -167,10 +131,6 @@ function formFromCategory(c: Category): FormData {
   };
 }
 
-// ============================================
-// COMPONENT
-// ============================================
-
 export function CategoryForm({
   categoryId,
   initialData,
@@ -181,10 +141,8 @@ export function CategoryForm({
 }: CategoryFormProps) {
   const router = useRouter();
 
-  // Edit mode if either a pre-fetched category or an id was provided
   const isEdit = !!(initialData || categoryId);
 
-  // ---- State ----
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -204,12 +162,10 @@ export function CategoryForm({
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const iconPickerRef = useRef<HTMLDivElement>(null);
 
-  // ---- Propagate submit state ----
   useEffect(() => {
     onSubmittingChange?.(submitting);
   }, [submitting, onSubmittingChange]);
 
-  // ---- Load categories for parent picker ----
   const loadCategories = useCallback(async () => {
     const bu = businessUnitId || loadedCategory?.businessUnitId;
     try {
@@ -224,7 +180,6 @@ export function CategoryForm({
     }
   }, [businessUnitId, loadedCategory?.businessUnitId]);
 
-  // ---- Fetch the category if only an id was provided ----
   const loadCategory = useCallback(async () => {
     if (!categoryId || initialData) return;
     try {
@@ -250,14 +205,12 @@ export function CategoryForm({
     }
   }, [loadCategories, loadCategory, categoryId, initialData]);
 
-  // ---- Auto-slug ----
   useEffect(() => {
     if (slugTouched) return;
     if (!formData.name) return;
     setFormData((prev) => ({ ...prev, slug: slugify(prev.name) }));
   }, [formData.name, slugTouched]);
 
-  // ---- Close icon picker on outside click ----
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -271,7 +224,6 @@ export function CategoryForm({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // ---- Esc cancels ----
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !submitting && onCancel) {
@@ -282,7 +234,6 @@ export function CategoryForm({
     return () => window.removeEventListener('keydown', handler);
   }, [onCancel, submitting]);
 
-  // ---- Field helpers ----
   const setField = useCallback(
     <K extends FieldKey>(key: K, value: FormData[K]) => {
       setFormData((prev) => ({ ...prev, [key]: value }));
@@ -295,7 +246,6 @@ export function CategoryForm({
     setTouched((prev) => ({ ...prev, [key]: true }));
   }, []);
 
-  // ---- Validation ----
   const validateField = useCallback(
     (key: FieldKey, value: any): string | undefined => {
       switch (key) {
@@ -308,7 +258,7 @@ export function CategoryForm({
           return undefined;
 
         case 'slug':
-          if (!value) return undefined; // auto-generated if empty
+          if (!value) return undefined;
           if (!SLUG_REGEX.test(value))
             return 'Use lowercase letters, numbers, and hyphens only';
           return undefined;
@@ -366,7 +316,6 @@ export function CategoryForm({
     return Object.keys(next).length === 0;
   }, [formData, validateField]);
 
-  // ---- Input handlers ----
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -396,12 +345,10 @@ export function CategoryForm({
     setErrors((prev) => ({ ...prev, [key]: msg }));
   };
 
-  // ---- Submit ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting || submitSuccess) return;
 
-    // Mark all touched, then validate
     const allTouched: Partial<Record<FieldKey, boolean>> = {};
     (Object.keys(formData) as FieldKey[]).forEach((k) => {
       allTouched[k] = true;
@@ -430,7 +377,6 @@ export function CategoryForm({
         metaDescription: formData.metaDescription.trim() || null,
       };
 
-      // Include slug whenever the user has set one (auto or manual)
       if (formData.slug.trim()) {
         payload.slug = formData.slug.trim();
       }
@@ -451,7 +397,6 @@ export function CategoryForm({
 
       setSubmitSuccess(true);
 
-      // Reset on create (edit stays populated in case onSuccess is delayed)
       if (!isEdit) {
         setFormData(emptyForm());
         setTouched({});
@@ -460,7 +405,6 @@ export function CategoryForm({
       }
 
       if (onSuccess) {
-        // Small delay so the user sees the success banner
         setTimeout(() => onSuccess(result), 600);
       } else {
         setTimeout(() => {
@@ -480,7 +424,6 @@ export function CategoryForm({
     }
   };
 
-  // ---- Derived ----
   const avatarPreview = useMemo(
     () => ({
       id: loadedCategory?.id ?? 'preview',
@@ -489,7 +432,13 @@ export function CategoryForm({
       icon: formData.icon || null,
       color: formData.color || null,
     }),
-    [formData.name, formData.image, formData.icon, formData.color, loadedCategory?.id],
+    [
+      formData.name,
+      formData.image,
+      formData.icon,
+      formData.color,
+      loadedCategory?.id,
+    ],
   );
 
   const filteredParents = useMemo(() => {
@@ -503,24 +452,23 @@ export function CategoryForm({
 
   const disabled = submitting || submitSuccess;
 
-  // ---- Field class helpers ----
   const inputClass = (key: FieldKey, extra = ''): string => {
     const base =
       'w-full px-3 py-2.5 rounded-xl border bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:border-transparent transition-all disabled:opacity-60 disabled:cursor-not-allowed';
-    const state = errors[key] && touched[key]
-      ? 'border-red-400 dark:border-red-500 focus:ring-red-500'
-      : 'border-gray-200 dark:border-gray-700 focus:ring-blue-500';
+    const state =
+      errors[key] && touched[key]
+        ? 'border-danger-400 dark:border-danger-500 focus:ring-danger-500'
+        : 'border-gray-200 dark:border-gray-700 focus:ring-brand-500';
     return `${base} ${state} ${extra}`.trim();
   };
 
   const fieldError = (key: FieldKey) =>
     touched[key] && errors[key] ? errors[key] : undefined;
 
-  // ---- Loading ----
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
           Loading category…
         </p>
@@ -528,27 +476,22 @@ export function CategoryForm({
     );
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      {/* Success banner */}
       <AnimatePresence>
         {submitSuccess && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="flex items-start gap-3 p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800"
+            className="flex items-start gap-3 p-4 rounded-xl bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800 animate-slide-down"
           >
-            <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <Sparkles className="w-5 h-5 text-success-600 dark:text-success-400 shrink-0 mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium text-emerald-800 dark:text-emerald-200">
+              <p className="font-medium text-success-800 dark:text-success-200">
                 {isEdit ? 'Category updated' : 'Category created'}
               </p>
-              <p className="text-emerald-700 dark:text-emerald-300 mt-0.5">
+              <p className="text-success-700 dark:text-success-300 mt-0.5">
                 {onSuccess ? 'Finishing up…' : 'Redirecting…'}
               </p>
             </div>
@@ -556,9 +499,6 @@ export function CategoryForm({
         )}
       </AnimatePresence>
 
-      {/* ============================================
-          SECTION 1 — IDENTITY
-          ============================================ */}
       <section>
         <SectionHeader
           icon={<Sparkles className="w-4 h-4" />}
@@ -567,7 +507,6 @@ export function CategoryForm({
         />
 
         <div className="mt-5 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6">
-          {/* Avatar preview */}
           <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-800/30 border border-gray-200 dark:border-gray-700">
             <CategoryAvatar
               category={avatarPreview}
@@ -579,14 +518,13 @@ export function CategoryForm({
               <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
                 Avatar preview
               </p>
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+              <p className="text-3xs text-gray-500 dark:text-gray-400 mt-0.5">
                 image → icon → initials
               </p>
             </div>
           </div>
 
           <div className="space-y-4">
-            {/* Name */}
             <Field
               label="Name"
               required
@@ -608,7 +546,6 @@ export function CategoryForm({
               />
             </Field>
 
-            {/* Slug */}
             <Field
               label="Slug"
               icon={<Hash className="w-4 h-4" />}
@@ -621,8 +558,8 @@ export function CategoryForm({
                     : 'Will be auto-generated'
               }
             >
-              <div className="flex items-stretch rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition-all">
-                <span className="flex items-center px-3 text-sm text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60 border-r border-gray-200 dark:border-gray-700">
+              <div className="flex items-stretch rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden focus-within:ring-2 focus-within:ring-brand-500 transition-all">
+                <span className="flex items-center px-3 text-sm text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/60 border-r border-gray-200 dark:border-gray-700 font-mono">
                   /
                 </span>
                 <input
@@ -633,7 +570,7 @@ export function CategoryForm({
                   onBlur={handleBlur}
                   placeholder="summer-collection"
                   disabled={disabled}
-                  className="flex-1 px-3 py-2.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none disabled:opacity-60"
+                  className="flex-1 px-3 py-2.5 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none disabled:opacity-60 font-mono"
                 />
                 {formData.name && !disabled && (
                   <button
@@ -642,7 +579,7 @@ export function CategoryForm({
                       setField('slug', slugify(formData.name));
                       setSlugTouched(false);
                     }}
-                    className="px-3 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    className="px-3 text-xs font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors focus-ring"
                   >
                     Reset
                   </button>
@@ -650,7 +587,6 @@ export function CategoryForm({
               </div>
             </Field>
 
-            {/* Description */}
             <Field
               label="Description"
               icon={<AlignLeft className="w-4 h-4" />}
@@ -677,9 +613,6 @@ export function CategoryForm({
         </div>
       </section>
 
-      {/* ============================================
-          SECTION 2 — VISUAL IDENTITY
-          ============================================ */}
       <section>
         <SectionHeader
           icon={<Palette className="w-4 h-4" />}
@@ -688,7 +621,6 @@ export function CategoryForm({
         />
 
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Image URL */}
           <Field
             label="Image URL"
             icon={<ImageIcon className="w-4 h-4" />}
@@ -711,7 +643,7 @@ export function CategoryForm({
                   href={formData.image}
                   target="_blank"
                   rel="noreferrer"
-                  className="p-2 rounded-lg text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
+                  className="p-2 rounded-lg text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors shrink-0 focus-ring"
                   title="Preview image"
                 >
                   <ExternalLink className="w-4 h-4" />
@@ -720,7 +652,6 @@ export function CategoryForm({
             </div>
           </Field>
 
-          {/* Icon picker */}
           <Field
             label="Icon"
             icon={<Smile className="w-4 h-4" />}
@@ -728,7 +659,7 @@ export function CategoryForm({
             hint="Emoji or short text"
           >
             <div className="relative" ref={iconPickerRef}>
-              <div className="flex items-stretch rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+              <div className="flex items-stretch rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden focus-within:ring-2 focus-within:ring-brand-500 transition-all">
                 <input
                   type="text"
                   name="icon"
@@ -744,7 +675,7 @@ export function CategoryForm({
                   type="button"
                   onClick={() => !disabled && setIconPickerOpen((v) => !v)}
                   disabled={disabled}
-                  className="px-3 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 border-l border-gray-200 dark:border-gray-700 transition-colors disabled:opacity-50"
+                  className="px-3 text-gray-500 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700/50 border-l border-gray-200 dark:border-gray-700 transition-colors disabled:opacity-50 focus-ring"
                   aria-label="Open icon picker"
                 >
                   <ChevronDown className="w-4 h-4" />
@@ -757,7 +688,7 @@ export function CategoryForm({
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
-                    className="absolute z-20 mt-2 w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-2"
+                    className="absolute z-toast mt-2 w-full bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover border border-gray-200 dark:border-gray-700 p-2"
                   >
                     <div className="grid grid-cols-6 gap-1">
                       {COMMON_ICONS.map((emoji) => (
@@ -769,9 +700,9 @@ export function CategoryForm({
                             markTouched('icon');
                             setIconPickerOpen(false);
                           }}
-                          className={`aspect-square flex items-center justify-center text-xl rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+                          className={`aspect-square flex items-center justify-center text-xl rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring ${
                             formData.icon === emoji
-                              ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                              ? 'ring-2 ring-brand-500 bg-brand-50 dark:bg-brand-900/20'
                               : ''
                           }`}
                         >
@@ -785,7 +716,6 @@ export function CategoryForm({
             </div>
           </Field>
 
-          {/* Color */}
           <Field
             label="Accent color"
             icon={<Palette className="w-4 h-4" />}
@@ -804,7 +734,7 @@ export function CategoryForm({
                 <input
                   type="color"
                   value={
-                    HEX_REGEX.test(formData.color) ? formData.color : '#3B82F6'
+                    HEX_REGEX.test(formData.color) ? formData.color : '#F97316'
                   }
                   onChange={(e) => setField('color', e.target.value)}
                   disabled={disabled}
@@ -826,7 +756,7 @@ export function CategoryForm({
                 <button
                   type="button"
                   onClick={() => setField('color', '')}
-                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
+                  className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors shrink-0 focus-ring"
                   aria-label="Clear color"
                 >
                   <X className="w-4 h-4" />
@@ -834,7 +764,6 @@ export function CategoryForm({
               )}
             </div>
 
-            {/* Swatches */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {DEFAULT_COLORS.map((c) => (
                 <button
@@ -845,7 +774,7 @@ export function CategoryForm({
                     setField('color', c);
                     markTouched('color');
                   }}
-                  className={`w-6 h-6 rounded-full transition-transform hover:scale-110 ring-2 ring-offset-2 dark:ring-offset-gray-800 disabled:opacity-50 disabled:hover:scale-100 ${
+                  className={`w-6 h-6 rounded-full transition-transform hover:scale-110 ring-2 ring-offset-2 dark:ring-offset-gray-800 disabled:opacity-50 disabled:hover:scale-100 focus-ring ${
                     formData.color.toLowerCase() === c.toLowerCase()
                       ? 'ring-gray-900 dark:ring-white'
                       : 'ring-transparent'
@@ -857,7 +786,6 @@ export function CategoryForm({
             </div>
           </Field>
 
-          {/* Sort order */}
           <Field
             label="Sort order"
             icon={<ArrowUpDown className="w-4 h-4" />}
@@ -878,9 +806,6 @@ export function CategoryForm({
         </div>
       </section>
 
-      {/* ============================================
-          SECTION 3 — HIERARCHY & STATUS
-          ============================================ */}
       <section>
         <SectionHeader
           icon={<FolderTree className="w-4 h-4" />}
@@ -889,7 +814,6 @@ export function CategoryForm({
         />
 
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Parent picker */}
           <Field
             label="Parent category"
             icon={<FolderTree className="w-4 h-4" />}
@@ -918,7 +842,6 @@ export function CategoryForm({
             )}
           </Field>
 
-          {/* Toggles */}
           <div className="space-y-3">
             <Toggle
               checked={formData.isActive}
@@ -940,14 +863,11 @@ export function CategoryForm({
         </div>
       </section>
 
-      {/* ============================================
-          SECTION 4 — SEO (collapsible)
-          ============================================ */}
       <section className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <button
           type="button"
           onClick={() => setShowSeo((v) => !v)}
-          className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 hover:bg-orange-50 dark:hover:bg-gray-800 transition-colors focus-ring"
         >
           <div className="flex items-center gap-2.5">
             <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
@@ -1032,16 +952,13 @@ export function CategoryForm({
         </AnimatePresence>
       </section>
 
-      {/* ============================================
-          ACTIONS
-          ============================================ */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
             disabled={submitting}
-            className="px-5 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-secondary focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
@@ -1049,7 +966,7 @@ export function CategoryForm({
         <button
           type="submit"
           disabled={disabled}
-          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium hover:from-blue-700 hover:to-indigo-700 shadow-sm hover:shadow transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+          className="px-5 py-2.5 rounded-xl bg-brand-gradient text-white text-sm font-medium shadow-brand hover:shadow-brand-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 focus-ring"
         >
           {submitting ? (
             <>
@@ -1065,10 +982,6 @@ export function CategoryForm({
   );
 }
 
-// ============================================
-// SUB-COMPONENTS
-// ============================================
-
 interface SectionHeaderProps {
   icon: React.ReactNode;
   title: string;
@@ -1078,7 +991,7 @@ interface SectionHeaderProps {
 function SectionHeader({ icon, title, subtitle }: SectionHeaderProps) {
   return (
     <div className="flex items-start gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
-      <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 text-blue-600 dark:text-blue-400 shrink-0">
+      <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-brand-100 to-secondary-100 dark:from-brand-900/30 dark:to-secondary-900/30 text-brand-600 dark:text-brand-400 shrink-0">
         {icon}
       </span>
       <div className="min-w-0">
@@ -1108,7 +1021,7 @@ function Field({ label, required, icon, error, hint, children }: FieldProps) {
       <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
         {icon && <span className="text-gray-400">{icon}</span>}
         {label}
-        {required && <span className="text-red-500">*</span>}
+        {required && <span className="text-danger-500">*</span>}
         {hint && (
           <span className="ml-auto text-xs font-normal text-gray-400 dark:text-gray-500">
             {hint}
@@ -1122,7 +1035,7 @@ function Field({ label, required, icon, error, hint, children }: FieldProps) {
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            className="mt-1.5 text-xs text-red-600 dark:text-red-400 flex items-center gap-1"
+            className="mt-1.5 text-xs text-danger-600 dark:text-danger-400 flex items-center gap-1"
           >
             <AlertCircle className="w-3 h-3 shrink-0" />
             {error}
@@ -1153,27 +1066,25 @@ function Toggle({
   tone = 'blue',
 }: ToggleProps) {
   const activeBg =
-    tone === 'amber'
-      ? 'bg-amber-500'
-      : 'bg-blue-600';
+    tone === 'amber' ? 'bg-warning-500' : 'bg-brand-500';
   return (
     <button
       type="button"
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
-      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left ${
+      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left focus-ring ${
         checked
-          ? 'border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-900/10'
-          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+          ? 'border-brand-200 dark:border-brand-900/50 bg-brand-50/50 dark:bg-brand-900/10'
+          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-orange-50 dark:hover:bg-gray-700/50'
       } disabled:opacity-60 disabled:cursor-not-allowed`}
     >
       {icon && (
         <span
           className={`shrink-0 ${
             checked && tone === 'amber'
-              ? 'text-amber-500'
+              ? 'text-warning-500'
               : checked
-                ? 'text-blue-600 dark:text-blue-400'
+                ? 'text-brand-600 dark:text-brand-400'
                 : 'text-gray-400'
           }`}
         >

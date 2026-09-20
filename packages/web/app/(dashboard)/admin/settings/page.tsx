@@ -44,7 +44,7 @@ export default function SettingsPage() {
 
         <div className="space-y-6">
           {/* Profile Section */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors duration-200">
+          <div className="card-brand p-6 transition-colors duration-200">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Profile Information
             </h3>
@@ -67,7 +67,7 @@ export default function SettingsPage() {
               </div>
               <button
                 onClick={() => showToast('Edit profile coming soon', 'info')}
-                className="mt-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium transition-colors"
+                className="mt-2 text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 text-sm font-medium transition-colors focus-ring rounded"
               >
                 Edit Profile →
               </button>
@@ -75,7 +75,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Preferences */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors duration-200">
+          <div className="card-brand p-6 transition-colors duration-200">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Preferences
             </h3>
@@ -93,8 +93,8 @@ export default function SettingsPage() {
                 <button
                   onClick={toggleTheme}
                   aria-label="Toggle dark mode"
-                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                    isDark ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 focus-ring ${
+                    isDark ? 'bg-brand-600' : 'bg-gray-300 dark:bg-gray-600'
                   }`}
                 >
                   <div
@@ -118,8 +118,8 @@ export default function SettingsPage() {
                 <button
                   onClick={() => setNotifications(!notifications)}
                   aria-label="Toggle notifications"
-                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                    notifications ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 focus-ring ${
+                    notifications ? 'bg-brand-600' : 'bg-gray-300 dark:bg-gray-600'
                   }`}
                 >
                   <div
@@ -143,8 +143,8 @@ export default function SettingsPage() {
                 <button
                   onClick={() => setEmailUpdates(!emailUpdates)}
                   aria-label="Toggle email updates"
-                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                    emailUpdates ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 flex-shrink-0 focus-ring ${
+                    emailUpdates ? 'bg-brand-600' : 'bg-gray-300 dark:bg-gray-600'
                   }`}
                 >
                   <div
@@ -158,20 +158,20 @@ export default function SettingsPage() {
           </div>
 
           {/* Account */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 transition-colors duration-200">
+          <div className="card-brand p-6 transition-colors duration-200">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Account
             </h3>
             <div className="space-y-3">
               <button
                 onClick={handleSaveSettings}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors duration-200 font-medium"
+                className="w-full bg-brand-500 text-white px-4 py-2 rounded-lg hover:bg-brand-600 dark:bg-brand-500 dark:hover:bg-brand-600 transition-colors duration-200 font-medium focus-ring"
               >
                 Save Settings
               </button>
               <button
                 onClick={handleSignOut}
-                className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 transition-colors duration-200 font-medium"
+                className="w-full bg-danger-600 text-white px-4 py-2 rounded-lg hover:bg-danger-700 dark:bg-danger-600 dark:hover:bg-danger-700 transition-colors duration-200 font-medium focus-ring"
               >
                 Sign Out
               </button>

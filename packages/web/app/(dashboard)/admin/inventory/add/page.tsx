@@ -1723,9 +1723,9 @@ export default function AddInventoryItemPage() {
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
     const base =
-      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
     return getFieldError(fieldName)
-      ? `${base} border-red-500 dark:border-red-500 focus:ring-red-500`
+      ? `${base} border-brand-accent-500 dark:border-brand-accent-500 focus:ring-brand-accent-500`
       : `${base} border-gray-300 dark:border-gray-600`;
   };
 
@@ -1748,7 +1748,7 @@ export default function AddInventoryItemPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-6">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto" />
+          <Loader2 className="w-10 h-10 animate-spin text-brand-600 mx-auto" />
           <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
             Checking your session...
           </p>
@@ -1772,7 +1772,7 @@ export default function AddInventoryItemPage() {
           </p>
           <button
             onClick={() => router.push('/login')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Go to Login
           </button>
@@ -1785,8 +1785,8 @@ export default function AddInventoryItemPage() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-6">
         <div className="text-center max-w-md">
-          <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-12 h-12 text-red-500" />
+          <div className="w-24 h-24 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-12 h-12 text-brand-accent-500" />
           </div>
           <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
             Access Denied
@@ -1796,7 +1796,7 @@ export default function AddInventoryItemPage() {
           </p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors focus-ring"
           >
             Back to Inventory
           </button>
@@ -1817,7 +1817,7 @@ export default function AddInventoryItemPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={handleCancel}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Go back"
               disabled={loading}
             >
@@ -1825,7 +1825,7 @@ export default function AddInventoryItemPage() {
             </button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Package className="w-6 h-6 text-blue-500" />
+                <Package className="w-6 h-6 text-brand-500" />
                 Add Inventory Item
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -1835,7 +1835,7 @@ export default function AddInventoryItemPage() {
             </div>
           </div>
           {selectedBuName && (
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg text-sm text-green-700 dark:text-green-300">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-success-100 dark:bg-success-950/30 rounded-lg text-sm text-success-700 dark:text-success-300">
               <Building className="w-4 h-4" />
               <span>BU: {selectedBuName}</span>
             </div>
@@ -1847,7 +1847,7 @@ export default function AddInventoryItemPage() {
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Select Business Unit <span className="text-red-500">*</span>
+                Select Business Unit <span className="text-brand-accent-500">*</span>
               </label>
               <div className="relative">
                 <button
@@ -1856,7 +1856,7 @@ export default function AddInventoryItemPage() {
                     setShowBusinessUnitDropdown(!showBusinessUnitDropdown)
                   }
                   disabled={loadingBusinessUnits || loading}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
                 >
                   <div className="flex items-center gap-2 truncate">
                     <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -1868,7 +1868,7 @@ export default function AddInventoryItemPage() {
                     ) : selectedBuName ? (
                       <span className="truncate">{selectedBuName}</span>
                     ) : businessUnitError ? (
-                      <span className="text-red-500 truncate">
+                      <span className="text-brand-accent-500 truncate">
                         {businessUnitError}
                       </span>
                     ) : (
@@ -1879,7 +1879,7 @@ export default function AddInventoryItemPage() {
                   </div>
                   <div className="flex items-center gap-1">
                     {isValidBusinessUnitId(selectedBusinessUnitId) && (
-                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="w-2 h-2 rounded-full bg-success-500" />
                     )}
                     {showBusinessUnitDropdown ? (
                       <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -1890,7 +1890,7 @@ export default function AddInventoryItemPage() {
                 </button>
 
                 {showBusinessUnitDropdown && (
-                  <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto custom-scrollbar">
                     {loadingBusinessUnits ? (
                       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                         <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
@@ -1898,7 +1898,7 @@ export default function AddInventoryItemPage() {
                       </div>
                     ) : businessUnits.length === 0 ? (
                       <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                        <AlertCircle className="w-5 h-5 mx-auto mb-2 text-yellow-500" />
+                        <AlertCircle className="w-5 h-5 mx-auto mb-2 text-warning-500" />
                         No business units available
                         <p className="text-xs text-gray-400 mt-1">
                           Please create a company with a business unit first
@@ -1919,11 +1919,11 @@ export default function AddInventoryItemPage() {
                             }
                             disabled={!isActive}
                             className={`
-                              w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700
-                              transition-colors flex items-center justify-between
+                              w-full px-4 py-2 text-left hover:bg-brand-50 dark:hover:bg-gray-700
+                              transition-colors flex items-center justify-between focus-ring
                               ${
                                 isSelected
-                                  ? 'bg-blue-50 dark:bg-blue-900/20'
+                                  ? 'bg-brand-50 dark:bg-brand-950/20'
                                   : ''
                               }
                               ${
@@ -1937,7 +1937,7 @@ export default function AddInventoryItemPage() {
                               <p
                                 className={`text-sm font-medium truncate ${
                                   isSelected
-                                    ? 'text-blue-600 dark:text-blue-400'
+                                    ? 'text-brand-600 dark:text-brand-400'
                                     : 'text-gray-900 dark:text-white'
                                 }`}
                               >
@@ -1952,14 +1952,14 @@ export default function AddInventoryItemPage() {
                                   </span>
                                 )}
                                 {!isActive && (
-                                  <span className="text-red-500">
+                                  <span className="text-brand-accent-500">
                                     • Inactive
                                   </span>
                                 )}
                               </div>
                             </div>
                             {isSelected && (
-                              <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />
+                              <CheckCircle className="w-4 h-4 text-brand-500 flex-shrink-0 ml-2" />
                             )}
                           </button>
                         );
@@ -1969,7 +1969,7 @@ export default function AddInventoryItemPage() {
                 )}
               </div>
               {getFieldError('businessUnit') && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                   {getFieldError('businessUnit')}
                 </p>
               )}
@@ -2002,13 +2002,13 @@ export default function AddInventoryItemPage() {
 
         {/* Business Unit Warning */}
         {!isValidBusinessUnitId(selectedBusinessUnitId) && (
-          <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 bg-warning-50 dark:bg-warning-950/20 border border-warning-200 dark:border-warning-800 rounded-lg p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning-600 dark:text-warning-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+              <p className="text-sm font-medium text-warning-800 dark:text-warning-200">
                 Business Unit Required
               </p>
-              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              <p className="text-sm text-warning-700 dark:text-warning-300">
                 Please select a business unit from the dropdown above to
                 continue creating inventory items.
                 {businessUnits.length === 0 &&
@@ -2020,14 +2020,14 @@ export default function AddInventoryItemPage() {
 
         {/* Success Banner */}
         {success && (
-          <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-6 bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+              <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                <p className="text-sm font-medium text-success-800 dark:text-success-200">
                   Success!
                 </p>
-                <p className="text-sm text-green-700 dark:text-green-300">
+                <p className="text-sm text-success-700 dark:text-success-300">
                   Item created successfully with barcode and QR code.
                 </p>
               </div>
@@ -2035,13 +2035,13 @@ export default function AddInventoryItemPage() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={handleCreateAnother}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center gap-1"
+                className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors text-sm flex items-center gap-1 shadow-brand focus-ring"
               >
                 <Plus className="w-4 h-4" /> Add Another
               </button>
               <button
                 onClick={() => router.push('/admin/inventory')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-1"
+                className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm flex items-center gap-1 shadow-brand focus-ring"
               >
                 <Package className="w-4 h-4" /> View Inventory
               </button>
@@ -2050,7 +2050,7 @@ export default function AddInventoryItemPage() {
                   onClick={() =>
                     router.push(`/admin/inventory/${createdItemId}`)
                   }
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1 focus-ring"
                 >
                   <Eye className="w-4 h-4" /> View Item
                 </button>
@@ -2061,19 +2061,19 @@ export default function AddInventoryItemPage() {
 
         {/* Error Display */}
         {error && !success && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+              <p className="text-sm font-medium text-brand-accent-800 dark:text-brand-accent-200">
                 Error
               </p>
-              <p className="text-sm text-red-700 dark:text-red-300 break-words">
+              <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300 break-words">
                 {error}
               </p>
             </div>
             <button
               onClick={() => setError(null)}
-              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              className="text-brand-accent-600 hover:text-brand-accent-800 dark:text-brand-accent-400 p-1 focus-ring"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
@@ -2089,12 +2089,12 @@ export default function AddInventoryItemPage() {
           {/* Basic Information */}
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <Info className="w-5 h-5 text-blue-500" /> Basic Information
+              <Info className="w-5 h-5 text-brand-500" /> Basic Information
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Item Name <span className="text-red-500">*</span>
+                  Item Name <span className="text-brand-accent-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -2108,7 +2108,7 @@ export default function AddInventoryItemPage() {
                   disabled={loading || success}
                 />
                 {getFieldError('name') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('name')}
                   </p>
                 )}
@@ -2125,9 +2125,9 @@ export default function AddInventoryItemPage() {
                     value={formData.sku}
                     onChange={handleSKUChange}
                     onBlur={handleBlur}
-                    className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono transition-colors disabled:opacity-50 ${
+                    className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono transition-colors disabled:opacity-50 ${
                       errors.sku
-                        ? 'border-red-500 dark:border-red-500'
+                        ? 'border-brand-accent-500 dark:border-brand-accent-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder={
@@ -2141,7 +2141,7 @@ export default function AddInventoryItemPage() {
                     type="button"
                     onClick={handleRegenerateSKU}
                     disabled={!formData.name || loading || success}
-                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                    className="px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                     title="Generate SKU from item name"
                   >
                     <Wand2 className="w-4 h-4" />
@@ -2161,7 +2161,7 @@ export default function AddInventoryItemPage() {
                         setFormData((prev) => ({ ...prev, sku: newSKU }));
                       }
                     }}
-                    className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-700"
+                    className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 bg-white dark:bg-gray-700 transition-colors"
                   />
                   <label
                     htmlFor="autoGenerateSKU"
@@ -2171,12 +2171,12 @@ export default function AddInventoryItemPage() {
                   </label>
                 </div>
                 {getFieldError('sku') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('sku')}
                   </p>
                 )}
                 {autoGenerateSKU && formData.sku && (
-                  <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+                  <p className="mt-1 text-xs text-success-600 dark:text-success-400">
                     ✓ Auto-generated:{' '}
                     <span className="font-mono">{formData.sku}</span>
                   </p>
@@ -2185,13 +2185,13 @@ export default function AddInventoryItemPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Unit <span className="text-red-500">*</span>
+                  Unit <span className="text-brand-accent-500">*</span>
                 </label>
                 <select
                   name="unit"
                   value={formData.unit}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 transition-colors"
                   disabled={loading || success}
                   required
                 >
@@ -2226,7 +2226,7 @@ export default function AddInventoryItemPage() {
                       category: match?.name || '',
                     }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 transition-colors"
                   disabled={loading || success || loadingOptions}
                 >
                   <option value="">Select Category</option>
@@ -2242,7 +2242,7 @@ export default function AddInventoryItemPage() {
                   <button
                     type="button"
                     onClick={handleAddNewCategory}
-                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    className="text-brand-500 hover:underline inline-flex items-center gap-1 focus-ring"
                     disabled={loading || success}
                   >
                     Create one
@@ -2250,7 +2250,7 @@ export default function AddInventoryItemPage() {
                   </button>
                 </p>
                 {getFieldError('category') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('category')}
                   </p>
                 )}
@@ -2285,7 +2285,7 @@ export default function AddInventoryItemPage() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50"
                   placeholder="Enter item description"
                   disabled={loading || success}
                 />
@@ -2305,7 +2305,7 @@ export default function AddInventoryItemPage() {
                   type="checkbox"
                   checked={autoGenerateCodes}
                   onChange={(e) => setAutoGenerateCodes(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-brand-600 border-gray-300 dark:border-gray-600 rounded focus:ring-brand-500 transition-colors"
                   disabled={loading || success}
                 />
                 Auto-generate on save if empty
@@ -2320,11 +2320,11 @@ export default function AddInventoryItemPage() {
                     name="barcode"
                     value={formData.barcode}
                     onChange={(e) => handleBarcodeChange(e.target.value)}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 font-mono disabled:opacity-50 ${
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 font-mono disabled:opacity-50 ${
                       errors.barcode
-                        ? 'border-red-500'
+                        ? 'border-brand-accent-500'
                         : isBarcodeValid === true
-                          ? 'border-green-500'
+                          ? 'border-success-500'
                           : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter barcode or click Generate"
@@ -2337,7 +2337,7 @@ export default function AddInventoryItemPage() {
                   )}
                   {isBarcodeValid === true && formData.barcode && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <CheckCircle className="w-4 h-4 text-success-500" />
                     </div>
                   )}
                 </div>
@@ -2345,7 +2345,7 @@ export default function AddInventoryItemPage() {
                   type="button"
                   onClick={handleGenerateBarcode}
                   disabled={generatingBarcode || loading || success}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                  className="px-3 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                   title="Generate barcode and QR code"
                 >
                   {generatingBarcode ? (
@@ -2360,12 +2360,12 @@ export default function AddInventoryItemPage() {
                     <button
                       type="button"
                       onClick={handleCopyBarcode}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                       title="Copy barcode"
                       disabled={loading || success}
                     >
                       {copied ? (
-                        <Check className="w-4 h-4 text-green-500" />
+                        <Check className="w-4 h-4 text-success-500" />
                       ) : (
                         <Copy className="w-4 h-4" />
                       )}
@@ -2373,7 +2373,7 @@ export default function AddInventoryItemPage() {
                     <button
                       type="button"
                       onClick={() => setShowBarcode(!showBarcode)}
-                      className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1 disabled:opacity-50"
+                      className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
                       title="Show/hide barcode and QR code"
                       disabled={loading || success}
                     >
@@ -2386,10 +2386,10 @@ export default function AddInventoryItemPage() {
                 )}
               </div>
               {errors.barcode && (
-                <p className="mt-1 text-sm text-red-500">{errors.barcode}</p>
+                <p className="mt-1 text-sm text-brand-accent-500">{errors.barcode}</p>
               )}
               {isBarcodeValid === true && formData.barcode && (
-                <p className="mt-1 text-sm text-green-500">
+                <p className="mt-1 text-sm text-success-500">
                   ✓ Barcode is available
                 </p>
               )}
@@ -2438,7 +2438,7 @@ export default function AddInventoryItemPage() {
                       <button
                         type="button"
                         onClick={handleDownloadBarcode}
-                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1 focus-ring"
                         disabled={loading || success}
                       >
                         <Download className="w-3 h-3" /> Barcode
@@ -2446,7 +2446,7 @@ export default function AddInventoryItemPage() {
                       <button
                         type="button"
                         onClick={handleDownloadQRCode}
-                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1 focus-ring"
                         disabled={loading || success}
                       >
                         <Download className="w-3 h-3" /> QR Code
@@ -2454,7 +2454,7 @@ export default function AddInventoryItemPage() {
                       <button
                         type="button"
                         onClick={handlePrintBarcode}
-                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-1 focus-ring"
                         disabled={loading || success}
                       >
                         <Printer className="w-3 h-3" /> Print Both
@@ -2462,14 +2462,14 @@ export default function AddInventoryItemPage() {
                       <button
                         type="button"
                         onClick={() => setShowBarcode(false)}
-                        className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                        className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-ring"
                         disabled={loading || success}
                       >
                         Hide
                       </button>
                     </div>
                     {barcodeSource === 'generated' && (
-                      <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                      <p className="text-xs text-success-600 dark:text-success-400 mt-2">
                         ✓ Auto-generated by the server. The QR code will be
                         finalized with the real inventory id after save.
                       </p>
@@ -2483,13 +2483,13 @@ export default function AddInventoryItemPage() {
           {/* Pricing & Stock */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-green-500" /> Pricing &
+              <DollarSign className="w-5 h-5 text-success-500" /> Pricing &
               Stock
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Unit Price <span className="text-red-500">*</span>
+                  Unit Price <span className="text-brand-accent-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
@@ -2504,13 +2504,13 @@ export default function AddInventoryItemPage() {
                     value={formData.unitPrice}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`${getInputClassName('unitPrice')} pl-8`}
+                    className={`${getInputClassName('unitPrice')} pl-8 tabular-nums`}
                     placeholder="0.00"
                     disabled={loading || success}
                   />
                 </div>
                 {getFieldError('unitPrice') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('unitPrice')}
                   </p>
                 )}
@@ -2532,13 +2532,13 @@ export default function AddInventoryItemPage() {
                     value={formData.costPrice}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`${getInputClassName('costPrice')} pl-8`}
+                    className={`${getInputClassName('costPrice')} pl-8 tabular-nums`}
                     placeholder="0.00"
                     disabled={loading || success}
                   />
                 </div>
                 {getFieldError('costPrice') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('costPrice')}
                   </p>
                 )}
@@ -2546,7 +2546,7 @@ export default function AddInventoryItemPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Quantity <span className="text-red-500">*</span>
+                  Quantity <span className="text-brand-accent-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -2556,12 +2556,12 @@ export default function AddInventoryItemPage() {
                   value={formData.quantity}
                   onChange={handleChange}
                   onBlur={handleBlur}
-                  className={getInputClassName('quantity')}
+                  className={`${getInputClassName('quantity')} tabular-nums`}
                   placeholder="0"
                   disabled={loading || success}
                 />
                 {getFieldError('quantity') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('quantity')}
                   </p>
                 )}
@@ -2575,7 +2575,7 @@ export default function AddInventoryItemPage() {
                   name="taxRate"
                   value={formData.taxRate}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 transition-colors"
                   disabled={loading || success}
                 >
                   {TAX_RATES.map((rate) => (
@@ -2591,7 +2591,7 @@ export default function AddInventoryItemPage() {
           {/* Stock Levels */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <Tag className="w-5 h-5 text-orange-500" /> Stock Levels
+              <Tag className="w-5 h-5 text-brand-500" /> Stock Levels
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -2605,12 +2605,12 @@ export default function AddInventoryItemPage() {
                   value={formData.minStock}
                   onChange={handleChange}
                   onBlur={handleBlur}
-                  className={getInputClassName('minStock')}
+                  className={`${getInputClassName('minStock')} tabular-nums`}
                   placeholder="5"
                   disabled={loading || success}
                 />
                 {getFieldError('minStock') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('minStock')}
                   </p>
                 )}
@@ -2626,12 +2626,12 @@ export default function AddInventoryItemPage() {
                   value={formData.maxStock}
                   onChange={handleChange}
                   onBlur={handleBlur}
-                  className={getInputClassName('maxStock')}
+                  className={`${getInputClassName('maxStock')} tabular-nums`}
                   placeholder="100"
                   disabled={loading || success}
                 />
                 {getFieldError('maxStock') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('maxStock')}
                   </p>
                 )}
@@ -2642,13 +2642,13 @@ export default function AddInventoryItemPage() {
           {/* Location & Supplier */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-purple-500" /> Location &
+              <MapPin className="w-5 h-5 text-secondary-500" /> Location &
               Supplier
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Location <span className="text-red-500">*</span>
+                  Location <span className="text-brand-accent-500">*</span>
                 </label>
                 <select
                   name="location"
@@ -2684,7 +2684,7 @@ export default function AddInventoryItemPage() {
                   <button
                     type="button"
                     onClick={handleAddNewLocation}
-                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    className="text-brand-500 hover:underline inline-flex items-center gap-1 focus-ring"
                     disabled={loading || success}
                   >
                     Create one
@@ -2692,7 +2692,7 @@ export default function AddInventoryItemPage() {
                   </button>
                 </p>
                 {getFieldError('location') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('location')}
                   </p>
                 )}
@@ -2734,7 +2734,7 @@ export default function AddInventoryItemPage() {
                   <button
                     type="button"
                     onClick={handleAddNewSupplier}
-                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    className="text-brand-500 hover:underline inline-flex items-center gap-1 focus-ring"
                     disabled={loading || success}
                   >
                     Create one
@@ -2763,12 +2763,12 @@ export default function AddInventoryItemPage() {
                   value={formData.weight}
                   onChange={handleChange}
                   onBlur={handleBlur}
-                  className={getInputClassName('weight')}
+                  className={`${getInputClassName('weight')} tabular-nums`}
                   placeholder="0.000"
                   disabled={loading || success}
                 />
                 {getFieldError('weight') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">
                     {getFieldError('weight')}
                   </p>
                 )}
@@ -2781,7 +2781,7 @@ export default function AddInventoryItemPage() {
                     name="isActive"
                     checked={formData.isActive}
                     onChange={handleChange}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 transition-colors"
                     disabled={loading || success}
                   />
                   Active
@@ -2792,7 +2792,7 @@ export default function AddInventoryItemPage() {
                     name="isDigital"
                     checked={formData.isDigital}
                     onChange={handleChange}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 transition-colors"
                     disabled={loading || success}
                   />
                   Digital Product
@@ -2803,7 +2803,7 @@ export default function AddInventoryItemPage() {
                     name="featured"
                     checked={formData.featured}
                     onChange={handleChange}
-                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500 transition-colors"
                     disabled={loading || success}
                   />
                   Featured
@@ -2821,7 +2821,7 @@ export default function AddInventoryItemPage() {
                 onChange={handleChange}
                 onBlur={handleBlur}
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50"
                 placeholder="Additional notes"
                 disabled={loading || success}
               />
@@ -2835,8 +2835,8 @@ export default function AddInventoryItemPage() {
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     isValidBusinessUnitId(selectedBusinessUnitId)
-                      ? 'bg-green-500'
-                      : 'bg-red-500'
+                      ? 'bg-success-500'
+                      : 'bg-brand-accent-500'
                   }`}
                 />
                 {isValidBusinessUnitId(selectedBusinessUnitId)
@@ -2846,7 +2846,7 @@ export default function AddInventoryItemPage() {
                   : '⚠️ No business unit selected'}
               </span>
               <span className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
                 {user?.id
                   ? `User: ${user.id.slice(0, 8)}...`
                   : '⚠️ No user ID'}
@@ -2864,7 +2864,7 @@ export default function AddInventoryItemPage() {
             <button
               type="button"
               onClick={handleCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 w-full sm:w-auto text-center disabled:opacity-50 focus-ring"
               disabled={loading}
             >
               Cancel
@@ -2872,7 +2872,7 @@ export default function AddInventoryItemPage() {
             <button
               type="submit"
               disabled={!canSubmit}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
+              className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center shadow-brand focus-ring"
             >
               {loading ? (
                 <>
@@ -2911,7 +2911,7 @@ export default function AddInventoryItemPage() {
                 </span>
               )}
               {autoGenerateSKU && formData.sku && (
-                <span className="flex items-center gap-2 text-green-500">
+                <span className="flex items-center gap-2 text-success-500">
                   <Wand2 className="w-3 h-3" /> Auto SKU: {formData.sku}
                 </span>
               )}
@@ -2919,8 +2919,8 @@ export default function AddInventoryItemPage() {
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     isValidBusinessUnitId(selectedBusinessUnitId)
-                      ? 'bg-green-500'
-                      : 'bg-red-500'
+                      ? 'bg-success-500'
+                      : 'bg-brand-accent-500'
                   }`}
                 />
                 {isValidBusinessUnitId(selectedBusinessUnitId)

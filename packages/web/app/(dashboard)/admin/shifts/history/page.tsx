@@ -90,14 +90,14 @@ export default function ShiftHistoryPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/admin/shifts')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0 focus-ring"
               aria-label="Back to Shifts"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-2">
-                <History className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <div className="bg-brand-50 dark:bg-brand-900/30 rounded-lg p-2">
+                <History className="h-5 w-5 text-brand-600 dark:text-brand-400" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">

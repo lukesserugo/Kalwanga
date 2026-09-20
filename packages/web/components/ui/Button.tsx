@@ -1,71 +1,40 @@
-// D:\Projects\Kalwanga\packages\web\components\ui\Button.tsx
+// D:\Projects\Kalwanga\packages\web\components\ui\Alert.tsx
 'use client';
 
-import { ReactNode, ButtonHTMLAttributes, forwardRef } from 'react';
+import { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface AlertProps {
   children: ReactNode;
-  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link' | 'success' | 'warning';
-  size?: 'default' | 'sm' | 'lg' | 'icon';
-  isLoading?: boolean;
-  asChild?: boolean;
+  variant?: 'default' | 'destructive';
+  className?: string;
 }
 
-const variantStyles = {
-  default: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
-  destructive: 'bg-red-600 text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2',
-  outline: 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
-  secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2',
-  ghost: 'text-gray-700 hover:bg-gray-100 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2',
-  link: 'text-blue-600 hover:underline focus:ring-2 focus:ring-blue-500 focus:ring-offset-2',
-  success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2',
-  warning: 'bg-yellow-500 text-white hover:bg-yellow-600 focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2',
-};
+export function Alert({ children, variant = 'default', className = '' }: AlertProps) {
+  return (
+    <div
+      className={cn(
+        'p-4 rounded-lg border',
+        variant === 'destructive'
+          ? 'bg-danger-50 border-danger-200 text-danger-700 dark:bg-danger-950/30 dark:border-danger-900 dark:text-danger-300'
+          : 'bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-950/30 dark:border-primary-900 dark:text-primary-300',
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
-const sizeStyles = {
-  default: 'px-4 py-2 text-sm',
-  sm: 'px-3 py-1.5 text-xs',
-  lg: 'px-6 py-3 text-base',
-  icon: 'p-2',
-};
+interface AlertDescriptionProps {
+  children: ReactNode;
+  className?: string;
+}
 
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ 
-    children, 
-    variant = 'default', 
-    size = 'default', 
-    isLoading = false, 
-    className = '', 
-    disabled,
-    type = 'button',
-    ...props 
-  }, ref) => {
-    return (
-      <button
-        ref={ref}
-        type={type}
-        disabled={disabled || isLoading}
-        className={cn(
-          'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
-          variantStyles[variant],
-          sizeStyles[size],
-          className
-        )}
-        {...props}
-      >
-        {isLoading && (
-          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        )}
-        {children}
-      </button>
-    );
-  }
-);
-
-Button.displayName = 'Button';
-
-export default Button;
+export function AlertDescription({ children, className = '' }: AlertDescriptionProps) {
+  return (
+    <div className={cn('text-sm leading-relaxed', className)}>
+      {children}
+    </div>
+  );
+}

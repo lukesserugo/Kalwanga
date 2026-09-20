@@ -117,21 +117,23 @@ export function RegisterCard({
 
   return (
     <>
-      <Card className="hover:shadow-lg transition-shadow">
+      <Card className="card-brand shadow-soft hover:shadow-card-hover transition duration-250 animate-fade-in">
         <div className="p-5">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-lg truncate">
+                <h3 className="font-semibold text-lg truncate text-gray-900 dark:text-white">
                   {register.name}
                 </h3>
                 {!register.isActive && (
-                  <Badge variant="destructive" className="text-xs">
+                  <Badge variant="destructive" className="text-2xs">
                     Inactive
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-gray-500">Code: {register.code}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 font-mono tabular-nums">
+                Code: {register.code}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={isOpen ? 'success' : 'secondary'}>
@@ -139,17 +141,20 @@ export function RegisterCard({
               </Badge>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 focus-ring">
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onEdit(register)}>
+                <DropdownMenuContent align="end" className="rounded-xl shadow-card">
+                  <DropdownMenuItem
+                    onClick={() => onEdit(register)}
+                    className="focus-ring"
+                  >
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    className="text-red-600"
+                    className="text-danger-600 dark:text-danger-400 focus:bg-danger-50 dark:focus:bg-danger-900/20 focus-ring"
                     onClick={() => onDelete(register.id)}
                     disabled={isOpen}
                   >
@@ -162,32 +167,32 @@ export function RegisterCard({
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="bg-gray-50 rounded-lg p-3 text-center">
-              <p className="text-xs text-gray-500">Balance</p>
-              <p className="text-lg font-bold text-gray-900">
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 text-center border border-transparent dark:border-gray-700 transition duration-250">
+              <p className="text-2xs text-gray-500 dark:text-gray-400 eyebrow">Balance</p>
+              <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-white">
                 {formatCurrency(register.cashBalance || 0)}
               </p>
             </div>
-            <div className="bg-gray-50 rounded-lg p-3 text-center">
-              <p className="text-xs text-gray-500">Status</p>
+            <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 text-center border border-transparent dark:border-gray-700 transition duration-250">
+              <p className="text-2xs text-gray-500 dark:text-gray-400 eyebrow">Status</p>
               <p className="text-sm font-medium">
                 {isOpen ? (
-                  <span className="text-green-600">Active</span>
+                  <span className="text-success-600 dark:text-success-400">Active</span>
                 ) : (
-                  <span className="text-gray-600">Inactive</span>
+                  <span className="text-gray-600 dark:text-gray-400">Inactive</span>
                 )}
               </p>
             </div>
           </div>
 
           {isOpen && sessionUser && (
-            <div className="mt-3 flex items-center gap-2 text-sm text-gray-600 bg-blue-50 rounded-lg p-2">
-              <User className="h-4 w-4 text-blue-500" />
+            <div className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 bg-brand-50 dark:bg-brand-900/20 rounded-xl p-2 border border-transparent dark:border-brand-900/50 transition duration-250">
+              <User className="h-4 w-4 text-brand-500 dark:text-brand-400" />
               <span>
                 {sessionUser.firstName} {sessionUser.lastName}
               </span>
               {currentSession?.openedAt && (
-                <span className="text-xs text-gray-400 ml-auto">
+                <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500 ml-auto">
                   since {formatDateTime(currentSession.openedAt)}
                 </span>
               )}
@@ -195,22 +200,22 @@ export function RegisterCard({
           )}
 
           {currentSession?.summary && isCurrentUserShift && (
-            <div className="mt-3 grid grid-cols-3 gap-2 text-sm bg-green-50 rounded-lg p-3">
+            <div className="mt-3 grid grid-cols-3 gap-2 text-sm bg-success-50 dark:bg-success-900/20 rounded-xl p-3 border border-transparent dark:border-success-900/50 transition duration-250">
               <div className="text-center">
-                <p className="text-xs text-gray-500">Sales</p>
-                <p className="font-medium">
+                <p className="text-2xs text-gray-500 dark:text-gray-400 eyebrow">Sales</p>
+                <p className="font-medium tabular-nums text-gray-900 dark:text-white">
                   {currentSession.summary.totalSales}
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">Revenue</p>
-                <p className="font-medium">
+                <p className="text-2xs text-gray-500 dark:text-gray-400 eyebrow">Revenue</p>
+                <p className="font-medium tabular-nums text-gray-900 dark:text-white">
                   {formatCurrency(currentSession.summary.totalRevenue)}
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">Avg Ticket</p>
-                <p className="font-medium">
+                <p className="text-2xs text-gray-500 dark:text-gray-400 eyebrow">Avg Ticket</p>
+                <p className="font-medium tabular-nums text-gray-900 dark:text-white">
                   {formatCurrency(currentSession.summary.averageTicket)}
                 </p>
               </div>
@@ -221,7 +226,7 @@ export function RegisterCard({
             {!isOpen ? (
               <Button
                 size="sm"
-                className="flex-1"
+                className="flex-1 btn-brand"
                 onClick={() => onStartShift(register)}
                 disabled={!register.isActive}
               >
@@ -233,7 +238,7 @@ export function RegisterCard({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="flex-1"
+                  className="flex-1 btn-secondary"
                   onClick={() =>
                     onEndShift(currentShift.id, {
                       endingBalance: register.cashBalance,
@@ -244,16 +249,17 @@ export function RegisterCard({
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline" className="px-2">
+                    <Button size="sm" variant="outline" className="px-2 btn-secondary">
                       <DollarSign className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="rounded-xl shadow-card">
                     <DropdownMenuItem
                       onClick={() => {
                         setCashAction('add');
                         setShowCashDialog(true);
                       }}
+                      className="focus-ring"
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       Add Cash
@@ -263,6 +269,7 @@ export function RegisterCard({
                         setCashAction('remove');
                         setShowCashDialog(true);
                       }}
+                      className="focus-ring"
                     >
                       <Minus className="h-4 w-4 mr-2" />
                       Remove Cash
@@ -278,15 +285,15 @@ export function RegisterCard({
           </div>
 
           {currentSession?.sales && currentSession.sales.length > 0 && (
-            <div className="mt-3 pt-3 border-t">
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
               <button
-                className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1 transition duration-250 focus-ring rounded"
                 onClick={() => {
                   // Navigate to sales
                 }}
               >
                 <Receipt className="h-4 w-4" />
-                View {currentSession.sales.length} sales
+                View <span className="tabular-nums">{currentSession.sales.length}</span> sales
               </button>
             </div>
           )}
@@ -295,7 +302,7 @@ export function RegisterCard({
 
       {/* Cash Dialog */}
       <Dialog open={showCashDialog} onOpenChange={setShowCashDialog}>
-        <DialogContent>
+        <DialogContent className="rounded-2xl shadow-card animate-slide-down">
           <DialogHeader>
             <DialogTitle>
               {cashAction === 'add' ? 'Add' : 'Remove'} Cash
@@ -315,6 +322,7 @@ export function RegisterCard({
                 onChange={handleCashAmountChange}
                 min="0.01"
                 step="0.01"
+                className="tabular-nums focus:ring-brand-500 transition duration-250"
               />
             </div>
             <div className="space-y-2">
@@ -324,14 +332,19 @@ export function RegisterCard({
                 placeholder="Reason for transaction"
                 value={cashDescription}
                 onChange={handleCashDescriptionChange}
+                className="focus:ring-brand-500 transition duration-250"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCashDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowCashDialog(false)}
+              className="btn-secondary"
+            >
               Cancel
             </Button>
-            <Button onClick={handleCashAction}>
+            <Button onClick={handleCashAction} className="btn-brand">
               {cashAction === 'add' ? 'Add' : 'Remove'} Cash
             </Button>
           </DialogFooter>

@@ -23,7 +23,7 @@ export default function ReportsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { canView, canManage } = usePermission();
-  
+
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,9 +47,9 @@ export default function ReportsPage() {
 
     try {
       if (showLoading) setLoading(true);
-      
+
       const data = await reportService.listReports({ limit: 100 });
-      
+
       let reportsData: Report[] = [];
       if (Array.isArray(data)) {
         reportsData = data;
@@ -58,7 +58,7 @@ export default function ReportsPage() {
       } else if (data && typeof data === 'object' && 'reports' in data && Array.isArray(data.reports)) {
         reportsData = data.reports;
       }
-      
+
       setReports(reportsData);
     } catch (error) {
       console.error('Failed to load reports:', error);
@@ -142,12 +142,12 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 max-w-container mx-auto animate-fade-in">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <FileText className="w-8 h-8 text-blue-500 dark:text-blue-400" />
+            <FileText className="w-8 h-8 text-brand-500 dark:text-brand-400" />
             Reports
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
@@ -158,8 +158,9 @@ export default function ReportsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 focus-ring disabled:opacity-50"
             title="Refresh"
+            aria-label="Refresh reports"
           >
             <RefreshCw className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -170,9 +171,9 @@ export default function ReportsPage() {
       <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
         <button
           onClick={() => setActiveTab('generate')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition duration-250 focus-ring ${
             activeTab === 'generate'
-              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+              ? 'border-brand-600 text-brand-600 dark:text-brand-400'
               : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
@@ -180,13 +181,13 @@ export default function ReportsPage() {
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+          className={`px-4 py-2 font-medium text-sm border-b-2 transition duration-250 focus-ring ${
             activeTab === 'history'
-              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+              ? 'border-brand-600 text-brand-600 dark:text-brand-400'
               : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
-          Report History ({reports.length})
+          Report History <span className="tabular-nums">({reports.length})</span>
         </button>
       </div>
 
@@ -196,40 +197,42 @@ export default function ReportsPage() {
       ) : (
         <div className="space-y-4">
           {/* Search and Filter */}
-          <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search reports..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-colors"
-                />
+          <div className="card-brand shadow-soft p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex-1 min-w-[200px]">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search reports..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border border-gray-200 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 transition duration-250"
+                  />
+                </div>
               </div>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 cursor-pointer transition duration-250"
+              >
+                <option value="all" className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">All Types</option>
+                {reportTypes.filter(t => t !== 'all').map(type => (
+                  <option key={type} value={type} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    {type.toUpperCase()}
+                  </option>
+                ))}
+              </select>
             </div>
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 cursor-pointer transition-colors"
-            >
-              <option value="all" className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">All Types</option>
-              {reportTypes.filter(t => t !== 'all').map(type => (
-                <option key={type} value={type} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                  {type.toUpperCase()}
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Reports List */}
           {loading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+              <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400" />
             </div>
           ) : filteredReports.length === 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-12 text-center border border-gray-200 dark:border-gray-700">
+            <div className="card-brand shadow-soft p-12 text-center">
               <FileText className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <p className="text-gray-500 dark:text-gray-400">
                 {searchQuery || filterType !== 'all' ? 'No reports match your filters' : 'No reports generated yet'}
@@ -259,14 +262,14 @@ export default function ReportsPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
+            className="fixed inset-0 z-modal flex items-center justify-center p-4"
           >
-            <div className="fixed inset-0 bg-black/50 dark:bg-black/70" onClick={() => setShowDeleteModal(false)} />
+            <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6"
             >
               <div className="text-center">
                 <div className="text-6xl mb-4">⚠️</div>
@@ -278,14 +281,14 @@ export default function ReportsPage() {
                   <button
                     onClick={() => setShowDeleteModal(false)}
                     disabled={deleting}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                    className="btn-secondary disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                    className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-xl transition duration-250 flex items-center gap-2 disabled:opacity-50 focus-ring"
                   >
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     Delete

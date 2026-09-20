@@ -20,14 +20,14 @@ export default function SSOCallbackPage() {
   }, [searchParams, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
-      <div className="max-w-md w-full bg-white rounded-xl shadow-soft p-6">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-brand-accent-50 dark:from-gray-900 dark:to-gray-950">
+      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700 p-6">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900">Completing sign in...</h2>
-          <p className="text-sm text-gray-600 mt-2">Please wait while we redirect you.</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Completing sign in...</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">Please wait while we redirect you.</p>
         </div>
-        <AuthenticateWithRedirectCallback 
+        <AuthenticateWithRedirectCallback
           afterSignInUrl={redirectUrl}
           afterSignUpUrl={redirectUrl}
         />

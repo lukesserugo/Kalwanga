@@ -68,7 +68,7 @@ export function NotificationDetailDrawer({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex justify-end"
+          className="fixed inset-0 z-modal flex justify-end"
           role="dialog"
           aria-modal="true"
           aria-labelledby="drawer-title"
@@ -83,11 +83,11 @@ export function NotificationDetailDrawer({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="relative w-full max-w-lg bg-white dark:bg-gray-900 shadow-2xl flex flex-col h-full"
+            className="relative w-full max-w-lg bg-white dark:bg-gray-900 shadow-card flex flex-col h-full rounded-l-2xl overflow-hidden"
           >
             <header className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 text-white shrink-0">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-xl bg-brand-gradient text-white shrink-0">
                   <Bell className="w-4 h-4" />
                 </span>
                 <h2
@@ -100,14 +100,14 @@ export function NotificationDetailDrawer({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-1.5 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition duration-250 focus-ring"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </header>
 
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
               <div>
                 <h3 className="text-base font-semibold text-gray-900 dark:text-white break-words">
                   {notification.title}
@@ -136,19 +136,19 @@ export function NotificationDetailDrawer({
                 Object.keys(notification.data).length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 eyebrow">
                         Payload
                       </h4>
                       <button
                         type="button"
                         onClick={handleCopyPayload}
-                        className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-orange-600 dark:hover:text-orange-400 transition-colors"
+                        className="inline-flex items-center gap-1 text-2xs text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition duration-250 focus-ring rounded"
                       >
                         <Copy className="w-3 h-3" />
                         Copy JSON
                       </button>
                     </div>
-                    <pre className="text-[11px] leading-relaxed bg-gray-50 dark:bg-gray-950 rounded-xl p-3 overflow-x-auto border border-gray-100 dark:border-gray-800 text-gray-700 dark:text-gray-300">
+                    <pre className="text-2xs font-mono leading-relaxed bg-gray-50 dark:bg-gray-950 rounded-xl p-3 overflow-x-auto custom-scrollbar border border-gray-100 dark:border-gray-800 text-gray-700 dark:text-gray-300">
                       {JSON.stringify(notification.data, null, 2)}
                     </pre>
                   </div>
@@ -156,12 +156,12 @@ export function NotificationDetailDrawer({
 
               {notification.link && (
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 eyebrow">
                     Related
                   </h4>
                   <Link
                     href={notification.link}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 text-xs font-medium hover:bg-orange-100 dark:hover:bg-orange-950/50 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 text-xs font-medium hover:bg-brand-100 dark:hover:bg-brand-900/50 transition duration-250 focus-ring"
                   >
                     Open related page
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -178,7 +178,7 @@ export function NotificationDetailDrawer({
                     onMarkRead(notification.id);
                     onClose();
                   }}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300 text-xs font-medium hover:bg-success-200 dark:hover:bg-success-900/50 transition duration-250 focus-ring"
                 >
                   <Check className="w-3.5 h-3.5" />
                   Mark as read
@@ -191,7 +191,7 @@ export function NotificationDetailDrawer({
                     onMarkUnread(notification.id);
                     onClose();
                   }}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition duration-250 focus-ring"
                 >
                   <Circle className="w-3.5 h-3.5" />
                   Mark as unread
@@ -200,7 +200,7 @@ export function NotificationDetailDrawer({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition duration-250 focus-ring"
               >
                 Close
               </button>
@@ -215,7 +215,7 @@ export function NotificationDetailDrawer({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-gray-50 dark:bg-gray-950 rounded-lg p-2.5">
-      <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">
+      <p className="text-2xs uppercase tracking-wider text-gray-400 dark:text-gray-500 eyebrow">
         {label}
       </p>
       <p className="text-xs font-medium text-gray-900 dark:text-white mt-0.5 break-words">

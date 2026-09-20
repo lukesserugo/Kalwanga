@@ -117,7 +117,7 @@ const returnService = {
     if (params.endDate) queryParams.append('endDate', params.endDate);
     if (params.page) queryParams.append('page', String(params.page));
     if (params.limit) queryParams.append('limit', String(params.limit));
-    
+
     const url = `/api/returns?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -165,7 +165,7 @@ const returnService = {
     const queryParams = new URLSearchParams();
     if (params?.startDate) queryParams.append('startDate', params.startDate);
     if (params?.endDate) queryParams.append('endDate', params.endDate);
-    
+
     const url = `/api/returns/stats?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -180,7 +180,7 @@ const returnService = {
     if (params.startDate) queryParams.append('startDate', params.startDate);
     if (params.endDate) queryParams.append('endDate', params.endDate);
     if (params.format) queryParams.append('format', params.format);
-    
+
     const url = `/api/returns/export?${queryParams.toString()}`;
     const response = await fetch(url);
     if (!response.ok) {
@@ -196,10 +196,10 @@ const returnService = {
 
 const getStatusColor = (status: string): string => {
   const colors: Record<string, string> = {
-    pending: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
-    approved: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-    rejected: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
-    processed: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+    pending: 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
+    approved: 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
+    rejected: 'bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400',
+    processed: 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
     cancelled: 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
   };
   return colors[status] || 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400';
@@ -223,9 +223,9 @@ const StatusIcon = ({ status }: { status: string }) => {
 
 const getConditionBadge = (condition: string): string => {
   const colors: Record<string, string> = {
-    good: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-    damaged: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
-    opened: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
+    good: 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
+    damaged: 'bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400',
+    opened: 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
     used: 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
   };
   return colors[condition] || 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400';
@@ -249,7 +249,7 @@ export default function ReturnsPage() {
   const { isLoaded, isSignedIn } = useUser();
   const { user: authUser } = useAuth();
   const router = useRouter();
-  
+
   const [returns, setReturns] = useState<Return[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -262,7 +262,7 @@ export default function ReturnsPage() {
     cancelled: 0,
     totalAmount: 0,
   });
-  
+
   const [filters, setFilters] = useState<ReturnFilters>({
     search: '',
     status: 'all',
@@ -271,7 +271,7 @@ export default function ReturnsPage() {
     page: 1,
     limit: 10,
   });
-  
+
   const [totalPages, setTotalPages] = useState(1);
   const [totalReturns, setTotalReturns] = useState(0);
   const [selectedReturn, setSelectedReturn] = useState<Return | null>(null);
@@ -311,7 +311,7 @@ export default function ReturnsPage() {
       setReturns(result.data || []);
       setTotalReturns(result.total || 0);
       setTotalPages(result.totalPages || 1);
-      
+
       // Fetch stats
       const statsData = await returnService.getReturnStats({
         startDate: filters.startDate,
@@ -351,7 +351,7 @@ export default function ReturnsPage() {
 
   const handleProcessReturn = async () => {
     if (!selectedReturn) return;
-    
+
     try {
       setProcessing(true);
       await returnService.processReturn(selectedReturn.id);
@@ -367,7 +367,7 @@ export default function ReturnsPage() {
 
   const handleRejectReturn = async () => {
     if (!selectedReturn || !rejectReason.trim()) return;
-    
+
     try {
       setProcessing(true);
       await returnService.rejectReturn(selectedReturn.id, rejectReason);
@@ -390,14 +390,14 @@ export default function ReturnsPage() {
         endDate: filters.endDate,
         format: 'csv',
       });
-      
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `returns-${new Date().toISOString().split('T')[0]}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Returns exported successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to export returns');
@@ -425,7 +425,7 @@ export default function ReturnsPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/admin/sales')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-500" />
               </button>
@@ -443,7 +443,7 @@ export default function ReturnsPage() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => fetchReturns(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
@@ -456,7 +456,7 @@ export default function ReturnsPage() {
             <button
               onClick={handleExport}
               disabled={exporting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -470,17 +470,17 @@ export default function ReturnsPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-          <StatCard title="Total" value={stats.total} color="blue" />
-          <StatCard title="Pending" value={stats.pending} color="yellow" />
-          <StatCard title="Approved" value={stats.approved} color="blue" />
-          <StatCard title="Rejected" value={stats.rejected} color="red" />
-          <StatCard title="Processed" value={stats.processed} color="green" />
+          <StatCard title="Total" value={stats.total} color="brand" />
+          <StatCard title="Pending" value={stats.pending} color="warning" />
+          <StatCard title="Approved" value={stats.approved} color="brand" />
+          <StatCard title="Rejected" value={stats.rejected} color="danger" />
+          <StatCard title="Processed" value={stats.processed} color="success" />
           <StatCard title="Cancelled" value={stats.cancelled} color="gray" />
-          <StatCard title="Total Amount" value={formatCurrency(stats.totalAmount)} color="blue" isCurrency />
+          <StatCard title="Total Amount" value={formatCurrency(stats.totalAmount)} color="brand" isCurrency />
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -489,13 +489,13 @@ export default function ReturnsPage() {
                 placeholder="Search by return #, receipt, customer..."
                 value={filters.search}
                 onChange={handleSearch}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
             <select
               value={filters.status}
               onChange={handleStatusChange}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending</option>
@@ -508,17 +508,17 @@ export default function ReturnsPage() {
               type="date"
               value={filters.startDate}
               onChange={(e) => handleDateChange('startDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <input
               type="date"
               value={filters.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <button
               onClick={() => fetchReturns()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
             >
               Apply Filters
             </button>
@@ -527,7 +527,7 @@ export default function ReturnsPage() {
 
         {/* Returns List */}
         {returns.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-12 text-center border border-gray-200 dark:border-gray-700">
+          <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">🔄</div>
             <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Returns Found</h2>
             <p className="text-gray-500 dark:text-gray-400">
@@ -546,12 +546,12 @@ export default function ReturnsPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all overflow-hidden border border-gray-200 dark:border-gray-700"
+                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                   >
                     {/* Return Header */}
                     <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                        <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
                           #{returnItem.returnNumber}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
@@ -568,7 +568,7 @@ export default function ReturnsPage() {
                           <StatusIcon status={returnItem.status} />
                           {returnItem.status.charAt(0).toUpperCase() + returnItem.status.slice(1)}
                         </span>
-                        <span className="font-bold text-gray-900 dark:text-white">
+                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(returnItem.total)}
                         </span>
                       </div>
@@ -587,7 +587,7 @@ export default function ReturnsPage() {
                               <FileText className="w-4 h-4" />
                               Receipt: #{returnItem.receiptNumber}
                             </span>
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-1 tabular-nums">
                               <Package className="w-4 h-4" />
                               {returnItem.items.length} items
                             </span>
@@ -609,7 +609,7 @@ export default function ReturnsPage() {
                               setSelectedReturn(returnItem);
                               setShowDetailModal(true);
                             }}
-                            className="px-3 py-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
+                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                           >
                             <Eye className="w-4 h-4" />
                             Details
@@ -621,7 +621,7 @@ export default function ReturnsPage() {
                                   setSelectedReturn(returnItem);
                                   setShowProcessModal(true);
                                 }}
-                                className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors flex items-center gap-1"
+                                className="px-3 py-1.5 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                               >
                                 <Check className="w-4 h-4" />
                                 Process
@@ -631,7 +631,7 @@ export default function ReturnsPage() {
                                   setSelectedReturn(returnItem);
                                   setShowRejectModal(true);
                                 }}
-                                className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors flex items-center gap-1"
+                                className="px-3 py-1.5 bg-danger-600 text-white rounded-lg hover:bg-danger-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
                               >
                                 <X className="w-4 h-4" />
                                 Reject
@@ -652,7 +652,7 @@ export default function ReturnsPage() {
                 <button
                   onClick={() => handlePageChange(Math.max(1, filters.page - 1))}
                   disabled={filters.page === 1}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   <ChevronLeft className="w-4 h-4 inline" />
                   Previous
@@ -673,9 +673,9 @@ export default function ReturnsPage() {
                       <button
                         key={pageNum}
                         onClick={() => handlePageChange(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors ${
+                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
                           filters.page === pageNum
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-brand-500 text-white'
                             : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                         }`}
                       >
@@ -687,7 +687,7 @@ export default function ReturnsPage() {
                 <button
                   onClick={() => handlePageChange(Math.min(totalPages, filters.page + 1))}
                   disabled={filters.page === totalPages}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
                   <ChevronRight className="w-4 h-4 inline" />
@@ -748,17 +748,17 @@ export default function ReturnsPage() {
 
 function StatCard({ title, value, color, isCurrency = false }: { title: string; value: number | string; color: string; isCurrency?: boolean }) {
   const colors: Record<string, string> = {
-    blue: 'text-blue-600 dark:text-blue-400',
-    yellow: 'text-yellow-600 dark:text-yellow-400',
-    green: 'text-green-600 dark:text-green-400',
-    red: 'text-red-600 dark:text-red-400',
+    brand: 'text-brand-600 dark:text-brand-400',
+    warning: 'text-warning-600 dark:text-warning-400',
+    success: 'text-success-600 dark:text-success-400',
+    danger: 'text-danger-600 dark:text-danger-400',
     gray: 'text-gray-600 dark:text-gray-400',
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+    <div className="card-brand p-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-      <p className={`text-xl font-bold ${colors[color] || 'text-gray-900 dark:text-white'}`}>
+      <p className={`text-xl font-bold ${colors[color] || 'text-gray-900 dark:text-white'} tabular-nums`}>
         {value}
       </p>
     </div>
@@ -767,18 +767,18 @@ function StatCard({ title, value, color, isCurrency = false }: { title: string; 
 
 function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 sidebar-scroll" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
               Return #{returnData.returnNumber}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {formatDateTime(returnData.createdAt)}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring">
             <XCircle className="w-6 h-6 text-gray-500" />
           </button>
         </div>
@@ -790,7 +790,7 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
               <StatusIcon status={returnData.status} />
               {returnData.status.charAt(0).toUpperCase() + returnData.status.slice(1)}
             </span>
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+            <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(returnData.total)}
             </span>
           </div>
@@ -829,7 +829,7 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
             </div>
             {returnData.rejectedReason && (
               <div className="col-span-2">
-                <p className="text-sm text-red-500 dark:text-red-400">Rejection Reason</p>
+                <p className="text-sm text-danger-500 dark:text-danger-400">Rejection Reason</p>
                 <p className="font-medium text-gray-900 dark:text-white">{returnData.rejectedReason}</p>
               </div>
             )}
@@ -845,14 +845,14 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
                     <p className="font-medium text-gray-900 dark:text-white">{item.productName}</p>
                     <div className="flex flex-wrap gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <span>SKU: {item.sku}</span>
-                      <span>× {item.quantity}</span>
+                      <span className="tabular-nums">× {item.quantity}</span>
                       <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${getConditionBadge(item.condition)}`}>
                         {item.condition}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Reason: {item.reason}</p>
                   </div>
-                  <span className="font-bold text-gray-900 dark:text-white">
+                  <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(item.total)}
                   </span>
                 </div>
@@ -865,22 +865,22 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
             <div className="space-y-2 max-w-xs ml-auto">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Subtotal</span>
-                <span className="text-gray-900 dark:text-white">{formatCurrency(returnData.subtotal)}</span>
+                <span className="text-gray-900 dark:text-white tabular-nums">{formatCurrency(returnData.subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Tax</span>
-                <span className="text-gray-900 dark:text-white">{formatCurrency(returnData.tax)}</span>
+                <span className="text-gray-900 dark:text-white tabular-nums">{formatCurrency(returnData.tax)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-gray-900 dark:text-white">Total</span>
-                <span className="text-blue-600 dark:text-blue-400">{formatCurrency(returnData.total)}</span>
+                <span className="text-brand-600 dark:text-brand-400 tabular-nums">{formatCurrency(returnData.total)}</span>
               </div>
             </div>
           </div>
 
           {/* Actions */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2">
+            <button className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2 focus-ring">
               <Printer className="w-4 h-4" />
               Print
             </button>
@@ -888,7 +888,7 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
               <>
                 <button
                   onClick={onProcess}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 focus-ring"
                 >
                   <Check className="w-4 h-4" />
                   Process Return
@@ -897,7 +897,7 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
             )}
             <button
               onClick={onClose}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
             >
               Close
             </button>
@@ -910,7 +910,7 @@ function DetailModal({ returnData, onClose, onProcess, canManage }: any) {
 
 function ProcessModal({ returnData, onClose, onConfirm, processing }: any) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           Process Return
@@ -925,14 +925,14 @@ function ProcessModal({ returnData, onClose, onConfirm, processing }: any) {
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={processing}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             {processing ? 'Processing...' : 'Confirm Process'}
@@ -945,7 +945,7 @@ function ProcessModal({ returnData, onClose, onConfirm, processing }: any) {
 
 function RejectModal({ returnData, onClose, onConfirm, reason, setReason, processing }: any) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
           Reject Return
@@ -955,13 +955,13 @@ function RejectModal({ returnData, onClose, onConfirm, reason, setReason, proces
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Reason for Rejection <span className="text-red-500">*</span>
+            Reason for Rejection <span className="text-danger-500">*</span>
           </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-danger-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             placeholder="Enter reason for rejection..."
             required
           />
@@ -969,14 +969,14 @@ function RejectModal({ returnData, onClose, onConfirm, reason, setReason, proces
         <div className="flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={processing || !reason.trim()}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
             {processing ? 'Rejecting...' : 'Confirm Reject'}

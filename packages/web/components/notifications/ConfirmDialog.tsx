@@ -39,31 +39,31 @@ const TONE_STYLES: Record<
 > = {
   danger: {
     icon: Trash2,
-    iconBg: 'bg-red-100 dark:bg-red-950/40',
-    iconFg: 'text-red-600 dark:text-red-400',
+    iconBg: 'bg-danger-100 dark:bg-danger-900/40',
+    iconFg: 'text-danger-600 dark:text-danger-400',
     confirmClass:
-      'bg-red-600 hover:bg-red-700 focus:ring-red-500/40 text-white',
+      'bg-danger-600 hover:bg-danger-700 focus:ring-danger-500/40 text-white',
   },
   warning: {
     icon: AlertTriangle,
-    iconBg: 'bg-amber-100 dark:bg-amber-950/40',
-    iconFg: 'text-amber-600 dark:text-amber-400',
+    iconBg: 'bg-warning-100 dark:bg-warning-900/40',
+    iconFg: 'text-warning-600 dark:text-warning-400',
     confirmClass:
-      'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500/40 text-white',
+      'bg-warning-600 hover:bg-warning-700 focus:ring-warning-500/40 text-white',
   },
   info: {
     icon: Info,
-    iconBg: 'bg-blue-100 dark:bg-blue-950/40',
-    iconFg: 'text-blue-600 dark:text-blue-400',
+    iconBg: 'bg-primary-100 dark:bg-primary-900/40',
+    iconFg: 'text-primary-600 dark:text-primary-400',
     confirmClass:
-      'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500/40 text-white',
+      'bg-primary-600 hover:bg-primary-700 focus:ring-primary-500/40 text-white',
   },
   success: {
     icon: CheckCircle2,
-    iconBg: 'bg-emerald-100 dark:bg-emerald-950/40',
-    iconFg: 'text-emerald-600 dark:text-emerald-400',
+    iconBg: 'bg-success-100 dark:bg-success-900/40',
+    iconFg: 'text-success-600 dark:text-success-400',
     confirmClass:
-      'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/40 text-white',
+      'bg-success-600 hover:bg-success-700 focus:ring-success-500/40 text-white',
   },
 };
 
@@ -115,7 +115,7 @@ export function ConfirmDialog({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-modal flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-title"
@@ -130,14 +130,14 @@ export function ConfirmDialog({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 8 }}
             transition={{ duration: 0.15 }}
-            className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 p-6"
+            className="relative w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-card border border-gray-200 dark:border-gray-800 p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
               onClick={onCancel}
               disabled={loading}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-300 transition duration-250 disabled:opacity-50 focus-ring"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
@@ -169,7 +169,7 @@ export function ConfirmDialog({
                 type="button"
                 onClick={onCancel}
                 disabled={loading}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition duration-250 disabled:opacity-50 focus-ring"
               >
                 {cancelLabel}
               </button>
@@ -178,7 +178,7 @@ export function ConfirmDialog({
                 type="button"
                 onClick={onConfirm}
                 disabled={loading}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium shadow-sm focus:outline-none focus:ring-2 transition-all disabled:opacity-50 ${styles.confirmClass}`}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium shadow-soft focus:outline-none focus:ring-2 transition duration-250 disabled:opacity-50 ${styles.confirmClass}`}
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {loading ? 'Working…' : confirmLabel}

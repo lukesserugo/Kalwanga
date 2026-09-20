@@ -1,5 +1,3 @@
-// packages/web/components/categories/CategoryList.tsx
-
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -39,10 +37,6 @@ import { CategoryForm } from './CategoryForm';
 import { CategoryGrid } from './CategoryGrid';
 import { CategoryAvatar } from './CategoryAvatar';
 
-// ============================================
-// TYPES & HELPERS
-// ============================================
-
 interface CategoryListProps {
   businessUnitId: string;
   onCategoryUpdated?: () => void;
@@ -64,17 +58,12 @@ function isFeatured(c: Category): boolean {
   return (c as any).featured === true;
 }
 
-// ============================================
-// COMPONENT
-// ============================================
-
 export function CategoryList({
   businessUnitId,
   onCategoryUpdated,
 }: CategoryListProps) {
   const router = useRouter();
 
-  // ---- State ----
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -94,7 +83,6 @@ export function CategoryList({
   const [sortBy, setSortBy] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
-  // ---- Load ----
   const loadCategories = useCallback(
     async (showLoading = true) => {
       try {
@@ -112,7 +100,6 @@ export function CategoryList({
 
         const result = await categoryService.getAllCategories(params);
 
-        // Normalize: array, wrapped, or paginated
         let data: Category[] = [];
         let total = 0;
         let totalPages = 1;
@@ -161,7 +148,6 @@ export function CategoryList({
     loadCategories();
   }, [loadCategories]);
 
-  // ---- Actions ----
   const handleRefresh = async () => {
     await loadCategories(false);
     toast.success('Categories refreshed');
@@ -212,7 +198,6 @@ export function CategoryList({
     }
   };
 
-  // ---- Columns (memoized) ----
   const columns = useMemo(
     () => [
       {
@@ -226,7 +211,7 @@ export function CategoryList({
               <p className="font-medium text-gray-900 dark:text-white flex items-center gap-1.5 truncate">
                 <span className="truncate">{category.name}</span>
                 {isFeatured(category) && (
-                  <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                  <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500 shrink-0" />
                 )}
               </p>
               <p className="text-xs text-gray-400 dark:text-gray-500 font-mono flex items-center gap-1">
@@ -249,7 +234,7 @@ export function CategoryList({
                 {category.parentId ? 'Has parent' : 'Root'}
               </span>
               {children > 0 && (
-                <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500">
+                <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-500 tabular-nums">
                   <Layers className="w-3 h-3" />
                   {children}
                 </span>
@@ -283,7 +268,7 @@ export function CategoryList({
           <div className="flex items-center justify-end gap-0.5">
             <button
               onClick={() => openView(category)}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               title="View"
               aria-label="View category"
             >
@@ -291,19 +276,19 @@ export function CategoryList({
             </button>
             <button
               onClick={() => openEdit(category)}
-              className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/30 transition-colors focus-ring"
               title="Edit"
               aria-label="Edit category"
             >
-              <Edit className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
             </button>
             <button
               onClick={() => openDelete(category)}
-              className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/30 transition-colors focus-ring"
               title="Delete"
               aria-label="Delete category"
             >
-              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
             </button>
           </div>
         ),
@@ -313,24 +298,17 @@ export function CategoryList({
     [],
   );
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className="space-y-6">
-      {/* ============================================
-          HEADER
-          ============================================ */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-sm">
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-brand-gradient text-white shadow-brand">
               <FolderTree className="w-5 h-5" />
             </span>
             Categories
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
             {pagination.total} categor{pagination.total === 1 ? 'y' : 'ies'}{' '}
             · Manage your product categories
           </p>
@@ -340,7 +318,7 @@ export function CategoryList({
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
             aria-label="Refresh"
           >
@@ -349,7 +327,6 @@ export function CategoryList({
             />
           </button>
 
-          {/* View mode */}
           <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
             {(
               [
@@ -361,10 +338,10 @@ export function CategoryList({
               <button
                 key={key}
                 onClick={() => setViewMode(key)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 focus-ring ${
                   viewMode === key
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-brand-gradient text-white shadow-brand'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700'
                 }`}
                 aria-label={`${label} view`}
               >
@@ -376,7 +353,7 @@ export function CategoryList({
 
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             title={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
             aria-label="Toggle sort order"
           >
@@ -394,10 +371,7 @@ export function CategoryList({
         </div>
       </div>
 
-      {/* ============================================
-          SEARCH
-          ============================================ */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <div className="card-brand !p-4">
         <SearchBar
           value={search}
           onChange={setSearch}
@@ -405,10 +379,7 @@ export function CategoryList({
         />
       </div>
 
-      {/* ============================================
-          CONTENT
-          ============================================ */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="card-brand !p-0 overflow-hidden">
         {viewMode === 'table' && (
           <>
             <Table
@@ -419,9 +390,8 @@ export function CategoryList({
               onRowClick={(cat: Category) => openView(cat)}
             />
 
-            {/* Footer */}
             <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex flex-wrap items-center justify-between gap-4">
-              <span className="text-sm text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                 Showing {categories.length} of {pagination.total} categor
                 {pagination.total === 1 ? 'y' : 'ies'}
               </span>
@@ -492,7 +462,7 @@ export function CategoryList({
                       animate={{ opacity: 1, y: 0 }}
                       whileHover={{ x: 2 }}
                       onClick={() => openView(category)}
-                      className="group flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all text-left"
+                      className="group flex items-center gap-3 p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-brand-300 dark:hover:border-brand-700 hover:bg-brand-50/50 dark:hover:bg-brand-900/10 transition-all text-left focus-ring"
                     >
                       <CategoryAvatar
                         category={category}
@@ -505,10 +475,10 @@ export function CategoryList({
                             {category.name}
                           </p>
                           {isFeatured(category) && (
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                            <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500 shrink-0" />
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate tabular-nums">
                           {productCountOf(category)} product
                           {productCountOf(category) === 1 ? '' : 's'}
                         </p>
@@ -519,22 +489,22 @@ export function CategoryList({
                             e.stopPropagation();
                             openEdit(category);
                           }}
-                          className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-brand-100 dark:hover:bg-brand-900/30 transition-colors focus-ring"
                           title="Edit"
                           aria-label="Edit category"
                         >
-                          <Edit className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <Edit className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
                         </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             openDelete(category);
                           }}
-                          className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-danger-100 dark:hover:bg-danger-900/30 transition-colors focus-ring"
                           title="Delete"
                           aria-label="Delete category"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                          <Trash2 className="w-3.5 h-3.5 text-danger-600 dark:text-danger-400" />
                         </button>
                       </div>
                     </motion.button>
@@ -557,9 +527,6 @@ export function CategoryList({
         )}
       </div>
 
-      {/* ============================================
-          DELETE MODAL
-          ============================================ */}
       <Modal
         isOpen={showDeleteModal}
         onClose={() => !deleting && setShowDeleteModal(false)}
@@ -577,9 +544,6 @@ export function CategoryList({
         </div>
       </Modal>
 
-      {/* ============================================
-          FORM MODAL
-          ============================================ */}
       <Modal
         isOpen={showFormModal}
         onClose={() => setShowFormModal(false)}
@@ -608,18 +572,14 @@ export function CategoryList({
   );
 }
 
-// ============================================
-// SUB-COMPONENTS
-// ============================================
-
 function StatusBadge({ isActive }: { isActive: boolean }) {
   return isActive ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300">
       <CheckCircle2 className="w-3 h-3" />
       Active
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400">
       <XCircle className="w-3 h-3" />
       Inactive
     </span>
@@ -675,9 +635,9 @@ function DeleteContent({
       </div>
 
       {hasChildren && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mb-4 flex items-start gap-2">
-          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-700 dark:text-red-300">
+        <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl p-3 mb-4 flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-danger-600 dark:text-danger-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-danger-700 dark:text-danger-300">
             <strong>Cannot delete.</strong> This category has {childCount}{' '}
             subcategor{childCount === 1 ? 'y' : 'ies'}. Move or delete them
             first.
@@ -686,9 +646,9 @@ function DeleteContent({
       )}
 
       {willArchive && (
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 mb-4 flex items-start gap-2">
-          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-700 dark:text-amber-300">
+        <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-3 mb-4 flex items-start gap-2">
+          <AlertTriangle className="w-5 h-5 text-warning-600 dark:text-warning-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-warning-700 dark:text-warning-300">
             This category has {productCount} product
             {productCount === 1 ? '' : 's'}. It will be{' '}
             <strong>archived (soft-deleted)</strong> instead of removed.

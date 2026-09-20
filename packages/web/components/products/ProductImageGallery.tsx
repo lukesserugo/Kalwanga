@@ -574,7 +574,7 @@ export function ProductImageGallery({
   // ============================================
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -582,13 +582,13 @@ export function ProductImageGallery({
             Product Images
           </h3>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            {images.length} / {effectiveMax} images • Drag to reorder • Max{' '}
+            <span className="tabular-nums">{images.length} / {effectiveMax}</span> images • Drag to reorder • Max{' '}
             {MAX_ORIGINAL_FILE_SIZE / 1024 / 1024} MB per file
           </p>
         </div>
         {canManage && images.length < effectiveMax && (
           <label className="cursor-pointer">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">
+            <div className="btn-brand">
               {uploading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
@@ -611,17 +611,17 @@ export function ProductImageGallery({
 
       {/* Upload Progress */}
       {uploading && uploadProgress && (
-        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div className="p-3 bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-xl animate-slide-down">
           <div className="flex items-center gap-2 mb-2">
-            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-            <span className="text-sm text-blue-700 dark:text-blue-300">
+            <Loader2 className="w-4 h-4 animate-spin text-brand-600 dark:text-brand-400" />
+            <span className="text-sm text-brand-700 dark:text-brand-300 tabular-nums">
               Processing image {uploadProgress.current} of{' '}
               {uploadProgress.total}...
             </span>
           </div>
-          <div className="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-2">
+          <div className="w-full bg-brand-100 dark:bg-brand-900/50 rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-brand-gradient h-2 rounded-full transition-all duration-350"
               style={{
                 width: `${
                   (uploadProgress.current / uploadProgress.total) * 100
@@ -634,14 +634,14 @@ export function ProductImageGallery({
 
       {/* Image Grid */}
       {images.length === 0 ? (
-        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center">
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-8 text-center">
           <ImageIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
           <p className="text-gray-500 dark:text-gray-400">
             No images uploaded
           </p>
           {canManage && (
             <label className="cursor-pointer mt-2 inline-block">
-              <span className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+              <span className="text-sm text-brand-600 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300 transition duration-250 focus-ring rounded">
                 Upload your first image
               </span>
               <input
@@ -670,8 +670,8 @@ export function ProductImageGallery({
                 onDragStart={() => handleDragStart(index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragEnd={handleDragEnd}
-                className={`relative group aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 transition-colors ${
-                  index === 0 ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                className={`relative group aspect-square rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-brand-500 transition duration-250 ${
+                  index === 0 ? 'ring-2 ring-brand-500 ring-offset-2' : ''
                 } ${dragIndex === index ? 'opacity-50' : ''}`}
               >
                 <img
@@ -682,12 +682,12 @@ export function ProductImageGallery({
                   loading="lazy"
                 />
 
-                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/50 text-white text-xs rounded">
+                <div className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/50 text-white text-2xs tabular-nums rounded">
                   {index + 1}
                 </div>
 
                 {index === 0 && (
-                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-blue-600 text-white text-xs rounded">
+                  <div className="absolute top-2 left-2 px-2 py-0.5 bg-brand-600 text-white text-2xs rounded">
                     Primary
                   </div>
                 )}
@@ -696,7 +696,7 @@ export function ProductImageGallery({
                   <button
                     type="button"
                     onClick={() => openLightbox(index)}
-                    className="p-1.5 bg-white/20 text-white rounded-lg hover:bg-white/30"
+                    className="p-1.5 bg-white/20 text-white rounded-lg hover:bg-white/30 transition duration-250 focus-ring"
                     title="Preview"
                     aria-label={`Preview image ${index + 1}`}
                   >
@@ -705,7 +705,7 @@ export function ProductImageGallery({
                   <button
                     type="button"
                     onClick={() => handleDownloadImage(image, index)}
-                    className="p-1.5 bg-white/20 text-white rounded-lg hover:bg-white/30"
+                    className="p-1.5 bg-white/20 text-white rounded-lg hover:bg-white/30 transition duration-250 focus-ring"
                     title="Download"
                     aria-label={`Download image ${index + 1}`}
                   >
@@ -715,7 +715,7 @@ export function ProductImageGallery({
                     <button
                       type="button"
                       onClick={() => handleSetPrimary(index)}
-                      className="p-1.5 bg-green-600/80 text-white rounded-lg hover:bg-green-700"
+                      className="p-1.5 bg-success-600/80 text-white rounded-lg hover:bg-success-700 transition duration-250 focus-ring"
                       title="Set as primary"
                       aria-label={`Set image ${index + 1} as primary`}
                     >
@@ -726,7 +726,7 @@ export function ProductImageGallery({
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(index)}
-                      className="p-1.5 bg-red-600/80 text-white rounded-lg hover:bg-red-700"
+                      className="p-1.5 bg-danger-600/80 text-white rounded-lg hover:bg-danger-700 transition duration-250 focus-ring"
                       title="Remove image"
                       aria-label={`Remove image ${index + 1}`}
                     >
@@ -746,9 +746,11 @@ export function ProductImageGallery({
 
           {/* Add More Tile */}
           {canManage && images.length < effectiveMax && !uploading && (
-            <label className="aspect-square rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 transition-colors cursor-pointer flex flex-col items-center justify-center">
-              <Plus className="w-8 h-8 text-gray-400" />
-              <span className="text-sm text-gray-500 mt-2">Add Image</span>
+            <label className="aspect-square rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-brand-500 transition duration-250 cursor-pointer flex flex-col items-center justify-center focus-ring">
+              <Plus className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+              <span className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                Add Image
+              </span>
               <input
                 type="file"
                 accept="image/*"
@@ -769,7 +771,7 @@ export function ProductImageGallery({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+            className="fixed inset-0 z-modal bg-black/90 flex items-center justify-center"
             onClick={closeLightbox}
             role="dialog"
             aria-modal="true"
@@ -778,7 +780,7 @@ export function ProductImageGallery({
             <button
               type="button"
               onClick={closeLightbox}
-              className="absolute top-4 right-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+              className="absolute top-4 right-4 p-2 text-white hover:bg-white/20 rounded-lg transition duration-250 focus-ring"
               aria-label="Close preview"
             >
               <X className="w-6 h-6" />
@@ -788,7 +790,7 @@ export function ProductImageGallery({
               <button
                 type="button"
                 onClick={handlePrevImage}
-                className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-lg transition duration-250 focus-ring"
                 aria-label="Previous image"
               >
                 <ChevronLeft className="w-6 h-6" />
@@ -807,7 +809,7 @@ export function ProductImageGallery({
               <button
                 type="button"
                 onClick={handleNextImage}
-                className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
+                className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-lg transition duration-250 focus-ring"
                 aria-label="Next image"
               >
                 <ChevronRight className="w-6 h-6" />
@@ -815,7 +817,7 @@ export function ProductImageGallery({
             )}
 
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-3">
-              <span className="text-white text-sm">
+              <span className="text-white text-sm tabular-nums">
                 {selectedImageIndex + 1} / {images.length}
               </span>
               <button
@@ -827,7 +829,7 @@ export function ProductImageGallery({
                     selectedImageIndex,
                   );
                 }}
-                className="p-1.5 bg-white/20 text-white rounded-lg hover:bg-white/30"
+                className="p-1.5 bg-white/20 text-white rounded-lg hover:bg-white/30 transition duration-250 focus-ring"
                 title="Download this image"
                 aria-label="Download this image"
               >

@@ -212,10 +212,7 @@ export default function CatalogProductsPage() {
     canEdit(PermissionResource.PRODUCT) ||
     canManage(PermissionResource.PRODUCT);
 
-  // Guards against the double-mount that React Strict Mode does in dev,
-  // and against the double-trigger the old code had from two effects.
   const initialLoadDone = useRef(false);
-  // Guards against a fetch resolving after the component unmounts.
   const lastFetchId = useRef(0);
 
   // ============================================
@@ -311,13 +308,9 @@ export default function CatalogProductsPage() {
       if (filters.minRating) params.minRating = parseFloat(filters.minRating);
       if (filters.hasVariants === 'yes') params.hasVariants = true;
       if (filters.hasVariants === 'no') params.hasVariants = false;
-      // NOTE: `linkedToInventory` has no server-side filter (the product
-      // service doesn't accept one). It's applied client-side below.
 
       const result = await productService.getAllProducts(params);
 
-      // If a newer fetch has started since this one was issued, drop
-      // the result — the newer fetch's data is authoritative.
       if (fetchId !== lastFetchId.current) return;
 
       let mappedProducts: Product[] = (result.data || []).map(
@@ -366,7 +359,6 @@ export default function CatalogProductsPage() {
         })
       );
 
-      // Client-side `linkedToInventory` filter.
       if (filters.linkedToInventory !== 'all') {
         const want = filters.linkedToInventory === 'yes';
         mappedProducts = mappedProducts.filter(
@@ -399,7 +391,6 @@ export default function CatalogProductsPage() {
     sortOrder,
   ]);
 
-  // Initial load: categories and the first page of products.
   useEffect(() => {
     if (!canViewProducts) return;
     if (initialLoadDone.current) return;
@@ -408,8 +399,6 @@ export default function CatalogProductsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canViewProducts]);
 
-  // Reload whenever the query state changes. `loadProducts` reads the
-  // current values via closure, so this fires exactly once per change.
   useEffect(() => {
     if (!canViewProducts) return;
     loadProducts();
@@ -425,7 +414,7 @@ export default function CatalogProductsPage() {
       await loadProducts();
       toast.success('Products refreshed');
     } catch {
-      // loadProducts handles its own error toast.
+      /* loadProducts handles its own error toast. */
     }
   }, [loadProducts]);
 
@@ -498,16 +487,11 @@ export default function CatalogProductsPage() {
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
 
-      // Log the first failure reason for diagnostics. The user only
-      // needs the summary.
       if (failed > 0) {
         const firstRejection = results.find(
           (r) => r.status === 'rejected'
         ) as PromiseRejectedResult;
-        console.warn(
-          'Bulk delete: first failure',
-          firstRejection?.reason
-        );
+        console.warn('Bulk delete: first failure', firstRejection?.reason);
       }
 
       if (failed > 0) {
@@ -538,8 +522,6 @@ export default function CatalogProductsPage() {
       setExporting(true);
       const blob = await productService.exportProducts('csv');
 
-      // Only build the URL + trigger the download after the network
-      // call resolves, so the spinner reflects actual work.
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -576,8 +558,6 @@ export default function CatalogProductsPage() {
       try {
         let info: BarcodeInfo;
 
-        // `getProductBarcode` throws on 404 (no barcode). Treat that
-        // as "generate a new one" rather than an error.
         try {
           if (product.barcode) {
             info = await productService.getProductBarcode(product.id);
@@ -678,10 +658,10 @@ export default function CatalogProductsPage() {
             .sku { color: #666; font-size: 12px; margin: 0 0 15px 0; }
             .barcode-img { max-width: 300px; margin: 10px 0; }
             .qr-img { max-width: 120px; margin: 10px 0; }
-            .price { font-size: 20px; font-weight: bold; color: #2563eb; margin: 5px 0; }
+            .price { font-size: 20px; font-weight: bold; color: #ea580c; margin: 5px 0; }
             .info { margin-top: 10px; font-size: 12px; color: #666; }
             .info span { margin: 0 8px; }
-            .linked-badge { display: inline-block; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-top: 5px; }
+            .linked-badge { display: inline-block; background: #ffedd5; color: #9a3412; padding: 2px 8px; border-radius: 12px; font-size: 10px; margin-top: 5px; }
             @media print {
               .container { border: none; padding: 20px; }
             }
@@ -774,7 +754,7 @@ export default function CatalogProductsPage() {
       return {
         label: 'Out of Stock',
         color:
-          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+          'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300',
         icon: '🔴',
       };
     }
@@ -782,14 +762,14 @@ export default function CatalogProductsPage() {
       return {
         label: 'Low Stock',
         color:
-          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+          'bg-warning-100 text-warning-700 dark:bg-warning-950/30 dark:text-warning-300',
         icon: '🟡',
       };
     }
     return {
       label: 'In Stock',
       color:
-        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+        'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300',
       icon: '🟢',
     };
   }, []);
@@ -802,13 +782,13 @@ export default function CatalogProductsPage() {
             key={star}
             className={`w-3.5 h-3.5 ${
               star <= Math.round(rating)
-                ? 'text-yellow-400 fill-current'
+                ? 'text-brand-400 fill-current'
                 : 'text-gray-300 dark:text-gray-600'
             }`}
           />
         ))}
         {rating > 0 && (
-          <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-1 tabular-nums">
             {rating.toFixed(1)}
           </span>
         )}
@@ -889,7 +869,7 @@ export default function CatalogProductsPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </div>
@@ -911,7 +891,7 @@ export default function CatalogProductsPage() {
         </p>
         <button
           onClick={() => router.push('/dashboard')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors shadow-brand focus-ring"
         >
           Go to Dashboard
         </button>
@@ -923,7 +903,7 @@ export default function CatalogProductsPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 dark:border-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading products...
           </p>
@@ -943,25 +923,25 @@ export default function CatalogProductsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-              <Package className="w-8 h-8 text-blue-500" />
+              <Package className="w-8 h-8 text-brand-500" />
               Catalog
             </h1>
             <div className="flex flex-wrap items-center gap-3 mt-1">
-              <p className="text-gray-500 dark:text-gray-400">
+              <p className="text-gray-500 dark:text-gray-400 tabular-nums">
                 {pagination.total} products • Manage your product catalog
               </p>
               <div className="flex items-center gap-2 text-sm">
-                <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">
+                <span className="px-2 py-0.5 bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300 rounded-full tabular-nums">
                   {barcodeStats.withBarcode} with barcode
                 </span>
-                <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full">
+                <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full tabular-nums">
                   {barcodeStats.withoutBarcode} without barcode
                 </span>
-                <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">
+                <span className="px-2 py-0.5 bg-brand-100 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300 rounded-full tabular-nums">
                   <Link2 className="w-3 h-3 inline" />{' '}
                   {barcodeStats.linkedToInventory} linked
                 </span>
-                <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full">
+                <span className="px-2 py-0.5 bg-secondary-100 dark:bg-secondary-950/30 text-secondary-700 dark:text-secondary-300 rounded-full tabular-nums">
                   <Layers className="w-3 h-3 inline" />{' '}
                   {barcodeStats.withVariants} with variants
                 </span>
@@ -973,7 +953,7 @@ export default function CatalogProductsPage() {
               type="button"
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
               title="Refresh"
               aria-label="Refresh products"
             >
@@ -984,7 +964,7 @@ export default function CatalogProductsPage() {
             <button
               type="button"
               onClick={handleScanBarcode}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
               title="Scan Barcode"
               aria-label="Scan barcode"
             >
@@ -995,7 +975,7 @@ export default function CatalogProductsPage() {
                 type="button"
                 onClick={handleExport}
                 disabled={exporting}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-2 disabled:opacity-50 focus-ring"
               >
                 {exporting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1008,7 +988,7 @@ export default function CatalogProductsPage() {
             {canCreateProducts && (
               <Link
                 href="/admin/catalog/add"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
               >
                 <Plus className="w-4 h-4" />
                 Add Product
@@ -1027,23 +1007,23 @@ export default function CatalogProductsPage() {
                 placeholder="Search by name, SKU, or barcode..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"
+                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors duration-200"
               />
             </div>
 
             <button
               type="button"
               onClick={() => setShowFilters((v) => !v)}
-              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors ${
+              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors focus-ring ${
                 showFilters || hasActiveFilters
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  ? 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-600 hover:border-brand-300 dark:hover:border-brand-700 border border-transparent'
               }`}
             >
               <Filter className="w-4 h-4" />
               Filters
               {hasActiveFilters && (
-                <span className="ml-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                <span className="ml-1 px-1.5 py-0.5 bg-brand-600 text-white text-xs rounded-full tabular-nums">
                   {activeFilterCount}
                 </span>
               )}
@@ -1053,9 +1033,9 @@ export default function CatalogProductsPage() {
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors focus-ring ${
                   viewMode === 'table'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400'
                 }`}
                 aria-label="Table view"
@@ -1065,9 +1045,9 @@ export default function CatalogProductsPage() {
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors focus-ring ${
                   viewMode === 'grid'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                    ? 'bg-white dark:bg-gray-600 text-brand-600 dark:text-brand-400 shadow-sm'
                     : 'text-gray-500 dark:text-gray-400'
                 }`}
                 aria-label="Grid view"
@@ -1080,7 +1060,7 @@ export default function CatalogProductsPage() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1"
+                className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 flex items-center gap-1 focus-ring transition-colors"
               >
                 <X className="w-4 h-4" />
                 Clear
@@ -1214,7 +1194,7 @@ export default function CatalogProductsPage() {
                       onChange={(e) =>
                         setFilters({ ...filters, minPrice: e.target.value })
                       }
-                      className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 tabular-nums transition-colors"
                       placeholder="0.00"
                     />
                   </div>
@@ -1230,7 +1210,7 @@ export default function CatalogProductsPage() {
                       onChange={(e) =>
                         setFilters({ ...filters, maxPrice: e.target.value })
                       }
-                      className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 tabular-nums transition-colors"
                       placeholder="0.00"
                     />
                   </div>
@@ -1247,9 +1227,9 @@ export default function CatalogProductsPage() {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2"
+              className="bg-brand-50 dark:bg-brand-950/20 border border-brand-200 dark:border-brand-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2"
             >
-              <span className="text-sm text-blue-700 dark:text-blue-300">
+              <span className="text-sm text-brand-700 dark:text-brand-300 tabular-nums">
                 {selectedProducts.length} products selected
               </span>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1257,7 +1237,7 @@ export default function CatalogProductsPage() {
                   <button
                     type="button"
                     onClick={handleBulkGenerateBarcodes}
-                    className="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors flex items-center gap-1"
+                    className="px-3 py-1 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                   >
                     <Barcode className="w-4 h-4" />
                     Generate Barcodes
@@ -1267,7 +1247,7 @@ export default function CatalogProductsPage() {
                   <button
                     type="button"
                     onClick={() => setShowBulkDeleteModal(true)}
-                    className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
+                    className="px-3 py-1 bg-brand-accent-600 text-white rounded-lg text-sm hover:bg-brand-accent-700 transition-colors flex items-center gap-1 shadow-brand focus-ring"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete Selected
@@ -1276,7 +1256,7 @@ export default function CatalogProductsPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedProducts([])}
-                  className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 transition-colors"
+                  className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors focus-ring"
                 >
                   <X className="w-4 h-4 inline mr-1" />
                   Cancel
@@ -1422,7 +1402,7 @@ function FilterSelect({ label, value, onChange, children }: FilterSelectProps) {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors duration-200"
+        className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition-colors duration-200"
       >
         {children}
       </select>
@@ -1455,7 +1435,7 @@ function EmptyState({
       {canCreateProducts && !hasActiveFilters && (
         <Link
           href="/admin/catalog/add"
-          className="mt-4 inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 inline-block px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors shadow-brand focus-ring"
         >
           <Plus className="w-4 h-4 inline mr-2" />
           Add Product
@@ -1465,7 +1445,7 @@ function EmptyState({
         <button
           type="button"
           onClick={onClearFilters}
-          className="mt-4 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="mt-4 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
         >
           Clear Filters
         </button>
@@ -1537,7 +1517,7 @@ function ProductTable({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -1547,7 +1527,7 @@ function ProductTable({
                     type="checkbox"
                     checked={allVisibleSelected}
                     onChange={toggleAll}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                     aria-label="Select all products"
                   />
                 </th>
@@ -1590,8 +1570,8 @@ function ProductTable({
               return (
                 <tr
                   key={product.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${
-                    isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                  className={`hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors cursor-pointer ${
+                    isSelected ? 'bg-brand-50 dark:bg-brand-950/20' : ''
                   }`}
                   onClick={() => onView(product)}
                 >
@@ -1604,7 +1584,7 @@ function ProductTable({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleSelection(product.id)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                         aria-label={`Select ${product.name}`}
                       />
                     </td>
@@ -1636,25 +1616,25 @@ function ProductTable({
                             </span>
                           )}
                           {product.featured && (
-                            <span className="text-xs text-yellow-500 flex items-center gap-0.5">
+                            <span className="text-xs text-brand-500 flex items-center gap-0.5">
                               <Star className="w-3 h-3 fill-current" />
                               Featured
                             </span>
                           )}
                           {product.variants &&
                             product.variants.length > 0 && (
-                              <span className="text-xs text-blue-500 flex items-center gap-0.5">
+                              <span className="text-xs text-brand-500 flex items-center gap-0.5">
                                 <Layers className="w-3 h-3" />
                                 {product.variants.length} variants
                                 {product.variants.some(
                                   (v) => v.images && v.images.length > 0
                                 ) && (
-                                  <ImageIcon className="w-3 h-3 text-purple-500 ml-0.5" />
+                                  <ImageIcon className="w-3 h-3 text-secondary-500 ml-0.5" />
                                 )}
                               </span>
                             )}
                           {product.inventoryId && (
-                            <span className="text-xs text-blue-500 flex items-center gap-0.5">
+                            <span className="text-xs text-brand-500 flex items-center gap-0.5">
                               <Link2 className="w-3 h-3" />
                               Inventory
                             </span>
@@ -1669,7 +1649,7 @@ function ProductTable({
                   <td className="px-4 py-3">
                     {product.barcode ? (
                       <div className="flex items-center gap-1">
-                        <Barcode className="w-4 h-4 text-green-500" />
+                        <Barcode className="w-4 h-4 text-success-500" />
                         <span className="text-xs font-mono text-gray-600 dark:text-gray-300">
                           {product.barcode}
                         </span>
@@ -1680,12 +1660,12 @@ function ProductTable({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(product.unitPrice)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                         {product.inventory?.quantity || 0}
                       </p>
                       <span
@@ -1700,8 +1680,8 @@ function ProductTable({
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
                           product.isActive
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                            ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
+                            : 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300'
                         }`}
                       >
                         {product.isActive ? 'Active' : 'Inactive'}
@@ -1720,28 +1700,28 @@ function ProductTable({
                         <button
                           type="button"
                           onClick={() => onGenerateBarcode(product)}
-                          className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
+                          className="p-1 hover:bg-success-100 dark:hover:bg-success-950/30 rounded transition-colors focus-ring"
                           title="Generate Barcode"
                           aria-label={`Generate barcode for ${product.name}`}
                         >
-                          <Barcode className="w-4 h-4 text-green-500" />
+                          <Barcode className="w-4 h-4 text-success-500" />
                         </button>
                       )}
                       {product.barcode && (
                         <button
                           type="button"
                           onClick={() => onGenerateBarcode(product)}
-                          className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                           title="View Barcode"
                           aria-label={`View barcode for ${product.name}`}
                         >
-                          <QrCode className="w-4 h-4 text-blue-500" />
+                          <QrCode className="w-4 h-4 text-brand-500" />
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={() => onView(product)}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                         title="View Details"
                         aria-label={`View details for ${product.name}`}
                       >
@@ -1751,22 +1731,22 @@ function ProductTable({
                         <button
                           type="button"
                           onClick={() => onEdit(product)}
-                          className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                           title="Edit"
                           aria-label={`Edit ${product.name}`}
                         >
-                          <Edit className="w-4 h-4 text-blue-500" />
+                          <Edit className="w-4 h-4 text-brand-500" />
                         </button>
                       )}
                       {canDeleteProducts && (
                         <button
                           type="button"
                           onClick={() => onDelete(product)}
-                          className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                          className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                           title="Delete"
                           aria-label={`Delete ${product.name}`}
                         >
-                          <Trash2 className="w-4 h-4 text-red-500" />
+                          <Trash2 className="w-4 h-4 text-brand-accent-500" />
                         </button>
                       )}
                     </div>
@@ -1780,7 +1760,7 @@ function ProductTable({
 
       {pagination.totalPages > 1 && (
         <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
+          <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
             Showing {products.length} of {pagination.total} products
           </span>
           <div className="flex gap-2">
@@ -1788,12 +1768,12 @@ function ProductTable({
               type="button"
               onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
               disabled={pagination.page <= 1}
-              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 disabled:opacity-50 transition-colors focus-ring"
               aria-label="Previous page"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300">
+            <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
               Page {pagination.page} of {pagination.totalPages}
             </span>
             <button
@@ -1804,7 +1784,7 @@ function ProductTable({
                 )
               }
               disabled={pagination.page >= pagination.totalPages}
-              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 disabled:opacity-50 transition-colors focus-ring"
               aria-label="Next page"
             >
               <ChevronRight className="w-4 h-4" />
@@ -1831,7 +1811,7 @@ function SortableHeader({
 }: SortableHeaderProps) {
   return (
     <th
-      className={`px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 ${
+      className={`px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-brand-600 dark:hover:text-brand-400 transition-colors focus-ring ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
       onClick={onClick}
@@ -1905,8 +1885,8 @@ function ProductGrid({
             whileHover={{ y: -4 }}
             className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-all ${
               isSelected
-                ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50'
-                : 'border-gray-200 dark:border-gray-700 hover:shadow-md'
+                ? 'border-brand-500 ring-2 ring-brand-500 ring-opacity-50'
+                : 'border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800'
             }`}
           >
             <div
@@ -1931,29 +1911,29 @@ function ProductGrid({
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => toggleSelection(product.id)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                     onClick={(e) => e.stopPropagation()}
                     aria-label={`Select ${product.name}`}
                   />
                 )}
                 {product.barcode && (
-                  <span className="px-1.5 py-0.5 bg-green-500/80 text-white text-[8px] rounded flex items-center gap-0.5">
+                  <span className="px-1.5 py-0.5 bg-success-500/80 text-white text-[8px] rounded flex items-center gap-0.5">
                     <Barcode className="w-3 h-3" />
                   </span>
                 )}
                 {product.inventoryId && (
-                  <span className="px-1.5 py-0.5 bg-blue-500/80 text-white text-[8px] rounded flex items-center gap-0.5">
+                  <span className="px-1.5 py-0.5 bg-brand-500/80 text-white text-[8px] rounded flex items-center gap-0.5">
                     <Link2 className="w-3 h-3" />
                   </span>
                 )}
               </div>
               {!product.isActive && (
-                <div className="absolute top-2 right-2 px-2 py-1 bg-red-600 text-white text-xs rounded">
+                <div className="absolute top-2 right-2 px-2 py-1 bg-brand-accent-600 text-white text-xs rounded">
                   Inactive
                 </div>
               )}
               {product.featured && (
-                <div className="absolute top-2 right-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded">
+                <div className="absolute top-2 right-2 px-2 py-1 bg-warning-500 text-white text-xs rounded">
                   <Star className="w-3 h-3 fill-current" />
                 </div>
               )}
@@ -1961,13 +1941,13 @@ function ProductGrid({
                 {stockStatus.icon} {stockStatus.label}
               </div>
               {product.variants && product.variants.length > 0 && (
-                <div className="absolute bottom-2 right-2 px-2 py-1 bg-blue-500/80 text-white text-xs rounded flex items-center gap-1">
+                <div className="absolute bottom-2 right-2 px-2 py-1 bg-brand-500/80 text-white text-xs rounded flex items-center gap-1">
                   <Layers className="w-3 h-3" />
                   {product.variants.length}
                   {product.variants.some(
                     (v) => v.images && v.images.length > 0
                   ) && (
-                    <ImageIcon className="w-3 h-3 text-purple-300" />
+                    <ImageIcon className="w-3 h-3 text-secondary-300" />
                   )}
                 </div>
               )}
@@ -1978,7 +1958,7 @@ function ProductGrid({
                 <h3 className="font-medium text-gray-900 dark:text-white truncate">
                   {product.name}
                 </h3>
-                <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                <span className="text-sm font-bold text-brand-600 dark:text-brand-400 tabular-nums">
                   {formatCurrency(product.unitPrice)}
                 </span>
               </div>
@@ -1991,9 +1971,9 @@ function ProductGrid({
                 </span>
               )}
               <div className="mt-2 flex items-center justify-between">
-                <div className="flex items-center gap-1 text-sm">
+                <div className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
                   <Package className="w-4 h-4 text-gray-400" />
-                  <span>{product.inventory?.quantity || 0} in stock</span>
+                  <span className="tabular-nums">{product.inventory?.quantity || 0} in stock</span>
                 </div>
                 {product.rating && product.rating > 0 && (
                   <div>{renderStars(product.rating)}</div>
@@ -2004,28 +1984,28 @@ function ProductGrid({
                   <button
                     type="button"
                     onClick={() => onGenerateBarcode(product)}
-                    className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
+                    className="p-1.5 hover:bg-success-100 dark:hover:bg-success-950/30 rounded transition-colors focus-ring"
                     title="Generate Barcode"
                     aria-label={`Generate barcode for ${product.name}`}
                   >
-                    <Barcode className="w-4 h-4 text-green-500" />
+                    <Barcode className="w-4 h-4 text-success-500" />
                   </button>
                 )}
                 {product.barcode && (
                   <button
                     type="button"
                     onClick={() => onGenerateBarcode(product)}
-                    className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                    className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                     title="View Barcode"
                     aria-label={`View barcode for ${product.name}`}
                   >
-                    <QrCode className="w-4 h-4 text-blue-500" />
+                    <QrCode className="w-4 h-4 text-brand-500" />
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => onView(product)}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                   title="View Details"
                   aria-label={`View details for ${product.name}`}
                 >
@@ -2035,22 +2015,22 @@ function ProductGrid({
                   <button
                     type="button"
                     onClick={() => onEdit(product)}
-                    className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                    className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                     title="Edit"
                     aria-label={`Edit ${product.name}`}
                   >
-                    <Edit className="w-4 h-4 text-blue-500" />
+                    <Edit className="w-4 h-4 text-brand-500" />
                   </button>
                 )}
                 {canDeleteProducts && (
                   <button
                     type="button"
                     onClick={() => onDelete(product)}
-                    className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                    className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                     title="Delete"
                     aria-label={`Delete ${product.name}`}
                   >
-                    <Trash2 className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-brand-accent-500" />
                   </button>
                 )}
               </div>
@@ -2089,22 +2069,22 @@ function BarcodeModal({
         className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto custom-scrollbar">
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+          className="absolute top-4 right-4 p-1 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
           aria-label="Close"
         >
           <X className="w-5 h-5 text-gray-500" />
         </button>
 
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+          <div className="p-2 bg-brand-100 dark:bg-brand-950/30 rounded-lg">
             {product.barcode ? (
-              <QrCode className="w-6 h-6 text-blue-600" />
+              <QrCode className="w-6 h-6 text-brand-600" />
             ) : (
-              <Barcode className="w-6 h-6 text-blue-600" />
+              <Barcode className="w-6 h-6 text-brand-600" />
             )}
           </div>
           <div>
@@ -2115,7 +2095,7 @@ function BarcodeModal({
               {product.name}
             </p>
             {product.inventoryId && (
-              <span className="text-xs text-blue-500 flex items-center gap-0.5">
+              <span className="text-xs text-brand-500 flex items-center gap-0.5">
                 <Link2 className="w-3 h-3" /> Linked to Inventory
               </span>
             )}
@@ -2124,7 +2104,7 @@ function BarcodeModal({
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-8">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
               Generating barcode...
             </p>
@@ -2177,7 +2157,7 @@ function BarcodeModal({
               <button
                 type="button"
                 onClick={onCopy}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-2 text-sm focus-ring"
               >
                 <Copy className="w-4 h-4" />
                 Copy
@@ -2185,7 +2165,7 @@ function BarcodeModal({
               <button
                 type="button"
                 onClick={onDownload}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center gap-2 text-sm focus-ring"
               >
                 <Download className="w-4 h-4" />
                 Download
@@ -2193,7 +2173,7 @@ function BarcodeModal({
               <button
                 type="button"
                 onClick={onPrint}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm"
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm shadow-brand focus-ring"
               >
                 <Printer className="w-4 h-4" />
                 Print
@@ -2209,7 +2189,7 @@ function BarcodeModal({
             <button
               type="button"
               onClick={onGenerate}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
             >
               Generate Barcode
             </button>
@@ -2250,14 +2230,14 @@ function DeleteModal({
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+          className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
           aria-label="Close"
         >
           <X className="w-5 h-5 text-gray-500" />
         </button>
         <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+          <div className="p-2 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-lg">
+            <AlertTriangle className="w-6 h-6 text-brand-accent-600 dark:text-brand-accent-400" />
           </div>
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">
@@ -2272,8 +2252,8 @@ function DeleteModal({
         <p className="text-gray-600 dark:text-gray-300 mb-4">{children}</p>
 
         {warning && (
-          <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-            <p className="text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+          <div className="mb-4 p-3 bg-warning-50 dark:bg-warning-950/20 border border-warning-200 dark:border-warning-800 rounded-lg">
+            <p className="text-sm text-warning-700 dark:text-warning-300 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               {warning}
             </p>
@@ -2284,7 +2264,7 @@ function DeleteModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
           >
             Cancel
           </button>
@@ -2292,7 +2272,7 @@ function DeleteModal({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-brand-accent-600 hover:bg-brand-accent-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-2 shadow-brand focus-ring"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />

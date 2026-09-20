@@ -208,17 +208,17 @@ function StatCard({
   hint,
 }: StatCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+    <div className="card-brand shadow-soft hover:shadow-card-hover transition duration-250">
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
           <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
             {title}
           </p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">
+          <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white truncate">
             {value}
           </p>
           {subtitle && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
+            <p className="text-xs tabular-nums text-gray-400 dark:text-gray-500 truncate">
               {subtitle}
             </p>
           )}
@@ -331,8 +331,8 @@ export function ProductSalesAnalytics({
   if (loading) {
     return (
       <div className={`flex items-center justify-center py-12 ${className}`}>
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-3" />
+        <div className="text-center animate-fade-in">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400 mx-auto mb-3" />
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Loading product data...
           </p>
@@ -343,15 +343,15 @@ export function ProductSalesAnalytics({
 
   if (error || !product) {
     return (
-      <div className={`text-center py-12 ${className}`}>
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+      <div className={`text-center py-12 animate-fade-in ${className}`}>
+        <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-3" />
         <p className="text-gray-600 dark:text-gray-400">
           {error || 'No data available'}
         </p>
         {isAuthenticated && (
           <button
             onClick={loadData}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 btn-brand"
           >
             Retry
           </button>
@@ -397,12 +397,12 @@ export function ProductSalesAnalytics({
       : product.rating ?? 0;
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-6 ${className} animate-fade-in`}>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-blue-500" />
+            <TrendingUp className="w-5 h-5 text-brand-500 dark:text-brand-400" />
             Product Overview
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -414,10 +414,11 @@ export function ProductSalesAnalytics({
         </div>
         <button
           onClick={handleRefresh}
-          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 focus-ring"
           title="Refresh"
+          aria-label="Refresh analytics"
         >
-          <RefreshCw className="w-4 h-4 text-gray-500" />
+          <RefreshCw className="w-4 h-4 text-gray-500 dark:text-gray-400" />
         </button>
       </div>
 
@@ -428,9 +429,9 @@ export function ProductSalesAnalytics({
           value={formatCurrency(product.unitPrice)}
           subtitle={`SKU: ${product.sku}`}
           icon={
-            <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <DollarSign className="w-5 h-5 text-success-600 dark:text-success-400" />
           }
-          color="bg-green-100 dark:bg-green-900/20"
+          color="bg-success-100 dark:bg-success-900/20"
         />
 
         <StatCard
@@ -442,9 +443,9 @@ export function ProductSalesAnalytics({
               : undefined
           }
           icon={
-            <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <Package className="w-5 h-5 text-brand-600 dark:text-brand-400" />
           }
-          color="bg-blue-100 dark:bg-blue-900/20"
+          color="bg-brand-100 dark:bg-brand-900/20"
         />
 
         <StatCard
@@ -460,9 +461,9 @@ export function ProductSalesAnalytics({
               : 'No reviews yet'
           }
           icon={
-            <Star className="w-5 h-5 text-yellow-600 dark:text-yellow-400 fill-current" />
+            <Star className="w-5 h-5 text-warning-600 dark:text-warning-400 fill-current" />
           }
-          color="bg-yellow-100 dark:bg-yellow-900/20"
+          color="bg-warning-100 dark:bg-warning-900/20"
           hint="Includes pending reviews"
         />
 
@@ -471,24 +472,24 @@ export function ProductSalesAnalytics({
           value={hasVariants ? product.variants.length : '—'}
           subtitle={hasVariants ? undefined : 'No variants'}
           icon={
-            <Layers className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <Layers className="w-5 h-5 text-secondary-600 dark:text-secondary-400" />
           }
-          color="bg-purple-100 dark:bg-purple-900/20"
+          color="bg-secondary-100 dark:bg-secondary-900/20"
         />
       </div>
 
       {/* Margin & stock status */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+        <div className="card-brand shadow-soft p-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 eyebrow">
             Margin
           </p>
           {margin != null ? (
             <>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl font-bold tabular-nums text-gray-900 dark:text-white">
                 {margin.toFixed(1)}%
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
                 {formatCurrency(marginAmount ?? 0)} per unit
               </p>
             </>
@@ -499,17 +500,17 @@ export function ProductSalesAnalytics({
           )}
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+        <div className="card-brand shadow-soft p-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 eyebrow">
             Stock Status
           </p>
           <p
             className={`text-lg font-bold ${
               stockStatus === 'out_of_stock'
-                ? 'text-red-600 dark:text-red-400'
+                ? 'text-danger-600 dark:text-danger-400'
                 : stockStatus === 'low_stock'
-                ? 'text-yellow-600 dark:text-yellow-400'
-                : 'text-green-600 dark:text-green-400'
+                ? 'text-warning-600 dark:text-warning-400'
+                : 'text-success-600 dark:text-success-400'
             }`}
           >
             {stockStatus === 'out_of_stock'
@@ -518,26 +519,26 @@ export function ProductSalesAnalytics({
               ? 'Low Stock'
               : 'In Stock'}
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
             Reorder at {product.minStock ?? 5} units
           </p>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+        <div className="card-brand shadow-soft p-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 eyebrow">
             Product State
           </p>
           <p
             className={`text-lg font-bold ${
               product.isActive
-                ? 'text-green-600 dark:text-green-400'
+                ? 'text-success-600 dark:text-success-400'
                 : 'text-gray-500 dark:text-gray-400'
             }`}
           >
             {product.isActive ? 'Active' : 'Inactive'}
           </p>
           {product.featured && (
-            <p className="text-xs text-yellow-600 dark:text-yellow-400">
+            <p className="text-xs text-warning-600 dark:text-warning-400">
               ★ Featured
             </p>
           )}
@@ -546,9 +547,9 @@ export function ProductSalesAnalytics({
 
       {/* Review distribution */}
       {reviewStats.total > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand shadow-soft p-4">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <Star className="w-4 h-4 text-gray-500" />
+            <Star className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             Review Distribution
           </h4>
           <div className="space-y-2">
@@ -561,16 +562,16 @@ export function ProductSalesAnalytics({
                   : 0;
               return (
                 <div key={rating} className="flex items-center gap-3">
-                  <span className="text-sm text-gray-500 dark:text-gray-400 w-8">
+                  <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400 w-8">
                     {rating} ★
                   </span>
                   <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div
-                      className="bg-yellow-400 rounded-full h-2 transition-all"
+                      className="bg-warning-400 rounded-full h-2 transition-all duration-350"
                       style={{ width: `${Math.min(pct, 100)}%` }}
                     />
                   </div>
-                  <span className="text-sm text-gray-600 dark:text-gray-400 w-12 text-right">
+                  <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400 w-12 text-right">
                     {count}
                   </span>
                 </div>
@@ -582,28 +583,28 @@ export function ProductSalesAnalytics({
 
       {/* Variant breakdown */}
       {hasVariants && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand shadow-soft p-4">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <Boxes className="w-4 h-4 text-gray-500" />
+            <Boxes className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             Variant Breakdown
           </h4>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                  <th className="text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2 eyebrow">
                     Variant
                   </th>
-                  <th className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                  <th className="text-left text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2 eyebrow">
                     SKU
                   </th>
-                  <th className="text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                  <th className="text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2 eyebrow">
                     Price
                   </th>
-                  <th className="text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                  <th className="text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2 eyebrow">
                     Cost
                   </th>
-                  <th className="text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                  <th className="text-right text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2 eyebrow">
                     Available
                   </th>
                 </tr>
@@ -614,23 +615,23 @@ export function ProductSalesAnalytics({
                     <td className="py-2 text-sm text-gray-900 dark:text-white">
                       {v.name}
                       {!v.isActive && (
-                        <span className="ml-2 text-xs text-gray-400">
+                        <span className="ml-2 text-2xs text-gray-400 dark:text-gray-500">
                           (inactive)
                         </span>
                       )}
                     </td>
-                    <td className="py-2 text-xs text-gray-500 dark:text-gray-400 font-mono">
+                    <td className="py-2 text-xs text-gray-500 dark:text-gray-400 font-mono tabular-nums">
                       {v.sku}
                     </td>
-                    <td className="py-2 text-sm text-gray-900 dark:text-white text-right">
+                    <td className="py-2 text-sm tabular-nums text-gray-900 dark:text-white text-right">
                       {formatCurrency(v.price)}
                     </td>
-                    <td className="py-2 text-sm text-gray-600 dark:text-gray-400 text-right">
+                    <td className="py-2 text-sm tabular-nums text-gray-600 dark:text-gray-400 text-right">
                       {v.costPrice != null
                         ? formatCurrency(v.costPrice)
                         : '—'}
                     </td>
-                    <td className="py-2 text-sm text-gray-900 dark:text-white text-right">
+                    <td className="py-2 text-sm tabular-nums text-gray-900 dark:text-white text-right">
                       {v.available}
                     </td>
                   </tr>
@@ -642,9 +643,9 @@ export function ProductSalesAnalytics({
       )}
 
       {/* Explanation of what's not shown */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-start gap-2">
-        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-        <p className="text-xs text-blue-700 dark:text-blue-300">
+      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-2xl p-3 flex items-start gap-2">
+        <Info className="w-4 h-4 text-primary-600 dark:text-primary-400 mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-primary-700 dark:text-primary-300">
           Time-series analytics (daily/monthly sales, revenue trends, top
           customers, conversion rate, return rate, revenue by channel) are
           not yet available from the backend. This view shows only the

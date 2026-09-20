@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign, TrendingUp, TrendingDown, Package,
   RefreshCw, Download, Lock, AlertCircle,
@@ -12,7 +12,8 @@ import {
   ChevronDown, ChevronUp, Info, Shield,
   Clock, Building, User, CheckCircle,
   AlertTriangle, X, Loader2, Eye,
-  Printer, ExternalLink, Copy, Link2
+  Printer, ExternalLink, Copy, Link2,
+  Filter,
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { inventoryService } from '../../../../../services/inventoryService';
@@ -89,9 +90,9 @@ interface FilterState {
 // ============================================
 
 const STATUS_CONFIG = {
-  in_stock: { label: 'In Stock', color: 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800', icon: CheckCircle },
-  low_stock: { label: 'Low Stock', color: 'text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800', icon: AlertTriangle },
-  out_of_stock: { label: 'Out of Stock', color: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800', icon: AlertCircle },
+  in_stock: { label: 'In Stock', color: 'text-success-600 dark:text-success-400 bg-success-50 dark:bg-success-950/20 border-success-200 dark:border-success-800', icon: CheckCircle },
+  low_stock: { label: 'Low Stock', color: 'text-warning-600 dark:text-warning-400 bg-warning-50 dark:bg-warning-950/20 border-warning-200 dark:border-warning-800', icon: AlertTriangle },
+  out_of_stock: { label: 'Out of Stock', color: 'text-danger-600 dark:text-danger-400 bg-danger-50 dark:bg-danger-950/20 border-danger-200 dark:border-danger-800', icon: AlertCircle },
 };
 
 // ============================================
@@ -109,7 +110,7 @@ const StatCard: React.FC<{
     <div className="flex items-start justify-between">
       <div>
         <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-        <p className={`text-2xl font-bold ${color || 'text-gray-900 dark:text-white'}`}>
+        <p className={`text-2xl font-bold tabular-nums ${color || 'text-gray-900 dark:text-white'}`}>
           {value}
         </p>
         {subtitle && (
@@ -194,7 +195,7 @@ export default function ValuationPage() {
         <p className="text-gray-500 dark:text-gray-400 mt-2">You need to be logged in to view valuation reports.</p>
         <button
           onClick={() => router.push('/login')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
         >
           Go to Login
         </button>
@@ -218,7 +219,7 @@ export default function ValuationPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to view valuation reports.</p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Back to Inventory
           </button>
@@ -330,8 +331,8 @@ export default function ValuationPage() {
         total: stats?.totalProducts || totalItems,
         healthScore: 0,
       };
-      stockStatus.healthScore = stockStatus.total > 0 
-        ? Math.round((stockStatus.inStock / stockStatus.total) * 100) 
+      stockStatus.healthScore = stockStatus.total > 0
+        ? Math.round((stockStatus.inStock / stockStatus.total) * 100)
         : 0;
 
       // Build complete valuation data
@@ -514,7 +515,7 @@ export default function ValuationPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 dark:border-blue-400"></div>
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-brand-600 dark:border-brand-400"></div>
         <p className="mt-4 text-gray-500 dark:text-gray-400">Loading valuation data...</p>
       </div>
     );
@@ -522,13 +523,13 @@ export default function ValuationPage() {
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3 max-w-4xl mx-auto mt-8">
-        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+      <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3 max-w-4xl mx-auto mt-8">
+        <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+          <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           <button
             onClick={handleRefresh}
-            className="mt-2 text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+            className="mt-2 text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 dark:hover:text-brand-accent-300 transition-colors focus-ring"
           >
             Try again
           </button>
@@ -545,7 +546,7 @@ export default function ValuationPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <DollarSign className="w-7 h-7 sm:w-8 sm:h-8 text-green-500" />
+            <DollarSign className="w-7 h-7 sm:w-8 sm:h-8 text-success-500" />
             Inventory Valuation
           </h1>
           <div className="flex flex-wrap items-center gap-3 mt-1">
@@ -563,16 +564,16 @@ export default function ValuationPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
-              showFilters ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' :
-              'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
+              showFilters ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400' :
+              'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -580,7 +581,7 @@ export default function ValuationPage() {
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1 sm:gap-2 transition-colors disabled:opacity-50 text-sm"
+            className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-1 sm:gap-2 transition-colors disabled:opacity-50 text-sm focus-ring"
           >
             <Download className="w-4 h-4" />
             {exporting ? 'Exporting...' : 'Export'}
@@ -607,7 +608,7 @@ export default function ValuationPage() {
                     value={filters.search}
                     onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                     placeholder="Search items..."
-                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <div>
@@ -615,7 +616,7 @@ export default function ValuationPage() {
                   <select
                     value={filters.category}
                     onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   >
                     <option value="">All Categories</option>
                     {data?.categories?.map((cat) => (
@@ -628,7 +629,7 @@ export default function ValuationPage() {
                   <select
                     value={filters.location}
                     onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   >
                     <option value="">All Locations</option>
                     {data?.locations?.map((loc) => (
@@ -641,7 +642,7 @@ export default function ValuationPage() {
                   <select
                     value={filters.stockStatus}
                     onChange={(e) => setFilters({ ...filters, stockStatus: e.target.value as FilterState['stockStatus'] })}
-                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   >
                     <option value="all">All Status</option>
                     <option value="in_stock">In Stock</option>
@@ -658,7 +659,7 @@ export default function ValuationPage() {
                     value={filters.minValue || ''}
                     onChange={(e) => setFilters({ ...filters, minValue: e.target.value ? parseFloat(e.target.value) : null })}
                     placeholder="Min"
-                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                   <label className="text-xs text-gray-500 dark:text-gray-400">Max:</label>
                   <input
@@ -666,12 +667,12 @@ export default function ValuationPage() {
                     value={filters.maxValue || ''}
                     onChange={(e) => setFilters({ ...filters, maxValue: e.target.value ? parseFloat(e.target.value) : null })}
                     placeholder="Max"
-                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                    className="w-24 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                   />
                 </div>
                 <button
                   onClick={resetFilters}
-                  className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-3 py-1.5 text-sm text-brand-accent-600 hover:text-brand-accent-700 dark:text-brand-accent-400 dark:hover:text-brand-accent-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-accent-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   <X className="w-3 h-3 inline mr-1" />
                   Reset Filters
@@ -688,31 +689,31 @@ export default function ValuationPage() {
           title="Total Value"
           value={formatCurrency(data?.totalValue || 0)}
           subtitle={`${data?.totalItems || 0} items`}
-          icon={<DollarSign className="w-5 h-5 text-green-500" />}
-          color="text-green-600 dark:text-green-400"
+          icon={<DollarSign className="w-5 h-5 text-success-500" />}
+          color="text-success-600 dark:text-success-400"
         />
         <StatCard
           title="Total Cost"
           value={formatCurrency(data?.totalCost || 0)}
           subtitle={`Avg: ${formatCurrency(data?.averageCost || 0)}/item`}
-          icon={<Package className="w-5 h-5 text-blue-500" />}
-          color="text-blue-600 dark:text-blue-400"
+          icon={<Package className="w-5 h-5 text-brand-500" />}
+          color="text-brand-600 dark:text-brand-400"
         />
         <StatCard
           title="Potential Profit"
           value={formatCurrency(data?.potentialProfit || 0)}
           subtitle={`Margin: ${formatPercent((data?.profitMargin || 0) / 100)}`}
-          icon={<TrendingUp className="w-5 h-5 text-purple-500" />}
-          color="text-purple-600 dark:text-purple-400"
+          icon={<TrendingUp className="w-5 h-5 text-secondary-500" />}
+          color="text-secondary-600 dark:text-secondary-400"
         />
         <StatCard
           title="Health Score"
           value={`${data?.stockStatus?.healthScore || 0}%`}
           subtitle={`${data?.stockStatus?.inStock || 0} in stock, ${data?.stockStatus?.lowStock || 0} low, ${data?.stockStatus?.outOfStock || 0} out`}
           icon={<CheckCircle className="w-5 h-5" />}
-          color={(data?.stockStatus?.healthScore ?? 0) >= 80 ? 'text-green-600 dark:text-green-400' : 
-                (data?.stockStatus?.healthScore ?? 0) >= 50 ? 'text-yellow-600 dark:text-yellow-400' : 
-                'text-red-600 dark:text-red-400'}
+          color={(data?.stockStatus?.healthScore ?? 0) >= 80 ? 'text-success-600 dark:text-success-400' :
+                (data?.stockStatus?.healthScore ?? 0) >= 50 ? 'text-warning-600 dark:text-warning-400' :
+                'text-danger-600 dark:text-danger-400'}
         />
       </div>
 
@@ -723,7 +724,7 @@ export default function ValuationPage() {
             <Package className="w-4 h-4" />
             Stock Health Overview
           </h3>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-gray-400 tabular-nums">
             {data?.stockStatus?.total || 0} total items
           </span>
         </div>
@@ -732,36 +733,36 @@ export default function ValuationPage() {
             initial={{ width: 0 }}
             animate={{ width: `${((data?.stockStatus?.inStock || 0) / (data?.stockStatus?.total || 1)) * 100}%` }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
-            className="bg-green-500 h-full"
+            className="bg-success-500 h-full"
             title={`In Stock: ${data?.stockStatus?.inStock || 0}`}
           />
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${((data?.stockStatus?.lowStock || 0) / (data?.stockStatus?.total || 1)) * 100}%` }}
             transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
-            className="bg-yellow-500 h-full"
+            className="bg-warning-500 h-full"
             title={`Low Stock: ${data?.stockStatus?.lowStock || 0}`}
           />
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${((data?.stockStatus?.outOfStock || 0) / (data?.stockStatus?.total || 1)) * 100}%` }}
             transition={{ duration: 0.8, ease: 'easeOut', delay: 0.4 }}
-            className="bg-red-500 h-full"
+            className="bg-brand-accent-500 h-full"
             title={`Out of Stock: ${data?.stockStatus?.outOfStock || 0}`}
           />
         </div>
         <div className="flex flex-wrap items-center gap-4 mt-3">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-400">In Stock: {data?.stockStatus?.inStock || 0}</span>
+            <div className="w-3 h-3 rounded-full bg-success-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400 tabular-nums">In Stock: {data?.stockStatus?.inStock || 0}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-400">Low Stock: {data?.stockStatus?.lowStock || 0}</span>
+            <div className="w-3 h-3 rounded-full bg-warning-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400 tabular-nums">Low Stock: {data?.stockStatus?.lowStock || 0}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-400">Out of Stock: {data?.stockStatus?.outOfStock || 0}</span>
+            <div className="w-3 h-3 rounded-full bg-brand-accent-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400 tabular-nums">Out of Stock: {data?.stockStatus?.outOfStock || 0}</span>
           </div>
         </div>
       </div>
@@ -770,12 +771,12 @@ export default function ValuationPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <button
           onClick={() => toggleSection('categories')}
-          className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+          className="w-full flex items-center justify-between p-4 hover:bg-brand-50/50 dark:hover:bg-gray-700/50 transition-colors focus-ring"
         >
           <div className="flex items-center gap-2">
-            <PieChart className="w-5 h-5 text-blue-500" />
+            <PieChart className="w-5 h-5 text-brand-500" />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Category Breakdown</h3>
-            <span className="text-xs text-gray-400">({data?.categories?.length || 0} categories)</span>
+            <span className="text-xs text-gray-400 tabular-nums">({data?.categories?.length || 0} categories)</span>
           </div>
           {expandedSections.categories ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
@@ -785,7 +786,7 @@ export default function ValuationPage() {
             {data?.categories?.length === 0 ? (
               <p className="text-center text-gray-500 dark:text-gray-400 py-8">No categories found</p>
             ) : (
-              <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+              <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
                 {data?.categories?.map((category, index) => (
                   <motion.div
                     key={category.id || index}
@@ -797,7 +798,7 @@ export default function ValuationPage() {
                       <span className="text-gray-700 dark:text-gray-300 truncate pr-2">
                         {category.name}
                       </span>
-                      <span className="text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      <span className="text-gray-600 dark:text-gray-400 whitespace-nowrap tabular-nums">
                         {category.count} items · {formatCurrency(category.value)}
                         <span className="text-xs text-gray-400 ml-1">
                           ({formatPercent((category.percentage || 0) / 100)})
@@ -809,12 +810,12 @@ export default function ValuationPage() {
                         initial={{ width: 0 }}
                         animate={{ width: `${Math.min(category.percentage || 0, 100)}%` }}
                         transition={{ duration: 0.8, delay: index * 0.05 }}
-                        className="bg-gradient-to-r from-blue-500 to-green-500 rounded-full h-2"
+                        className="bg-gradient-to-r from-brand-500 to-success-500 rounded-full h-2"
                       />
                     </div>
                     <div className="flex justify-end mt-0.5">
-                      <span className="text-xs text-gray-400">
-                        Profit: {formatCurrency(category.profit || 0)} · 
+                      <span className="text-xs text-gray-400 tabular-nums">
+                        Profit: {formatCurrency(category.profit || 0)} ·
                         Margin: {formatPercent((category.profitMargin || 0) / 100)}
                       </span>
                     </div>
@@ -830,12 +831,12 @@ export default function ValuationPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <button
           onClick={() => toggleSection('topItems')}
-          className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+          className="w-full flex items-center justify-between p-4 hover:bg-brand-50/50 dark:hover:bg-gray-700/50 transition-colors focus-ring"
         >
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-indigo-500" />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Top Valuable Items</h3>
-            <span className="text-xs text-gray-400">({data?.topValuableItems?.length || 0} items)</span>
+            <span className="text-xs text-gray-400 tabular-nums">({data?.topValuableItems?.length || 0} items)</span>
           </div>
           {expandedSections.topItems ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
         </button>
@@ -845,7 +846,7 @@ export default function ValuationPage() {
             {data?.topValuableItems?.length === 0 ? (
               <p className="text-center text-gray-500 dark:text-gray-400 py-8">No items found</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
@@ -865,16 +866,16 @@ export default function ValuationPage() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.03 }}
-                        className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
+                        className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
                         onClick={() => router.push(`/admin/inventory/items/${item.id}`)}
                       >
-                        <td className="py-2 text-gray-400">#{index + 1}</td>
+                        <td className="py-2 text-gray-400 tabular-nums">#{index + 1}</td>
                         <td className="py-2 font-medium text-gray-900 dark:text-white">{item.name}</td>
                         <td className="py-2 text-gray-500 dark:text-gray-400 font-mono text-xs">{item.sku}</td>
                         <td className="py-2 text-right text-gray-600 dark:text-gray-400 hidden md:table-cell">{item.category}</td>
-                        <td className="py-2 text-right text-gray-600 dark:text-gray-400">{formatNumber(item.quantity)}</td>
-                        <td className="py-2 text-right text-gray-600 dark:text-gray-400">{formatCurrency(item.unitPrice)}</td>
-                        <td className="py-2 text-right font-semibold text-green-600 dark:text-green-400">{formatCurrency(item.totalValue)}</td>
+                        <td className="py-2 text-right text-gray-600 dark:text-gray-400 tabular-nums">{formatNumber(item.quantity)}</td>
+                        <td className="py-2 text-right text-gray-600 dark:text-gray-400 tabular-nums">{formatCurrency(item.unitPrice)}</td>
+                        <td className="py-2 text-right font-semibold text-success-600 dark:text-success-400 tabular-nums">{formatCurrency(item.totalValue)}</td>
                       </motion.tr>
                     ))}
                   </tbody>
@@ -891,12 +892,12 @@ export default function ValuationPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <button
             onClick={() => toggleSection('lowStock')}
-            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            className="w-full flex items-center justify-between p-4 hover:bg-brand-50/50 dark:hover:bg-gray-700/50 transition-colors focus-ring"
           >
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-yellow-500" />
+              <AlertTriangle className="w-5 h-5 text-warning-500" />
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Low Stock Items</h3>
-              <span className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-0.5 rounded-full">
+              <span className="text-xs text-warning-600 dark:text-warning-400 bg-warning-50 dark:bg-warning-950/20 px-2 py-0.5 rounded-full tabular-nums">
                 {data?.stockStatus?.lowStock || 0}
               </span>
             </div>
@@ -907,18 +908,18 @@ export default function ValuationPage() {
             <div className="p-4 pt-0 border-t border-gray-200 dark:border-gray-700">
               {data?.lowStockItems?.length === 0 ? (
                 <div className="text-center py-8">
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                  <CheckCircle className="w-12 h-12 text-success-500 mx-auto mb-2" />
                   <p className="text-gray-500 dark:text-gray-400">No low stock items</p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-2">
                   {data?.lowStockItems?.map((item, index) => (
                     <motion.div
                       key={item.id || index}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
-                      className="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg border border-yellow-200 dark:border-yellow-800/30 hover:bg-yellow-100 dark:hover:bg-yellow-900/20 transition-colors cursor-pointer"
+                      className="flex items-center justify-between p-3 bg-warning-50 dark:bg-warning-950/10 rounded-lg border border-warning-200 dark:border-warning-800/30 hover:bg-warning-100 dark:hover:bg-warning-950/20 transition-colors cursor-pointer"
                       onClick={() => router.push(`/admin/inventory/items/${item.id}`)}
                     >
                       <div className="flex-1 min-w-0">
@@ -926,15 +927,15 @@ export default function ValuationPage() {
                           {item.name || item.product?.name || 'Unknown'}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          SKU: {item.sku || item.product?.sku || 'N/A'} · 
+                          SKU: {item.sku || item.product?.sku || 'N/A'} ·
                           Location: {item.location || 'Warehouse'}
                         </p>
                       </div>
                       <div className="text-right flex-shrink-0 ml-4">
-                        <p className="text-sm font-semibold text-yellow-600 dark:text-yellow-400">
+                        <p className="text-sm font-semibold text-warning-600 dark:text-warning-400 tabular-nums">
                           {item.quantity || item.stock || 0} units
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                           Reorder: {item.reorderPoint || 5}
                         </p>
                       </div>
@@ -950,12 +951,12 @@ export default function ValuationPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <button
             onClick={() => toggleSection('outOfStock')}
-            className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            className="w-full flex items-center justify-between p-4 hover:bg-brand-50/50 dark:hover:bg-gray-700/50 transition-colors focus-ring"
           >
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-500" />
+              <AlertCircle className="w-5 h-5 text-brand-accent-500" />
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Out of Stock Items</h3>
-              <span className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">
+              <span className="text-xs text-brand-accent-600 dark:text-brand-accent-400 bg-brand-accent-50 dark:bg-brand-accent-950/20 px-2 py-0.5 rounded-full tabular-nums">
                 {data?.stockStatus?.outOfStock || 0}
               </span>
             </div>
@@ -966,18 +967,18 @@ export default function ValuationPage() {
             <div className="p-4 pt-0 border-t border-gray-200 dark:border-gray-700">
               {data?.outOfStockItems?.length === 0 ? (
                 <div className="text-center py-8">
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                  <CheckCircle className="w-12 h-12 text-success-500 mx-auto mb-2" />
                   <p className="text-gray-500 dark:text-gray-400">No out of stock items</p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto pr-2">
+                <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar pr-2">
                   {data?.outOfStockItems?.map((item, index) => (
                     <motion.div
                       key={item.id || index}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
-                      className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800/30 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors cursor-pointer"
+                      className="flex items-center justify-between p-3 bg-brand-accent-50 dark:bg-brand-accent-950/10 rounded-lg border border-brand-accent-200 dark:border-brand-accent-800/30 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/20 transition-colors cursor-pointer"
                       onClick={() => router.push(`/admin/inventory/items/${item.id}`)}
                     >
                       <div className="flex-1 min-w-0">
@@ -985,12 +986,12 @@ export default function ValuationPage() {
                           {item.name || item.product?.name || 'Unknown'}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          SKU: {item.sku || item.product?.sku || 'N/A'} · 
+                          SKU: {item.sku || item.product?.sku || 'N/A'} ·
                           Location: {item.location || 'Warehouse'}
                         </p>
                       </div>
                       <div className="text-right flex-shrink-0 ml-4">
-                        <p className="text-sm font-semibold text-red-600 dark:text-red-400">0 units</p>
+                        <p className="text-sm font-semibold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">0 units</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           Last updated: {item.updatedAt ? formatDate(item.updatedAt) : 'N/A'}
                         </p>
@@ -1017,7 +1018,7 @@ export default function ValuationPage() {
           <span>Report ID: {data?.timestamp ? `V-${data.timestamp.replace(/[-:T.Z]/g, '').slice(0, 12)}` : 'N/A'}</span>
           <button
             onClick={() => window.print()}
-            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1.5 hover:bg-brand-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
             title="Print Report"
           >
             <Printer className="w-4 h-4" />
@@ -1027,10 +1028,3 @@ export default function ValuationPage() {
     </div>
   );
 }
-
-// ============================================
-// ADDITIONAL IMPORTS
-// ============================================
-
-import { AnimatePresence } from 'framer-motion';
-import { Filter } from 'lucide-react';

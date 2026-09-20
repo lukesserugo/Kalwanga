@@ -82,19 +82,20 @@ const OrderStatsCards: React.FC<{ stats: OrderStats; loading?: boolean }> = ({ s
   }
 
   const cards = [
-    { label: 'Total Orders', value: stats.total, icon: FileText, color: 'blue' },
-    { label: 'Total Spent', value: formatCurrency(stats.totalAmount), icon: DollarSign, color: 'green' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'yellow' },
-    { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'green' },
-    { label: 'Avg. Order Value', value: formatCurrency(stats.averageOrderValue), icon: TrendingUp, color: 'purple' },
+    { label: 'Total Orders', value: stats.total, icon: FileText, color: 'brand' },
+    { label: 'Total Spent', value: formatCurrency(stats.totalAmount), icon: DollarSign, color: 'success' },
+    { label: 'Pending', value: stats.pending, icon: Clock, color: 'warning' },
+    { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'success' },
+    { label: 'Avg. Order Value', value: formatCurrency(stats.averageOrderValue), icon: TrendingUp, color: 'brand-accent' },
   ];
 
   const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
+    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-600 dark:text-secondary-400',
+    success: 'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
+    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
+    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400',
   };
 
   return (
@@ -107,15 +108,15 @@ const OrderStatsCards: React.FC<{ stats: OrderStats; loading?: boolean }> = ({ s
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow"
+            className="card-brand p-4 hover:shadow-card-hover transition-shadow"
           >
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{card.label}</p>
-              <div className={`p-1.5 rounded-lg ${colorClasses[card.color] || colorClasses.blue}`}>
+              <div className={`p-1.5 rounded-lg ${colorClasses[card.color] || colorClasses.brand}`}>
                 <Icon className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{card.value}</p>
           </motion.div>
         );
       })}
@@ -163,7 +164,7 @@ const OrderFiltersBar: React.FC<{
   ].reduce((a, b) => a + b, 0);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+    <div className="card-brand p-4">
       <div className="flex flex-wrap gap-3">
         <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -173,7 +174,7 @@ const OrderFiltersBar: React.FC<{
             value={filters.search}
             onChange={(e) => onFilterChange('search', e.target.value)}
             disabled={loading}
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
           />
         </div>
 
@@ -182,7 +183,7 @@ const OrderFiltersBar: React.FC<{
             value={filters.status}
             onChange={(e) => onFilterChange('status', e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {statusOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -193,7 +194,7 @@ const OrderFiltersBar: React.FC<{
             value={filters.dateRange}
             onChange={(e) => onFilterChange('dateRange', e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {dateRangeOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -204,7 +205,7 @@ const OrderFiltersBar: React.FC<{
             value={filters.sortBy}
             onChange={(e) => onFilterChange('sortBy', e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>Sort by {opt.label}</option>
@@ -214,7 +215,7 @@ const OrderFiltersBar: React.FC<{
           <button
             onClick={() => onFilterChange('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
             disabled={loading}
-            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 focus-ring"
           >
             {filters.sortOrder === 'asc' ? '↑' : '↓'}
           </button>
@@ -223,7 +224,7 @@ const OrderFiltersBar: React.FC<{
             <button
               onClick={onReset}
               disabled={loading}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1 disabled:opacity-50"
+              className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 flex items-center gap-1 disabled:opacity-50 focus-ring rounded"
             >
               <X className="w-4 h-4" />
               Clear
@@ -241,13 +242,13 @@ const OrderCard: React.FC<{
 }> = ({ order, index }) => {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'COMPLETED': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border-green-200 dark:border-green-800',
-      'PENDING': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800',
-      'CANCELLED': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800',
-      'APPROVED': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+      'COMPLETED': 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300 border-success-200 dark:border-success-800',
+      'PENDING': 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300 border-warning-200 dark:border-warning-800',
+      'CANCELLED': 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 border-danger-200 dark:border-danger-800',
+      'APPROVED': 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 border-brand-200 dark:border-brand-800',
       'DRAFT': 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300 border-gray-200 dark:border-gray-600',
-      'RECEIVED': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-      'PARTIALLY_RECEIVED': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+      'RECEIVED': 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300 border-secondary-200 dark:border-secondary-800',
+      'PARTIALLY_RECEIVED': 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300 border-brand-accent-200 dark:border-brand-accent-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300 border-gray-200 dark:border-gray-600';
   };
@@ -271,12 +272,12 @@ const OrderCard: React.FC<{
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ y: -4 }}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-all"
+      className="card-brand p-4 hover:shadow-card-hover transition-all"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex-shrink-0">
-            <FileText className="w-5 h-5 text-blue-500" />
+          <div className="p-2 bg-brand-50 dark:bg-brand-900/20 rounded-lg flex-shrink-0">
+            <FileText className="w-5 h-5 text-brand-500" />
           </div>
           <div className="min-w-0">
             <h4 className="font-medium text-gray-900 dark:text-white truncate">{order.orderNumber}</h4>
@@ -297,13 +298,13 @@ const OrderCard: React.FC<{
       <div className="mt-3 grid grid-cols-3 gap-2">
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
           <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
             {formatCurrency(order.total)}
           </p>
         </div>
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
           <p className="text-xs text-gray-500 dark:text-gray-400">Items</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
             {order.itemsCount || 0}
           </p>
         </div>
@@ -329,20 +330,20 @@ const OrderTable: React.FC<{
 }> = ({ orders }) => {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'COMPLETED': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-      'PENDING': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-      'CANCELLED': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-      'APPROVED': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+      'COMPLETED': 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+      'PENDING': 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+      'CANCELLED': 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+      'APPROVED': 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
       'DRAFT': 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-      'RECEIVED': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-      'PARTIALLY_RECEIVED': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+      'RECEIVED': 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+      'PARTIALLY_RECEIVED': 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
     };
     return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand p-0 overflow-hidden">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -365,7 +366,7 @@ const OrderTable: React.FC<{
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden sm:table-cell">
                   {formatDate(order.orderDate || order.createdAt)}
                 </td>
-                <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-white">
+                <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-white tabular-nums">
                   {formatCurrency(order.total)}
                 </td>
                 <td className="px-4 py-3">
@@ -373,7 +374,7 @@ const OrderTable: React.FC<{
                     {order.status || 'DRAFT'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-300 hidden md:table-cell">
+                <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-300 hidden md:table-cell tabular-nums">
                   {order.itemsCount || 0}
                 </td>
               </tr>
@@ -394,7 +395,7 @@ export default function SupplierOrdersPage() {
   const supplierId = params?.id as string;
   const { user } = useAuth();
   const { canView, canManage, isLoading: permissionLoading } = usePermission();
-  
+
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -426,7 +427,7 @@ export default function SupplierOrdersPage() {
       if (showLoading) setLoading(true);
       setError(null);
       const data = await supplierService.getSupplierOrderHistory(supplierId);
-      
+
       let ordersData: any[] = [];
       if (data && typeof data === 'object') {
         if ('data' in data && Array.isArray(data.data)) {
@@ -435,7 +436,7 @@ export default function SupplierOrdersPage() {
           ordersData = data;
         }
       }
-      
+
       setOrders(ordersData);
     } catch (error) {
       console.error('Failed to load orders:', error);
@@ -501,7 +502,7 @@ export default function SupplierOrdersPage() {
     if (filters.dateRange !== 'all') {
       const now = new Date();
       let startDate = new Date();
-      
+
       switch (filters.dateRange) {
         case 'today':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -523,7 +524,7 @@ export default function SupplierOrdersPage() {
         default:
           break;
       }
-      
+
       filtered = filtered.filter(o => {
         const orderDate = new Date(o.orderDate || o.createdAt);
         return orderDate >= startDate;
@@ -560,7 +561,7 @@ export default function SupplierOrdersPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading orders...</p>
         </div>
       </div>
@@ -580,7 +581,7 @@ export default function SupplierOrdersPage() {
         </p>
         <button
           onClick={() => window.history.back()}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Go Back
@@ -597,33 +598,33 @@ export default function SupplierOrdersPage() {
           <div className="flex items-center gap-4">
             <Link
               href={`/admin/suppliers/${supplierId}`}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </Link>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <FileText className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500" />
+                <FileText className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500" />
                 Purchase Orders
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
-                <span>{orders.length} orders</span>
+                <span className="tabular-nums">{orders.length} orders</span>
                 {filteredOrders.length !== orders.length && (
-                  <span className="text-blue-600 dark:text-blue-400">
+                  <span className="text-brand-600 dark:text-brand-400 tabular-nums">
                     ({filteredOrders.length} filtered)
                   </span>
                 )}
                 <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span className="w-2 h-2 rounded-full bg-warning-500"></span>
                   {stats.pending} pending
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span className="w-2 h-2 rounded-full bg-success-500"></span>
                   {stats.completed} completed
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-green-600"></span>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span className="w-2 h-2 rounded-full bg-success-600"></span>
                   {formatCurrency(stats.totalAmount)} total spent
                 </span>
               </p>
@@ -632,7 +633,7 @@ export default function SupplierOrdersPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Toggle view mode"
             >
               {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
@@ -640,13 +641,13 @@ export default function SupplierOrdersPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => window.print()}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               <Printer className="w-4 h-4" />
             </button>
@@ -658,12 +659,12 @@ export default function SupplierOrdersPage() {
 
         {/* Error State */}
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">{error}</span>
+          <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+            <span className="text-danger-700 dark:text-danger-300">{error}</span>
             <button
               onClick={() => loadOrders(false)}
-              className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors text-sm"
+              className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-800/30 text-danger-700 dark:text-danger-300 rounded-lg hover:bg-danger-200 dark:hover:bg-danger-800/50 transition-colors text-sm focus-ring"
             >
               Retry
             </button>
@@ -680,7 +681,7 @@ export default function SupplierOrdersPage() {
 
         {/* Orders Display */}
         {filteredOrders.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+          <div className="card-brand p-12 text-center">
             <FileText className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No orders found</h3>
             <p className="text-gray-500 dark:text-gray-400 mt-2">
@@ -701,15 +702,15 @@ export default function SupplierOrdersPage() {
 
         {/* Footer Info */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400 dark:text-gray-500">
-          <span>
+          <span className="tabular-nums">
             Showing {filteredOrders.length} of {orders.length} orders
             {filters.status !== 'all' && ` (filtered by ${filters.status})`}
             {filters.dateRange !== 'all' && ` (${filters.dateRange})`}
           </span>
-          <span>
+          <span className="tabular-nums">
             Total: {formatCurrency(stats.totalAmount)} across {stats.total} orders
           </span>
-          <span>
+          <span className="tabular-nums">
             Last updated: {new Date().toLocaleTimeString()}
           </span>
         </div>

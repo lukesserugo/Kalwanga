@@ -76,22 +76,22 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
 };
 
 const PAYMENT_METHOD_COLORS: Record<string, string> = {
-  CASH: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  CREDIT_CARD: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  DEBIT_CARD: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  MOBILE_MONEY: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  CASH: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  CREDIT_CARD: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  DEBIT_CARD: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  MOBILE_MONEY: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
   BANK_TRANSFER: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
-  GIFT_CARD: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
-  LOYALTY_POINTS: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+  GIFT_CARD: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+  LOYALTY_POINTS: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
   CHECK: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  PAYPAL: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  PAYPAL: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
   FLUTTERWAVE: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
   PAYSTACK: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
   SQUARE: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  MTN: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-  AIRTEL: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  TIGO: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  VODAFONE: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  MTN: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  AIRTEL: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  TIGO: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  VODAFONE: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
 };
 
 // EXACT OFFICIAL LOGO URLs
@@ -130,95 +130,95 @@ const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
-const PROVIDER_CONFIGS: Record<string, { 
-  icon: string; 
-  color: string; 
-  bgColor: string; 
+const PROVIDER_CONFIGS: Record<string, {
+  icon: string;
+  color: string;
+  bgColor: string;
   name: string;
 }> = {
-  STRIPE: { 
-    icon: '💳', 
-    color: 'blue', 
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20', 
-    name: 'Stripe' 
+  STRIPE: {
+    icon: '💳',
+    color: 'primary',
+    bgColor: 'bg-primary-50 dark:bg-primary-900/20',
+    name: 'Stripe'
   },
-  CASH: { 
-    icon: '💰', 
-    color: 'green', 
-    bgColor: 'bg-green-50 dark:bg-green-900/20', 
-    name: 'Cash' 
+  CASH: {
+    icon: '💰',
+    color: 'success',
+    bgColor: 'bg-success-50 dark:bg-success-900/20',
+    name: 'Cash'
   },
-  MOBILE_MONEY: { 
-    icon: '📱', 
-    color: 'orange', 
-    bgColor: 'bg-orange-50 dark:bg-orange-900/20', 
-    name: 'Mobile Money' 
+  MOBILE_MONEY: {
+    icon: '📱',
+    color: 'brand',
+    bgColor: 'bg-brand-50 dark:bg-brand-900/20',
+    name: 'Mobile Money'
   },
-  BANK_TRANSFER: { 
-    icon: '🏦', 
-    color: 'indigo', 
-    bgColor: 'bg-indigo-50 dark:bg-indigo-900/20', 
-    name: 'Bank Transfer' 
+  BANK_TRANSFER: {
+    icon: '🏦',
+    color: 'indigo',
+    bgColor: 'bg-indigo-50 dark:bg-indigo-900/20',
+    name: 'Bank Transfer'
   },
-  GIFT_CARD: { 
-    icon: '🎁', 
-    color: 'pink', 
-    bgColor: 'bg-pink-50 dark:bg-pink-900/20', 
-    name: 'Gift Card' 
+  GIFT_CARD: {
+    icon: '🎁',
+    color: 'brand',
+    bgColor: 'bg-brand-50 dark:bg-brand-900/20',
+    name: 'Gift Card'
   },
-  LOYALTY_POINTS: { 
-    icon: '⭐', 
-    color: 'yellow', 
-    bgColor: 'bg-yellow-50 dark:bg-yellow-900/20', 
-    name: 'Loyalty Points' 
+  LOYALTY_POINTS: {
+    icon: '⭐',
+    color: 'warning',
+    bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+    name: 'Loyalty Points'
   },
-  PAYPAL: { 
-    icon: '💸', 
-    color: 'blue', 
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20', 
-    name: 'PayPal' 
+  PAYPAL: {
+    icon: '💸',
+    color: 'primary',
+    bgColor: 'bg-primary-50 dark:bg-primary-900/20',
+    name: 'PayPal'
   },
-  FLUTTERWAVE: { 
-    icon: '🌊', 
-    color: 'cyan', 
-    bgColor: 'bg-cyan-50 dark:bg-cyan-900/20', 
-    name: 'Flutterwave' 
+  FLUTTERWAVE: {
+    icon: '🌊',
+    color: 'cyan',
+    bgColor: 'bg-cyan-50 dark:bg-cyan-900/20',
+    name: 'Flutterwave'
   },
-  PAYSTACK: { 
-    icon: '🔷', 
-    color: 'sky', 
-    bgColor: 'bg-sky-50 dark:bg-sky-900/20', 
-    name: 'Paystack' 
+  PAYSTACK: {
+    icon: '🔷',
+    color: 'sky',
+    bgColor: 'bg-sky-50 dark:bg-sky-900/20',
+    name: 'Paystack'
   },
-  SQUARE: { 
-    icon: '⬜', 
-    color: 'gray', 
-    bgColor: 'bg-gray-50 dark:bg-gray-800/50', 
-    name: 'Square' 
+  SQUARE: {
+    icon: '⬜',
+    color: 'gray',
+    bgColor: 'bg-gray-50 dark:bg-gray-800/50',
+    name: 'Square'
   },
-  MTN: { 
-    icon: '📱', 
-    color: 'yellow', 
-    bgColor: 'bg-yellow-50 dark:bg-yellow-900/20', 
-    name: 'MTN Mobile Money' 
+  MTN: {
+    icon: '📱',
+    color: 'warning',
+    bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+    name: 'MTN Mobile Money'
   },
-  AIRTEL: { 
-    icon: '📱', 
-    color: 'red', 
-    bgColor: 'bg-red-50 dark:bg-red-900/20', 
-    name: 'Airtel Money' 
+  AIRTEL: {
+    icon: '📱',
+    color: 'danger',
+    bgColor: 'bg-danger-50 dark:bg-danger-900/20',
+    name: 'Airtel Money'
   },
-  TIGO: { 
-    icon: '📱', 
-    color: 'blue', 
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20', 
-    name: 'Tigo Pesa' 
+  TIGO: {
+    icon: '📱',
+    color: 'primary',
+    bgColor: 'bg-primary-50 dark:bg-primary-900/20',
+    name: 'Tigo Pesa'
   },
-  VODAFONE: { 
-    icon: '📱', 
-    color: 'red', 
-    bgColor: 'bg-red-50 dark:bg-red-900/20', 
-    name: 'Vodafone Cash' 
+  VODAFONE: {
+    icon: '📱',
+    color: 'danger',
+    bgColor: 'bg-danger-50 dark:bg-danger-900/20',
+    name: 'Vodafone Cash'
   },
 };
 
@@ -256,7 +256,7 @@ export default function AdminPaymentStatsPage() {
       }
 
       const params: any = {};
-      
+
       const now = new Date();
       if (dateRange === 'today') {
         const start = new Date(now);
@@ -291,9 +291,9 @@ export default function AdminPaymentStatsPage() {
       }
 
       const response = await paymentService.getPaymentSummary(params);
-      
+
       const providerStats = calculateProviderStats(response);
-      
+
       setStats({
         ...response,
         providerStats,
@@ -320,7 +320,7 @@ export default function AdminPaymentStatsPage() {
     imageUrl?: string;
   }> => {
     const providerMap: Record<string, { amount: number; count: number }> = {};
-    
+
     const methodToProvider: Record<string, string> = {
       CASH: 'CASH',
       CREDIT_CARD: 'STRIPE',
@@ -350,16 +350,16 @@ export default function AdminPaymentStatsPage() {
     });
 
     const total = data.totalAmount || 1;
-    
+
     return Object.entries(providerMap).map(([provider, stats]) => {
-      const config = PROVIDER_CONFIGS[provider] || { 
-        icon: '📊', 
-        color: 'gray', 
-        bgColor: 'bg-gray-50 dark:bg-gray-800/50', 
-        name: provider 
+      const config = PROVIDER_CONFIGS[provider] || {
+        icon: '📊',
+        color: 'gray',
+        bgColor: 'bg-gray-50 dark:bg-gray-800/50',
+        name: provider
       };
       const imageUrl = PROVIDER_IMAGE_URLS[provider] || '';
-      
+
       return {
         provider,
         name: config.name,
@@ -405,7 +405,7 @@ export default function AdminPaymentStatsPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       toast.success('Stats exported successfully');
     } catch (error) {
       console.error('Export failed:', error);
@@ -438,15 +438,15 @@ export default function AdminPaymentStatsPage() {
   };
 
   const getProviderImageUrl = (provider: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[provider] 
-      ? PROVIDER_DARK_IMAGE_URLS[provider] 
+    return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
       : PROVIDER_IMAGE_URLS[provider] || '';
   };
 
   if (permissionLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className={`w-12 h-12 animate-spin ${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
+        <Loader2 className={`w-12 h-12 animate-spin ${isDark ? 'text-brand-400' : 'text-brand-600'}`} />
       </div>
     );
   }
@@ -461,7 +461,7 @@ export default function AdminPaymentStatsPage() {
         <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to view payment statistics.</p>
         <button
           onClick={() => router.push('/admin/payments')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           Back to Payments
         </button>
@@ -472,12 +472,12 @@ export default function AdminPaymentStatsPage() {
   if (!stats) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <AlertCircle className={`w-16 h-16 mb-4 ${isDark ? 'text-yellow-400' : 'text-yellow-500'}`} />
+        <AlertCircle className={`w-16 h-16 mb-4 ${isDark ? 'text-warning-400' : 'text-warning-500'}`} />
         <h2 className="text-2xl font-semibold mb-2">No Data Available</h2>
         <p className="text-gray-500">There is no payment data for the selected period.</p>
         <button
           onClick={handleRefresh}
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          className="mt-4 btn-brand"
         >
           Try Again
         </button>
@@ -487,384 +487,301 @@ export default function AdminPaymentStatsPage() {
 
   return (
     <div className={`min-h-screen p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/admin/payments')}
-            className={`p-2 rounded-lg transition ${
-              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
-            }`}
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Payment Statistics
-            </h1>
-            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-              Monitor your payment performance and metrics across all providers
+      <div className="max-w-container mx-auto">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push('/admin/payments')}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
+              }`}
+              aria-label="Back to payments"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Payment Statistics
+              </h1>
+              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                Monitor your payment performance and metrics across all providers
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className={`flex rounded-lg overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-300'}`}>
+              <button
+                onClick={() => setViewType('methods')}
+                className={`px-3 py-1.5 text-sm transition duration-250 focus-ring ${
+                  viewType === 'methods'
+                    ? 'bg-brand-gradient text-white'
+                    : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                By Method
+              </button>
+              <button
+                onClick={() => setViewType('providers')}
+                className={`px-3 py-1.5 text-sm transition duration-250 focus-ring ${
+                  viewType === 'providers'
+                    ? 'bg-brand-gradient text-white'
+                    : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                By Provider
+              </button>
+            </div>
+
+            <select
+              value={dateRange}
+              onChange={(e) => {
+                setDateRange(e.target.value as any);
+                if (e.target.value !== 'custom') {
+                  setCustomStartDate('');
+                  setCustomEndDate('');
+                }
+              }}
+              className={`px-4 py-2 rounded-lg border ${
+                isDark
+                  ? 'bg-gray-800 border-gray-700 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              } focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250`}
+            >
+              <option value="today">Today</option>
+              <option value="week">Last 7 Days</option>
+              <option value="month">Last 30 Days</option>
+              <option value="quarter">Last 90 Days</option>
+              <option value="year">Last 365 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+
+            {dateRange === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className={`px-3 py-2 rounded-lg border ${
+                    isDark
+                      ? 'bg-gray-800 border-gray-700 text-white'
+                      : 'bg-white border-gray-300 text-gray-900'
+                  } focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250`}
+                />
+                <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>to</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className={`px-3 py-2 rounded-lg border ${
+                    isDark
+                      ? 'bg-gray-800 border-gray-700 text-white'
+                      : 'bg-white border-gray-300 text-gray-900'
+                  } focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250`}
+                />
+              </div>
+            )}
+
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                isDark
+                  ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                  : 'bg-white hover:bg-gray-100 text-gray-700'
+              } border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
+              aria-label="Refresh stats"
+            >
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+
+            <button
+              onClick={handleExport}
+              className="btn-brand"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[
+            {
+              title: 'Total Revenue',
+              value: formatCurrency(stats.totalAmount),
+              icon: DollarSign,
+              color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
+              change: '+12.5%'
+            },
+            {
+              title: 'Total Transactions',
+              value: stats.count.toLocaleString(),
+              icon: CreditCard,
+              color: 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
+              change: '+8.3%'
+            },
+            {
+              title: 'Average Transaction',
+              value: formatCurrency(stats.averageAmount),
+              icon: BarChart3,
+              color: 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
+              change: '+5.2%'
+            },
+            {
+              title: 'Net Revenue',
+              value: formatCurrency(stats.netAmount),
+              icon: TrendingUp,
+              color: 'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400',
+              change: stats.netAmount > 0 ? '+2.1%' : '-0.5%'
+            }
+          ].map((stat, index) => (
+            <div key={index} className="card-brand shadow-soft hover:shadow-card-hover transition duration-250">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {stat.title}
+                  </p>
+                  <p className={`text-2xl font-bold mt-2 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {stat.value}
+                  </p>
+                  <div className="flex items-center gap-1 mt-2">
+                    {stat.change.startsWith('+') ? (
+                      <TrendingUpIcon className="w-4 h-4 text-success-500" />
+                    ) : (
+                      <TrendingDownIcon className="w-4 h-4 text-danger-500" />
+                    )}
+                    <span className={`text-sm font-medium ${
+                      stat.change.startsWith('+') ? 'text-success-500' : 'text-danger-500'
+                    }`}>
+                      {stat.change}
+                    </span>
+                    <span className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                      vs previous period
+                    </span>
+                  </div>
+                </div>
+                <div className={`p-3 rounded-lg ${stat.color}`}>
+                  <stat.icon className="w-6 h-6" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Refund Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="card-brand shadow-soft">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Total Refunds</p>
+                <p className={`text-2xl font-bold mt-1 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  {formatCurrency(stats.totalRefunds)}
+                </p>
+              </div>
+              <div className={`p-3 rounded-lg ${isDark ? 'bg-danger-900/20' : 'bg-danger-100'}`}>
+                <TrendingDown className={`w-6 h-6 ${isDark ? 'text-danger-400' : 'text-danger-600'}`} />
+              </div>
+            </div>
+            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {stats.refundCount} refund transactions
+            </p>
+          </div>
+          <div className="card-brand shadow-soft">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Refund Rate</p>
+                <p className={`text-2xl font-bold mt-1 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  {stats.count > 0 ? ((stats.refundCount / stats.count) * 100).toFixed(1) : 0}%
+                </p>
+              </div>
+              <div className={`p-3 rounded-lg ${isDark ? 'bg-primary-900/20' : 'bg-primary-100'}`}>
+                <PieChart className={`w-6 h-6 ${isDark ? 'text-primary-400' : 'text-primary-600'}`} />
+              </div>
+            </div>
+            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {stats.refundCount} of {stats.count} transactions refunded
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className={`flex rounded-lg overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-300'}`}>
-            <button
-              onClick={() => setViewType('methods')}
-              className={`px-3 py-1.5 text-sm transition ${
-                viewType === 'methods'
-                  ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
-                  : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              By Method
-            </button>
-            <button
-              onClick={() => setViewType('providers')}
-              className={`px-3 py-1.5 text-sm transition ${
-                viewType === 'providers'
-                  ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
-                  : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              By Provider
-            </button>
+        {/* Payment Methods / Providers Breakdown */}
+        <div className="card-brand mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              {viewType === 'methods' ? 'Payment Methods Breakdown' : 'Payment Providers Breakdown'}
+            </h2>
+            <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {viewType === 'methods'
+                ? `${Object.keys(stats.byMethod || {}).length} methods`
+                : `${stats.providerStats?.length || 0} providers`}
+            </span>
           </div>
 
-          <select
-            value={dateRange}
-            onChange={(e) => {
-              setDateRange(e.target.value as any);
-              if (e.target.value !== 'custom') {
-                setCustomStartDate('');
-                setCustomEndDate('');
-              }
-            }}
-            className={`px-4 py-2 rounded-lg border ${
-              isDark
-                ? 'bg-gray-800 border-gray-700 text-white'
-                : 'bg-white border-gray-300 text-gray-900'
-            } focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-          >
-            <option value="today">Today</option>
-            <option value="week">Last 7 Days</option>
-            <option value="month">Last 30 Days</option>
-            <option value="quarter">Last 90 Days</option>
-            <option value="year">Last 365 Days</option>
-            <option value="custom">Custom Range</option>
-          </select>
+          {viewType === 'methods' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {stats.byMethod && Object.entries(stats.byMethod).map(([method, amount]) => {
+                const total = stats.totalAmount || 1;
+                const percentage = (amount / total) * 100;
+                const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
+                const colorClass = PAYMENT_METHOD_COLORS[method] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
 
-          {dateRange === 'custom' && (
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className={`px-3 py-2 rounded-lg border ${
-                  isDark
-                    ? 'bg-gray-800 border-gray-700 text-white'
-                    : 'bg-white border-gray-300 text-gray-900'
-                } focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-              />
-              <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>to</span>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className={`px-3 py-2 rounded-lg border ${
-                  isDark
-                    ? 'bg-gray-800 border-gray-700 text-white'
-                    : 'bg-white border-gray-300 text-gray-900'
-                } focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-              />
-            </div>
-          )}
-
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className={`p-2 rounded-lg transition ${
-              isDark
-                ? 'bg-gray-800 hover:bg-gray-700 text-white'
-                : 'bg-white hover:bg-gray-100 text-gray-700'
-            } border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
-          >
-            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          {
-            title: 'Total Revenue',
-            value: formatCurrency(stats.totalAmount),
-            icon: DollarSign,
-            color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
-            change: '+12.5%'
-          },
-          {
-            title: 'Total Transactions',
-            value: stats.count.toLocaleString(),
-            icon: CreditCard,
-            color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
-            change: '+8.3%'
-          },
-          {
-            title: 'Average Transaction',
-            value: formatCurrency(stats.averageAmount),
-            icon: BarChart3,
-            color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
-            change: '+5.2%'
-          },
-          {
-            title: 'Net Revenue',
-            value: formatCurrency(stats.netAmount),
-            icon: TrendingUp,
-            color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
-            change: stats.netAmount > 0 ? '+2.1%' : '-0.5%'
-          }
-        ].map((stat, index) => (
-          <div key={index} className={`p-6 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm hover:shadow-md transition`}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                  {stat.title}
-                </p>
-                <p className={`text-2xl font-bold mt-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {stat.value}
-                </p>
-                <div className="flex items-center gap-1 mt-2">
-                  {stat.change.startsWith('+') ? (
-                    <TrendingUpIcon className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <TrendingDownIcon className="w-4 h-4 text-red-500" />
-                  )}
-                  <span className={`text-sm font-medium ${
-                    stat.change.startsWith('+') ? 'text-green-500' : 'text-red-500'
-                  }`}>
-                    {stat.change}
-                  </span>
-                  <span className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                    vs previous period
-                  </span>
-                </div>
-              </div>
-              <div className={`p-3 rounded-lg ${stat.color}`}>
-                <stat.icon className="w-6 h-6" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Refund Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Total Refunds</p>
-              <p className={`text-2xl font-bold mt-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {formatCurrency(stats.totalRefunds)}
-              </p>
-            </div>
-            <div className={`p-3 rounded-lg ${isDark ? 'bg-red-900/20' : 'bg-red-100'}`}>
-              <TrendingDown className={`w-6 h-6 ${isDark ? 'text-red-400' : 'text-red-600'}`} />
-            </div>
-          </div>
-          <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            {stats.refundCount} refund transactions
-          </p>
-        </div>
-        <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Refund Rate</p>
-              <p className={`text-2xl font-bold mt-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {stats.count > 0 ? ((stats.refundCount / stats.count) * 100).toFixed(1) : 0}%
-              </p>
-            </div>
-            <div className={`p-3 rounded-lg ${isDark ? 'bg-blue-900/20' : 'bg-blue-100'}`}>
-              <PieChart className={`w-6 h-6 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
-            </div>
-          </div>
-          <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            {stats.refundCount} of {stats.count} transactions refunded
-          </p>
-        </div>
-      </div>
-
-      {/* Payment Methods / Providers Breakdown */}
-      <div className={`p-6 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            {viewType === 'methods' ? 'Payment Methods Breakdown' : 'Payment Providers Breakdown'}
-          </h2>
-          <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            {viewType === 'methods' 
-              ? `${Object.keys(stats.byMethod || {}).length} methods` 
-              : `${stats.providerStats?.length || 0} providers`}
-          </span>
-        </div>
-
-        {viewType === 'methods' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stats.byMethod && Object.entries(stats.byMethod).map(([method, amount]) => {
-              const total = stats.totalAmount || 1;
-              const percentage = (amount / total) * 100;
-              const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
-              const colorClass = PAYMENT_METHOD_COLORS[method] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
-              
-              return (
-                <div key={method} className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${colorClass}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                      <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {formatMethod(method)}
-                      </p>
-                      <div className="flex justify-between text-sm">
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          {formatCurrency(amount)}
-                        </span>
-                        <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                          {percentage.toFixed(1)}%
-                        </span>
+                return (
+                  <div key={method} className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'} transition duration-250 hover:shadow-card`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${colorClass}`}>
+                        <Icon className="w-5 h-5" />
                       </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
-                        <div
-                          className="bg-blue-600 h-2 rounded-full transition-all"
-                          style={{ width: `${percentage}%` }}
-                        />
+                      <div className="flex-1">
+                        <p className={`font-medium capitalize ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {formatMethod(method)}
+                        </p>
+                        <div className="flex justify-between text-sm tabular-nums">
+                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                            {formatCurrency(amount)}
+                          </span>
+                          <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
+                            {percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                          <div
+                            className="bg-brand-gradient h-2 rounded-full transition-all duration-350"
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stats.providerStats && stats.providerStats.map((provider) => {
-              const config = PROVIDER_CONFIGS[provider.provider];
-              const imageUrl = provider.imageUrl || '';
-              const bgColor = provider.bgColor || 'bg-gray-50 dark:bg-gray-700/30';
-              
-              return (
-                <div key={provider.provider} className={`p-4 rounded-lg ${bgColor}`}>
-                  <div className="flex items-center gap-3">
-                    {imageUrl ? (
-                      <div className="relative w-10 h-10 flex-shrink-0">
-                        <Image
-                          src={imageUrl}
-                          alt={provider.name}
-                          width={40}
-                          height={40}
-                          className="rounded-lg object-contain"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            const parent = (e.target as HTMLImageElement).parentElement;
-                            if (parent) {
-                              const fallback = document.createElement('span');
-                              fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
-                              fallback.textContent = config?.icon || '📊';
-                              parent.appendChild(fallback);
-                            }
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center">
-                        <span className="text-2xl">{config?.icon || '📊'}</span>
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {provider.name}
-                      </p>
-                      <div className="flex justify-between text-sm">
-                        <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                          {formatCurrency(provider.amount)}
-                        </span>
-                        <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                          {provider.percentage.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
-                        <div
-                          className={`h-2 rounded-full transition-all ${
-                            provider.color === 'green' ? 'bg-green-600' :
-                            provider.color === 'blue' ? 'bg-blue-600' :
-                            provider.color === 'orange' ? 'bg-orange-600' :
-                            provider.color === 'indigo' ? 'bg-indigo-600' :
-                            provider.color === 'pink' ? 'bg-pink-600' :
-                            provider.color === 'yellow' ? 'bg-yellow-600' :
-                            provider.color === 'cyan' ? 'bg-cyan-600' :
-                            provider.color === 'sky' ? 'bg-sky-600' :
-                            provider.color === 'red' ? 'bg-red-600' :
-                            'bg-gray-600'
-                          }`}
-                          style={{ width: `${provider.percentage}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs mt-1">
-                        <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
-                          {provider.count} transactions
-                        </span>
-                        <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
-                          Avg: {formatCurrency(provider.average)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {stats.providerStats && stats.providerStats.map((provider) => {
+                const config = PROVIDER_CONFIGS[provider.provider];
+                const imageUrl = provider.imageUrl || '';
+                const bgColor = provider.bgColor || 'bg-gray-50 dark:bg-gray-700/30';
 
-      {/* Provider Comparison Summary */}
-      {viewType === 'providers' && stats.providerStats && stats.providerStats.length > 1 && (
-        <div className={`p-4 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-          <h3 className={`text-sm font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            Provider Comparison
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {stats.providerStats.slice(0, 3).map((provider, index) => {
-              const config = PROVIDER_CONFIGS[provider.provider];
-              const imageUrl = provider.imageUrl || '';
-              
-              return (
-                <div key={provider.provider} className={`p-3 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                return (
+                  <div key={provider.provider} className={`p-4 rounded-xl ${bgColor} transition duration-250 hover:shadow-card`}>
+                    <div className="flex items-center gap-3">
                       {imageUrl ? (
-                        <div className="relative w-8 h-8">
+                        <div className="relative w-10 h-10 flex-shrink-0">
                           <Image
                             src={imageUrl}
                             alt={provider.name}
-                            width={32}
-                            height={32}
+                            width={40}
+                            height={40}
                             className="rounded-lg object-contain"
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = 'none';
                               const parent = (e.target as HTMLImageElement).parentElement;
                               if (parent) {
                                 const fallback = document.createElement('span');
-                                fallback.className = `text-lg ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
+                                fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
                                 fallback.textContent = config?.icon || '📊';
                                 parent.appendChild(fallback);
                               }
@@ -872,60 +789,146 @@ export default function AdminPaymentStatsPage() {
                           />
                         </div>
                       ) : (
-                        <div className="w-8 h-8 flex items-center justify-center">
-                          <span className="text-lg">{config?.icon || '📊'}</span>
+                        <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center">
+                          <span className="text-2xl">{config?.icon || '📊'}</span>
                         </div>
                       )}
-                      <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {provider.name}
-                      </span>
+                      <div className="flex-1">
+                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {provider.name}
+                        </p>
+                        <div className="flex justify-between text-sm tabular-nums">
+                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
+                            {formatCurrency(provider.amount)}
+                          </span>
+                          <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
+                            {provider.percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-350 ${
+                              provider.color === 'success' ? 'bg-success-600' :
+                              provider.color === 'primary' ? 'bg-primary-600' :
+                              provider.color === 'brand' ? 'bg-brand-gradient' :
+                              provider.color === 'indigo' ? 'bg-indigo-600' :
+                              provider.color === 'warning' ? 'bg-warning-600' :
+                              provider.color === 'cyan' ? 'bg-cyan-600' :
+                              provider.color === 'sky' ? 'bg-sky-600' :
+                              provider.color === 'danger' ? 'bg-danger-600' :
+                              'bg-gray-600'
+                            }`}
+                            style={{ width: `${provider.percentage}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs mt-1 tabular-nums">
+                          <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
+                            {provider.count} transactions
+                          </span>
+                          <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
+                            Avg: {formatCurrency(provider.average)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    {index === 0 && (
-                      <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded-full">
-                        Top
-                      </span>
-                    )}
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Volume</p>
-                      <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {formatCurrency(provider.amount)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Transactions</p>
-                      <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {provider.count}
-                      </p>
-                    </div>
-                    <div>
-                      <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Avg</p>
-                      <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {formatCurrency(provider.average)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
 
-      {/* Footer */}
-      <div className={`mt-8 p-4 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-sm">
-          <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-            <Clock className="inline w-4 h-4 mr-1" />
-            Last updated: {formatDate(new Date())}
+        {/* Provider Comparison Summary */}
+        {viewType === 'providers' && stats.providerStats && stats.providerStats.length > 1 && (
+          <div className="card-brand mb-6">
+            <h3 className={`text-sm font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Provider Comparison
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {stats.providerStats.slice(0, 3).map((provider, index) => {
+                const config = PROVIDER_CONFIGS[provider.provider];
+                const imageUrl = provider.imageUrl || '';
+
+                return (
+                  <div key={provider.provider} className={`p-3 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'} transition duration-250 hover:shadow-card`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {imageUrl ? (
+                          <div className="relative w-8 h-8">
+                            <Image
+                              src={imageUrl}
+                              alt={provider.name}
+                              width={32}
+                              height={32}
+                              className="rounded-lg object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                                const parent = (e.target as HTMLImageElement).parentElement;
+                                if (parent) {
+                                  const fallback = document.createElement('span');
+                                  fallback.className = `text-lg ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
+                                  fallback.textContent = config?.icon || '📊';
+                                  parent.appendChild(fallback);
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 flex items-center justify-center">
+                            <span className="text-lg">{config?.icon || '📊'}</span>
+                          </div>
+                        )}
+                        <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {provider.name}
+                        </span>
+                      </div>
+                      {index === 0 && (
+                        <span className="badge-brand">
+                          Top
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular-nums">
+                      <div>
+                        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Volume</p>
+                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {formatCurrency(provider.amount)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Transactions</p>
+                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {provider.count}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Avg</p>
+                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                          {formatCurrency(provider.average)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-            Data covers {dateRange === 'today' ? 'today' : dateRange === 'custom' ? 'custom range' : `last ${dateRange}`}
-          </div>
-          <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-            <Shield className="inline w-4 h-4 mr-1" />
-            All amounts in {process.env.NEXT_PUBLIC_CURRENCY || 'USD'}
+        )}
+
+        {/* Footer */}
+        <div className="card-brand shadow-soft mt-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-sm">
+            <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              <Clock className="inline w-4 h-4 mr-1" />
+              Last updated: {formatDate(new Date())}
+            </div>
+            <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              Data covers {dateRange === 'today' ? 'today' : dateRange === 'custom' ? 'custom range' : `last ${dateRange}`}
+            </div>
+            <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              <Shield className="inline w-4 h-4 mr-1" />
+              All amounts in {process.env.NEXT_PUBLIC_CURRENCY || 'USD'}
+            </div>
           </div>
         </div>
       </div>

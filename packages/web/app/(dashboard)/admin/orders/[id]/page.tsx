@@ -37,7 +37,7 @@ export default function AdminOrderDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -45,12 +45,12 @@ export default function AdminOrderDetailPage() {
   if (error || !order) {
     return (
       <div className="text-center py-12">
-        <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+        <XCircle className="w-16 h-16 text-danger-500 mx-auto mb-4" />
         <h2 className="text-xl font-bold">Order not found</h2>
         <p className="text-gray-500 mt-2">{error}</p>
         <button
           onClick={() => router.push('/admin/orders')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
         >
           Back to Orders
         </button>
@@ -63,12 +63,12 @@ export default function AdminOrderDetailPage() {
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={() => router.push('/admin/orders')}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
             Order #{order.orderNumber}
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -80,9 +80,9 @@ export default function AdminOrderDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {/* Items */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="card-brand p-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Package className="w-5 h-5 text-blue-500" /> Items
+              <Package className="w-5 h-5 text-brand-500" /> Items
             </h2>
             <div className="space-y-3">
               {(order.items || []).map((item: any) => (
@@ -94,11 +94,11 @@ export default function AdminOrderDetailPage() {
                     <p className="font-medium text-gray-900 dark:text-white">
                       {item.product?.name || item.productName || 'Item'}
                     </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                       {item.quantity} × {formatCurrency(item.unitPrice)}
                     </p>
                   </div>
-                  <span className="font-medium">
+                  <span className="font-medium tabular-nums">
                     {formatCurrency(item.total)}
                   </span>
                 </div>
@@ -107,26 +107,26 @@ export default function AdminOrderDetailPage() {
           </div>
 
           {/* Totals */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="card-brand p-6">
             <h2 className="text-lg font-semibold mb-4">Summary</h2>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-500">Subtotal</span>
-                <span>{formatCurrency(order.subtotal)}</span>
+                <span className="tabular-nums">{formatCurrency(order.subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Tax</span>
-                <span>{formatCurrency(order.tax)}</span>
+                <span className="tabular-nums">{formatCurrency(order.tax)}</span>
               </div>
               {order.discount > 0 && (
-                <div className="flex justify-between text-green-600">
+                <div className="flex justify-between text-success-600">
                   <span>Discount</span>
-                  <span>-{formatCurrency(order.discount)}</span>
+                  <span className="tabular-nums">-{formatCurrency(order.discount)}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span>Total</span>
-                <span>{formatCurrency(order.total)}</span>
+                <span className="tabular-nums">{formatCurrency(order.total)}</span>
               </div>
             </div>
           </div>
@@ -134,9 +134,9 @@ export default function AdminOrderDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="card-brand p-6">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <User className="w-4 h-4 text-blue-500" /> Customer
+              <User className="w-4 h-4 text-brand-500" /> Customer
             </h3>
             {order.customer ? (
               <div className="text-sm space-y-1">
@@ -153,9 +153,9 @@ export default function AdminOrderDetailPage() {
             )}
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="card-brand p-6">
             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-yellow-500" /> Status
+              <Clock className="w-4 h-4 text-warning-500" /> Status
             </h3>
             <p className="text-lg font-bold">{order.status}</p>
             {order.notes && (
@@ -164,12 +164,12 @@ export default function AdminOrderDetailPage() {
           </div>
 
           {order.payment && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <div className="card-brand p-6">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-green-500" /> Payment
+                <CreditCard className="w-4 h-4 text-success-500" /> Payment
               </h3>
               <div className="text-sm space-y-1">
-                <p className="font-medium">
+                <p className="font-medium tabular-nums">
                   {formatCurrency(order.payment.amount)}
                 </p>
                 <p className="text-gray-500">{order.payment.paymentMethod}</p>

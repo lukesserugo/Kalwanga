@@ -14,8 +14,8 @@ export default function InventoryScanPage() {
       {/* Page header — owned by the route, not the component */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-            <Scan className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <div className="p-2 bg-brand-50 dark:bg-brand-950/30 rounded-lg">
+            <Scan className="w-6 h-6 text-brand-600 dark:text-brand-400" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -29,7 +29,7 @@ export default function InventoryScanPage() {
 
         <button
           onClick={() => router.push('/admin/inventory')}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm text-gray-700 dark:text-gray-300"
+          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-sm text-gray-700 dark:text-gray-300 focus-ring"
         >
           Back to Inventory
         </button>

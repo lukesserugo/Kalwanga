@@ -46,16 +46,16 @@ export function LocationDataTable<T>({
 }: LocationDataTableProps<T>) {
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
-        <p className="mt-2 text-sm text-gray-500">Loading…</p>
+      <div className="card-brand shadow-soft p-12 text-center">
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600 dark:text-brand-400 mx-auto" />
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
       </div>
     );
   }
 
   if (rows.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+      <div className="card-brand shadow-soft p-12 text-center">
         <p className="text-sm text-gray-500 dark:text-gray-400">
           {emptyMessage}
         </p>
@@ -64,15 +64,15 @@ export function LocationDataTable<T>({
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand shadow-soft overflow-hidden p-0">
+      <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className={`px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
+                  className={`px-4 py-3 text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider eyebrow ${
                     alignClass[col.align ?? 'left']
                   } ${col.hideBelow ? hideClass[col.hideBelow] : ''}`}
                 >
@@ -86,7 +86,7 @@ export function LocationDataTable<T>({
               <tr
                 key={rowKey(row)}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={`transition-colors ${
+                className={`transition duration-250 focus-ring ${
                   onRowClick
                     ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50'
                     : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'

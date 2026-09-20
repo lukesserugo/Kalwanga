@@ -49,19 +49,22 @@ export function LocationCard({
 
   return (
     <div
-      className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 transition-colors ${
+      className={`card-brand shadow-soft transition duration-250 ${
         onView
-          ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50'
+          ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:shadow-card-hover focus-ring'
           : ''
       }`}
       onClick={() => onView?.(location)}
+      role={onView ? 'button' : undefined}
+      tabIndex={onView ? 0 : undefined}
+      aria-label={onView ? `View ${location.name}` : undefined}
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0 flex-1">
-          {/* Icon tile — matches the blue/blue-900/20 accent used elsewhere */}
-          <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
-            <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          {/* Icon tile — matches the brand accent used elsewhere */}
+          <div className="w-10 h-10 rounded-xl bg-brand-50 dark:bg-brand-900/20 flex items-center justify-center flex-shrink-0">
+            <MapPin className="w-5 h-5 text-brand-600 dark:text-brand-400" />
           </div>
 
           <div className="min-w-0 flex-1">
@@ -75,7 +78,7 @@ export function LocationCard({
               </h3>
 
               {location.isDefault && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                   <Star className="w-3 h-3" />
                   Default
                 </span>
@@ -84,12 +87,12 @@ export function LocationCard({
               {/* ✅ Show both states with matching chip shapes so the
                   header row stays balanced whichever state it's in. */}
               {isActive ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300">
                   <CheckCircle2 className="w-3 h-3" />
                   Active
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
                   Inactive
                 </span>
               )}
@@ -99,7 +102,7 @@ export function LocationCard({
             <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
               {typeLabel}
               {location.code && (
-                <span className="ml-2 font-mono text-xs text-gray-500 dark:text-gray-400">
+                <span className="ml-2 font-mono tabular-nums text-2xs text-gray-500 dark:text-gray-400">
                   ({location.code})
                 </span>
               )}
@@ -125,11 +128,11 @@ export function LocationCard({
                 e.stopPropagation();
                 onEdit(location);
               }}
-              className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+              className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-xl transition duration-250 focus-ring"
               title="Edit"
               aria-label={`Edit ${location.name}`}
             >
-              <Edit className="w-4 h-4 text-blue-500" />
+              <Edit className="w-4 h-4 text-brand-500 dark:text-brand-400" />
             </button>
           )}
           {canDelete && onDelete && (
@@ -138,11 +141,11 @@ export function LocationCard({
                 e.stopPropagation();
                 onDelete(location);
               }}
-              className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded-xl transition duration-250 focus-ring"
               title="Delete"
               aria-label={`Delete ${location.name}`}
             >
-              <Trash2 className="w-4 h-4 text-red-500" />
+              <Trash2 className="w-4 h-4 text-danger-500" />
             </button>
           )}
         </div>
@@ -152,7 +155,9 @@ export function LocationCard({
       <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs">
         <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
           <Package className="w-3.5 h-3.5" />
-          {inventoryCount} item{inventoryCount !== 1 ? 's' : ''}
+          <span className="tabular-nums">
+            {inventoryCount} item{inventoryCount !== 1 ? 's' : ''}
+          </span>
         </span>
 
         {/*

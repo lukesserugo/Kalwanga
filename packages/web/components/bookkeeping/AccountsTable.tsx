@@ -28,15 +28,15 @@ interface Props {
 
 const TYPE_STYLES: Record<string, string> = {
   ASSET:
-    'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400',
   LIABILITY:
-    'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400',
   EQUITY:
-    'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400',
   REVENUE:
-    'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+    'bg-secondary-100 text-secondary-800 dark:bg-secondary-900/30 dark:text-secondary-400',
   EXPENSE:
-    'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+    'bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400',
 };
 
 export default function AccountsTable({
@@ -48,7 +48,7 @@ export default function AccountsTable({
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
-        <ArrowPathIcon className="w-6 h-6 text-blue-600 animate-spin" />
+        <ArrowPathIcon className="w-6 h-6 text-brand-500 animate-spin" />
       </div>
     );
   }
@@ -69,15 +69,15 @@ export default function AccountsTable({
   const alignRight = new Set(['Debit', 'Credit', 'Balance']);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand !p-0 overflow-hidden">
+      <div className="overflow-x-auto custom-scrollbar">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-900/50">
             <tr>
               {headers.map((h) => (
                 <th
                   key={h}
-                  className={`px-6 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
+                  className={`px-6 py-3 text-2xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
                     alignRight.has(h) ? 'text-right' : 'text-left'
                   }`}
                 >
@@ -103,23 +103,24 @@ export default function AccountsTable({
               accounts.map((a) => (
                 <tr
                   key={a.id || a.code}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  className="hover:bg-orange-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
-                  <td className="px-6 py-4 font-mono text-sm text-gray-600 dark:text-gray-400">
+                  <td className="px-6 py-4 font-mono text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                     {a.code}
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
                     {a.name}
                   </td>
                   {!compact && (
-                    <td className="px-6 py-4 text-xs text-gray-500 dark:text-gray-400">
+                    <td className="px-6 py-4 text-2xs text-gray-500 dark:text-gray-400">
                       {a.category || '—'}
                     </td>
                   )}
                   <td className="px-6 py-4 text-sm">
                     <span
-                      className={`px-2 py-1 rounded-full text-xs ${
-                        TYPE_STYLES[a.type] ?? 'bg-gray-100 text-gray-800'
+                      className={`px-2 py-1 rounded-full text-2xs ${
+                        TYPE_STYLES[a.type] ??
+                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400'
                       }`}
                     >
                       {a.type}
@@ -127,20 +128,20 @@ export default function AccountsTable({
                   </td>
                   {!compact && (
                     <>
-                      <td className="px-6 py-4 text-sm text-right font-mono">
+                      <td className="px-6 py-4 text-sm text-right font-mono tabular-nums">
                         {a.debit > 0 ? formatCurrency(a.debit) : '—'}
                       </td>
-                      <td className="px-6 py-4 text-sm text-right font-mono">
+                      <td className="px-6 py-4 text-sm text-right font-mono tabular-nums">
                         {a.credit > 0 ? formatCurrency(a.credit) : '—'}
                       </td>
                     </>
                   )}
                   <td
-                    className={`px-6 py-4 text-sm text-right font-mono font-semibold ${
+                    className={`px-6 py-4 text-sm text-right font-mono font-semibold tabular-nums ${
                       a.balance > 0
-                        ? 'text-green-600 dark:text-green-400'
+                        ? 'text-success-600 dark:text-success-400'
                         : a.balance < 0
-                        ? 'text-red-600 dark:text-red-400'
+                        ? 'text-danger-600 dark:text-danger-400'
                         : 'text-gray-500 dark:text-gray-400'
                     }`}
                   >
@@ -151,7 +152,7 @@ export default function AccountsTable({
                       <button
                         type="button"
                         onClick={() => onEdit(a)}
-                        className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        className="p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                         title="Edit account"
                       >
                         <PencilSquareIcon className="w-4 h-4 text-gray-500" />

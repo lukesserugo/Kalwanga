@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartPage.tsx
-
 'use client';
 
 import React, {
@@ -43,18 +41,10 @@ export function CartPage({ className = '' }: CartPageProps) {
   );
   const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0);
 
-  /**
-   * The active cart service. Guests hit `/cart/guest/*`;
-   * authenticated users hit `/cart/*`.
-   */
   const activeCartService = useMemo(
     () => (isAuthenticated ? cartService : guestCartService),
     [isAuthenticated],
   );
-
-  // ============================================
-  // FETCH CART
-  // ============================================
 
   const fetchCart = useCallback(async () => {
     try {
@@ -66,17 +56,12 @@ export function CartPage({ className = '' }: CartPageProps) {
 
       if (cartData.customerId) {
         setCustomerId(cartData.customerId);
-        // Loyalty points are loaded lazily by CartSummary when the
-        // user opens the loyalty widget. Do not preload here — the
-        // previous code hardcoded a value, which was wrong.
       } else {
         setCustomerId(undefined);
         setLoyaltyPoints(0);
       }
     } catch (error: any) {
       console.error('❌ Failed to fetch cart:', error);
-      // Only authenticated carts can expire. Guest carts don't
-      // return 401 on a valid session.
       if (error?.response?.status === 401 && isAuthenticated) {
         router.push(
           `/login?redirect_url=${encodeURIComponent('/cart')}`,
@@ -89,10 +74,6 @@ export function CartPage({ className = '' }: CartPageProps) {
       setLoading(false);
     }
   }, [activeCartService, isAuthenticated, router]);
-
-  // ============================================
-  // CART OPERATIONS
-  // ============================================
 
   const updateQuantity = useCallback(
     async (itemId: string, quantity: number) => {
@@ -220,8 +201,6 @@ export function CartPage({ className = '' }: CartPageProps) {
       return;
     }
 
-    // Guests are sent through login first so the guest cart can be
-    // merged into the user cart before checkout runs.
     if (!isAuthenticated) {
       router.push(
         `/login?redirect_url=${encodeURIComponent('/checkout')}`,
@@ -232,17 +211,9 @@ export function CartPage({ className = '' }: CartPageProps) {
     router.push('/checkout');
   }, [cart, isAuthenticated, router]);
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     fetchCart();
   }, [fetchCart]);
-
-  // ============================================
-  // RENDER — loading
-  // ============================================
 
   if (loading) {
     return (
@@ -261,10 +232,6 @@ export function CartPage({ className = '' }: CartPageProps) {
     );
   }
 
-  // ============================================
-  // RENDER — empty
-  // ============================================
-
   if (!cart || cart.items.length === 0) {
     return (
       <div
@@ -277,23 +244,18 @@ export function CartPage({ className = '' }: CartPageProps) {
     );
   }
 
-  // ============================================
-  // RENDER — main
-  // ============================================
-
   return (
     <div
       className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-8 sm:py-12 ${className}`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-              <ShoppingCart className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+              <ShoppingCart className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
               Your Cart
               {cart.itemCount > 0 && (
-                <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+                <span className="text-sm font-normal text-gray-500 dark:text-gray-400 tabular-nums">
                   ({cart.itemCount}{' '}
                   {cart.itemCount === 1 ? 'item' : 'items'})
                 </span>
@@ -306,7 +268,7 @@ export function CartPage({ className = '' }: CartPageProps) {
               </p>
             )}
             {!isAuthenticated && (
-              <span className="inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+              <span className="inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-2xs font-medium bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300">
                 Guest cart
               </span>
             )}
@@ -317,14 +279,14 @@ export function CartPage({ className = '' }: CartPageProps) {
                 fetchCart();
                 toast.success('Cart refreshed');
               }}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Refresh cart"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
             <button
               onClick={clearCart}
-              className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors text-sm flex items-center gap-1"
+              className="px-3 py-2 text-danger-600 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-colors text-sm flex items-center gap-1 focus-ring"
             >
               <Trash2 className="w-4 h-4" />
               Clear Cart
@@ -332,18 +294,17 @@ export function CartPage({ className = '' }: CartPageProps) {
           </div>
         </div>
 
-        {/* Error Banner */}
         {error && (
-          <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="mb-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-2xl p-4 flex items-start gap-3 animate-slide-down">
+            <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm text-red-800 dark:text-red-200">
+              <p className="text-sm text-danger-800 dark:text-danger-200">
                 {error}
               </p>
             </div>
             <button
               onClick={() => setError(null)}
-              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              className="text-danger-600 hover:text-danger-800 dark:text-danger-400 p-1 focus-ring rounded"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
@@ -351,9 +312,7 @@ export function CartPage({ className = '' }: CartPageProps) {
           </div>
         )}
 
-        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-          {/* Cart Items */}
           <div className="lg:col-span-2 space-y-4">
             <AnimatePresence mode="popLayout">
               {cart.items.map((item) => (
@@ -378,7 +337,6 @@ export function CartPage({ className = '' }: CartPageProps) {
             </AnimatePresence>
           </div>
 
-          {/* Cart Summary */}
           <div className="lg:col-span-1">
             <CartSummary
               cart={cart}

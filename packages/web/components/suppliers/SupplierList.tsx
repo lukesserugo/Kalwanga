@@ -208,7 +208,7 @@ export function SupplierList({
 
   if (!canViewSuppliers) {
     return (
-      <div className="p-8 text-center text-gray-500">
+      <div className="p-8 text-center text-gray-500 dark:text-gray-400">
         You don't have permission to view suppliers.
       </div>
     );
@@ -221,7 +221,7 @@ export function SupplierList({
   if (loading) {
     return (
       <div className="flex justify-center p-8">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500 dark:text-brand-400" />
       </div>
     );
   }
@@ -239,19 +239,19 @@ export function SupplierList({
       {/* SEARCH + ADD BUTTON */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px] relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
           <input
             type="text"
             placeholder="Search suppliers..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus-visible:ring-2 focus-visible:ring-brand-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-colors duration-250"
           />
         </div>
         {canCreateSuppliers && (
           <Link
             href="/admin/suppliers/create"
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            className="btn-brand shadow-brand focus-ring px-4 py-2 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Add Supplier
@@ -261,12 +261,12 @@ export function SupplierList({
 
       {/* ERROR STATE */}
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-          <span className="text-red-700 dark:text-red-300">{error}</span>
+        <div className="bg-danger-50 dark:bg-danger-950/30 border border-danger-200 dark:border-danger-900 rounded-lg p-4 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0" />
+          <span className="text-danger-700 dark:text-danger-300">{error}</span>
           <button
             onClick={loadSuppliers}
-            className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors text-sm"
+            className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-950/40 text-danger-700 dark:text-danger-300 rounded-lg hover:bg-danger-200 dark:hover:bg-danger-950/60 transition-colors duration-250 text-2xs focus-ring"
           >
             Retry
           </button>
@@ -274,7 +274,7 @@ export function SupplierList({
       )}
 
       {/* SUPPLIERS TABLE */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div
           className="overflow-x-auto"
           style={maxHeight ? { maxHeight } : undefined}
@@ -287,22 +287,22 @@ export function SupplierList({
                     <span className="sr-only">Select</span>
                   </th>
                 )}
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Supplier
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Contact
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Email
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Phone
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-right text-2xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -317,7 +317,7 @@ export function SupplierList({
                 return (
                   <tr
                     key={supplier.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                    className="hover:bg-brand-50/40 dark:hover:bg-gray-700/50 transition-colors duration-250"
                   >
                     {selectable && (
                       <td className="px-4 py-3">
@@ -331,14 +331,14 @@ export function SupplierList({
                               onSupplierSelect(supplier);
                             }
                           }}
-                          className="w-4 h-4 text-blue-600 rounded-full"
+                          className="w-4 h-4 text-brand-600 rounded-full focus-ring"
                           aria-label={`Select ${supplier.name}`}
                         />
                       </td>
                     )}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <Truck className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                         <span className="font-medium text-gray-900 dark:text-white">
                           {displayOr(supplier.name, 'Unnamed Supplier')}
                         </span>
@@ -350,14 +350,14 @@ export function SupplierList({
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
                       {displayOr((supplier as any).email)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 tabular-nums">
                       {displayOr((supplier as any).phone)}
                     </td>
                     <td className="px-4 py-3">
                       <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        className={`px-2 py-1 rounded-full text-2xs font-medium ${
                           isActive
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                            ? 'bg-success-100 text-success-700 dark:bg-success-950/40 dark:text-success-300'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-400'
                         }`}
                       >
@@ -368,31 +368,31 @@ export function SupplierList({
                       <div className="flex items-center justify-end gap-1">
                         <Link
                           href={`/admin/suppliers/${supplier.id}`}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-250 focus-ring"
                           title="View"
                           aria-label={`View ${supplier.name}`}
                         >
-                          <Eye className="w-4 h-4 text-gray-500" />
+                          <Eye className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                         </Link>
                         {canEditSuppliers && (
                           <Link
                             href={`/admin/suppliers/${supplier.id}/edit`}
-                            className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/40 rounded-lg transition-colors duration-250 focus-ring"
                             title="Edit"
                             aria-label={`Edit ${supplier.name}`}
                           >
-                            <Edit className="w-4 h-4 text-blue-500" />
+                            <Edit className="w-4 h-4 text-brand-600 dark:text-brand-400" />
                           </Link>
                         )}
                         {canDeleteSuppliers && (
                           <button
                             type="button"
                             onClick={() => openDeleteModal(supplier)}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                            className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-950/40 rounded-lg transition-colors duration-250 focus-ring"
                             title="Delete"
                             aria-label={`Delete ${supplier.name}`}
                           >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4 text-danger-600 dark:text-danger-400" />
                           </button>
                         )}
                       </div>
@@ -405,7 +405,7 @@ export function SupplierList({
                 <tr>
                   <td
                     colSpan={selectable ? 7 : 6}
-                    className="px-4 py-8 text-center text-gray-500 dark:text-gray-400"
+                    className="px-4 py-8 text-center text-2xs text-gray-500 dark:text-gray-400"
                   >
                     {searchQuery
                       ? 'No suppliers match your search'
@@ -421,7 +421,7 @@ export function SupplierList({
       {/* DELETE MODAL */}
       {showDeleteModal && supplierToDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-modal flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-supplier-title"
@@ -430,19 +430,19 @@ export function SupplierList({
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={closeDeleteModal}
           />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 max-w-md w-full p-6">
             <button
               type="button"
               onClick={closeDeleteModal}
-              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors duration-250 focus-ring"
               aria-label="Close"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+              <div className="p-2 bg-danger-100 dark:bg-danger-950/40 rounded-lg">
+                <AlertCircle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
               </div>
               <div>
                 <h3
@@ -451,7 +451,7 @@ export function SupplierList({
                 >
                   Delete Supplier
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-2xs text-gray-500 dark:text-gray-400">
                   This action cannot be undone
                 </p>
               </div>
@@ -465,7 +465,7 @@ export function SupplierList({
               ?
               {typeof productCountForDelete === 'number' &&
                 productCountForDelete > 0 && (
-                  <span className="block mt-2 text-red-600">
+                  <span className="block mt-2 text-danger-600 dark:text-danger-400">
                     ⚠️ This supplier has {productCountForDelete} associated
                     product{productCountForDelete === 1 ? '' : 's'}.
                   </span>
@@ -477,7 +477,7 @@ export function SupplierList({
                 type="button"
                 onClick={closeDeleteModal}
                 disabled={deleting}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-250 disabled:opacity-50 focus-ring"
               >
                 Cancel
               </button>
@@ -485,7 +485,7 @@ export function SupplierList({
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors duration-250 focus-ring"
               >
                 {deleting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

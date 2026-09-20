@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\companies\components\CompanyForm.tsx
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -11,7 +9,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  Globe,
   Loader2,
   DollarSign,
   Clock,
@@ -20,12 +17,6 @@ import {
 import { companyService } from '../../services/companyService';
 import { toast } from '../../utils/toast-manager';
 
-// ============================================================
-// RESERVED ROUTE GUARD
-// These strings are route segments, not company IDs.
-// If any of them appears as the dynamic [id] param, we must
-// NOT call the API — the route is invalid.
-// ============================================================
 const RESERVED_ROUTE_IDS = new Set([
   'settings',
   'default',
@@ -77,14 +68,38 @@ interface FormErrors {
   businessUnitCode?: string;
 }
 
-const currencies = ['USD', 'EUR', 'GBP', 'NGN', 'KES', 'ZAR', 'GHS', 'UGX', 'TZS'];
-const timezones = ['UTC', 'EST', 'PST', 'GMT', 'CET', 'EAT', 'WAT', 'CAT', 'SAST'];
-const businessUnitTypes = ['HEADQUARTERS', 'BRANCH', 'WAREHOUSE', 'STORE'];
+const currencies = [
+  'USD',
+  'EUR',
+  'GBP',
+  'NGN',
+  'KES',
+  'ZAR',
+  'GHS',
+  'UGX',
+  'TZS',
+];
+const timezones = [
+  'UTC',
+  'EST',
+  'PST',
+  'GMT',
+  'CET',
+  'EAT',
+  'WAT',
+  'CAT',
+  'SAST',
+];
+const businessUnitTypes = [
+  'HEADQUARTERS',
+  'BRANCH',
+  'WAREHOUSE',
+  'STORE',
+];
 
 export function CompanyForm({ id }: CompanyFormProps) {
   const router = useRouter();
 
-  // ✅ An "edit" form is only valid when we have a real, non-reserved ID
   const isEdit = !!id && !isReservedRouteId(id);
 
   const [formData, setFormData] = useState<FormData>({
@@ -109,13 +124,11 @@ export function CompanyForm({ id }: CompanyFormProps) {
     if (isEdit && id) {
       loadCompany();
     } else if (id && isReservedRouteId(id)) {
-      // ✅ Fail fast with a clear message instead of hitting the API
       toast.error(`Invalid company ID: "${id}" is a reserved route`);
     }
   }, [id, isEdit]);
 
   const loadCompany = async () => {
-    // ✅ Defense in depth: never call the API with a reserved word
     if (!id || isReservedRouteId(id)) {
       return;
     }
@@ -140,7 +153,6 @@ export function CompanyForm({ id }: CompanyFormProps) {
     } catch (error: any) {
       console.error('Failed to load company:', error);
 
-      // ✅ If the backend says 404, redirect back to the list — the ID is bad
       if (error?.response?.status === 404) {
         toast.error('Company not found. Redirecting to companies list...');
         router.replace('/admin/companies');
@@ -154,7 +166,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
   };
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value, type } = e.target;
 
@@ -271,7 +283,10 @@ export function CompanyForm({ id }: CompanyFormProps) {
           toast.error(err.message);
         });
       } else if (error?.message?.includes('email already exists')) {
-        setErrors((prev) => ({ ...prev, email: 'This email is already taken' }));
+        setErrors((prev) => ({
+          ...prev,
+          email: 'This email is already taken',
+        }));
         toast.error('Company with this email already exists');
       } else {
         toast.error(error?.message || 'Failed to save company');
@@ -289,14 +304,14 @@ export function CompanyForm({ id }: CompanyFormProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div className="p-6 max-w-3xl mx-auto animate-fade-in">
+      <div className="card-brand">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -311,7 +326,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
           <button
             type="button"
             onClick={handleCancel}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Close"
             disabled={saving}
           >
@@ -326,7 +341,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
               htmlFor="name"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
             >
-              Company Name <span className="text-red-500">*</span>
+              Company Name <span className="text-danger-500">*</span>
             </label>
             <div className="relative">
               <Building className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
@@ -336,9 +351,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
                   errors.name
-                    ? 'border-red-500'
+                    ? 'border-danger-500'
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="Acme Corporation"
@@ -348,7 +363,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
               />
             </div>
             {errors.name && (
-              <p className="mt-1 text-sm text-red-500">{errors.name}</p>
+              <p className="mt-1 text-sm text-danger-500">{errors.name}</p>
             )}
           </div>
 
@@ -359,7 +374,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 htmlFor="email"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
               >
-                Email Address <span className="text-red-500">*</span>
+                Email Address <span className="text-danger-500">*</span>
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
@@ -369,9 +384,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
                     errors.email
-                      ? 'border-red-500'
+                      ? 'border-danger-500'
                       : 'border-gray-300 dark:border-gray-600'
                   }`}
                   placeholder="contact@company.com"
@@ -380,7 +395,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 />
               </div>
               {errors.email && (
-                <p className="mt-1 text-sm text-red-500">{errors.email}</p>
+                <p className="mt-1 text-sm text-danger-500">{errors.email}</p>
               )}
             </div>
 
@@ -389,7 +404,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 htmlFor="phone"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
               >
-                Phone Number <span className="text-red-500">*</span>
+                Phone Number <span className="text-danger-500">*</span>
               </label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
@@ -399,9 +414,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
                     errors.phone
-                      ? 'border-red-500'
+                      ? 'border-danger-500'
                       : 'border-gray-300 dark:border-gray-600'
                   }`}
                   placeholder="+1 234 567 890"
@@ -410,7 +425,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 />
               </div>
               {errors.phone && (
-                <p className="mt-1 text-sm text-red-500">{errors.phone}</p>
+                <p className="mt-1 text-sm text-danger-500">{errors.phone}</p>
               )}
             </div>
           </div>
@@ -431,7 +446,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 name="address"
                 value={formData.address}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 placeholder="123 Main St, City, State, ZIP"
                 disabled={saving}
               />
@@ -456,7 +471,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 name="taxId"
                 value={formData.taxId}
                 onChange={handleChange}
-                className="w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 font-mono tabular-nums"
                 placeholder="TAX-123456"
                 disabled={saving}
               />
@@ -470,7 +485,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 htmlFor="currency"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
               >
-                Currency <span className="text-red-500">*</span>
+                Currency <span className="text-danger-500">*</span>
               </label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
@@ -479,9 +494,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                   name="currency"
                   value={formData.currency}
                   onChange={handleChange}
-                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white appearance-none ${
+                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white appearance-none ${
                     errors.currency
-                      ? 'border-red-500'
+                      ? 'border-danger-500'
                       : 'border-gray-300 dark:border-gray-600'
                   }`}
                   disabled={saving}
@@ -494,7 +509,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 </select>
               </div>
               {errors.currency && (
-                <p className="mt-1 text-sm text-red-500">{errors.currency}</p>
+                <p className="mt-1 text-sm text-danger-500">
+                  {errors.currency}
+                </p>
               )}
             </div>
 
@@ -503,7 +520,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 htmlFor="timezone"
                 className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
               >
-                Timezone <span className="text-red-500">*</span>
+                Timezone <span className="text-danger-500">*</span>
               </label>
               <div className="relative">
                 <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
@@ -512,9 +529,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                   name="timezone"
                   value={formData.timezone}
                   onChange={handleChange}
-                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white appearance-none ${
+                  className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white appearance-none ${
                     errors.timezone
-                      ? 'border-red-500'
+                      ? 'border-danger-500'
                       : 'border-gray-300 dark:border-gray-600'
                   }`}
                   disabled={saving}
@@ -527,7 +544,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                 </select>
               </div>
               {errors.timezone && (
-                <p className="mt-1 text-sm text-red-500">{errors.timezone}</p>
+                <p className="mt-1 text-sm text-danger-500">
+                  {errors.timezone}
+                </p>
               )}
             </div>
           </div>
@@ -546,7 +565,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
               name="logo"
               value={formData.logo}
               onChange={handleChange}
-              className="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+              className="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
               placeholder="https://example.com/logo.png"
               disabled={saving}
             />
@@ -556,7 +575,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
           {!isEdit && (
             <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center gap-2 mb-4">
-                <Briefcase className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <Briefcase className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                   Default Business Unit
                 </h3>
@@ -574,7 +593,8 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     htmlFor="businessUnitName"
                     className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
                   >
-                    Business Unit Name <span className="text-red-500">*</span>
+                    Business Unit Name{' '}
+                    <span className="text-danger-500">*</span>
                   </label>
                   <input
                     id="businessUnitName"
@@ -582,9 +602,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     name="businessUnitName"
                     value={formData.businessUnitName}
                     onChange={handleChange}
-                    className={`w-full px-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                    className={`w-full px-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
                       errors.businessUnitName
-                        ? 'border-red-500'
+                        ? 'border-danger-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Main Store"
@@ -592,7 +612,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     disabled={saving}
                   />
                   {errors.businessUnitName && (
-                    <p className="mt-1 text-sm text-red-500">
+                    <p className="mt-1 text-sm text-danger-500">
                       {errors.businessUnitName}
                     </p>
                   )}
@@ -603,7 +623,8 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     htmlFor="businessUnitCode"
                     className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
                   >
-                    Business Unit Code <span className="text-red-500">*</span>
+                    Business Unit Code{' '}
+                    <span className="text-danger-500">*</span>
                   </label>
                   <input
                     id="businessUnitCode"
@@ -611,9 +632,9 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     name="businessUnitCode"
                     value={formData.businessUnitCode}
                     onChange={handleChange}
-                    className={`w-full px-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 uppercase ${
+                    className={`w-full px-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 uppercase font-mono ${
                       errors.businessUnitCode
-                        ? 'border-red-500'
+                        ? 'border-danger-500'
                         : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="MAIN"
@@ -621,7 +642,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     disabled={saving}
                   />
                   {errors.businessUnitCode && (
-                    <p className="mt-1 text-sm text-red-500">
+                    <p className="mt-1 text-sm text-danger-500">
                       {errors.businessUnitCode}
                     </p>
                   )}
@@ -639,7 +660,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                     name="businessUnitType"
                     value={formData.businessUnitType}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white appearance-none"
+                    className="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white appearance-none"
                     disabled={saving}
                   >
                     {businessUnitTypes.map((type) => (
@@ -665,7 +686,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
                   className="sr-only peer"
                   disabled={saving}
                 />
-                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
                 <span className="ms-3 text-sm font-medium text-gray-700 dark:text-gray-300">
                   {formData.isActive ? 'Active' : 'Inactive'}
                 </span>
@@ -678,7 +699,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
             <button
               type="button"
               onClick={handleCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+              className="btn-secondary focus-ring disabled:opacity-50"
               disabled={saving}
             >
               Cancel
@@ -686,7 +707,7 @@ export function CompanyForm({ id }: CompanyFormProps) {
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+              className="px-6 py-2 bg-brand-gradient hover:shadow-brand-lg text-white rounded-lg shadow-brand transition-all flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {saving ? (
                 <>
@@ -706,3 +727,5 @@ export function CompanyForm({ id }: CompanyFormProps) {
     </div>
   );
 }
+
+export default CompanyForm;

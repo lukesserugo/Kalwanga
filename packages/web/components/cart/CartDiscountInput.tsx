@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartDiscountInput.tsx
-
 'use client';
 
 import React, { useCallback, useState } from 'react';
@@ -11,23 +9,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { formatCurrency } from '../../utils/formatters';
 
 interface CartDiscountInputProps {
-  /**
-   * Called after a successful apply. Receives whatever the cart
-   * service returned — typically the updated cart.
-   */
   onDiscountApplied?: (result: unknown) => void;
-  /**
-   * Current discount amount on the cart. When > 0, the input shows
-   * the applied discount with a clear button.
-   */
   currentDiscount?: number;
-  /**
-   * Current discount type, if any. Used for display only.
-   */
   currentDiscountType?: 'PERCENTAGE' | 'FIXED';
-  /**
-   * Called after a successful removal of the current discount.
-   */
   onDiscountRemoved?: () => void;
   disabled?: boolean;
   className?: string;
@@ -51,10 +35,6 @@ export function CartDiscountInput({
 
   const hasApplied = currentDiscount > 0;
 
-  // ============================================
-  // HANDLERS
-  // ============================================
-
   const handleApplyDiscount = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -70,10 +50,6 @@ export function CartDiscountInput({
         return;
       }
 
-      // ✅ Guest carts don't support discounts. `guestCartService`
-      //    exposes neither `applyDiscount` nor `applyPromotion`, so
-      //    calling them through the union triggers TS2339. Surface a
-      //    clear "sign in" message instead.
       if (!isAuthenticated) {
         const message = 'Sign in to apply a discount';
         setError(message);
@@ -85,8 +61,6 @@ export function CartDiscountInput({
       setIsLoading(true);
 
       try {
-        // ✅ TypeScript narrows to the concrete service here. The
-        //    `isAuthenticated` check above guarantees `cartService`.
         const result = await cartService.applyDiscount(
           discountValue,
           discountType,
@@ -123,20 +97,16 @@ export function CartDiscountInput({
     onDiscountRemoved?.();
   }, [onDiscountRemoved]);
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <div className={`space-y-2 ${className}`}>
       {hasApplied && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-success-50 dark:bg-success-900/20 border border-success-200 dark:border-success-800">
           <div className="flex items-center gap-2 min-w-0">
-            <Tag className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">
+            <Tag className="w-4 h-4 text-success-600 dark:text-success-400 shrink-0" />
+            <span className="text-sm font-medium text-success-700 dark:text-success-300 tabular-nums">
               {formatCurrency(currentDiscount)}
             </span>
-            <span className="text-xs text-emerald-500 dark:text-emerald-400">
+            <span className="text-xs text-success-500 dark:text-success-400">
               applied
               {currentDiscountType
                 ? ` (${currentDiscountType === 'PERCENTAGE' ? '%' : '$'})`
@@ -148,7 +118,7 @@ export function CartDiscountInput({
               type="button"
               onClick={handleRemoveApplied}
               disabled={disabled}
-              className="shrink-0 p-1 rounded-md text-emerald-600 hover:bg-emerald-100 dark:text-emerald-400 dark:hover:bg-emerald-900/40 transition-colors disabled:opacity-50"
+              className="shrink-0 p-1 rounded-md text-success-600 hover:bg-success-100 dark:text-success-400 dark:hover:bg-success-900/40 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Remove applied discount"
             >
               <X className="w-3.5 h-3.5" />
@@ -184,10 +154,10 @@ export function CartDiscountInput({
             }
             disabled={disabled || isLoading || !isAuthenticated}
             inputMode="decimal"
-            className={`w-full pl-9 pr-8 py-2 bg-white dark:bg-gray-700 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors ${
+            className={`w-full pl-9 pr-8 py-2 bg-white dark:bg-gray-700 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors tabular-nums ${
               error
-                ? 'border-red-500 focus:ring-red-500'
-                : 'border-gray-300 dark:border-gray-600 focus:ring-emerald-500'
+                ? 'border-danger-500 focus:ring-danger-500'
+                : 'border-gray-300 dark:border-gray-600 focus:ring-success-500'
             }`}
             aria-invalid={error ? 'true' : 'false'}
             aria-describedby={error ? 'discount-error' : undefined}
@@ -197,7 +167,7 @@ export function CartDiscountInput({
               type="button"
               onClick={handleClearDiscount}
               disabled={disabled || isLoading}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-orange-50 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Clear discount input"
             >
               <X className="w-3.5 h-3.5" />
@@ -211,7 +181,7 @@ export function CartDiscountInput({
             setDiscountType(e.target.value as 'PERCENTAGE' | 'FIXED')
           }
           disabled={disabled || isLoading || !isAuthenticated}
-          className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white disabled:opacity-50 text-sm"
+          className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-success-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white disabled:opacity-50 text-sm"
           aria-label="Discount type"
         >
           <option value="PERCENTAGE">%</option>
@@ -223,7 +193,7 @@ export function CartDiscountInput({
           disabled={
             disabled || isLoading || !discount || !isAuthenticated
           }
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px] shadow-sm"
+          className="px-4 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px] shadow-soft focus-ring"
         >
           {isLoading ? (
             <>
@@ -245,7 +215,7 @@ export function CartDiscountInput({
       {error && (
         <p
           id="discount-error"
-          className="text-sm text-red-600 dark:text-red-400"
+          className="text-sm text-danger-600 dark:text-danger-400"
         >
           {error}
         </p>

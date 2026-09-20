@@ -65,18 +65,8 @@ interface ReportData {
     inStock: number;
     categories: Array<{ name: string; count: number; value: number }>;
   };
-  movements: Array<{
-    date: string;
-    in: number;
-    out: number;
-    net: number;
-  }>;
-  valuation: Array<{
-    category: string;
-    value: number;
-    cost: number;
-    profit: number;
-  }>;
+  movements: Array<{ date: string; in: number; out: number; net: number }>;
+  valuation: Array<{ category: string; value: number; cost: number; profit: number }>;
   topProducts: Array<{
     name: string;
     sku: string;
@@ -105,33 +95,33 @@ const StatCard: React.FC<{
   trend?: { value: number; direction: 'up' | 'down' | 'neutral' };
 }> = ({ label, value, icon: Icon, color, subtext, trend }) => {
   const colorClasses: Record<string, { bg: string; text: string }> = {
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' },
-    green: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-400' },
-    yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', text: 'text-yellow-600 dark:text-yellow-400' },
-    red: { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-400' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-400' },
-    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-600 dark:text-indigo-400' },
-    teal: { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-600 dark:text-teal-400' },
-    orange: { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-400' },
+    brand: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
+    success: { bg: 'bg-success-50 dark:bg-success-950/20', text: 'text-success-600 dark:text-success-400' },
+    warning: { bg: 'bg-warning-50 dark:bg-warning-950/20', text: 'text-warning-600 dark:text-warning-400' },
+    danger: { bg: 'bg-brand-accent-50 dark:bg-brand-accent-950/20', text: 'text-brand-accent-600 dark:text-brand-accent-400' },
+    secondary: { bg: 'bg-secondary-50 dark:bg-secondary-950/20', text: 'text-secondary-600 dark:text-secondary-400' },
+    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/20', text: 'text-indigo-600 dark:text-indigo-400' },
+    teal: { bg: 'bg-teal-50 dark:bg-teal-950/20', text: 'text-teal-600 dark:text-teal-400' },
+    orange: { bg: 'bg-brand-50 dark:bg-brand-950/20', text: 'text-brand-600 dark:text-brand-400' },
   };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`${colorClasses[color]?.bg || colorClasses.blue.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
+      className={`${colorClasses[color]?.bg || colorClasses.brand.bg} rounded-xl p-4 border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow`}
     >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.blue.text} mt-1`}>
+          <p className={`text-2xl font-bold ${colorClasses[color]?.text || colorClasses.brand.text} mt-1 tabular-nums`}>
             {value}
           </p>
           {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
           {trend && (
-            <div className={`flex items-center gap-1 mt-1 text-xs ${
-              trend.direction === 'up' ? 'text-green-600 dark:text-green-400' :
-              trend.direction === 'down' ? 'text-red-600 dark:text-red-400' :
+            <div className={`flex items-center gap-1 mt-1 text-xs tabular-nums ${
+              trend.direction === 'up' ? 'text-success-600 dark:text-success-400' :
+              trend.direction === 'down' ? 'text-brand-accent-600 dark:text-brand-accent-400' :
               'text-gray-400'
             }`}>
               {trend.direction === 'up' && <ArrowUp className="w-3 h-3" />}
@@ -141,7 +131,7 @@ const StatCard: React.FC<{
           )}
         </div>
         <div className={`p-2 rounded-lg bg-white dark:bg-gray-700/50`}>
-          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.blue.text}`} />
+          <Icon className={`w-5 h-5 ${colorClasses[color]?.text || colorClasses.brand.text}`} />
         </div>
       </div>
     </motion.div>
@@ -150,10 +140,10 @@ const StatCard: React.FC<{
 
 const CoverageBadge: React.FC<{ percentage: number }> = ({ percentage }) => {
   const getBadge = () => {
-    if (percentage >= 80) return { label: 'Excellent', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' };
-    if (percentage >= 60) return { label: 'Good', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' };
-    if (percentage >= 40) return { label: 'Fair', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' };
-    return { label: 'Poor', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' };
+    if (percentage >= 80) return { label: 'Excellent', color: 'bg-success-100 text-success-800 dark:bg-success-950/30 dark:text-success-300' };
+    if (percentage >= 60) return { label: 'Good', color: 'bg-brand-100 text-brand-800 dark:bg-brand-950/30 dark:text-brand-300' };
+    if (percentage >= 40) return { label: 'Fair', color: 'bg-warning-100 text-warning-800 dark:bg-warning-950/30 dark:text-warning-300' };
+    return { label: 'Poor', color: 'bg-brand-accent-100 text-brand-accent-800 dark:bg-brand-accent-950/30 dark:text-brand-accent-300' };
   };
 
   const badge = getBadge();
@@ -229,10 +219,6 @@ export default function ReportsPage() {
   const canViewReports = hasPermission(`${PermissionResource.INVENTORY}:view`) || user?.role === 'SUPER_ADMIN';
   const canExport = hasPermission(`${PermissionResource.INVENTORY}:export`) || user?.role === 'SUPER_ADMIN';
 
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
-
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
@@ -263,7 +249,7 @@ export default function ReportsPage() {
           </p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Back to Inventory
           </button>
@@ -271,10 +257,6 @@ export default function ReportsPage() {
       </div>
     );
   }
-
-  // ============================================
-  // DATA LOADING
-  // ============================================
 
   const loadReport = useCallback(async () => {
     if (!businessUnitId) {
@@ -286,10 +268,8 @@ export default function ReportsPage() {
       setLoading(true);
       setError(null);
 
-      // Load summary data
       const summary = await inventoryService.getInventorySummary(businessUnitId);
       
-      // Load barcode stats if barcode tab is selected
       let barcodeStatsData = null;
       let barcodeAnalyticsData = null;
       
@@ -298,7 +278,6 @@ export default function ReportsPage() {
         barcodeAnalyticsData = await loadBarcodeAnalytics();
       }
 
-      // Build report data
       const report: ReportData = {
         summary: {
           totalItems: summary.totalItems || 0,
@@ -335,7 +314,6 @@ export default function ReportsPage() {
 
   const loadBarcodeStats = async (): Promise<BarcodeStats> => {
     try {
-      // Mock data for development
       await new Promise(resolve => setTimeout(resolve, 500));
       return {
         totalProducts: 256,
@@ -430,10 +408,6 @@ export default function ReportsPage() {
     toast.success('Report refreshed');
   };
 
-  // ============================================
-  // EXPORT HANDLERS
-  // ============================================
-
   const handleExport = async () => {
     if (!canExport) {
       toast.error('You do not have permission to export reports');
@@ -468,10 +442,6 @@ export default function ReportsPage() {
     }
   };
 
-  // ============================================
-  // UTILITY FUNCTIONS
-  // ============================================
-
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
       ...prev,
@@ -480,24 +450,16 @@ export default function ReportsPage() {
   };
 
   const getCoverageColor = (percentage: number) => {
-    if (percentage >= 80) return 'text-green-600 dark:text-green-400';
-    if (percentage >= 50) return 'text-yellow-600 dark:text-yellow-400';
-    return 'text-red-600 dark:text-red-400';
+    if (percentage >= 80) return 'text-success-600 dark:text-success-400';
+    if (percentage >= 50) return 'text-warning-600 dark:text-warning-400';
+    return 'text-brand-accent-600 dark:text-brand-accent-400';
   };
-
-  // ============================================
-  // EFFECTS
-  // ============================================
 
   useEffect(() => {
     if (isAuthenticated && businessUnitId) {
       loadReport();
     }
   }, [isAuthenticated, businessUnitId, loadReport]);
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   if (loading && !refreshing) {
     return <LoadingSkeleton />;
@@ -513,18 +475,17 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -533,7 +494,7 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <BarChart3 className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+            <BarChart3 className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
             Inventory Reports
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Analyze your inventory performance</p>
@@ -541,8 +502,8 @@ export default function ReportsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
-              showFilters ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
+              showFilters ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400' : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -550,7 +511,7 @@ export default function ReportsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
@@ -558,7 +519,7 @@ export default function ReportsPage() {
             <div className="relative">
               <button
                 onClick={() => setShowExportOptions(!showExportOptions)}
-                className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
+                className="px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm focus-ring"
               >
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">Export</span>
@@ -580,10 +541,10 @@ export default function ReportsPage() {
                           <button
                             key={format}
                             onClick={() => setExportOptions({ ...exportOptions, format })}
-                            className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                            className={`px-3 py-1 text-sm rounded-lg transition-colors focus-ring ${
                               exportOptions.format === format
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                ? 'bg-brand-600 text-white'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-brand-50 dark:hover:bg-gray-600'
                             }`}
                           >
                             {format.toUpperCase()}
@@ -594,7 +555,7 @@ export default function ReportsPage() {
                         <button
                           onClick={handleExport}
                           disabled={exporting}
-                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                          className="w-full px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors shadow-brand focus-ring"
                         >
                           {exporting ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -633,18 +594,18 @@ export default function ReportsPage() {
                   type="date"
                   value={dateRange.startDate}
                   onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 />
                 <span className="text-sm text-gray-500">to</span>
                 <input
                   type="date"
                   value={dateRange.endDate}
                   onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
                 />
                 <button
                   onClick={() => loadReport()}
-                  className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                  className="px-4 py-1.5 bg-brand-600 text-white rounded-lg text-sm hover:bg-brand-700 transition-colors shadow-brand focus-ring"
                 >
                   Apply
                 </button>
@@ -653,7 +614,7 @@ export default function ReportsPage() {
                     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                     endDate: new Date().toISOString().split('T')[0],
                   })}
-                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Last 30 Days
                 </button>
@@ -662,7 +623,7 @@ export default function ReportsPage() {
                     startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                     endDate: new Date().toISOString().split('T')[0],
                   })}
-                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Last 7 Days
                 </button>
@@ -681,10 +642,10 @@ export default function ReportsPage() {
             <button
               key={tab.id}
               onClick={() => setReportType(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all focus-ring ${
                 isActive
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
-                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  ? 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-brand-50/50 dark:hover:bg-gray-700'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -711,65 +672,40 @@ export default function ReportsPage() {
     </div>
   );
 
-  // ============================================
-  // RENDER HELPER FUNCTIONS
-  // ============================================
-
   function renderSummarySection(reportData: ReportData) {
     return (
       <div className="space-y-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Inventory Summary</h3>
         
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <StatCard
-            label="Total Items"
-            value={reportData.summary.totalItems}
-            icon={Package}
-            color="blue"
-          />
-          <StatCard
-            label="Total Value"
-            value={formatCurrency(reportData.summary.totalValue)}
-            icon={DollarSign}
-            color="green"
-          />
-          <StatCard
-            label="Low Stock"
-            value={reportData.summary.lowStock}
-            icon={AlertTriangle}
-            color="yellow"
-          />
-          <StatCard
-            label="Out of Stock"
-            value={reportData.summary.outOfStock}
-            icon={AlertCircle}
-            color="red"
-          />
+          <StatCard label="Total Items" value={reportData.summary.totalItems} icon={Package} color="brand" />
+          <StatCard label="Total Value" value={formatCurrency(reportData.summary.totalValue)} icon={DollarSign} color="success" />
+          <StatCard label="Low Stock" value={reportData.summary.lowStock} icon={AlertTriangle} color="warning" />
+          <StatCard label="Out of Stock" value={reportData.summary.outOfStock} icon={AlertCircle} color="danger" />
         </div>
 
-        {/* Stock Health */}
         <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stock Health</span>
-            <span className="text-sm font-bold text-green-600 dark:text-green-400">
+            <span className="text-sm font-bold text-success-600 dark:text-success-400 tabular-nums">
               {((reportData.summary.inStock / (reportData.summary.totalItems || 1)) * 100).toFixed(1)}% Healthy
             </span>
           </div>
           <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden flex">
             <motion.div
-              className="h-full bg-green-500"
+              className="h-full bg-success-500"
               initial={{ width: 0 }}
               animate={{ width: `${(reportData.summary.inStock / (reportData.summary.totalItems || 1)) * 100}%` }}
               transition={{ duration: 0.5 }}
             />
             <motion.div
-              className="h-full bg-yellow-500"
+              className="h-full bg-warning-500"
               initial={{ width: 0 }}
               animate={{ width: `${(reportData.summary.lowStock / (reportData.summary.totalItems || 1)) * 100}%` }}
               transition={{ duration: 0.5 }}
             />
             <motion.div
-              className="h-full bg-red-500"
+              className="h-full bg-brand-accent-500"
               initial={{ width: 0 }}
               animate={{ width: `${(reportData.summary.outOfStock / (reportData.summary.totalItems || 1)) * 100}%` }}
               transition={{ duration: 0.5 }}
@@ -777,39 +713,38 @@ export default function ReportsPage() {
           </div>
           <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="w-2 h-2 rounded-full bg-success-500" />
               In Stock ({reportData.summary.inStock})
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-yellow-500" />
+              <span className="w-2 h-2 rounded-full bg-warning-500" />
               Low Stock ({reportData.summary.lowStock})
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="w-2 h-2 rounded-full bg-brand-accent-500" />
               Out of Stock ({reportData.summary.outOfStock})
             </span>
           </div>
         </div>
 
-        {/* Barcode Summary */}
         {barcodeStats && (
           <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-              <Barcode className="w-4 h-4 text-blue-500" />
+              <Barcode className="w-4 h-4 text-brand-500" />
               Barcode Coverage Summary
             </h4>
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-500 dark:text-gray-400">With Barcode</p>
-                <p className="text-lg font-bold text-green-600 dark:text-green-400">{barcodeStats.withBarcode}</p>
+                <p className="text-lg font-bold text-success-600 dark:text-success-400 tabular-nums">{barcodeStats.withBarcode}</p>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Without Barcode</p>
-                <p className="text-lg font-bold text-red-600 dark:text-red-400">{barcodeStats.withoutBarcode}</p>
+                <p className="text-lg font-bold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">{barcodeStats.withoutBarcode}</p>
               </div>
               <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Coverage</p>
-                <p className={`text-lg font-bold ${getCoverageColor(barcodeStats.barcodeCoverage)}`}>
+                <p className={`text-lg font-bold tabular-nums ${getCoverageColor(barcodeStats.barcodeCoverage)}`}>
                   {barcodeStats.barcodeCoverage.toFixed(1)}%
                 </p>
               </div>
@@ -837,7 +772,7 @@ export default function ReportsPage() {
               >
                 <div className="flex justify-between text-sm mb-1">
                   <span className="text-gray-700 dark:text-gray-300">{category.name}</span>
-                  <span className="text-gray-600 dark:text-gray-400">
+                  <span className="text-gray-600 dark:text-gray-400 tabular-nums">
                     {category.count} items - {formatCurrency(category.value)}
                   </span>
                 </div>
@@ -846,7 +781,7 @@ export default function ReportsPage() {
                     initial={{ width: 0 }}
                     animate={{ width: `${Math.min((category.value / reportData.summary.totalValue) * 100, 100)}%` }}
                     transition={{ duration: 0.8, delay: index * 0.05 }}
-                    className="bg-blue-500 rounded-full h-2"
+                    className="bg-brand-500 rounded-full h-2"
                   />
                 </div>
               </motion.div>
@@ -879,13 +814,13 @@ export default function ReportsPage() {
             label="Total Value"
             value={formatCurrency(reportData?.summary.totalValue || 0)}
             icon={DollarSign}
-            color="green"
+            color="success"
           />
           <StatCard
             label="Total Cost"
             value={formatCurrency(reportData?.summary.totalCost || 0)}
             icon={Package}
-            color="purple"
+            color="secondary"
           />
           <StatCard
             label="Potential Profit"
@@ -901,7 +836,7 @@ export default function ReportsPage() {
               {reportData.summary.categories.map((category, index) => (
                 <div key={index} className="flex justify-between text-sm py-1 border-b border-gray-100 dark:border-gray-700">
                   <span className="text-gray-700 dark:text-gray-300">{category.name}</span>
-                  <span className="text-gray-900 dark:text-white font-medium">{formatCurrency(category.value)}</span>
+                  <span className="text-gray-900 dark:text-white font-medium tabular-nums">{formatCurrency(category.value)}</span>
                 </div>
               ))}
             </div>
@@ -924,7 +859,7 @@ export default function ReportsPage() {
     return (
       <div className="space-y-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-          <Barcode className="w-5 h-5 text-blue-500" />
+          <Barcode className="w-5 h-5 text-brand-500" />
           Barcode Analytics
         </h3>
 
@@ -932,15 +867,15 @@ export default function ReportsPage() {
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
           <button
             onClick={() => toggleSection('coverage')}
-            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             <div className="flex items-center gap-2">
-              <Barcode className="w-5 h-5 text-blue-500" />
+              <Barcode className="w-5 h-5 text-brand-500" />
               <h4 className="font-medium text-gray-900 dark:text-white">Barcode Coverage</h4>
               <CoverageBadge percentage={barcodeStats.barcodeCoverage} />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-blue-600 dark:text-blue-400">
+              <span className="text-sm font-medium text-brand-600 dark:text-brand-400 tabular-nums">
                 {barcodeStats.barcodeCoverage.toFixed(1)}%
               </span>
               {expandedSections.coverage ? (
@@ -963,29 +898,28 @@ export default function ReportsPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 text-center">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Total Products</p>
-                    <p className="text-xl font-bold text-gray-900 dark:text-white">{barcodeStats.totalProducts}</p>
+                    <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">{barcodeStats.totalProducts}</p>
                   </div>
-                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center border border-green-200 dark:border-green-800">
+                  <div className="bg-success-50 dark:bg-success-950/20 rounded-lg p-3 text-center border border-success-200 dark:border-success-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">With Barcode</p>
-                    <p className="text-xl font-bold text-green-600 dark:text-green-400">{barcodeStats.withBarcode}</p>
+                    <p className="text-xl font-bold text-success-600 dark:text-success-400 tabular-nums">{barcodeStats.withBarcode}</p>
                   </div>
-                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 text-center border border-red-200 dark:border-red-800">
+                  <div className="bg-brand-accent-50 dark:bg-brand-accent-950/20 rounded-lg p-3 text-center border border-brand-accent-200 dark:border-brand-accent-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Without Barcode</p>
-                    <p className="text-xl font-bold text-red-600 dark:text-red-400">{barcodeStats.withoutBarcode}</p>
+                    <p className="text-xl font-bold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">{barcodeStats.withoutBarcode}</p>
                   </div>
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center border border-blue-200 dark:border-blue-800">
+                  <div className="bg-brand-50 dark:bg-brand-950/20 rounded-lg p-3 text-center border border-brand-200 dark:border-brand-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Coverage</p>
-                    <p className={`text-xl font-bold ${getCoverageColor(barcodeStats.barcodeCoverage)}`}>
+                    <p className={`text-xl font-bold tabular-nums ${getCoverageColor(barcodeStats.barcodeCoverage)}`}>
                       {barcodeStats.barcodeCoverage.toFixed(1)}%
                     </p>
                   </div>
                 </div>
                 
-                {/* Coverage Progress Bar */}
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-gray-600 dark:text-gray-400">Coverage Progress</span>
-                    <span className="text-gray-700 dark:text-gray-300">{barcodeStats.barcodeCoverage.toFixed(1)}%</span>
+                    <span className="text-gray-700 dark:text-gray-300 tabular-nums">{barcodeStats.barcodeCoverage.toFixed(1)}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
                     <motion.div
@@ -993,9 +927,9 @@ export default function ReportsPage() {
                       animate={{ width: `${barcodeStats.barcodeCoverage}%` }}
                       transition={{ duration: 1 }}
                       className={`h-3 rounded-full ${
-                        barcodeStats.barcodeCoverage >= 80 ? 'bg-green-500' :
-                        barcodeStats.barcodeCoverage >= 50 ? 'bg-yellow-500' :
-                        'bg-red-500'
+                        barcodeStats.barcodeCoverage >= 80 ? 'bg-success-500' :
+                        barcodeStats.barcodeCoverage >= 50 ? 'bg-warning-500' :
+                        'bg-brand-accent-500'
                       }`}
                     />
                   </div>
@@ -1009,14 +943,14 @@ export default function ReportsPage() {
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
           <button
             onClick={() => toggleSection('scans')}
-            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             <div className="flex items-center gap-2">
-              <Scan className="w-5 h-5 text-green-500" />
+              <Scan className="w-5 h-5 text-success-500" />
               <h4 className="font-medium text-gray-900 dark:text-white">Scan Activity</h4>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400 tabular-nums">
                 {barcodeStats.scansToday} today
               </span>
               {expandedSections.scans ? (
@@ -1037,25 +971,24 @@ export default function ReportsPage() {
                 className="p-4 space-y-4"
               >
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-center border border-blue-200 dark:border-blue-800">
+                  <div className="bg-brand-50 dark:bg-brand-950/20 rounded-lg p-3 text-center border border-brand-200 dark:border-brand-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Today's Scans</p>
-                    <p className="text-xl font-bold text-blue-600 dark:text-blue-400">{barcodeStats.scansToday}</p>
+                    <p className="text-xl font-bold text-brand-600 dark:text-brand-400 tabular-nums">{barcodeStats.scansToday}</p>
                   </div>
-                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center border border-green-200 dark:border-green-800">
+                  <div className="bg-success-50 dark:bg-success-950/20 rounded-lg p-3 text-center border border-success-200 dark:border-success-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Total Scans</p>
-                    <p className="text-xl font-bold text-green-600 dark:text-green-400">{barcodeStats.scansTotal}</p>
+                    <p className="text-xl font-bold text-success-600 dark:text-success-400 tabular-nums">{barcodeStats.scansTotal}</p>
                   </div>
-                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 text-center border border-purple-200 dark:border-purple-800">
+                  <div className="bg-secondary-50 dark:bg-secondary-950/20 rounded-lg p-3 text-center border border-secondary-200 dark:border-secondary-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">QR Codes Generated</p>
-                    <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{barcodeStats.qrCodesGenerated}</p>
+                    <p className="text-xl font-bold text-secondary-600 dark:text-secondary-400 tabular-nums">{barcodeStats.qrCodesGenerated}</p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3 text-center border border-orange-200 dark:border-orange-800">
+                  <div className="bg-brand-50 dark:bg-brand-950/20 rounded-lg p-3 text-center border border-brand-200 dark:border-brand-800">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Avg Scans/Day</p>
-                    <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{barcodeStats.averageScansPerDay.toFixed(1)}</p>
+                    <p className="text-xl font-bold text-brand-600 dark:text-brand-400 tabular-nums">{barcodeStats.averageScansPerDay.toFixed(1)}</p>
                   </div>
                 </div>
 
-                {/* Daily Scans Chart */}
                 {barcodeAnalytics && barcodeAnalytics.dailyScans.length > 0 && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Daily Scan Activity</p>
@@ -1069,7 +1002,7 @@ export default function ReportsPage() {
                               initial={{ height: 0 }}
                               animate={{ height: `${Math.max(5, height)}%` }}
                               transition={{ duration: 0.5, delay: index * 0.02 }}
-                              className="w-full bg-blue-500 rounded-t transition-all hover:bg-blue-600 cursor-pointer"
+                              className="w-full bg-brand-500 rounded-t transition-all hover:bg-brand-600 cursor-pointer"
                             />
                             <span className="text-[8px] text-gray-400 mt-1 rotate-45 origin-left group-hover:scale-110 transition-transform">
                               {new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -1089,12 +1022,12 @@ export default function ReportsPage() {
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
           <button
             onClick={() => toggleSection('types')}
-            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             <div className="flex items-center gap-2">
-              <PieChart className="w-5 h-5 text-purple-500" />
+              <PieChart className="w-5 h-5 text-secondary-500" />
               <h4 className="font-medium text-gray-900 dark:text-white">Barcode Type Distribution</h4>
-              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-950/30 dark:text-secondary-300">
                 {barcodeStats.topBarcodeFormat}
               </span>
             </div>
@@ -1120,7 +1053,7 @@ export default function ReportsPage() {
                   <div key={type}>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600 dark:text-gray-400">{type}</span>
-                      <span className="text-gray-700 dark:text-gray-300">{count} ({((count / barcodeStats.withBarcode) * 100).toFixed(1)}%)</span>
+                      <span className="text-gray-700 dark:text-gray-300 tabular-nums">{count} ({((count / barcodeStats.withBarcode) * 100).toFixed(1)}%)</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <motion.div
@@ -1128,9 +1061,9 @@ export default function ReportsPage() {
                         animate={{ width: `${(count / barcodeStats.withBarcode) * 100}%` }}
                         transition={{ duration: 0.8 }}
                         className={`h-2 rounded-full ${
-                          type === 'EAN-13' ? 'bg-blue-500' :
-                          type === 'UPC-A' ? 'bg-green-500' :
-                          type === 'CODE128' ? 'bg-purple-500' :
+                          type === 'EAN-13' ? 'bg-brand-500' :
+                          type === 'UPC-A' ? 'bg-success-500' :
+                          type === 'CODE128' ? 'bg-secondary-500' :
                           'bg-gray-500'
                         }`}
                       />
@@ -1146,12 +1079,12 @@ export default function ReportsPage() {
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
           <button
             onClick={() => toggleSection('recent')}
-            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700 transition-colors focus-ring"
           >
             <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-orange-500" />
+              <Clock className="w-5 h-5 text-brand-500" />
               <h4 className="font-medium text-gray-900 dark:text-white">Recently Generated Barcodes</h4>
-              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-950/30 dark:text-brand-300">
                 {barcodeStats.recentBarcodes.length}
               </span>
             </div>
@@ -1173,7 +1106,7 @@ export default function ReportsPage() {
                 transition={{ duration: 0.2 }}
                 className="p-4"
               >
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto custom-scrollbar">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 dark:bg-gray-700/50">
                       <tr>
@@ -1186,20 +1119,20 @@ export default function ReportsPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                       {barcodeStats.recentBarcodes.map((item, index) => (
-                        <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                        <tr key={index} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
                           <td className="px-3 py-2 text-gray-900 dark:text-white">{item.productName}</td>
                           <td className="px-3 py-2 text-gray-600 dark:text-gray-400 font-mono">{item.sku}</td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-1">
-                              <Barcode className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+                              <Barcode className="w-3.5 h-3.5 text-success-500 flex-shrink-0" />
                               <span className="font-mono text-gray-600 dark:text-gray-300 text-xs">{item.barcode}</span>
                               <button
                                 onClick={() => handleCopyBarcode(item.barcode)}
-                                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors focus-ring"
                                 title="Copy barcode"
                               >
                                 {copiedBarcode === item.barcode ? (
-                                  <CheckCircle className="w-3 h-3 text-green-500" />
+                                  <CheckCircle className="w-3 h-3 text-success-500" />
                                 ) : (
                                   <Copy className="w-3 h-3 text-gray-400" />
                                 )}
@@ -1214,14 +1147,14 @@ export default function ReportsPage() {
                                   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify({ barcode: item.barcode }))}&size=200x200`;
                                   window.open(qrUrl, '_blank');
                                 }}
-                                className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                                className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                                 title="Generate QR Code"
                               >
-                                <QrCode className="w-3.5 h-3.5 text-blue-500" />
+                                <QrCode className="w-3.5 h-3.5 text-brand-500" />
                               </button>
                               <button
                                 onClick={() => router.push(`/admin/inventory?search=${item.sku}`)}
-                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                                 title="View in Inventory"
                               >
                                 <ExternalLink className="w-3.5 h-3.5 text-gray-500" />
@@ -1243,10 +1176,10 @@ export default function ReportsPage() {
           <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
             <button
               onClick={() => toggleSection('topProducts')}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-green-500" />
+                <TrendingUp className="w-5 h-5 text-success-500" />
                 <h4 className="font-medium text-gray-900 dark:text-white">Top Scanned Products</h4>
               </div>
               <div>
@@ -1278,14 +1211,14 @@ export default function ReportsPage() {
                             </span>
                           )}
                         </div>
-                        <span className="text-gray-600 dark:text-gray-400">{product.scans} scans</span>
+                        <span className="text-gray-600 dark:text-gray-400 tabular-nums">{product.scans} scans</span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${(product.scans / barcodeAnalytics.topScannedProducts[0].scans) * 100}%` }}
                           transition={{ duration: 0.8 }}
-                          className="bg-green-500 rounded-full h-2"
+                          className="bg-success-500 rounded-full h-2"
                         />
                       </div>
                     </div>
@@ -1301,10 +1234,10 @@ export default function ReportsPage() {
           <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
             <button
               onClick={() => toggleSection('categoryUsage')}
-              className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50/50 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               <div className="flex items-center gap-2">
-                <PieChart className="w-5 h-5 text-purple-500" />
+                <PieChart className="w-5 h-5 text-secondary-500" />
                 <h4 className="font-medium text-gray-900 dark:text-white">Barcode Usage by Category</h4>
               </div>
               <div>
@@ -1329,14 +1262,14 @@ export default function ReportsPage() {
                     <div key={index}>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-700 dark:text-gray-300">{category.category}</span>
-                        <span className="text-gray-600 dark:text-gray-400">{category.count}</span>
+                        <span className="text-gray-600 dark:text-gray-400 tabular-nums">{category.count}</span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${(category.count / barcodeAnalytics.barcodeUsageByCategory[0].count) * 100}%` }}
                           transition={{ duration: 0.8 }}
-                          className="bg-purple-500 rounded-full h-2"
+                          className="bg-secondary-500 rounded-full h-2"
                         />
                       </div>
                     </div>

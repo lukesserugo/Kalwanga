@@ -33,7 +33,7 @@ interface PaymentSettings {
   maxDiscount: number;
   taxInclusive: boolean;
   defaultPaymentMethod: string;
-  
+
   // Payment Method Settings
   allowCash: boolean;
   allowCard: boolean;
@@ -45,23 +45,23 @@ interface PaymentSettings {
   allowFlutterwave: boolean;
   allowPaystack: boolean;
   allowSquare: boolean;
-  
+
   // Loyalty Settings
   loyaltyPointsEnabled: boolean;
   pointsPerDollar: number;
-  
+
   // Notification Settings
   notifyOnPayment: boolean;
   notifyOnRefund: boolean;
   notifyOnFailed: boolean;
   notifyAdminOnLargePayment: boolean;
   largePaymentThreshold: number;
-  
+
   // Security Settings
   require2FAForRefund: boolean;
   requireApprovalForRefund: boolean;
   maxRefundAmount: number;
-  
+
   // Currency Settings
   currencyCode: string;
   currencySymbol: string;
@@ -106,16 +106,16 @@ const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
 };
 
 const PROVIDER_CONFIGS: Record<string, { icon: string; name: string; color: string; bgColor: string }> = {
-  STRIPE: { icon: '💳', name: 'Stripe', color: 'blue', bgColor: 'bg-blue-50 dark:bg-blue-900/20' },
-  PAYPAL: { icon: '💸', name: 'PayPal', color: 'blue', bgColor: 'bg-blue-50 dark:bg-blue-900/20' },
+  STRIPE: { icon: '💳', name: 'Stripe', color: 'primary', bgColor: 'bg-primary-50 dark:bg-primary-900/20' },
+  PAYPAL: { icon: '💸', name: 'PayPal', color: 'primary', bgColor: 'bg-primary-50 dark:bg-primary-900/20' },
   FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan', bgColor: 'bg-cyan-50 dark:bg-cyan-900/20' },
   PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky', bgColor: 'bg-sky-50 dark:bg-sky-900/20' },
   SQUARE: { icon: '⬜', name: 'Square', color: 'gray', bgColor: 'bg-gray-50 dark:bg-gray-800/50' },
-  CASH: { icon: '💰', name: 'Cash', color: 'green', bgColor: 'bg-green-50 dark:bg-green-900/20' },
-  MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'purple', bgColor: 'bg-purple-50 dark:bg-purple-900/20' },
+  CASH: { icon: '💰', name: 'Cash', color: 'success', bgColor: 'bg-success-50 dark:bg-success-900/20' },
+  MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'brand', bgColor: 'bg-brand-50 dark:bg-brand-900/20' },
   BANK_TRANSFER: { icon: '🏦', name: 'Bank Transfer', color: 'indigo', bgColor: 'bg-indigo-50 dark:bg-indigo-900/20' },
-  GIFT_CARD: { icon: '🎁', name: 'Gift Card', color: 'pink', bgColor: 'bg-pink-50 dark:bg-pink-900/20' },
-  LOYALTY_POINTS: { icon: '⭐', name: 'Loyalty Points', color: 'yellow', bgColor: 'bg-yellow-50 dark:bg-yellow-900/20' },
+  GIFT_CARD: { icon: '🎁', name: 'Gift Card', color: 'brand', bgColor: 'bg-brand-50 dark:bg-brand-900/20' },
+  LOYALTY_POINTS: { icon: '⭐', name: 'Loyalty Points', color: 'warning', bgColor: 'bg-warning-50 dark:bg-warning-900/20' },
 };
 
 // ============================================
@@ -495,7 +495,7 @@ export default function AdminPaymentSettingsPage() {
 
   const handleSave = async () => {
     if (!settings) return;
-    
+
     setSaving(true);
     try {
       // Save settings via API
@@ -525,7 +525,7 @@ export default function AdminPaymentSettingsPage() {
 
   const handleConfigureProvider = async (providerId: string) => {
     if (!providerId) return;
-    
+
     setSavingProvider(true);
     try {
       // Wrap config data in the expected format
@@ -555,8 +555,8 @@ export default function AdminPaymentSettingsPage() {
   };
 
   const getProviderImageUrl = (provider: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[provider] 
-      ? PROVIDER_DARK_IMAGE_URLS[provider] 
+    return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
       : PROVIDER_IMAGE_URLS[provider] || '';
   };
 
@@ -568,11 +568,11 @@ export default function AdminPaymentSettingsPage() {
       </div>
       <button
         onClick={() => updateSetting(key, !settings?.[key])}
-        className={`relative w-12 h-6 rounded-full transition flex-shrink-0 ${
-          settings?.[key] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+        className={`relative w-12 h-6 rounded-full transition duration-250 flex-shrink-0 focus-ring ${
+          settings?.[key] ? 'bg-brand-gradient' : 'bg-gray-300 dark:bg-gray-600'
         }`}
       >
-        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition ${
+        <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition duration-250 ${
           settings?.[key] ? 'translate-x-6' : ''
         }`} />
       </button>
@@ -591,11 +591,11 @@ export default function AdminPaymentSettingsPage() {
           onChange={(e) => updateSetting(key, parseFloat(e.target.value) || 0)}
           min={min}
           max={max}
-          className={`w-32 px-3 py-2 rounded-lg text-sm ${
+          className={`w-32 px-3 py-2 rounded-lg text-sm tabular-nums ${
             isDark
               ? 'bg-gray-700 text-white border-gray-600'
               : 'bg-gray-100 text-gray-900 border-gray-300'
-          } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
         />
         {suffix && <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{suffix}</span>}
       </div>
@@ -614,7 +614,7 @@ export default function AdminPaymentSettingsPage() {
           isDark
             ? 'bg-gray-700 text-white border-gray-600'
             : 'bg-gray-100 text-gray-900 border-gray-300'
-        } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+        } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
       >
         {options.map(opt => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -630,7 +630,7 @@ export default function AdminPaymentSettingsPage() {
     const configValues = provider.config || {};
 
     return (
-      <div className={`p-4 rounded-lg border ${isDark ? 'border-gray-700 bg-gray-700/30' : 'border-gray-200 bg-gray-50'}`}>
+      <div className={`p-4 rounded-xl border animate-slide-down ${isDark ? 'border-gray-700 bg-gray-700/30' : 'border-gray-200 bg-gray-50'}`}>
         <div className="flex items-center gap-3 mb-4">
           {imageUrl ? (
             <div className="relative w-10 h-10 flex-shrink-0">
@@ -663,10 +663,10 @@ export default function AdminPaymentSettingsPage() {
               {provider.provider || ''} • {provider.type || 'N/A'}
             </p>
           </div>
-          <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${
-            provider.configured 
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-              : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+          <span className={`ml-auto text-2xs px-2 py-0.5 rounded-full ${
+            provider.configured
+              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+              : 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300'
           }`}>
             {provider.configured ? 'Configured' : 'Not Configured'}
           </span>
@@ -687,7 +687,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="sk_test_..."
               />
             </div>
@@ -703,7 +703,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="whsec_..."
               />
             </div>
@@ -724,7 +724,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="Enter PayPal Client ID"
               />
             </div>
@@ -740,7 +740,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="Enter PayPal Client Secret"
               />
             </div>
@@ -761,7 +761,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="FLWSECK-..."
               />
             </div>
@@ -777,7 +777,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="FLWPUBK-..."
               />
             </div>
@@ -793,7 +793,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="FLWSECK-..."
               />
             </div>
@@ -814,7 +814,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="sk_live_..."
               />
             </div>
@@ -830,7 +830,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="pk_live_..."
               />
             </div>
@@ -851,7 +851,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="EAAAE..."
               />
             </div>
@@ -867,7 +867,7 @@ export default function AdminPaymentSettingsPage() {
                   isDark
                     ? 'bg-gray-700 text-white border-gray-600'
                     : 'bg-white text-gray-900 border-gray-300'
-                } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 placeholder="L..."
               />
             </div>
@@ -886,7 +886,7 @@ export default function AdminPaymentSettingsPage() {
               isDark
                 ? 'bg-gray-700 text-white border-gray-600'
                 : 'bg-white text-gray-900 border-gray-300'
-            } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
           >
             <option value="sandbox">Sandbox (Test)</option>
             <option value="production">Production (Live)</option>
@@ -897,7 +897,7 @@ export default function AdminPaymentSettingsPage() {
           <button
             onClick={() => provider.id && handleConfigureProvider(provider.id)}
             disabled={savingProvider}
-            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex-1 btn-brand disabled:opacity-50"
           >
             {savingProvider ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -912,7 +912,7 @@ export default function AdminPaymentSettingsPage() {
               setEditingProvider(null);
               setProviderConfigData({});
             }}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="btn-secondary"
           >
             Cancel
           </button>
@@ -924,7 +924,7 @@ export default function AdminPaymentSettingsPage() {
   if (permissionLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -939,7 +939,7 @@ export default function AdminPaymentSettingsPage() {
         <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to manage payment settings.</p>
         <button
           onClick={() => router.push('/admin/payments')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           Back to Payments
         </button>
@@ -949,330 +949,334 @@ export default function AdminPaymentSettingsPage() {
 
   return (
     <div className={`min-h-screen p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/admin/payments')}
-            className={`p-2 rounded-lg transition ${
-              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
-            }`}
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Payment Settings
-            </h1>
-            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-              Configure your payment preferences, providers, and rules
-            </p>
+      <div className="max-w-container mx-auto">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push('/admin/payments')}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
+              }`}
+              aria-label="Back to payments"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Payment Settings
+              </h1>
+              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                Configure your payment preferences, providers, and rules
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { loadSettings(); loadProviders(); }}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                isDark
+                  ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                  : 'bg-white hover:bg-gray-100 text-gray-700'
+              } border ${isDark ? 'border-gray-700' : 'border-gray-300'}`}
+              aria-label="Refresh settings"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="btn-brand disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { loadSettings(); loadProviders(); }}
-            className={`p-2 rounded-lg transition ${
-              isDark
-                ? 'bg-gray-800 hover:bg-gray-700 text-white'
-                : 'bg-white hover:bg-gray-100 text-gray-700'
-            } border ${isDark ? 'border-gray-700' : 'border-gray-300'}`}
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
+
+        {/* Tabs */}
+        <div className={`flex flex-wrap gap-2 mb-6 p-1 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-soft`}>
+          {[
+            { id: 'general', label: 'General' },
+            { id: 'methods', label: 'Payment Methods' },
+            { id: 'providers', label: 'Providers' },
+            { id: 'loyalty', label: 'Loyalty' },
+            { id: 'notifications', label: 'Notifications' },
+            { id: 'security', label: 'Security' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition duration-250 focus-ring ${
+                activeTab === tab.id
+                  ? 'bg-brand-gradient text-white shadow-brand'
+                  : isDark
+                    ? 'text-gray-400 hover:bg-gray-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className={`flex flex-wrap gap-2 mb-6 p-1 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
-        {[
-          { id: 'general', label: 'General' },
-          { id: 'methods', label: 'Payment Methods' },
-          { id: 'providers', label: 'Providers' },
-          { id: 'loyalty', label: 'Loyalty' },
-          { id: 'notifications', label: 'Notifications' },
-          { id: 'security', label: 'Security' },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === tab.id
-                ? 'bg-blue-600 text-white'
-                : isDark
-                  ? 'text-gray-400 hover:bg-gray-700'
-                  : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+        {/* Settings Content */}
+        <div className="card-brand shadow-soft">
+          {activeTab === 'general' && (
+            <div>
+              <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                General Settings
+              </h2>
+              {renderToggle('Allow Partial Payment', 'allowPartialPayment', 'Allow customers to pay in installments')}
+              {renderToggle('Require Customer Account', 'requireCustomer', 'Force users to have an account before payment')}
+              {renderToggle('Require Digital Signature', 'requireSignature', 'Require customers to sign for their payment')}
+              {renderNumberInput('Maximum Discount Amount', 'maxDiscount', 'USD', 0, 100)}
+              {renderToggle('Tax Inclusive Pricing', 'taxInclusive', 'Show prices including tax')}
+              {renderSelect('Default Payment Method', 'defaultPaymentMethod', [
+                { value: 'CASH', label: 'Cash' },
+                { value: 'CREDIT_CARD', label: 'Credit Card' },
+                { value: 'DEBIT_CARD', label: 'Debit Card' },
+                { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+                { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+                { value: 'GIFT_CARD', label: 'Gift Card' },
+                { value: 'LOYALTY_POINTS', label: 'Loyalty Points' },
+                { value: 'PAYPAL', label: 'PayPal' },
+                { value: 'FLUTTERWAVE', label: 'Flutterwave' },
+                { value: 'PAYSTACK', label: 'Paystack' },
+                { value: 'SQUARE', label: 'Square' },
+              ])}
+            </div>
+          )}
 
-      {/* Settings Content */}
-      <div className={`rounded-xl p-6 shadow-sm ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
-        {activeTab === 'general' && (
-          <div>
-            <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              General Settings
-            </h2>
-            {renderToggle('Allow Partial Payment', 'allowPartialPayment', 'Allow customers to pay in installments')}
-            {renderToggle('Require Customer Account', 'requireCustomer', 'Force users to have an account before payment')}
-            {renderToggle('Require Digital Signature', 'requireSignature', 'Require customers to sign for their payment')}
-            {renderNumberInput('Maximum Discount Amount', 'maxDiscount', 'USD', 0, 100)}
-            {renderToggle('Tax Inclusive Pricing', 'taxInclusive', 'Show prices including tax')}
-            {renderSelect('Default Payment Method', 'defaultPaymentMethod', [
-              { value: 'CASH', label: 'Cash' },
-              { value: 'CREDIT_CARD', label: 'Credit Card' },
-              { value: 'DEBIT_CARD', label: 'Debit Card' },
-              { value: 'MOBILE_MONEY', label: 'Mobile Money' },
-              { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
-              { value: 'GIFT_CARD', label: 'Gift Card' },
-              { value: 'LOYALTY_POINTS', label: 'Loyalty Points' },
-              { value: 'PAYPAL', label: 'PayPal' },
-              { value: 'FLUTTERWAVE', label: 'Flutterwave' },
-              { value: 'PAYSTACK', label: 'Paystack' },
-              { value: 'SQUARE', label: 'Square' },
-            ])}
-          </div>
-        )}
+          {activeTab === 'methods' && (
+            <div>
+              <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Payment Methods
+              </h2>
+              {renderToggle('Allow Cash', 'allowCash', 'Enable cash payments')}
+              {renderToggle('Allow Credit/Debit Cards', 'allowCard', 'Enable card payments via Stripe')}
+              {renderToggle('Allow Mobile Money', 'allowMobileMoney', 'Enable mobile money payments (M-Pesa, Tigo Pesa, Airtel Money)')}
+              {renderToggle('Allow Bank Transfer', 'allowBankTransfer', 'Enable bank transfer payments')}
+              {renderToggle('Allow Gift Cards', 'allowGiftCards', 'Enable gift card payments')}
+              {renderToggle('Allow Loyalty Points', 'allowLoyaltyPoints', 'Enable loyalty points payments')}
+              {renderToggle('Allow PayPal', 'allowPayPal', 'Enable PayPal payments')}
+              {renderToggle('Allow Flutterwave', 'allowFlutterwave', 'Enable Flutterwave payments (Cards, Mobile Money, Bank Transfer)')}
+              {renderToggle('Allow Paystack', 'allowPaystack', 'Enable Paystack payments (Cards, Bank Transfer, USSD)')}
+              {renderToggle('Allow Square', 'allowSquare', 'Enable Square payments (Cards, Digital Wallet)')}
+            </div>
+          )}
 
-        {activeTab === 'methods' && (
-          <div>
-            <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Payment Methods
-            </h2>
-            {renderToggle('Allow Cash', 'allowCash', 'Enable cash payments')}
-            {renderToggle('Allow Credit/Debit Cards', 'allowCard', 'Enable card payments via Stripe')}
-            {renderToggle('Allow Mobile Money', 'allowMobileMoney', 'Enable mobile money payments (M-Pesa, Tigo Pesa, Airtel Money)')}
-            {renderToggle('Allow Bank Transfer', 'allowBankTransfer', 'Enable bank transfer payments')}
-            {renderToggle('Allow Gift Cards', 'allowGiftCards', 'Enable gift card payments')}
-            {renderToggle('Allow Loyalty Points', 'allowLoyaltyPoints', 'Enable loyalty points payments')}
-            {renderToggle('Allow PayPal', 'allowPayPal', 'Enable PayPal payments')}
-            {renderToggle('Allow Flutterwave', 'allowFlutterwave', 'Enable Flutterwave payments (Cards, Mobile Money, Bank Transfer)')}
-            {renderToggle('Allow Paystack', 'allowPaystack', 'Enable Paystack payments (Cards, Bank Transfer, USSD)')}
-            {renderToggle('Allow Square', 'allowSquare', 'Enable Square payments (Cards, Digital Wallet)')}
-          </div>
-        )}
+          {activeTab === 'providers' && (
+            <div>
+              <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Payment Providers
+              </h2>
+              <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                Configure and manage your payment providers. Activate providers to make them available to customers.
+              </p>
 
-        {activeTab === 'providers' && (
-          <div>
-            <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Payment Providers
-            </h2>
-            <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              Configure and manage your payment providers. Activate providers to make them available to customers.
-            </p>
+              {loadingProviders ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {providers.map((provider) => {
+                    const config = PROVIDER_CONFIGS[provider.provider] || PROVIDER_CONFIGS.STRIPE;
+                    const imageUrl = getProviderImageUrl(provider.provider);
+                    const isActive = provider.isActive && provider.isHealthy && provider.configured;
+                    const isEditing = showProviderConfig === provider.id;
 
-            {loadingProviders ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {providers.map((provider) => {
-                  const config = PROVIDER_CONFIGS[provider.provider] || PROVIDER_CONFIGS.STRIPE;
-                  const imageUrl = getProviderImageUrl(provider.provider);
-                  const isActive = provider.isActive && provider.isHealthy && provider.configured;
-                  const isEditing = showProviderConfig === provider.id;
-
-                  return (
-                    <div
-                      key={provider.id}
-                      className={`p-4 rounded-lg border transition ${
-                        isActive
-                          ? `${config.bgColor} ${isDark ? 'border-gray-700' : 'border-gray-200'}`
-                          : isDark
-                            ? 'bg-gray-700/30 border-gray-700'
-                            : 'bg-gray-50 border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {imageUrl ? (
-                            <div className="relative w-10 h-10 flex-shrink-0">
-                              <Image
-                                src={imageUrl}
-                                alt={provider.name || 'Payment provider'}
-                                width={40}
-                                height={40}
-                                style={{ width: 'auto', height: 'auto' }}
-                                className="rounded-lg object-contain max-w-[40px] max-h-[40px]"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const parent = target.parentElement;
-                                  if (parent) {
-                                    const fallback = document.createElement('span');
-                                    fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
-                                    fallback.textContent = config.icon;
-                                    parent.appendChild(fallback);
-                                  }
-                                }}
-                              />
+                    return (
+                      <div
+                        key={provider.id}
+                        className={`p-4 rounded-xl border transition duration-250 ${
+                          isActive
+                            ? `${config.bgColor} ${isDark ? 'border-gray-700' : 'border-gray-200'}`
+                            : isDark
+                              ? 'bg-gray-700/30 border-gray-700'
+                              : 'bg-gray-50 border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {imageUrl ? (
+                              <div className="relative w-10 h-10 flex-shrink-0">
+                                <Image
+                                  src={imageUrl}
+                                  alt={provider.name || 'Payment provider'}
+                                  width={40}
+                                  height={40}
+                                  style={{ width: 'auto', height: 'auto' }}
+                                  className="rounded-lg object-contain max-w-[40px] max-h-[40px]"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    const parent = target.parentElement;
+                                    if (parent) {
+                                      const fallback = document.createElement('span');
+                                      fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
+                                      fallback.textContent = config.icon;
+                                      parent.appendChild(fallback);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <span className="text-2xl">{config.icon}</span>
+                            )}
+                            <div>
+                              <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                {provider.name || 'Unknown Provider'}
+                              </p>
+                              <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {provider.provider || ''} • {provider.type || 'N/A'}
+                              </p>
                             </div>
-                          ) : (
-                            <span className="text-2xl">{config.icon}</span>
-                          )}
-                          <div>
-                            <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                              {provider.name || 'Unknown Provider'}
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {/* Status badges */}
+                            <div className="flex items-center gap-2">
+                              {provider.isActive ? (
+                                <span className="text-2xs text-success-600 dark:text-success-400 flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" />
+                                  Active
+                                </span>
+                              ) : (
+                                <span className="text-2xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                                  <XCircle className="w-3 h-3" />
+                                  Inactive
+                                </span>
+                              )}
+                              {provider.configured ? (
+                                <span className="text-2xs text-success-600 dark:text-success-400 flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" />
+                                  Configured
+                                </span>
+                              ) : (
+                                <span className="text-2xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3" />
+                                  Not Configured
+                                </span>
+                              )}
+                            </div>
+
+                            {/* ✅ FIXED: Toggle button with nullish coalescing */}
+                            <button
+                              onClick={() => {
+                                if (provider.id) {
+                                  handleToggleProvider(provider.id, provider.isActive);
+                                }
+                              }}
+                              className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
+                                isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
+                              }`}
+                              title={provider.isActive ? 'Deactivate' : 'Activate'}
+                              disabled={!provider.id}
+                            >
+                              {provider.isActive ? (
+                                <ToggleRight className="w-5 h-5 text-success-500" />
+                              ) : (
+                                <ToggleLeft className="w-5 h-5 text-gray-400" />
+                              )}
+                            </button>
+
+                            {/* ✅ FIXED: Configure button with nullish coalescing */}
+                            <button
+                              onClick={() => {
+                                if (isEditing) {
+                                  setShowProviderConfig(null);
+                                  setProviderConfigData({});
+                                } else {
+                                  setShowProviderConfig(provider.id ?? null);
+                                  setProviderConfigData({
+                                    ...(provider.config || {}),
+                                    environment: (provider.config as any)?.environment || 'sandbox',
+                                  });
+                                }
+                              }}
+                              className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
+                                isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
+                              }`}
+                              title={isEditing ? 'Close configuration' : 'Configure provider'}
+                              disabled={!provider.id}
+                            >
+                              {isEditing ? (
+                                <XCircle className="w-5 h-5 text-danger-500" />
+                              ) : (
+                                <SettingsIcon className="w-5 h-5 text-brand-500" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <div className="text-center">
+                            <p className={`text-2xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>24h</p>
+                            <p className={`text-sm font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {provider.transactions24h || 0}
                             </p>
-                            <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {provider.provider || ''} • {provider.type || 'N/A'}
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-2xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>7d</p>
+                            <p className={`text-sm font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {provider.transactions7d || 0}
+                            </p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-2xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>30d</p>
+                            <p className={`text-sm font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                              {provider.transactions30d || 0}
                             </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                          {/* Status badges */}
-                          <div className="flex items-center gap-2">
-                            {provider.isActive ? (
-                              <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3" />
-                                Active
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                <XCircle className="w-3 h-3" />
-                                Inactive
-                              </span>
-                            )}
-                            {provider.configured ? (
-                              <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3" />
-                                Configured
-                              </span>
-                            ) : (
-                              <span className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" />
-                                Not Configured
-                              </span>
-                            )}
-                          </div>
-
-                          {/* ✅ FIXED: Toggle button with nullish coalescing */}
-                          <button
-                            onClick={() => {
-                              if (provider.id) {
-                                handleToggleProvider(provider.id, provider.isActive);
-                              }
-                            }}
-                            className={`p-1.5 rounded-lg transition ${
-                              isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
-                            }`}
-                            title={provider.isActive ? 'Deactivate' : 'Activate'}
-                            disabled={!provider.id}
-                          >
-                            {provider.isActive ? (
-                              <ToggleRight className="w-5 h-5 text-green-500" />
-                            ) : (
-                              <ToggleLeft className="w-5 h-5 text-gray-400" />
-                            )}
-                          </button>
-
-                          {/* ✅ FIXED: Configure button with nullish coalescing */}
-                          <button
-                            onClick={() => {
-                              if (isEditing) {
-                                setShowProviderConfig(null);
-                                setProviderConfigData({});
-                              } else {
-                                setShowProviderConfig(provider.id ?? null);
-                                setProviderConfigData({
-                                  ...(provider.config || {}),
-                                  environment: (provider.config as any)?.environment || 'sandbox',
-                                });
-                              }
-                            }}
-                            className={`p-1.5 rounded-lg transition ${
-                              isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'
-                            }`}
-                            title={isEditing ? 'Close configuration' : 'Configure provider'}
-                            disabled={!provider.id}
-                          >
-                            {isEditing ? (
-                              <XCircle className="w-5 h-5 text-red-500" />
-                            ) : (
-                              <SettingsIcon className="w-5 h-5 text-blue-500" />
-                            )}
-                          </button>
-                        </div>
+                        {/* Configuration Form */}
+                        {isEditing && provider.id && renderProviderConfigForm(provider)}
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
-                      {/* Stats */}
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        <div className="text-center">
-                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>24h</p>
-                          <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.transactions24h || 0}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>7d</p>
-                          <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.transactions7d || 0}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>30d</p>
-                          <p className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                            {provider.transactions30d || 0}
-                          </p>
-                        </div>
-                      </div>
+          {activeTab === 'loyalty' && (
+            <div>
+              <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Loyalty Points Settings
+              </h2>
+              {renderToggle('Enable Loyalty Points', 'loyaltyPointsEnabled', 'Allow customers to earn and redeem loyalty points')}
+              {renderNumberInput('Points per Dollar', 'pointsPerDollar', 'points', 1, 100)}
+            </div>
+          )}
 
-                      {/* Configuration Form */}
-                      {isEditing && provider.id && renderProviderConfigForm(provider)}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+          {activeTab === 'notifications' && (
+            <div>
+              <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Notification Settings
+              </h2>
+              {renderToggle('Notify on Payment Success', 'notifyOnPayment', 'Send notification when payment is successful')}
+              {renderToggle('Notify on Refund', 'notifyOnRefund', 'Send notification when a refund is processed')}
+              {renderToggle('Notify on Failed Payment', 'notifyOnFailed', 'Send notification when a payment fails')}
+              {renderToggle('Notify Admin on Large Payment', 'notifyAdminOnLargePayment', 'Notify admin for payments above threshold')}
+              {renderNumberInput('Large Payment Threshold', 'largePaymentThreshold', 'USD', 100, 100000)}
+            </div>
+          )}
 
-        {activeTab === 'loyalty' && (
-          <div>
-            <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Loyalty Points Settings
-            </h2>
-            {renderToggle('Enable Loyalty Points', 'loyaltyPointsEnabled', 'Allow customers to earn and redeem loyalty points')}
-            {renderNumberInput('Points per Dollar', 'pointsPerDollar', 'points', 1, 100)}
-          </div>
-        )}
-
-        {activeTab === 'notifications' && (
-          <div>
-            <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Notification Settings
-            </h2>
-            {renderToggle('Notify on Payment Success', 'notifyOnPayment', 'Send notification when payment is successful')}
-            {renderToggle('Notify on Refund', 'notifyOnRefund', 'Send notification when a refund is processed')}
-            {renderToggle('Notify on Failed Payment', 'notifyOnFailed', 'Send notification when a payment fails')}
-            {renderToggle('Notify Admin on Large Payment', 'notifyAdminOnLargePayment', 'Notify admin for payments above threshold')}
-            {renderNumberInput('Large Payment Threshold', 'largePaymentThreshold', 'USD', 100, 100000)}
-          </div>
-        )}
-
-        {activeTab === 'security' && (
-          <div>
-            <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Security Settings
-            </h2>
-            {renderToggle('Require 2FA for Refunds', 'require2FAForRefund', 'Require two-factor authentication for refunds')}
-            {renderToggle('Require Approval for Refunds', 'requireApprovalForRefund', 'Require admin approval for refunds')}
-            {renderNumberInput('Maximum Refund Amount', 'maxRefundAmount', 'USD', 0, 100000)}
-          </div>
-        )}
+          {activeTab === 'security' && (
+            <div>
+              <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Security Settings
+              </h2>
+              {renderToggle('Require 2FA for Refunds', 'require2FAForRefund', 'Require two-factor authentication for refunds')}
+              {renderToggle('Require Approval for Refunds', 'requireApprovalForRefund', 'Require admin approval for refunds')}
+              {renderNumberInput('Maximum Refund Amount', 'maxRefundAmount', 'USD', 0, 100000)}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

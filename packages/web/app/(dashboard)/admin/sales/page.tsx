@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ShoppingBag, 
-  TrendingUp, 
-  Users, 
+import {
+  ShoppingBag,
+  TrendingUp,
+  Users,
   Calendar,
   Filter,
   Search,
@@ -77,24 +77,24 @@ const StatCard: React.FC<{
   color?: string;
   icon?: React.ElementType;
   subtext?: string;
-}> = ({ label, value, color = 'blue', icon: Icon, subtext }) => {
+}> = ({ label, value, color = 'brand', icon: Icon, subtext }) => {
   const colorClasses: Record<string, string> = {
-    blue: 'border-blue-200 dark:border-blue-800',
-    green: 'border-green-200 dark:border-green-800',
-    yellow: 'border-yellow-200 dark:border-yellow-800',
-    red: 'border-red-200 dark:border-red-800',
-    purple: 'border-purple-200 dark:border-purple-800',
-    indigo: 'border-indigo-200 dark:border-indigo-800',
-    teal: 'border-teal-200 dark:border-teal-800',
+    brand: 'border-brand-200 dark:border-brand-800',
+    'brand-accent': 'border-brand-accent-200 dark:border-brand-accent-800',
+    secondary: 'border-secondary-200 dark:border-secondary-800',
+    success: 'border-success-200 dark:border-success-800',
+    warning: 'border-warning-200 dark:border-warning-800',
+    danger: 'border-danger-200 dark:border-danger-800',
+    gray: 'border-gray-200 dark:border-gray-700',
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border ${colorClasses[color] || colorClasses.blue}`}>
+    <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border ${colorClasses[color] || colorClasses.brand}`}>
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
         {Icon && <Icon className="w-4 h-4 text-gray-400" />}
       </div>
-      <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
+      <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{value}</p>
       {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
     </div>
   );
@@ -102,12 +102,12 @@ const StatCard: React.FC<{
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    COMPLETED: { label: 'Completed', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle },
-    PENDING: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300', icon: Clock },
-    PROCESSING: { label: 'Processing', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300', icon: RefreshCw },
-    CANCELLED: { label: 'Cancelled', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', icon: XCircle },
+    COMPLETED: { label: 'Completed', color: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300', icon: CheckCircle },
+    PENDING: { label: 'Pending', color: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300', icon: Clock },
+    PROCESSING: { label: 'Processing', color: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300', icon: RefreshCw },
+    CANCELLED: { label: 'Cancelled', color: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300', icon: XCircle },
     REFUNDED: { label: 'Refunded', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300', icon: AlertCircle },
-    ON_HOLD: { label: 'On Hold', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', icon: Clock },
+    ON_HOLD: { label: 'On Hold', color: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300', icon: Clock },
   };
 
   const config = statusConfig[status] || statusConfig.PENDING;
@@ -130,7 +130,7 @@ export default function SalesPage() {
   const { user: authUser } = useAuth();
   const { canView, canManage } = usePermission();
   const router = useRouter();
-  
+
   const [orders, setOrders] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -165,22 +165,22 @@ export default function SalesPage() {
 
   // Permission checks
   const canViewSales = useCallback(() => {
-    return canView?.(`${PermissionResource.SALE}:view`) || 
+    return canView?.(`${PermissionResource.SALE}:view`) ||
            ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'CASHIER'].includes(userRole);
   }, [userRole, canView]);
 
   const canManageSales = useCallback(() => {
-    return canManage?.(`${PermissionResource.SALE}:manage`) || 
+    return canManage?.(`${PermissionResource.SALE}:manage`) ||
            ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole);
   }, [userRole, canManage]);
 
   const canViewAllSales = useCallback(() => {
-    return canView?.(`${PermissionResource.SALE}:view_all`) || 
+    return canView?.(`${PermissionResource.SALE}:view_all`) ||
            ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole);
   }, [userRole, canView]);
 
   const canViewStats = useCallback(() => {
-    return canView?.(`${PermissionResource.SALE}:view_stats`) || 
+    return canView?.(`${PermissionResource.SALE}:view_stats`) ||
            ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole);
   }, [userRole, canView]);
 
@@ -242,7 +242,7 @@ export default function SalesPage() {
       }
 
       const result = await saleService.getAllSales(params);
-      
+
       if (result?.data) {
         setOrders(result.data);
         setTotalPages(result.totalPages || 1);
@@ -254,7 +254,7 @@ export default function SalesPage() {
       }
     } catch (error: any) {
       console.error('Error fetching orders:', error);
-      
+
       if (error?.response?.status === 401) {
         router.push('/login?redirect=/admin/sales');
       } else if (error?.response?.status === 403) {
@@ -281,18 +281,18 @@ export default function SalesPage() {
       }
 
       const response = await saleService.getSalesStats(params);
-      
+
       if (response) {
         const today = new Date().toISOString().split('T')[0];
         let todayRevenue = 0;
         let todaySales = 0;
-        
+
         if (orders.length > 0) {
           const todayOrders = orders.filter(order => {
             const orderDate = order.saleDate || order.createdAt;
             if (!orderDate) return false;
-            const dateStr = typeof orderDate === 'string' 
-              ? orderDate.split('T')[0] 
+            const dateStr = typeof orderDate === 'string'
+              ? orderDate.split('T')[0]
               : new Date(orderDate).toISOString().split('T')[0];
             return dateStr === today;
           });
@@ -353,7 +353,7 @@ export default function SalesPage() {
       }
 
       const result = await saleService.exportSales(params);
-      
+
       if (result && result.data) {
         const headers = ['Receipt', 'Date', 'Customer', 'Subtotal', 'Tax', 'Discount', 'Total', 'Payment', 'Status', 'Items'];
         const rows = result.data.map((sale: any) => [
@@ -379,7 +379,7 @@ export default function SalesPage() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
+
         toast.success('Sales exported successfully');
       } else {
         toast.error('No data to export');
@@ -392,7 +392,7 @@ export default function SalesPage() {
 
   const handleRefund = async (order: Sale) => {
     if (!confirm(`Are you sure you want to refund order #${order.receiptNumber}?`)) return;
-    
+
     try {
       await saleService.refundSale(order.id, 'Customer requested refund');
       toast.success('Order refunded successfully');
@@ -451,8 +451,8 @@ export default function SalesPage() {
               {userRole === 'CASHIER' ? 'My Sales' : 'Sales'}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
-              {canViewAllSales() 
-                ? 'View and manage all sales transactions' 
+              {canViewAllSales()
+                ? 'View and manage all sales transactions'
                 : userRole === 'MANAGER'
                 ? 'View sales for your business unit'
                 : 'View your sales transactions'}
@@ -463,48 +463,48 @@ export default function SalesPage() {
             {/* POS Button - Navigate to POS */}
             <button
               onClick={goToPos}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors focus-ring"
             >
               <ShoppingCart className="w-4 h-4" />
               POS
             </button>
-            
+
             {/* Dashboard Button - Navigate to Dashboard */}
             <button
               onClick={goToDashboard}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-secondary-600 text-white rounded-lg hover:bg-secondary-700 transition-colors focus-ring"
             >
               <LayoutDashboard className="w-4 h-4" />
               Dashboard
             </button>
-            
+
             <button
               onClick={() => fetchOrders(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               disabled={isRefreshing}
             >
               {isRefreshing ? (
-                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
               ) : (
                 <RefreshCw className="w-4 h-4" />
               )}
               Refresh
             </button>
-            
+
             {canViewStats() && (
               <>
                 <button
                   onClick={handleExport}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   <Download className="w-4 h-4" />
                   Export
                 </button>
                 <button
                   onClick={() => setShowStats(!showStats)}
-                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors ${
-                    showStats 
-                      ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' 
+                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-colors focus-ring ${
+                    showStats
+                      ? 'bg-brand-500 text-white border-brand-500 hover:bg-brand-600'
                       : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
@@ -513,24 +513,24 @@ export default function SalesPage() {
                 </button>
               </>
             )}
-            
+
             <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                className={`p-1.5 rounded transition-colors focus-ring ${viewMode === 'list' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
               >
                 <FileText className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               </button>
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                className={`p-1.5 rounded transition-colors focus-ring ${viewMode === 'grid' ? 'bg-white dark:bg-gray-600 shadow' : 'hover:bg-gray-200 dark:hover:bg-gray-600'}`}
               >
                 <Package className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               </button>
             </div>
             <Link
               href="/dashboard"
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium flex items-center"
+              className="text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 font-medium flex items-center focus-ring rounded"
             >
               Dashboard →
             </Link>
@@ -539,10 +539,10 @@ export default function SalesPage() {
 
         {/* Role-based info banner */}
         {!canViewAllSales() && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4 text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+          <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-lg p-3 mb-4 text-sm text-brand-700 dark:text-brand-300 flex items-center gap-2">
             <Users className="w-4 h-4" />
             <span>
-              {userRole === 'CASHIER' 
+              {userRole === 'CASHIER'
                 ? 'Showing only your sales. You can view your transaction history here.'
                 : userRole === 'EMPLOYEE'
                 ? 'Showing only your sales. You can view your transaction history here.'
@@ -555,7 +555,7 @@ export default function SalesPage() {
 
         {/* Stats Cards */}
         {showStats && canViewStats() && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6"
@@ -563,50 +563,50 @@ export default function SalesPage() {
             <StatCard
               label="Total Revenue"
               value={formatCurrency(stats.totalRevenue)}
-              color="green"
+              color="success"
               icon={DollarSign}
             />
             <StatCard
               label="Total Sales"
               value={stats.totalSales}
-              color="blue"
+              color="brand"
               icon={ShoppingBag}
             />
             <StatCard
               label="Average Ticket"
               value={formatCurrency(stats.averageTicket)}
-              color="purple"
+              color="secondary"
               icon={TrendingUp}
             />
             <StatCard
               label="Today's Revenue"
               value={formatCurrency(stats.todayRevenue)}
-              color="indigo"
+              color="brand-accent"
               icon={Calendar}
             />
             <StatCard
               label="Today's Sales"
               value={stats.todaySales}
-              color="teal"
+              color="success"
               icon={CheckCircle}
             />
             <StatCard
               label="Pending"
               value={stats.pendingOrders}
-              color="yellow"
+              color="warning"
               icon={Clock}
             />
             <StatCard
               label="Refunded"
               value={stats.refundedOrders}
-              color="red"
+              color="danger"
               icon={XCircle}
             />
           </motion.div>
         )}
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 mb-6 border border-gray-200 dark:border-gray-700">
+        <div className="card-brand p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -615,13 +615,13 @@ export default function SalesPage() {
                 placeholder="Search by receipt number..."
                 value={searchQuery}
                 onChange={handleSearch}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
             </div>
             <select
               value={filter}
               onChange={handleFilterChange}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="">All Statuses</option>
               <option value="COMPLETED">Completed</option>
@@ -635,20 +635,20 @@ export default function SalesPage() {
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           </div>
         </div>
 
         {/* Sales List */}
         {orders.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-12 text-center border border-gray-200 dark:border-gray-700">
+          <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">📦</div>
             <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Orders Found</h2>
             <p className="text-gray-500 dark:text-gray-400">
@@ -657,23 +657,23 @@ export default function SalesPage() {
                 : "No sales transactions found."}
             </p>
             <div className="flex flex-wrap gap-3 justify-center mt-4">
-              <button 
+              <button
                 onClick={goToPos}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                className="bg-success-600 text-white px-6 py-2 rounded-lg hover:bg-success-700 transition-colors flex items-center gap-2 focus-ring"
               >
                 <ShoppingCart className="w-4 h-4" />
                 Open POS
               </button>
               <button
                 onClick={goToDashboard}
-                className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                className="bg-secondary-600 text-white px-6 py-2 rounded-lg hover:bg-secondary-700 transition-colors flex items-center gap-2 focus-ring"
               >
                 <LayoutDashboard className="w-4 h-4" />
                 View Dashboard
               </button>
-              <Link 
-                href="/products" 
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              <Link
+                href="/products"
+                className="bg-brand-500 text-white px-6 py-2 rounded-lg hover:bg-brand-600 transition-colors focus-ring"
               >
                 Start Shopping
               </Link>
@@ -689,17 +689,17 @@ export default function SalesPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all overflow-hidden border border-gray-200 dark:border-gray-700"
+                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                   >
                     {/* Order Header */}
                     <div className={`px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3 ${viewMode === 'grid' ? 'flex-col items-start' : ''}`}>
                       <div className={`flex items-center gap-3 ${viewMode === 'grid' ? 'w-full justify-between' : ''}`}>
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">#{order.receiptNumber}</span>
+                        <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">#{order.receiptNumber}</span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">{safeFormatDate(order.saleDate || order.createdAt)}</span>
                       </div>
                       <div className={`flex items-center gap-3 ${viewMode === 'grid' ? 'w-full justify-between' : ''}`}>
                         <StatusBadge status={order.status} />
-                        <span className="font-bold text-gray-900 dark:text-white">{formatCurrency(order.total)}</span>
+                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">{formatCurrency(order.total)}</span>
                       </div>
                     </div>
 
@@ -730,11 +730,11 @@ export default function SalesPage() {
                             <span className="text-gray-600 dark:text-gray-300 truncate max-w-[150px]">
                               {item.product?.name || 'Product'} × {item.quantity}
                             </span>
-                            <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(item.total)}</span>
+                            <span className="font-medium text-gray-900 dark:text-white tabular-nums">{formatCurrency(item.total)}</span>
                           </div>
                         ))}
                         {order.items && order.items.length > (viewMode === 'grid' ? 2 : 3) && (
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                             + {order.items.length - (viewMode === 'grid' ? 2 : 3)} more items
                           </p>
                         )}
@@ -742,7 +742,7 @@ export default function SalesPage() {
 
                       {/* Footer */}
                       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
-                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                        <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                           {order.items?.length || 0} items
                         </span>
                         <div className="flex gap-2">
@@ -751,14 +751,14 @@ export default function SalesPage() {
                               setSelectedSale(order);
                               setShowDetailModal(true);
                             }}
-                            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium flex items-center gap-1"
+                            className="text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 text-sm font-medium flex items-center gap-1 focus-ring rounded"
                           >
                             <Eye className="w-4 h-4" />
                             Details
                           </button>
                           <button
                             onClick={() => handlePrintReceipt(order)}
-                            className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm font-medium flex items-center gap-1"
+                            className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm font-medium flex items-center gap-1 focus-ring rounded"
                           >
                             <Printer className="w-4 h-4" />
                             Print
@@ -766,7 +766,7 @@ export default function SalesPage() {
                           {canManageSales() && order.status === 'COMPLETED' && (
                             <button
                               onClick={() => handleRefund(order)}
-                              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium flex items-center gap-1"
+                              className="text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 text-sm font-medium flex items-center gap-1 focus-ring rounded"
                             >
                               <XCircle className="w-4 h-4" />
                               Refund
@@ -786,7 +786,7 @@ export default function SalesPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   <ChevronLeft className="w-4 h-4 inline" />
                   Previous
@@ -807,9 +807,9 @@ export default function SalesPage() {
                       <button
                         key={pageNum}
                         onClick={() => setPage(pageNum)}
-                        className={`w-9 h-9 rounded-lg text-sm transition-colors ${
+                        className={`w-9 h-9 rounded-lg text-sm transition-colors tabular-nums focus-ring ${
                           page === pageNum
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-brand-500 text-white'
                             : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                         }`}
                       >
@@ -821,7 +821,7 @@ export default function SalesPage() {
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
                   Next
                   <ChevronRight className="w-4 h-4 inline" />
@@ -839,19 +839,19 @@ export default function SalesPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
             onClick={() => setShowDetailModal(false)}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700"
+              className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 sidebar-scroll"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
                     Sale #{selectedSale.receiptNumber}
                   </h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -860,7 +860,7 @@ export default function SalesPage() {
                 </div>
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                 >
                   <XCircle className="w-6 h-6 text-gray-500" />
                 </button>
@@ -870,7 +870,7 @@ export default function SalesPage() {
                 {/* Status and Total */}
                 <div className="flex items-center justify-between">
                   <StatusBadge status={selectedSale.status} />
-                  <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(selectedSale.total)}
                   </span>
                 </div>
@@ -919,11 +919,11 @@ export default function SalesPage() {
                           <p className="font-medium text-gray-900 dark:text-white">
                             {item.product?.name || 'Product'}
                           </p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                             × {item.quantity} @ {formatCurrency(item.unitPrice)}
                           </p>
                         </div>
-                        <span className="font-bold text-gray-900 dark:text-white">
+                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(item.total)}
                         </span>
                       </div>
@@ -936,25 +936,25 @@ export default function SalesPage() {
                   <div className="space-y-2 max-w-xs ml-auto">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500 dark:text-gray-400">Subtotal</span>
-                      <span className="text-gray-900 dark:text-white">
+                      <span className="text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(selectedSale.subtotal)}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500 dark:text-gray-400">Tax</span>
-                      <span className="text-gray-900 dark:text-white">
+                      <span className="text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(selectedSale.tax)}
                       </span>
                     </div>
                     {selectedSale.discount > 0 && (
-                      <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                      <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
                         <span>Discount</span>
-                        <span>-{formatCurrency(selectedSale.discount)}</span>
+                        <span className="tabular-nums">-{formatCurrency(selectedSale.discount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                       <span className="text-gray-900 dark:text-white">Total</span>
-                      <span className="text-blue-600 dark:text-blue-400">
+                      <span className="text-brand-600 dark:text-brand-400 tabular-nums">
                         {formatCurrency(selectedSale.total)}
                       </span>
                     </div>
@@ -964,7 +964,7 @@ export default function SalesPage() {
                         {selectedSale.payments.map((payment: any, idx: number) => (
                           <div key={idx} className="flex justify-between text-sm">
                             <span className="text-gray-600 dark:text-gray-300">{payment.paymentMethod}</span>
-                            <span className="text-gray-900 dark:text-white">{formatCurrency(payment.amount)}</span>
+                            <span className="text-gray-900 dark:text-white tabular-nums">{formatCurrency(payment.amount)}</span>
                           </div>
                         ))}
                       </div>
@@ -974,9 +974,9 @@ export default function SalesPage() {
 
                 {/* Notes */}
                 {selectedSale.notes && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                    <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Notes</p>
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300">{selectedSale.notes}</p>
+                  <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
+                    <p className="text-sm font-medium text-warning-800 dark:text-warning-200">Notes</p>
+                    <p className="text-sm text-warning-700 dark:text-warning-300">{selectedSale.notes}</p>
                   </div>
                 )}
 
@@ -984,7 +984,7 @@ export default function SalesPage() {
                 <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => handlePrintReceipt(selectedSale)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
                   >
                     <Printer className="w-4 h-4" />
                     Print Receipt
@@ -992,7 +992,7 @@ export default function SalesPage() {
                   {canManageSales() && selectedSale.status === 'COMPLETED' && (
                     <button
                       onClick={() => handleRefund(selectedSale)}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+                      className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 focus-ring"
                     >
                       <XCircle className="w-4 h-4" />
                       Refund
@@ -1000,7 +1000,7 @@ export default function SalesPage() {
                   )}
                   <button
                     onClick={() => setShowDetailModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                   >
                     Close
                   </button>

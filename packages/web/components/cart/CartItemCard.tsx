@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\CartItemCard.tsx
-
 'use client';
 
 import React from 'react';
@@ -25,7 +23,6 @@ interface CartItemCardProps {
   total: number;
   images?: string[];
   variantName?: string;
-  /** Live inventory from the backend. */
   availableStock: number;
   isInStock: boolean;
   onUpdateQuantity: (
@@ -54,10 +51,8 @@ export function CartItemCard({
   isUpdating = false,
   disabled = false,
 }: CartItemCardProps) {
-  // Prevent spamming: refuse when there's nothing to change.
   const atMinimum = quantity <= 1;
-  const atMaximum =
-    availableStock > 0 && quantity >= availableStock;
+  const atMaximum = availableStock > 0 && quantity >= availableStock;
 
   const handleQuantityChange = (newQuantity: number) => {
     if (isUpdating || disabled) return;
@@ -73,10 +68,6 @@ export function CartItemCard({
   const imageSrc = images[0];
   const hasImage = Boolean(imageSrc);
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   return (
     <motion.div
       layout
@@ -84,16 +75,15 @@ export function CartItemCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -100 }}
       transition={{ duration: 0.2 }}
-      className={`flex items-start gap-3 sm:gap-4 p-3 sm:p-4 bg-white dark:bg-gray-800 rounded-xl border ${
+      className={`flex items-start gap-3 sm:gap-4 p-3 sm:p-4 bg-white dark:bg-gray-800 rounded-2xl border shadow-soft ${
         !isInStock
-          ? 'border-red-200 dark:border-red-800'
+          ? 'border-danger-200 dark:border-danger-800'
           : 'border-gray-200 dark:border-gray-700'
-      } hover:shadow-md transition-shadow duration-200`}
+      } hover:shadow-card-hover transition-shadow duration-200`}
     >
-      {/* Product image */}
       <Link
         href={`/shop/${productId}`}
-        className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
+        className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden hover:opacity-90 transition-opacity focus-ring"
       >
         {hasImage ? (
           <img
@@ -109,22 +99,21 @@ export function CartItemCard({
         )}
       </Link>
 
-      {/* Product info */}
       <div className="flex-1 min-w-0">
         <Link
           href={`/shop/${productId}`}
-          className="font-medium text-gray-900 dark:text-white truncate hover:text-orange-600 dark:hover:text-orange-400 transition-colors block"
+          className="font-medium text-gray-900 dark:text-white truncate hover:text-brand-600 dark:hover:text-brand-400 transition-colors block focus-ring rounded"
           title={productName}
         >
           {productName}
         </Link>
 
         <div className="flex flex-wrap items-center gap-2 mt-1">
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="text-2xs text-gray-500 dark:text-gray-400 font-mono">
             SKU: {sku}
           </span>
           {variantName && (
-            <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">
+            <span className="text-2xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">
               {variantName}
             </span>
           )}
@@ -136,20 +125,19 @@ export function CartItemCard({
           </span>
 
           {!isInStock && (
-            <span className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400 font-medium">
+            <span className="flex items-center gap-1 text-2xs text-danger-600 dark:text-danger-400 font-medium">
               <AlertCircle className="w-3 h-3" />
               Out of Stock
             </span>
           )}
 
           {isInStock && availableStock > 0 && availableStock <= 5 && (
-            <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">
+            <span className="text-2xs text-warning-600 dark:text-warning-400 font-medium tabular-nums">
               Only {availableStock} left
             </span>
           )}
         </div>
 
-        {/* Quantity + total on mobile */}
         <div className="flex items-center justify-between gap-3 mt-2 sm:hidden">
           <QuantityStepper
             quantity={quantity}
@@ -165,7 +153,6 @@ export function CartItemCard({
         </div>
       </div>
 
-      {/* Quantity + total + remove (desktop) */}
       <div className="hidden sm:flex items-center gap-3 sm:gap-4 shrink-0">
         <QuantityStepper
           quantity={quantity}
@@ -184,7 +171,7 @@ export function CartItemCard({
             type="button"
             onClick={handleRemove}
             disabled={isUpdating || disabled}
-            className="mt-1 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="mt-1 text-2xs text-danger-500 hover:text-danger-700 dark:text-danger-400 dark:hover:text-danger-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 focus-ring rounded"
             aria-label={`Remove ${productName} from cart`}
           >
             <Trash2 className="w-3 h-3" />
@@ -193,12 +180,11 @@ export function CartItemCard({
         </div>
       </div>
 
-      {/* Remove button (mobile) */}
       <button
         type="button"
         onClick={handleRemove}
         disabled={isUpdating || disabled}
-        className="sm:hidden p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors disabled:opacity-50"
+        className="sm:hidden p-1.5 text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-md transition-colors disabled:opacity-50 focus-ring"
         aria-label={`Remove ${productName} from cart`}
       >
         <Trash2 className="w-4 h-4" />
@@ -206,10 +192,6 @@ export function CartItemCard({
     </motion.div>
   );
 }
-
-// ============================================
-// QUANTITY STEPPER
-// ============================================
 
 interface QuantityStepperProps {
   quantity: number;
@@ -234,7 +216,7 @@ function QuantityStepper({
         type="button"
         onClick={() => onChange(quantity - 1)}
         disabled={isUpdating || atMinimum || disabled}
-        className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="w-8 h-8 flex items-center justify-center hover:bg-orange-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-ring"
         aria-label="Decrease quantity"
       >
         <Minus className="w-3 h-3 text-gray-600 dark:text-gray-300" />
@@ -246,7 +228,7 @@ function QuantityStepper({
         aria-atomic="true"
       >
         {isUpdating ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500" />
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-500" />
         ) : (
           quantity
         )}
@@ -256,7 +238,7 @@ function QuantityStepper({
         type="button"
         onClick={() => onChange(quantity + 1)}
         disabled={isUpdating || atMaximum || disabled}
-        className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="w-8 h-8 flex items-center justify-center hover:bg-orange-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-ring"
         aria-label="Increase quantity"
       >
         <Plus className="w-3 h-3 text-gray-600 dark:text-gray-300" />
@@ -266,3 +248,4 @@ function QuantityStepper({
 }
 
 export default CartItemCard;
+

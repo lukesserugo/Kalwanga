@@ -288,11 +288,11 @@ export function PaymentForm({
           <button
             type="button"
             onClick={() => setShowProviderDropdown(!showProviderDropdown)}
-            className={`w-full flex items-center gap-3 px-4 py-3 border rounded-lg transition ${
+            className={`w-full flex items-center gap-3 px-4 py-3 border rounded-lg transition duration-250 focus-ring ${
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600'
                 : 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50'
-            } ${showProviderDropdown ? 'ring-2 ring-blue-500' : ''}`}
+            } ${showProviderDropdown ? 'ring-2 ring-brand-500' : ''}`}
           >
             {imageUrl ? (
               <div className="relative w-8 h-8 flex-shrink-0">
@@ -321,11 +321,11 @@ export function PaymentForm({
             <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               {config.description}
             </span>
-            <ChevronDown className={`w-4 h-4 transition-transform ${showProviderDropdown ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-4 h-4 transition-transform duration-250 ${showProviderDropdown ? 'rotate-180' : ''}`} />
           </button>
 
           {showProviderDropdown && (
-            <div className={`absolute top-full left-0 right-0 mt-1 rounded-lg shadow-lg border z-10 overflow-hidden ${
+            <div className={`absolute top-full left-0 right-0 mt-1 rounded-xl shadow-card border z-modal overflow-hidden custom-scrollbar animate-slide-down ${
               isDark
                 ? 'bg-gray-800 border-gray-700'
                 : 'bg-white border-gray-200'
@@ -343,15 +343,15 @@ export function PaymentForm({
                       setSelectedProvider(providerCode);
                       setShowProviderDropdown(false);
                     }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 transition ${
+                    className={`w-full flex items-center gap-3 px-4 py-3 transition duration-250 focus-ring ${
                       isSelected
                         ? isDark
-                          ? 'bg-blue-900/30 text-white'
-                          : 'bg-blue-50 text-blue-700'
+                          ? 'bg-brand-900/30 text-white'
+                          : 'bg-brand-50 text-brand-700'
                         : isDark
                           ? 'hover:bg-gray-700 text-gray-300'
                           : 'hover:bg-gray-50 text-gray-700'
-                    } ${isSelected ? 'border-l-4 border-blue-500' : ''}`}
+                    } ${isSelected ? 'border-l-4 border-brand-500' : ''}`}
                   >
                     {providerImageUrl ? (
                       <div className="relative w-8 h-8 flex-shrink-0">
@@ -407,15 +407,15 @@ export function PaymentForm({
             onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
             placeholder="1234 5678 9012 3456"
             maxLength={19}
-            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 tabular-nums ${
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-            } ${errors.cardNumber ? 'border-red-500' : ''}`}
+            } ${errors.cardNumber ? 'border-danger-500' : ''}`}
           />
         </div>
         {errors.cardNumber && (
-          <p className="mt-1 text-sm text-red-500">{errors.cardNumber}</p>
+          <p className="mt-1 text-sm text-danger-500">{errors.cardNumber}</p>
         )}
       </div>
 
@@ -430,14 +430,14 @@ export function PaymentForm({
             onChange={(e) => setCardExpiry(formatExpiry(e.target.value))}
             placeholder="MM/YY"
             maxLength={5}
-            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 tabular-nums ${
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-            } ${errors.cardExpiry ? 'border-red-500' : ''}`}
+            } ${errors.cardExpiry ? 'border-danger-500' : ''}`}
           />
           {errors.cardExpiry && (
-            <p className="mt-1 text-sm text-red-500">{errors.cardExpiry}</p>
+            <p className="mt-1 text-sm text-danger-500">{errors.cardExpiry}</p>
           )}
         </div>
         <div>
@@ -451,22 +451,23 @@ export function PaymentForm({
               onChange={(e) => setCardCvv(e.target.value.replace(/\D/g, ''))}
               placeholder="123"
               maxLength={4}
-              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 tabular-nums ${
                 isDark
                   ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              } ${errors.cardCvv ? 'border-red-500' : ''}`}
+              } ${errors.cardCvv ? 'border-danger-500' : ''}`}
             />
             <button
               type="button"
               onClick={() => setShowCvv(!showCvv)}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition duration-250 focus-ring rounded"
+              aria-label={showCvv ? 'Hide CVV' : 'Show CVV'}
             >
               {showCvv ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
           {errors.cardCvv && (
-            <p className="mt-1 text-sm text-red-500">{errors.cardCvv}</p>
+            <p className="mt-1 text-sm text-danger-500">{errors.cardCvv}</p>
           )}
         </div>
       </div>
@@ -480,14 +481,14 @@ export function PaymentForm({
           value={cardHolder}
           onChange={(e) => setCardHolder(e.target.value)}
           placeholder="John Doe"
-          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 ${
             isDark
               ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
               : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-          } ${errors.cardHolder ? 'border-red-500' : ''}`}
+          } ${errors.cardHolder ? 'border-danger-500' : ''}`}
         />
         {errors.cardHolder && (
-          <p className="mt-1 text-sm text-red-500">{errors.cardHolder}</p>
+          <p className="mt-1 text-sm text-danger-500">{errors.cardHolder}</p>
         )}
       </div>
     </div>
@@ -496,9 +497,9 @@ export function PaymentForm({
   // Render PayPal form
   const renderPayPalForm = () => (
     <div className="space-y-4">
-      <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-blue-50'}`}>
+      <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-primary-50'}`}>
         <div className="flex items-center gap-3">
-          <Globe className="w-6 h-6 text-blue-500" />
+          <Globe className="w-6 h-6 text-primary-500" />
           <div>
             <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
               PayPal Checkout
@@ -519,7 +520,7 @@ export function PaymentForm({
         <input
           type="email"
           placeholder="john@example.com"
-          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 ${
             isDark
               ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
               : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
@@ -566,15 +567,15 @@ export function PaymentForm({
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
             placeholder="0712345678"
-            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 tabular-nums ${
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-            } ${errors.phoneNumber ? 'border-red-500' : ''}`}
+            } ${errors.phoneNumber ? 'border-danger-500' : ''}`}
           />
         </div>
         {errors.phoneNumber && (
-          <p className="mt-1 text-sm text-red-500">{errors.phoneNumber}</p>
+          <p className="mt-1 text-sm text-danger-500">{errors.phoneNumber}</p>
         )}
       </div>
 
@@ -585,7 +586,7 @@ export function PaymentForm({
         <select
           value={mobileProvider}
           onChange={(e) => setMobileProvider(e.target.value)}
-          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 ${
             isDark
               ? 'bg-gray-700 border-gray-600 text-white'
               : 'bg-white border-gray-300 text-gray-900'
@@ -616,15 +617,15 @@ export function PaymentForm({
             value={giftCardCode}
             onChange={(e) => setGiftCardCode(e.target.value.toUpperCase())}
             placeholder="GIFT-XXXX-XXXX"
-            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+            className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 font-mono ${
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                 : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-            } ${errors.giftCardCode ? 'border-red-500' : ''}`}
+            } ${errors.giftCardCode ? 'border-danger-500' : ''}`}
           />
         </div>
         {errors.giftCardCode && (
-          <p className="mt-1 text-sm text-red-500">{errors.giftCardCode}</p>
+          <p className="mt-1 text-sm text-danger-500">{errors.giftCardCode}</p>
         )}
       </div>
     </div>
@@ -635,9 +636,9 @@ export function PaymentForm({
     <div className="space-y-4">
       {renderProviderSelector()}
 
-      <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-blue-50'}`}>
+      <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-primary-50'}`}>
         <div className="flex items-center gap-3">
-          <Star className="w-6 h-6 text-yellow-500 fill-current" />
+          <Star className="w-6 h-6 text-warning-500 fill-current" />
           <div>
             <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
               Available Points: {customerLoyaltyPoints}
@@ -662,16 +663,16 @@ export function PaymentForm({
           }}
           min={0}
           max={maxPoints}
-          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 tabular-nums ${
             isDark
               ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
               : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-          } ${errors.loyaltyPoints ? 'border-red-500' : ''}`}
+          } ${errors.loyaltyPoints ? 'border-danger-500' : ''}`}
         />
         {errors.loyaltyPoints && (
-          <p className="mt-1 text-sm text-red-500">{errors.loyaltyPoints}</p>
+          <p className="mt-1 text-sm text-danger-500">{errors.loyaltyPoints}</p>
         )}
-        <p className={`mt-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+        <p className={`mt-1 text-sm tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
           Discount: {formatCurrency(loyaltyDiscount)}
         </p>
       </div>
@@ -682,7 +683,7 @@ export function PaymentForm({
           id="useMaxPoints"
           checked={loyaltyPoints === maxPoints}
           onChange={(e) => setLoyaltyPoints(e.target.checked ? maxPoints : 0)}
-          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+          className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition duration-250"
         />
         <label htmlFor="useMaxPoints" className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
           Use maximum points for this order
@@ -704,10 +705,10 @@ export function PaymentForm({
           <p className={`font-mono text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Bank: Kalwanga Bank
           </p>
-          <p className={`font-mono text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <p className={`font-mono text-sm tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Account: 1234567890
           </p>
-          <p className={`font-mono text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <p className={`font-mono text-sm tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
             Reference: BT-{Date.now().toString().slice(-6)}
           </p>
         </div>
@@ -722,7 +723,7 @@ export function PaymentForm({
           value={bankReference}
           onChange={(e) => setBankReference(e.target.value)}
           placeholder="Enter bank reference"
-          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250 ${
             isDark
               ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
               : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
@@ -764,7 +765,7 @@ export function PaymentForm({
       <div className="flex flex-col items-center justify-center py-12">
         <div className="relative">
           <div className="w-20 h-20 border-4 border-gray-200 dark:border-gray-700 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-blue-600 rounded-full animate-spin border-t-transparent"></div>
+          <div className="absolute top-0 left-0 w-20 h-20 border-4 border-brand-600 rounded-full animate-spin border-t-transparent"></div>
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
             {imageUrl ? (
               <div className="relative w-8 h-8">
@@ -780,7 +781,7 @@ export function PaymentForm({
                 />
               </div>
             ) : (
-              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+              <Loader2 className="w-8 h-8 text-brand-600 animate-spin" />
             )}
           </div>
         </div>
@@ -790,7 +791,7 @@ export function PaymentForm({
         <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
           Please wait while we process your payment via {config.name}...
         </p>
-        <div className="mt-4 flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+        <div className="mt-4 flex items-center gap-2 text-sm text-brand-600 dark:text-brand-400">
           <Shield className="w-4 h-4" />
           <span>Secure transaction</span>
         </div>
@@ -805,8 +806,8 @@ export function PaymentForm({
 
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-          <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
+        <div className="w-20 h-20 bg-success-100 dark:bg-success-900/30 rounded-full flex items-center justify-center">
+          <CheckCircle className="w-12 h-12 text-success-600 dark:text-success-400" />
         </div>
         <h3 className={`mt-4 text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Payment Successful!
@@ -828,12 +829,12 @@ export function PaymentForm({
             />
           </div>
         )}
-        <p className={`text-sm font-medium mt-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+        <p className={`text-sm font-medium mt-2 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Amount: {formatCurrency(finalAmount || amount)}
         </p>
         <button
           onClick={onCancel}
-          className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-6 btn-brand"
         >
           Continue
         </button>
@@ -844,8 +845,8 @@ export function PaymentForm({
   // Render error state
   const renderError = () => (
     <div className="flex flex-col items-center justify-center py-12">
-      <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-        <XCircle className="w-12 h-12 text-red-600 dark:text-red-400" />
+      <div className="w-20 h-20 bg-danger-100 dark:bg-danger-900/30 rounded-full flex items-center justify-center">
+        <XCircle className="w-12 h-12 text-danger-600 dark:text-danger-400" />
       </div>
       <h3 className={`mt-4 text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
         Payment Failed
@@ -856,13 +857,13 @@ export function PaymentForm({
       <div className="mt-6 flex gap-3">
         <button
           onClick={() => setStep('form')}
-          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="btn-brand"
         >
           Try Again
         </button>
         <button
           onClick={onCancel}
-          className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="btn-secondary"
         >
           Cancel
         </button>
@@ -871,15 +872,15 @@ export function PaymentForm({
   );
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-6 ${className} animate-fade-in`}>
       {/* Amount Display */}
       {step === 'form' && (
-        <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+        <div className={`p-4 rounded-2xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
           <div className="flex justify-between items-center">
             <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               Amount to Pay
             </span>
-            <span className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            <span className={`text-xl font-bold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
               {formatCurrency(finalAmount || amount)}
             </span>
           </div>
@@ -888,7 +889,7 @@ export function PaymentForm({
               <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                 Loyalty Discount
               </span>
-              <span className="text-sm text-green-600 dark:text-green-400">
+              <span className="text-sm tabular-nums text-success-600 dark:text-success-400">
                 -{formatCurrency(loyaltyDiscount)}
               </span>
             </div>
@@ -944,7 +945,7 @@ export function PaymentForm({
           {onCancel && (
             <button
               onClick={onCancel}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="flex-1 btn-secondary"
             >
               Cancel
             </button>
@@ -952,14 +953,14 @@ export function PaymentForm({
           <button
             onClick={handleSubmit}
             disabled={processing}
-            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex-1 btn-brand disabled:opacity-50"
           >
             {processing ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <>
                 <Lock className="w-4 h-4" />
-                Pay {formatCurrency(finalAmount || amount)}
+                Pay <span className="tabular-nums">{formatCurrency(finalAmount || amount)}</span>
               </>
             )}
           </button>
@@ -970,15 +971,15 @@ export function PaymentForm({
       {step === 'form' && (
         <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400">
           <span className="flex items-center gap-1">
-            <Shield className="w-3 h-3 text-green-500" />
+            <Shield className="w-3 h-3 text-success-500" />
             Secure
           </span>
           <span className="flex items-center gap-1">
-            <Lock className="w-3 h-3 text-blue-500" />
+            <Lock className="w-3 h-3 text-brand-500" />
             Encrypted
           </span>
           <span className="flex items-center gap-1">
-            <Zap className="w-3 h-3 text-orange-500" />
+            <Zap className="w-3 h-3 text-brand-500" />
             Instant
           </span>
         </div>

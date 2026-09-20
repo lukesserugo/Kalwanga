@@ -65,7 +65,7 @@ export default function EditLocationPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+        <Loader2 className="w-10 h-10 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -73,13 +73,13 @@ export default function EditLocationPage() {
   if (!location) {
     return (
       <div className="max-w-2xl mx-auto p-6 text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-4" />
         <p className="text-gray-600 dark:text-gray-400">
           {error || 'Location not found'}
         </p>
         <Link
           href="/admin/locations"
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
@@ -92,7 +92,7 @@ export default function EditLocationPage() {
     <div className="max-w-3xl mx-auto p-4 sm:p-6">
       <Link
         href={`/admin/locations/${location.id}`}
-        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-4"
+        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mb-4 focus-ring rounded"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Location
@@ -102,7 +102,7 @@ export default function EditLocationPage() {
         Edit Location
       </h1>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card-brand p-6">
         <LocationForm
           mode="edit"
           saving={saving}

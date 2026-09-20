@@ -39,13 +39,13 @@ const EMPTY: CreateLocationInput = {
 
 // Shared class strings so every input stays in lockstep.
 const inputBase =
-  'w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50';
+  'w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 disabled:opacity-50';
 const inputBorder = 'border-gray-300 dark:border-gray-600';
 const inputWithIcon = 'pl-9 pr-3';
 const labelBase =
   'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1';
 const iconBase =
-  'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none';
+  'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none';
 
 export function LocationForm({
   initialValues,
@@ -112,9 +112,9 @@ export function LocationForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Error banner — same envelope as LocationsPage modal */}
       {displayError && (
-        <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-700 dark:text-red-300">
+        <div className="p-3 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl flex items-start gap-2 animate-slide-down">
+          <AlertCircle className="w-4 h-4 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-danger-700 dark:text-danger-300">
             {displayError}
           </p>
         </div>
@@ -123,7 +123,7 @@ export function LocationForm({
       {/* Name */}
       <div>
         <label className={labelBase}>
-          Name <span className="text-red-500">*</span>
+          Name <span className="text-danger-500">*</span>
         </label>
         <input
           type="text"
@@ -165,7 +165,7 @@ export function LocationForm({
               onBlur={trimOnBlur('code')}
               placeholder="WH-01"
               disabled={saving}
-              className={`${inputBase} ${inputBorder} ${inputWithIcon} font-mono`}
+              className={`${inputBase} ${inputBorder} ${inputWithIcon} font-mono tabular-nums`}
             />
           </div>
         </div>
@@ -175,14 +175,14 @@ export function LocationForm({
       <div>
         <label className={labelBase}>Description</label>
         <div className="relative">
-          <FileText className="absolute left-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
+          <FileText className="absolute left-3 top-3 w-4 h-4 text-gray-400 dark:text-gray-500 pointer-events-none" />
           <textarea
             value={form.description || ''}
             onChange={(e) => updateField('description', e.target.value)}
             rows={2}
             placeholder="Optional description"
             disabled={saving}
-            className={`${inputBase} ${inputBorder} ${inputWithIcon} resize-none`}
+            className={`${inputBase} ${inputBorder} ${inputWithIcon} resize-none custom-scrollbar`}
           />
         </div>
       </div>
@@ -210,7 +210,7 @@ export function LocationForm({
               onChange={(e) => updateField('phone', e.target.value)}
               placeholder="+1 555 0100"
               disabled={saving}
-              className={`${inputBase} ${inputBorder} ${inputWithIcon}`}
+              className={`${inputBase} ${inputBorder} ${inputWithIcon} tabular-nums`}
             />
           </div>
         </div>
@@ -223,7 +223,7 @@ export function LocationForm({
           checked={!!form.isDefault}
           onChange={(e) => updateField('isDefault', e.target.checked)}
           disabled={saving}
-          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-brand-600 focus:ring-brand-500 transition duration-250"
         />
         Set as default location for this business unit
       </label>
@@ -234,7 +234,7 @@ export function LocationForm({
           type="button"
           onClick={onCancel}
           disabled={saving}
-          className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          className="flex-1 btn-secondary disabled:opacity-50"
         >
           <X className="w-4 h-4" />
           Cancel
@@ -242,7 +242,7 @@ export function LocationForm({
         <button
           type="submit"
           disabled={saving || !form.name.trim()}
-          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors"
+          className="flex-1 btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? (
             <>

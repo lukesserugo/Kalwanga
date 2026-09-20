@@ -25,8 +25,8 @@ export function LocationEmptyState({
 
   if (variant === 'loading') {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+      <div className="flex items-center justify-center min-h-[60vh] animate-fade-in">
+        <Loader2 className="w-10 h-10 animate-spin text-brand-600 dark:text-brand-400" />
       </div>
     );
   }
@@ -49,11 +49,11 @@ export function LocationEmptyState({
     : 'When there is data to show, it will appear here.';
 
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-6">
+    <div className="flex flex-col items-center justify-center py-16 px-6 animate-fade-in">
       <div className="text-center max-w-md">
         {FinalIcon && (
           <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FinalIcon className="w-10 h-10 text-gray-400" />
+            <FinalIcon className="w-10 h-10 text-gray-400 dark:text-gray-500" />
           </div>
         )}
         <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
@@ -65,7 +65,7 @@ export function LocationEmptyState({
         {isLogin && !action && (
           <button
             onClick={() => router.push('/login')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 btn-brand"
           >
             Go to Login
           </button>

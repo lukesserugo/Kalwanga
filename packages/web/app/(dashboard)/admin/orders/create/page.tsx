@@ -12,7 +12,7 @@ export default function CreateOrderPage() {
         <div className="flex items-center gap-4 mb-6">
           <Link
             href="/admin/orders"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus-ring"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>

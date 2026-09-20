@@ -155,21 +155,25 @@ const PROVIDER_ICONS: Record<string, any> = {
   VODAFONE: Smartphone,
 };
 
+// Brand-aligned gradients — using semantic + brand tokens.
+// Stripe/PayPal map to primary; Cash to success; Mobile Money to brand;
+// Bank Transfer to indigo; Gift Card to brand; Loyalty to warning;
+// Flutterwave to cyan; Paystack to sky; Square to gray; telcos to brand/warning/danger.
 const PROVIDER_COLORS: Record<string, string> = {
-  CASH: 'from-green-500 to-emerald-600',
-  STRIPE: 'from-blue-500 to-indigo-600',
-  MOBILE_MONEY: 'from-orange-500 to-amber-600',
-  BANK_TRANSFER: 'from-purple-500 to-violet-600',
-  GIFT_CARD: 'from-pink-500 to-rose-600',
-  LOYALTY_POINTS: 'from-yellow-500 to-amber-600',
-  PAYPAL: 'from-blue-400 to-sky-500',
+  CASH: 'from-success-500 to-emerald-600',
+  STRIPE: 'from-primary-500 to-indigo-600',
+  MOBILE_MONEY: 'from-brand-500 to-brand-accent-500',
+  BANK_TRANSFER: 'from-indigo-500 to-violet-600',
+  GIFT_CARD: 'from-brand-500 to-brand-accent-500',
+  LOYALTY_POINTS: 'from-warning-500 to-amber-600',
+  PAYPAL: 'from-primary-400 to-sky-500',
   FLUTTERWAVE: 'from-emerald-500 to-teal-600',
-  PAYSTACK: 'from-cyan-500 to-blue-600',
+  PAYSTACK: 'from-cyan-500 to-primary-600',
   SQUARE: 'from-gray-700 to-gray-900',
-  MTN: 'from-yellow-500 to-amber-600',
-  AIRTEL: 'from-red-500 to-rose-600',
-  TIGO: 'from-blue-500 to-indigo-600',
-  VODAFONE: 'from-red-600 to-red-800',
+  MTN: 'from-warning-500 to-amber-600',
+  AIRTEL: 'from-danger-500 to-rose-600',
+  TIGO: 'from-primary-500 to-indigo-600',
+  VODAFONE: 'from-danger-600 to-danger-800',
 };
 
 const PROVIDER_TYPE_LABELS: Record<string, string> = {
@@ -179,15 +183,15 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  inactive: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-  unhealthy: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  configured: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  not_configured: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-  online: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  active: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  inactive: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  healthy: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  unhealthy: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  configured: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  not_configured: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  online: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
   offline: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  hybrid: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+  hybrid: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
 };
 
 // ============================================
@@ -198,7 +202,7 @@ export default function PaymentProvidersPage() {
   const router = useRouter();
   const { isDark } = useThemeStore();
   const { canView, canManage } = usePermission();
-  
+
   const [providers, setProviders] = useState<PaymentProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -211,7 +215,7 @@ export default function PaymentProvidersPage() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [submitting, setSubmitting] = useState(false);
-  
+
   // Form state for add provider
   const [newProvider, setNewProvider] = useState<CreateProviderData>({
     name: '',
@@ -244,10 +248,10 @@ export default function PaymentProvidersPage() {
   const fetchProviders = useCallback(async () => {
     try {
       setLoading(true);
-      
+
       // Use the payment service to fetch providers
       const response = await paymentService.getPaymentProviders();
-      
+
       if (response.success && response.data) {
         // Map the response data to our provider type
         const mappedProviders = response.data.map((p: any) => ({
@@ -283,9 +287,9 @@ export default function PaymentProvidersPage() {
           createdAt: p.createdAt || new Date().toISOString(),
           updatedAt: p.updatedAt || new Date().toISOString(),
         }));
-        
+
         setProviders(mappedProviders);
-        
+
         if (mappedProviders.length === 0) {
           toast.info('No payment providers found. Create your first provider.');
         }
@@ -295,7 +299,7 @@ export default function PaymentProvidersPage() {
       }
     } catch (error: any) {
       console.error('Failed to fetch payment providers:', error);
-      
+
       // Handle 404 gracefully
       if (error?.response?.status === 404) {
         toast.info('Payment providers endpoint not found. Please set up your payment providers.');
@@ -404,7 +408,7 @@ export default function PaymentProvidersPage() {
 
       // Send to API using payment service
       const response = await paymentService.createPaymentProvider(providerData);
-      
+
       if (response.success && response.data) {
         // Add new provider to local state
         const newProviderData: PaymentProvider = {
@@ -429,15 +433,15 @@ export default function PaymentProvidersPage() {
           createdAt: response.data.createdAt || new Date().toISOString(),
           updatedAt: response.data.updatedAt || new Date().toISOString(),
         };
-        
+
         setProviders(prev => [...prev, newProviderData]);
         toast.success('Provider added successfully');
       } else {
         toast.error(response.message || 'Failed to add provider');
       }
-      
+
       setShowProviderModal(false);
-      
+
       // Reset form
       setNewProvider({
         name: '',
@@ -456,10 +460,10 @@ export default function PaymentProvidersPage() {
           feeFixed: 0,
         },
       });
-      
+
     } catch (error: any) {
       console.error('Failed to add provider:', error);
-      
+
       if (error?.response?.status === 404) {
         toast.error('Payment providers API not available. Please contact support.');
       } else if (error?.response?.status === 400) {
@@ -477,12 +481,12 @@ export default function PaymentProvidersPage() {
   // Update an existing provider
   const handleUpdateProvider = async () => {
     if (!selectedProvider) return;
-    
+
     try {
       setSubmitting(true);
-      
+
       const response = await paymentService.updatePaymentProvider(selectedProvider.id, settingsData);
-      
+
       if (response.success && response.data) {
         // Update local state
         const updatedProvider: PaymentProvider = {
@@ -493,23 +497,23 @@ export default function PaymentProvidersPage() {
             ...(response.data.config || {}),
           },
         };
-        
+
         setProviders(prev => prev.map(p =>
           p.id === selectedProvider.id ? updatedProvider : p
         ));
-        
+
         toast.success('Settings updated successfully');
       } else {
         toast.error(response.message || 'Failed to update provider');
       }
-      
+
       setShowSettingsModal(false);
       setSelectedProvider(null);
       setSettingsData({});
-      
+
     } catch (error: any) {
       console.error('Failed to update provider:', error);
-      
+
       if (error?.response?.status === 404) {
         toast.error('Payment providers API not available. Please contact support.');
       } else if (error?.response?.status === 400) {
@@ -533,20 +537,20 @@ export default function PaymentProvidersPage() {
       setSubmitting(true);
 
       const response = await paymentService.togglePaymentProvider(providerId, !provider.isActive);
-      
+
       if (response.success) {
         // Update local state
         setProviders(prev => prev.map(p =>
           p.id === providerId ? { ...p, isActive: !p.isActive } : p
         ));
-        
+
         toast.success(`Provider ${provider.isActive ? 'deactivated' : 'activated'} successfully`);
       } else {
         toast.error(response.message || 'Failed to toggle provider');
       }
     } catch (error: any) {
       console.error('Failed to toggle provider:', error);
-      
+
       if (error?.response?.status === 404) {
         toast.error('Payment providers API not available. Please contact support.');
       } else {
@@ -561,24 +565,24 @@ export default function PaymentProvidersPage() {
   // Delete a provider
   const handleDeleteProvider = async () => {
     if (!selectedProvider) return;
-    
+
     try {
       setSubmitting(true);
-      
+
       const response = await paymentService.deletePaymentProvider(selectedProvider.id);
-      
+
       if (response.success) {
         setProviders(prev => prev.filter(p => p.id !== selectedProvider.id));
         setShowDeleteModal(false);
         setSelectedProvider(null);
-        
+
         toast.success('Provider deleted successfully');
       } else {
         toast.error(response.message || 'Failed to delete provider');
       }
     } catch (error: any) {
       console.error('Failed to delete provider:', error);
-      
+
       if (error?.response?.status === 404) {
         toast.error('Payment providers API not available. Please contact support.');
       } else {
@@ -604,12 +608,12 @@ export default function PaymentProvidersPage() {
   };
 
   const getProviderColor = (providerCode: string) => {
-    return PROVIDER_COLORS[providerCode] || 'from-blue-500 to-purple-600';
+    return PROVIDER_COLORS[providerCode] || 'from-primary-500 to-secondary-600';
   };
 
   const getProviderImageUrl = (providerCode: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode] 
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode] 
+    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
+      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
       : PROVIDER_IMAGE_URLS[providerCode] || '';
   };
 
@@ -637,7 +641,7 @@ export default function PaymentProvidersPage() {
         <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to manage payment providers.</p>
         <button
           onClick={() => router.push('/admin/dashboard')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           Go to Dashboard
         </button>
@@ -653,7 +657,7 @@ export default function PaymentProvidersPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 dark:text-blue-400 mx-auto" />
+          <Loader2 className="w-12 h-12 animate-spin text-brand-600 dark:text-brand-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading payment providers...</p>
         </div>
       </div>
@@ -665,21 +669,21 @@ export default function PaymentProvidersPage() {
     const ProviderIcon = getProviderIcon(provider.provider);
     const imageUrl = getProviderImageUrl(provider.provider);
     const isActive = provider.isActive && provider.isHealthy && provider.configured;
-    
+
     return (
       <motion.div
         key={provider.id}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.05 }}
-        className={`group rounded-xl overflow-hidden border transition-all duration-300 ${
+        className={`group rounded-2xl overflow-hidden border transition-all duration-250 ${
           isActive
             ? isDark
-              ? 'bg-gray-800 border-blue-500/50 hover:border-blue-400'
-              : 'bg-white border-blue-300 hover:border-blue-500 shadow-md hover:shadow-xl'
+              ? 'bg-gray-800 border-primary-500/50 hover:border-primary-400'
+              : 'bg-white border-primary-300 hover:border-primary-500 shadow-soft hover:shadow-card-hover'
             : isDark
               ? 'bg-gray-800 border-gray-700 hover:border-gray-600'
-              : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm hover:shadow-lg'
+              : 'bg-white border-gray-200 hover:border-gray-300 shadow-soft hover:shadow-card-hover'
         }`}
       >
         {/* Header */}
@@ -713,16 +717,16 @@ export default function PaymentProvidersPage() {
               )}
               <div>
                 <h3 className="text-white font-semibold text-lg">{provider.name}</h3>
-                <p className="text-white/70 text-sm">{provider.code}</p>
+                <p className="text-white/70 text-sm font-mono tabular-nums">{provider.code}</p>
               </div>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white`}>
+              <span className={`px-2 py-0.5 rounded-full text-2xs font-medium bg-white/20 text-white`}>
                 {getTypeLabel(provider.type)}
               </span>
               <div className="flex items-center gap-1">
-                <span className={`w-2 h-2 rounded-full ${provider.isActive ? 'bg-green-400' : 'bg-red-400'}`} />
-                <span className="text-xs text-white/70">{provider.isActive ? 'Active' : 'Inactive'}</span>
+                <span className={`w-2 h-2 rounded-full ${provider.isActive ? 'bg-success-400' : 'bg-danger-400'}`} />
+                <span className="text-2xs text-white/70">{provider.isActive ? 'Active' : 'Inactive'}</span>
               </div>
             </div>
           </div>
@@ -732,18 +736,18 @@ export default function PaymentProvidersPage() {
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-              <p className="text-xs text-gray-500 dark:text-gray-400">24h Transactions</p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-white">{provider.transactions24h || 0}</p>
+              <p className="text-2xs text-gray-500 dark:text-gray-400">24h Transactions</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{provider.transactions24h || 0}</p>
             </div>
             <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-              <p className="text-xs text-gray-500 dark:text-gray-400">24h Volume</p>
-              <p className="text-lg font-semibold text-gray-900 dark:text-white">{formatCurrency(provider.volume24h || 0)}</p>
+              <p className="text-2xs text-gray-500 dark:text-gray-400">24h Volume</p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{formatCurrency(provider.volume24h || 0)}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {(provider.config?.supportedCurrencies || []).map((currency) => (
-              <span key={currency} className={`px-2 py-0.5 rounded text-xs font-medium ${
+              <span key={currency} className={`px-2 py-0.5 rounded text-2xs font-medium ${
                 isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
               }`}>
                 {currency}
@@ -760,23 +764,23 @@ export default function PaymentProvidersPage() {
           <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-2">
               {provider.configured ? (
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <span className="text-2xs text-success-600 dark:text-success-400 flex items-center gap-1">
                   <CheckCircle className="w-3 h-3" />
                   Configured
                 </span>
               ) : (
-                <span className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+                <span className="text-2xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   Not Configured
                 </span>
               )}
               {provider.isHealthy ? (
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <span className="text-2xs text-success-600 dark:text-success-400 flex items-center gap-1">
                   <Shield className="w-3 h-3" />
                   Healthy
                 </span>
               ) : (
-                <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                <span className="text-2xs text-danger-600 dark:text-danger-400 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
                   Unhealthy
                 </span>
@@ -788,15 +792,16 @@ export default function PaymentProvidersPage() {
                   <button
                     onClick={() => handleToggleProvider(provider.id)}
                     disabled={submitting}
-                    className={`p-1.5 rounded-lg transition ${
+                    className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                       isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     } disabled:opacity-50`}
                     title={provider.isActive ? 'Deactivate' : 'Activate'}
+                    aria-label={provider.isActive ? 'Deactivate provider' : 'Activate provider'}
                   >
                     {provider.isActive ? (
-                      <PowerOff className="w-4 h-4 text-red-500" />
+                      <PowerOff className="w-4 h-4 text-danger-500" />
                     ) : (
-                      <Power className="w-4 h-4 text-green-500" />
+                      <Power className="w-4 h-4 text-success-500" />
                     )}
                   </button>
                   <button
@@ -810,24 +815,26 @@ export default function PaymentProvidersPage() {
                       });
                       setShowSettingsModal(true);
                     }}
-                    className={`p-1.5 rounded-lg transition ${
+                    className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                       isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     }`}
                     title="Settings"
+                    aria-label="Provider settings"
                   >
-                    <Settings className="w-4 h-4 text-blue-500" />
+                    <Settings className="w-4 h-4 text-primary-500" />
                   </button>
                   <button
                     onClick={() => {
                       setSelectedProvider(provider);
                       setShowDeleteModal(true);
                     }}
-                    className={`p-1.5 rounded-lg transition ${
+                    className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                       isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     }`}
                     title="Delete"
+                    aria-label="Delete provider"
                   >
-                    <Trash2 className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4 text-danger-500" />
                   </button>
                 </>
               )}
@@ -842,13 +849,13 @@ export default function PaymentProvidersPage() {
   const renderProviderRow = (provider: PaymentProvider) => {
     const ProviderIcon = getProviderIcon(provider.provider);
     const imageUrl = getProviderImageUrl(provider.provider);
-    
+
     return (
-      <tr key={provider.id} className={`${isDark ? 'bg-gray-800 hover:bg-gray-700/50' : 'bg-white hover:bg-gray-50'} transition-colors`}>
+      <tr key={provider.id} className={`${isDark ? 'bg-gray-800 hover:bg-gray-700/50' : 'bg-white hover:bg-gray-50'} transition-colors duration-250`}>
         <td className="px-4 py-3">
           <div className="flex items-center gap-3">
             {imageUrl ? (
-              <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-gradient-to-r ${getProviderColor(provider.provider)} flex items-center justify-center p-1">
+              <div className={`relative w-10 h-10 rounded-lg overflow-hidden bg-gradient-to-r ${getProviderColor(provider.provider)} flex items-center justify-center p-1`}>
                 <Image
                   src={imageUrl}
                   alt={provider.name}
@@ -874,45 +881,45 @@ export default function PaymentProvidersPage() {
             )}
             <div>
               <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{provider.name}</p>
-              <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{provider.code}</p>
+              <p className={`text-xs font-mono tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{provider.code}</p>
             </div>
           </div>
         </td>
         <td className="px-4 py-3">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(provider.type?.toLowerCase() || '')}`}>
+          <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${getStatusColor(provider.type?.toLowerCase() || '')}`}>
             {getTypeLabel(provider.type)}
           </span>
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${getStatusColor(provider.isActive ? 'active' : 'inactive')}`}>
+            <span className={`px-2 py-0.5 rounded-full text-2xs font-medium w-fit ${getStatusColor(provider.isActive ? 'active' : 'inactive')}`}>
               {provider.isActive ? 'Active' : 'Inactive'}
             </span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium w-fit ${getStatusColor(provider.isHealthy ? 'healthy' : 'unhealthy')}`}>
+            <span className={`px-2 py-0.5 rounded-full text-2xs font-medium w-fit ${getStatusColor(provider.isHealthy ? 'healthy' : 'unhealthy')}`}>
               {provider.isHealthy ? 'Healthy' : 'Unhealthy'}
             </span>
           </div>
         </td>
         <td className="px-4 py-3 text-right">
-          <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <p className={`font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
             {formatCurrency(provider.volume24h || 0)}
           </p>
-          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p className={`text-xs tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
             {provider.transactions24h || 0} transactions
           </p>
         </td>
         <td className="px-4 py-3 text-right">
-          <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <p className={`font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
             {formatCurrency(provider.volume30d || 0)}
           </p>
-          <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p className={`text-xs tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
             {provider.transactions30d || 0} transactions
           </p>
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-wrap gap-1">
             {(provider.config?.supportedCurrencies || []).map((currency) => (
-              <span key={currency} className={`px-2 py-0.5 rounded text-xs font-medium ${
+              <span key={currency} className={`px-2 py-0.5 rounded text-2xs font-medium ${
                 isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
               }`}>
                 {currency}
@@ -927,15 +934,16 @@ export default function PaymentProvidersPage() {
                 <button
                   onClick={() => handleToggleProvider(provider.id)}
                   disabled={submitting}
-                  className={`p-1.5 rounded-lg transition ${
+                  className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                     isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                   } disabled:opacity-50`}
                   title={provider.isActive ? 'Deactivate' : 'Activate'}
+                  aria-label={provider.isActive ? 'Deactivate provider' : 'Activate provider'}
                 >
                   {provider.isActive ? (
-                    <PowerOff className="w-4 h-4 text-red-500" />
+                    <PowerOff className="w-4 h-4 text-danger-500" />
                   ) : (
-                    <Power className="w-4 h-4 text-green-500" />
+                    <Power className="w-4 h-4 text-success-500" />
                   )}
                 </button>
                 <button
@@ -949,24 +957,26 @@ export default function PaymentProvidersPage() {
                     });
                     setShowSettingsModal(true);
                   }}
-                  className={`p-1.5 rounded-lg transition ${
+                  className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                     isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                   }`}
                   title="Settings"
+                  aria-label="Provider settings"
                 >
-                  <Settings className="w-4 h-4 text-blue-500" />
+                  <Settings className="w-4 h-4 text-primary-500" />
                 </button>
                 <button
                   onClick={() => {
                     setSelectedProvider(provider);
                     setShowDeleteModal(true);
                   }}
-                  className={`p-1.5 rounded-lg transition ${
+                  className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                     isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                   }`}
                   title="Delete"
+                  aria-label="Delete provider"
                 >
-                  <Trash2 className="w-4 h-4 text-red-500" />
+                  <Trash2 className="w-4 h-4 text-danger-500" />
                 </button>
               </>
             )}
@@ -978,680 +988,678 @@ export default function PaymentProvidersPage() {
 
   return (
     <div className={`min-h-screen p-6 ${isDark ? 'dark bg-gray-950' : 'bg-gray-50'} transition-colors duration-300`}>
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/admin/dashboard')}
-            className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'} flex items-center gap-3`}>
-              <CreditCard className="w-7 h-7 text-blue-500" />
-              Payment Providers
-            </h1>
-            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-              Manage your payment providers and their configurations
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className={`p-2 rounded-lg transition ${isDark ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-white hover:bg-gray-100 text-gray-700'} border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
-          >
-            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
-          <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1">
+      <div className="max-w-container mx-auto">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in">
+          <div className="flex items-center gap-4">
             <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+              onClick={() => router.push('/admin/dashboard')}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
+              aria-label="Back to dashboard"
             >
-              <Layers className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-            >
-              <Box className="w-4 h-4" />
-            </button>
-          </div>
-          {canManageProviders && (
-            <button
-              onClick={() => setShowProviderModal(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Provider
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: 'Total Providers', value: providers.length, icon: CreditCard, color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' },
-          { label: 'Active', value: providers.filter(p => p.isActive).length, icon: CheckCircle, color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
-          { label: 'Healthy', value: providers.filter(p => p.isHealthy).length, icon: Shield, color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
-          { label: '24h Volume', value: `$${formatNumber(providers.reduce((sum, p) => sum + (p.volume24h || 0), 0))}`, icon: TrendingUp, color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
-        ].map((stat, index) => (
-          <motion.div
-            key={index}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05 }}
-            className={`p-6 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stat.label}</p>
-                <p className={`text-2xl font-bold mt-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>{stat.value}</p>
-              </div>
-              <div className={`p-3 rounded-lg ${stat.color}`}>
-                <stat.icon className="w-5 h-5" />
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className={`p-4 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search providers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${
-                isDark
-                  ? 'bg-gray-700 text-white placeholder-gray-400'
-                  : 'bg-gray-100 text-gray-900 placeholder-gray-500'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-            />
-          </div>
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className={`px-4 py-2 rounded-lg border text-sm ${
-              isDark
-                ? 'bg-gray-700 border-gray-600 text-white'
-                : 'bg-white border-gray-300 text-gray-900'
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-          >
-            <option value="all">All Types</option>
-            <option value="ONLINE">Online</option>
-            <option value="OFFLINE">Offline</option>
-            <option value="HYBRID">Hybrid</option>
-          </select>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className={`px-4 py-2 rounded-lg border text-sm ${
-              isDark
-                ? 'bg-gray-700 border-gray-600 text-white'
-                : 'bg-white border-gray-300 text-gray-900'
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="healthy">Healthy</option>
-            <option value="unhealthy">Unhealthy</option>
-          </select>
-          {(searchQuery || filterType !== 'all' || filterStatus !== 'all') && (
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setFilterType('all');
-                setFilterStatus('all');
-              }}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex items-center gap-1"
-            >
-              <X className="w-4 h-4" />
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Providers Grid/List */}
-      {filteredProviders.length === 0 ? (
-        <div className={`text-center py-12 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-          <CreditCard className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-          <h3 className={`text-lg font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>No providers found</h3>
-          <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-            {providers.length === 0 ? 'No payment providers configured yet' : 'Try adjusting your filters or search terms'}
-          </p>
-          {providers.length === 0 && canManageProviders && (
-            <button
-              onClick={() => setShowProviderModal(true)}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              Add your first provider
-            </button>
-          )}
-        </div>
-      ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProviders.map((provider, index) => renderProviderCard(provider, index))}
-        </div>
-      ) : (
-        <div className={`rounded-xl overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-          <table className="w-full">
-            <thead className={`${isDark ? 'bg-gray-800' : 'bg-gray-50'} border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-              <tr>
-                <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Provider
-                </th>
-                <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Type
-                </th>
-                <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Status
-                </th>
-                <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  24h Volume
-                </th>
-                <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  30d Volume
-                </th>
-                <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Currencies
-                </th>
-                <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-200'}`}>
-              {filteredProviders.map(renderProviderRow)}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Provider Stats Summary */}
-      {filteredProviders.length > 0 && (
-        <div className={`mt-6 p-4 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total Providers</p>
-              <p className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{filteredProviders.length}</p>
-            </div>
-            <div>
-              <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total 24h Volume</p>
-              <p className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {formatCurrency(filteredProviders.reduce((sum, p) => sum + (p.volume24h || 0), 0))}
-              </p>
-            </div>
-            <div>
-              <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total 30d Volume</p>
-              <p className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {formatCurrency(filteredProviders.reduce((sum, p) => sum + (p.volume30d || 0), 0))}
-              </p>
-            </div>
-            <div>
-              <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Avg. Fee</p>
-              <p className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {(filteredProviders.reduce((sum, p) => sum + (p.config?.feePercentage || 0), 0) / filteredProviders.length).toFixed(1)}%
+              <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'} flex items-center gap-3`}>
+                <CreditCard className="w-7 h-7 text-brand-500" />
+                Payment Providers
+              </h1>
+              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                Manage your payment providers and their configurations
               </p>
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-white hover:bg-gray-100 text-gray-700'} border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
+              aria-label="Refresh providers"
+            >
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${viewMode === 'grid' ? 'bg-brand-gradient text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                aria-label="Grid view"
+              >
+                <Layers className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${viewMode === 'list' ? 'bg-brand-gradient text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                aria-label="List view"
+              >
+                <Box className="w-4 h-4" />
+              </button>
+            </div>
+            {canManageProviders && (
+              <button
+                onClick={() => setShowProviderModal(true)}
+                className="btn-brand"
+              >
+                <Plus className="w-4 h-4" />
+                Add Provider
+              </button>
+            )}
+          </div>
         </div>
-      )}
 
-      {/* Delete Provider Modal */}
-      <AnimatePresence>
-        {showDeleteModal && selectedProvider && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-          >
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: 'Total Providers', value: providers.length, icon: CreditCard, color: 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400' },
+            { label: 'Active', value: providers.filter(p => p.isActive).length, icon: CheckCircle, color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400' },
+            { label: 'Healthy', value: providers.filter(p => p.isHealthy).length, icon: Shield, color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400' },
+            { label: '24h Volume', value: `$${formatNumber(providers.reduce((sum, p) => sum + (p.volume24h || 0), 0))}`, icon: TrendingUp, color: 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400' },
+          ].map((stat, index) => (
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className={`max-w-md w-full rounded-xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'}`}
+              key={index}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+              className="card-brand shadow-soft hover:shadow-card-hover transition duration-250"
             >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
-                </div>
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Delete Provider</h3>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>This action cannot be undone</p>
+                  <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stat.label}</p>
+                  <p className={`text-2xl font-bold mt-2 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>{stat.value}</p>
                 </div>
-              </div>
-              <p className={`text-gray-600 dark:text-gray-300 mb-6`}>
-                Are you sure you want to delete <strong className={isDark ? 'text-white' : 'text-gray-900'}>{selectedProvider.name}</strong>?
-                This will permanently remove the provider and all associated data.
-              </p>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setShowDeleteModal(false)}
-                  className={`px-4 py-2 border rounded-lg transition ${
-                    isDark
-                      ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteProvider}
-                  disabled={submitting}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition flex items-center gap-2 disabled:opacity-50"
-                >
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  Delete
-                </button>
+                <div className={`p-3 rounded-lg ${stat.color}`}>
+                  <stat.icon className="w-5 h-5" />
+                </div>
               </div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          ))}
+        </div>
 
-      {/* Add Provider Modal */}
-      <AnimatePresence>
-        {showProviderModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className={`max-w-lg w-full rounded-xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'} max-h-[90vh] overflow-y-auto`}
+        {/* Filters */}
+        <div className="card-brand mb-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[200px] relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search providers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${
+                  isDark
+                    ? 'bg-gray-700 text-white placeholder-gray-400'
+                    : 'bg-gray-100 text-gray-900 placeholder-gray-500'
+                } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+              />
+            </div>
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className={`px-4 py-2 rounded-lg border text-sm ${
+                isDark
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Add Payment Provider</h3>
-                <button
-                  onClick={() => setShowProviderModal(false)}
-                  className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
-                >
-                  <X className="w-5 h-5" />
-                </button>
+              <option value="all">All Types</option>
+              <option value="ONLINE">Online</option>
+              <option value="OFFLINE">Offline</option>
+              <option value="HYBRID">Hybrid</option>
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className={`px-4 py-2 rounded-lg border text-sm ${
+                isDark
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="healthy">Healthy</option>
+              <option value="unhealthy">Unhealthy</option>
+            </select>
+            {(searchQuery || filterType !== 'all' || filterStatus !== 'all') && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setFilterType('all');
+                  setFilterStatus('all');
+                }}
+                className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 flex items-center gap-1 transition duration-250 focus-ring"
+              >
+                <X className="w-4 h-4" />
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Providers Grid/List */}
+        {filteredProviders.length === 0 ? (
+          <div className="card-brand text-center py-12">
+            <CreditCard className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+            <h3 className={`text-lg font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>No providers found</h3>
+            <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              {providers.length === 0 ? 'No payment providers configured yet' : 'Try adjusting your filters or search terms'}
+            </p>
+            {providers.length === 0 && canManageProviders && (
+              <button
+                onClick={() => setShowProviderModal(true)}
+                className="mt-4 btn-brand"
+              >
+                Add your first provider
+              </button>
+            )}
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProviders.map((provider, index) => renderProviderCard(provider, index))}
+          </div>
+        ) : (
+          <div className={`rounded-2xl overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'} shadow-soft`}>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full">
+                <thead className={`${isDark ? 'bg-gray-800' : 'bg-gray-50'} border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <tr>
+                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Provider
+                    </th>
+                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Type
+                    </th>
+                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Status
+                    </th>
+                    <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      24h Volume
+                    </th>
+                    <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      30d Volume
+                    </th>
+                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Currencies
+                    </th>
+                    <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-200'}`}>
+                  {filteredProviders.map(renderProviderRow)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Provider Stats Summary */}
+        {filteredProviders.length > 0 && (
+          <div className="card-brand shadow-soft mt-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total Providers</p>
+                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>{filteredProviders.length}</p>
               </div>
-              <div className="space-y-4">
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Provider Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={newProvider.name}
-                    onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                    }`}
-                    placeholder="e.g., Stripe"
-                  />
+              <div>
+                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total 24h Volume</p>
+                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  {formatCurrency(filteredProviders.reduce((sum, p) => sum + (p.volume24h || 0), 0))}
+                </p>
+              </div>
+              <div>
+                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total 30d Volume</p>
+                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  {formatCurrency(filteredProviders.reduce((sum, p) => sum + (p.volume30d || 0), 0))}
+                </p>
+              </div>
+              <div>
+                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Avg. Fee</p>
+                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  {(filteredProviders.reduce((sum, p) => sum + (p.config?.feePercentage || 0), 0) / filteredProviders.length).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Provider Modal */}
+        <AnimatePresence>
+          {showDeleteModal && selectedProvider && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className={`max-w-md w-full rounded-2xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'}`}
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                    <AlertTriangle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
+                  </div>
+                  <div>
+                    <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Delete Provider</h3>
+                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>This action cannot be undone</p>
+                  </div>
                 </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Provider Code *
-                  </label>
-                  <input
-                    type="text"
-                    value={newProvider.code}
-                    onChange={(e) => setNewProvider({ ...newProvider, code: e.target.value.toUpperCase() })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                    }`}
-                    placeholder="e.g., STRIPE"
-                  />
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Type
-                  </label>
-                  <select
-                    value={newProvider.type}
-                    onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value as 'ONLINE' | 'OFFLINE' | 'HYBRID' })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
+                <p className={`text-gray-600 dark:text-gray-300 mb-6`}>
+                  Are you sure you want to delete <strong className={isDark ? 'text-white' : 'text-gray-900'}>{selectedProvider.name}</strong>?
+                  This will permanently remove the provider and all associated data.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    className="btn-secondary"
                   >
-                    <option value="ONLINE">Online</option>
-                    <option value="OFFLINE">Offline</option>
-                    <option value="HYBRID">Hybrid</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteProvider}
+                    disabled={submitting}
+                    className="px-4 py-2 bg-gradient-to-r from-danger-500 to-brand-accent-500 hover:from-danger-600 hover:to-brand-accent-600 text-white rounded-xl transition duration-250 flex items-center gap-2 disabled:opacity-50 focus-ring shadow-brand"
+                  >
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    Delete
+                  </button>
                 </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Description
-                  </label>
-                  <textarea
-                    value={newProvider.config.description || ''}
-                    onChange={(e) => setNewProvider({
-                      ...newProvider,
-                      config: { ...newProvider.config, description: e.target.value }
-                    })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                    }`}
-                    placeholder="Brief description of the provider"
-                    rows={2}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Min Amount
-                    </label>
-                    <input
-                      type="number"
-                      value={newProvider.config.minAmount || 0}
-                      onChange={(e) => setNewProvider({
-                        ...newProvider,
-                        config: { ...newProvider.config, minAmount: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Max Amount
-                    </label>
-                    <input
-                      type="number"
-                      value={newProvider.config.maxAmount || 0}
-                      onChange={(e) => setNewProvider({
-                        ...newProvider,
-                        config: { ...newProvider.config, maxAmount: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Fee Percentage (%)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={newProvider.config.feePercentage || 0}
-                      onChange={(e) => setNewProvider({
-                        ...newProvider,
-                        config: { ...newProvider.config, feePercentage: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Fixed Fee
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={newProvider.config.feeFixed || 0}
-                      onChange={(e) => setNewProvider({
-                        ...newProvider,
-                        config: { ...newProvider.config, feeFixed: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Supported Currencies (comma separated)
-                  </label>
-                  <input
-                    type="text"
-                    value={newProvider.config.supportedCurrencies.join(', ')}
-                    onChange={(e) => setNewProvider({
-                      ...newProvider,
-                      config: {
-                        ...newProvider.config,
-                        supportedCurrencies: e.target.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-                      }
-                    })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                    }`}
-                    placeholder="USD, EUR, GBP"
-                  />
-                </div>
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Add Provider Modal */}
+        <AnimatePresence>
+          {showProviderModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className={`max-w-lg w-full rounded-2xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'} max-h-[90vh] overflow-y-auto custom-scrollbar`}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Add Payment Provider</h3>
                   <button
                     onClick={() => setShowProviderModal(false)}
-                    className={`px-4 py-2 border rounded-lg transition ${
-                      isDark
-                        ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
+                    className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                    aria-label="Close modal"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddProvider}
-                    disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    Add Provider
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
-              </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Provider Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={newProvider.name}
+                      onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                      }`}
+                      placeholder="e.g., Stripe"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Provider Code *
+                    </label>
+                    <input
+                      type="text"
+                      value={newProvider.code}
+                      onChange={(e) => setNewProvider({ ...newProvider, code: e.target.value.toUpperCase() })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                      }`}
+                      placeholder="e.g., STRIPE"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Type
+                    </label>
+                    <select
+                      value={newProvider.type}
+                      onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value as 'ONLINE' | 'OFFLINE' | 'HYBRID' })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    >
+                      <option value="ONLINE">Online</option>
+                      <option value="OFFLINE">Offline</option>
+                      <option value="HYBRID">Hybrid</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Description
+                    </label>
+                    <textarea
+                      value={newProvider.config.description || ''}
+                      onChange={(e) => setNewProvider({
+                        ...newProvider,
+                        config: { ...newProvider.config, description: e.target.value }
+                      })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                      }`}
+                      placeholder="Brief description of the provider"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Min Amount
+                      </label>
+                      <input
+                        type="number"
+                        value={newProvider.config.minAmount || 0}
+                        onChange={(e) => setNewProvider({
+                          ...newProvider,
+                          config: { ...newProvider.config, minAmount: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Max Amount
+                      </label>
+                      <input
+                        type="number"
+                        value={newProvider.config.maxAmount || 0}
+                        onChange={(e) => setNewProvider({
+                          ...newProvider,
+                          config: { ...newProvider.config, maxAmount: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Fee Percentage (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={newProvider.config.feePercentage || 0}
+                        onChange={(e) => setNewProvider({
+                          ...newProvider,
+                          config: { ...newProvider.config, feePercentage: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Fixed Fee
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={newProvider.config.feeFixed || 0}
+                        onChange={(e) => setNewProvider({
+                          ...newProvider,
+                          config: { ...newProvider.config, feeFixed: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Supported Currencies (comma separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={newProvider.config.supportedCurrencies.join(', ')}
+                      onChange={(e) => setNewProvider({
+                        ...newProvider,
+                        config: {
+                          ...newProvider.config,
+                          supportedCurrencies: e.target.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+                        }
+                      })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                      }`}
+                      placeholder="USD, EUR, GBP"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      onClick={() => setShowProviderModal(false)}
+                      className="btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleAddProvider}
+                      disabled={submitting}
+                      className="btn-brand disabled:opacity-50"
+                    >
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      Add Provider
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
 
-      {/* Settings Modal */}
-      <AnimatePresence>
-        {showSettingsModal && selectedProvider && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto"
-          >
+        {/* Settings Modal */}
+        <AnimatePresence>
+          {showSettingsModal && selectedProvider && (
             <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className={`max-w-2xl w-full rounded-xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'} max-h-[90vh] overflow-y-auto`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto"
             >
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {selectedProvider.name} Settings
-                  </h3>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Configure provider settings and preferences
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowSettingsModal(false)}
-                  className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Provider Name
-                  </label>
-                  <input
-                    type="text"
-                    value={settingsData.name || ''}
-                    onChange={(e) => setSettingsData({ ...settingsData, name: e.target.value })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className={`max-w-2xl w-full rounded-2xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'} max-h-[90vh] overflow-y-auto custom-scrollbar`}
+              >
+                <div className="flex items-center justify-between mb-4">
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Min Amount
-                    </label>
-                    <input
-                      type="number"
-                      value={settingsData.config?.minAmount || 0}
-                      onChange={(e) => setSettingsData({
-                        ...settingsData,
-                        config: { ...settingsData.config, minAmount: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
+                    <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                      {selectedProvider.name} Settings
+                    </h3>
+                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Configure provider settings and preferences
+                    </p>
                   </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Max Amount
-                    </label>
-                    <input
-                      type="number"
-                      value={settingsData.config?.maxAmount || 0}
-                      onChange={(e) => setSettingsData({
-                        ...settingsData,
-                        config: { ...settingsData.config, maxAmount: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Fee Percentage (%)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={settingsData.config?.feePercentage || 0}
-                      onChange={(e) => setSettingsData({
-                        ...settingsData,
-                        config: { ...settingsData.config, feePercentage: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Fixed Fee
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={settingsData.config?.feeFixed || 0}
-                      onChange={(e) => setSettingsData({
-                        ...settingsData,
-                        config: { ...settingsData.config, feeFixed: parseFloat(e.target.value) || 0 }
-                      })}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                        isDark
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      }`}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Supported Currencies (comma separated)
-                  </label>
-                  <input
-                    type="text"
-                    value={(settingsData.config?.supportedCurrencies || []).join(', ')}
-                    onChange={(e) => setSettingsData({
-                      ...settingsData,
-                      config: {
-                        ...settingsData.config,
-                        supportedCurrencies: e.target.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-                      }
-                    })}
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none ${
-                      isDark
-                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                    }`}
-                    placeholder="USD, EUR, GBP"
-                  />
-                </div>
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => setShowSettingsModal(false)}
-                    className={`px-4 py-2 border rounded-lg transition ${
-                      isDark
-                        ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
+                    className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                    aria-label="Close settings"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleUpdateProvider}
-                    disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    Save Settings
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
-              </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Provider Name
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsData.name || ''}
+                      onChange={(e) => setSettingsData({ ...settingsData, name: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Min Amount
+                      </label>
+                      <input
+                        type="number"
+                        value={settingsData.config?.minAmount || 0}
+                        onChange={(e) => setSettingsData({
+                          ...settingsData,
+                          config: { ...settingsData.config, minAmount: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Max Amount
+                      </label>
+                      <input
+                        type="number"
+                        value={settingsData.config?.maxAmount || 0}
+                        onChange={(e) => setSettingsData({
+                          ...settingsData,
+                          config: { ...settingsData.config, maxAmount: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Fee Percentage (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={settingsData.config?.feePercentage || 0}
+                        onChange={(e) => setSettingsData({
+                          ...settingsData,
+                          config: { ...settingsData.config, feePercentage: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Fixed Fee
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={settingsData.config?.feeFixed || 0}
+                        onChange={(e) => setSettingsData({
+                          ...settingsData,
+                          config: { ...settingsData.config, feeFixed: parseFloat(e.target.value) || 0 }
+                        })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
+                          isDark
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Supported Currencies (comma separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={(settingsData.config?.supportedCurrencies || []).join(', ')}
+                      onChange={(e) => setSettingsData({
+                        ...settingsData,
+                        config: {
+                          ...settingsData.config,
+                          supportedCurrencies: e.target.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+                        }
+                      })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
+                        isDark
+                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                      }`}
+                      placeholder="USD, EUR, GBP"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      onClick={() => setShowSettingsModal(false)}
+                      className="btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleUpdateProvider}
+                      disabled={submitting}
+                      className="btn-brand disabled:opacity-50"
+                    >
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Save Settings
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

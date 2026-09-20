@@ -29,7 +29,7 @@ const POSComponent = dynamic(
     loading: () => (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto" />
+          <Loader2 className="w-12 h-12 animate-spin text-brand-600 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Loading POS...
           </p>
@@ -83,7 +83,7 @@ export default function POSPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto" />
+          <Loader2 className="w-12 h-12 animate-spin text-brand-600 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
             Checking permissions...
           </p>
@@ -109,7 +109,7 @@ export default function POSPage() {
         </p>
         <Link
           href="/admin/sales"
-          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Sales
@@ -124,12 +124,12 @@ export default function POSPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header — same pattern as orders/create page */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-header">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               href="/admin/sales"
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors focus-ring rounded"
             >
               <ArrowLeft className="w-5 h-5" />
               <span className="hidden sm:inline">Back to Sales</span>
@@ -142,14 +142,14 @@ export default function POSPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/admin/sales"
-              className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-1.5 text-gray-700 dark:text-gray-300"
+              className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-1.5 text-gray-700 dark:text-gray-300 focus-ring"
             >
               <List className="w-4 h-4" />
               <span className="hidden sm:inline">Sales List</span>
             </Link>
             <Link
               href="/admin/sales/dashboard"
-              className="px-3 py-1.5 text-sm bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg transition-colors flex items-center gap-1.5 text-blue-600 dark:text-blue-400"
+              className="px-3 py-1.5 text-sm bg-brand-50 dark:bg-brand-900/30 hover:bg-brand-100 dark:hover:bg-brand-900/50 rounded-lg transition-colors flex items-center gap-1.5 text-brand-600 dark:text-brand-400 focus-ring"
             >
               <LayoutDashboard className="w-4 h-4" />
               <span className="hidden sm:inline">Dashboard</span>

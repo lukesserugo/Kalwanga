@@ -134,9 +134,9 @@ export default function JournalEntryForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-black/50 overflow-y-auto">
+    <div className="fixed inset-0 z-modal flex items-start justify-center p-4 bg-black/50 overflow-y-auto animate-fade-in">
       <div
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl my-8"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover w-full max-w-2xl my-8"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -147,7 +147,7 @@ export default function JournalEntryForm({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            className="p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           >
             <XMarkIcon className="w-5 h-5 text-gray-500" />
           </button>
@@ -164,7 +164,7 @@ export default function JournalEntryForm({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                className="input-brand"
               />
             </div>
             <div>
@@ -176,7 +176,7 @@ export default function JournalEntryForm({
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 placeholder="Optional"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                className="input-brand"
               />
             </div>
           </div>
@@ -191,7 +191,7 @@ export default function JournalEntryForm({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this entry for?"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+              className="input-brand"
             />
           </div>
 
@@ -204,7 +204,7 @@ export default function JournalEntryForm({
               <button
                 type="button"
                 onClick={addLine}
-                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                className="flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 font-medium transition-colors focus-ring rounded"
               >
                 <PlusIcon className="w-4 h-4" />
                 Add line
@@ -222,7 +222,7 @@ export default function JournalEntryForm({
                     onChange={(e) =>
                       updateLine(i, { accountId: e.target.value })
                     }
-                    className="col-span-12 sm:col-span-5 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    className="col-span-12 sm:col-span-5 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   >
                     <option value="">Select account</option>
                     {accounts.map((a) => (
@@ -243,7 +243,7 @@ export default function JournalEntryForm({
                         debit: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="col-span-6 sm:col-span-3 px-2 py-1.5 text-sm text-right font-mono border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    className="col-span-6 sm:col-span-3 px-2 py-1.5 text-sm text-right font-mono tabular-nums border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   />
 
                   <input
@@ -257,14 +257,14 @@ export default function JournalEntryForm({
                         credit: parseFloat(e.target.value) || 0,
                       })
                     }
-                    className="col-span-6 sm:col-span-3 px-2 py-1.5 text-sm text-right font-mono border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    className="col-span-6 sm:col-span-3 px-2 py-1.5 text-sm text-right font-mono tabular-nums border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   />
 
                   <button
                     type="button"
                     onClick={() => removeLine(i)}
                     disabled={lines.length <= 2}
-                    className="col-span-12 sm:col-span-1 flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-30"
+                    className="col-span-12 sm:col-span-1 flex items-center justify-center text-danger-500 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded disabled:opacity-30 transition-colors focus-ring"
                     title="Remove line"
                   >
                     <TrashIcon className="w-4 h-4" />
@@ -277,7 +277,7 @@ export default function JournalEntryForm({
                     onChange={(e) =>
                       updateLine(i, { description: e.target.value })
                     }
-                    className="col-span-12 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                    className="col-span-12 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
                   />
                 </div>
               ))}
@@ -288,23 +288,19 @@ export default function JournalEntryForm({
           <div
             className={`p-3 rounded-lg border ${
               isBalanced
-                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+                ? 'bg-success-50 dark:bg-success-900/20 border-success-200 dark:border-success-800'
+                : 'bg-warning-50 dark:bg-warning-900/20 border-warning-200 dark:border-warning-800'
             }`}
           >
             <div className="flex justify-between text-sm">
-              <span className="text-gray-700 dark:text-gray-300">
-                Debits
-              </span>
-              <span className="font-mono font-medium text-gray-900 dark:text-white">
+              <span className="text-gray-700 dark:text-gray-300">Debits</span>
+              <span className="font-mono font-medium text-gray-900 dark:text-white tabular-nums">
                 {totalDebit.toFixed(2)}
               </span>
             </div>
             <div className="flex justify-between text-sm mt-1">
-              <span className="text-gray-700 dark:text-gray-300">
-                Credits
-              </span>
-              <span className="font-mono font-medium text-gray-900 dark:text-white">
+              <span className="text-gray-700 dark:text-gray-300">Credits</span>
+              <span className="font-mono font-medium text-gray-900 dark:text-white tabular-nums">
                 {totalCredit.toFixed(2)}
               </span>
             </div>
@@ -313,10 +309,10 @@ export default function JournalEntryForm({
                 {isBalanced ? '✓ Balanced' : '⚠️ Not balanced'}
               </span>
               <span
-                className={`font-mono font-bold ${
+                className={`font-mono font-bold tabular-nums ${
                   isBalanced
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-yellow-600 dark:text-yellow-400'
+                    ? 'text-success-600 dark:text-success-400'
+                    : 'text-warning-600 dark:text-warning-400'
                 }`}
               >
                 {(totalDebit - totalCredit).toFixed(2)}
@@ -326,7 +322,7 @@ export default function JournalEntryForm({
 
           {/* Error */}
           {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+            <div className="p-3 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg text-sm text-danger-700 dark:text-danger-400 animate-slide-down">
               {error}
             </div>
           )}
@@ -337,14 +333,14 @@ export default function JournalEntryForm({
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="btn-secondary focus-ring disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || !isBalanced}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg disabled:opacity-50 text-sm transition-all focus-ring"
             >
               {submitting ? 'Creating…' : 'Create Entry'}
             </button>

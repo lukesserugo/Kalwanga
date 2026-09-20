@@ -29,7 +29,6 @@ import { formatCurrency, formatDate } from '../../../../../utils/formatters';
 // ============================================
 
 interface SettingsData {
-  // Default Values
   defaultReorderPoint: number;
   defaultReorderQuantity: number;
   defaultLocation: string;
@@ -37,21 +36,15 @@ interface SettingsData {
   defaultUnit: string;
   defaultTaxRate: number;
   defaultWeight: number;
-  
-  // Alerts & Notifications
   lowStockAlertThreshold: number;
   enableLowStockAlerts: boolean;
   enableEmailNotifications: boolean;
   enableSMSNotifications: boolean;
   notificationEmail: string;
   notificationPhone: string;
-  
-  // Auto-Reorder
   enableAutoReorder: boolean;
   autoReorderDays: number;
   autoReorderQuantity: number;
-  
-  // Advanced Settings
   enableBarcodeScanning: boolean;
   enableQrGeneration: boolean;
   enableStockTracking: boolean;
@@ -59,8 +52,6 @@ interface SettingsData {
   enableExpiryTracking: boolean;
   enableSerialTracking: boolean;
   enableMultiLocation: boolean;
-  
-  // Preferences
   defaultViewMode: 'table' | 'grid' | 'compact';
   itemsPerPage: number;
   showLowStockBadge: boolean;
@@ -68,8 +59,6 @@ interface SettingsData {
   showImagesInList: boolean;
   defaultSortField: string;
   defaultSortOrder: 'asc' | 'desc';
-  
-  // Integrations
   enableSupplierSync: boolean;
   enableCategorySync: boolean;
   enablePricingSync: boolean;
@@ -181,10 +170,10 @@ const SectionToggle: React.FC<{
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+      className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 focus-ring ${
         isActive
-          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
-          : 'bg-gray-50 dark:bg-gray-700/30 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 border border-transparent'
+          ? 'bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800'
+          : 'bg-gray-50 dark:bg-gray-700/30 text-gray-600 dark:text-gray-400 hover:bg-brand-50/50 dark:hover:bg-gray-700/50 border border-transparent hover:border-brand-200 dark:hover:border-brand-800'
       }`}
     >
       <Icon className="w-4 h-4" />
@@ -206,8 +195,8 @@ const ToggleSwitch: React.FC<{
         type="button"
         onClick={() => onChange(!checked)}
         disabled={disabled}
-        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-          checked ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 ${
+          checked ? 'bg-brand-600' : 'bg-gray-300 dark:bg-gray-600'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         role="switch"
         aria-checked={checked}
@@ -253,7 +242,7 @@ const SettingInput: React.FC<{
   description,
   disabled = false,
 }) => {
-  const baseClasses = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50";
+  const baseClasses = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50";
 
   if (type === 'select') {
     return (
@@ -286,7 +275,7 @@ const SettingInput: React.FC<{
         max={max}
         step={step}
         disabled={disabled}
-        className={baseClasses + ` ${type === 'number' ? 'border-gray-300 dark:border-gray-600' : 'border-gray-300 dark:border-gray-600'}`}
+        className={baseClasses + ` border-gray-300 dark:border-gray-600 ${type === 'number' ? 'tabular-nums' : ''}`}
       />
       {description && <p className="text-xs text-gray-400 mt-1">{description}</p>}
     </div>
@@ -352,10 +341,6 @@ export default function InventorySettingsPage() {
 
   const canManageSettings = hasPermission(`${PermissionResource.INVENTORY}:manage`) || user?.role === 'SUPER_ADMIN';
 
-  // ============================================
-  // LOAD SETTINGS
-  // ============================================
-
   const loadSettings = useCallback(async () => {
     if (!businessUnitId) {
       setLoading(false);
@@ -366,11 +351,6 @@ export default function InventorySettingsPage() {
       setLoading(true);
       setError(null);
       
-      // Load settings from API
-      // const data = await inventoryService.getSettings(businessUnitId);
-      // if (data) setSettings(data);
-      
-      // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 500));
       
       setSuccess(false);
@@ -389,10 +369,6 @@ export default function InventorySettingsPage() {
     await loadSettings();
     toast.success('Settings refreshed');
   };
-
-  // ============================================
-  // SAVE SETTINGS
-  // ============================================
 
   const validateSettings = (): boolean => {
     const errors: Record<string, string> = {};
@@ -435,16 +411,12 @@ export default function InventorySettingsPage() {
     setSuccess(false);
     
     try {
-      // await inventoryService.updateSettings(settings);
-      
-      // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 800));
       
       setSuccess(true);
       setUnsavedChanges(false);
       toast.success('Settings saved successfully');
       
-      // Auto-hide success message
       setTimeout(() => setSuccess(false), 3000);
     } catch (error: any) {
       console.error('Failed to save settings:', error);
@@ -467,19 +439,11 @@ export default function InventorySettingsPage() {
     }
   };
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     if (isAuthenticated && businessUnitId && canManageSettings) {
       loadSettings();
     }
   }, [isAuthenticated, businessUnitId, canManageSettings, loadSettings]);
-
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
 
   if (!isAuthenticated) {
     return (
@@ -491,7 +455,7 @@ export default function InventorySettingsPage() {
         <p className="text-gray-500 dark:text-gray-400 mt-2">You need to be logged in to manage settings.</p>
         <button 
           onClick={() => router.push('/login')} 
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
         >
           Go to Login
         </button>
@@ -509,7 +473,7 @@ export default function InventorySettingsPage() {
         <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to manage inventory settings.</p>
         <button 
           onClick={() => router.push('/admin/inventory')} 
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
         >
           Back to Inventory
         </button>
@@ -521,16 +485,12 @@ export default function InventorySettingsPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-brand-500 animate-spin mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">Loading settings...</p>
         </div>
       </div>
     );
   }
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   const renderSection = (sectionId: string) => {
     switch (sectionId) {
@@ -851,13 +811,13 @@ export default function InventorySettingsPage() {
         <div>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mb-2 inline-flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="mb-2 inline-flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors focus-ring"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Inventory
           </button>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <Settings className="w-8 h-8 text-blue-500" />
+            <Settings className="w-8 h-8 text-brand-500" />
             Inventory Settings
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Configure inventory defaults and preferences</p>
@@ -866,13 +826,13 @@ export default function InventorySettingsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing || saving}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
           {unsavedChanges && (
-            <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium flex items-center gap-1">
+            <span className="text-xs text-warning-600 dark:text-warning-400 font-medium flex items-center gap-1">
               <AlertTriangle className="w-3 h-3" />
               Unsaved changes
             </span>
@@ -880,7 +840,7 @@ export default function InventorySettingsPage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors disabled:opacity-50 shadow-brand focus-ring"
           >
             {saving ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -894,16 +854,16 @@ export default function InventorySettingsPage() {
 
       {/* Error Banner */}
       {error && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="mb-6 p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -913,17 +873,17 @@ export default function InventorySettingsPage() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3"
+          className="mb-6 p-4 bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800 rounded-xl flex items-center gap-3"
         >
-          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-          <p className="text-sm text-green-700 dark:text-green-300">Settings saved successfully!</p>
+          <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
+          <p className="text-sm text-success-700 dark:text-success-300">Settings saved successfully!</p>
         </motion.div>
       )}
 
       {/* Settings Content */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         {/* Navigation Tabs */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1.5 overflow-x-auto">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1.5 overflow-x-auto custom-scrollbar">
           {SECTIONS.map((section) => (
             <SectionToggle
               key={section.id}
@@ -943,7 +903,7 @@ export default function InventorySettingsPage() {
             >
               <div className="mb-6">
                 <div className="flex items-center gap-2 mb-1">
-                  <section.icon className="w-5 h-5 text-blue-500" />
+                  <section.icon className="w-5 h-5 text-brand-500" />
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{section.title}</h2>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">{section.description}</p>
@@ -975,7 +935,7 @@ export default function InventorySettingsPage() {
                   setUnsavedChanges(false);
                   toast.info('Settings reset to saved values');
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-sm focus-ring"
                 disabled={saving}
               >
                 Reset to Saved
@@ -983,7 +943,7 @@ export default function InventorySettingsPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 shadow-brand focus-ring"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

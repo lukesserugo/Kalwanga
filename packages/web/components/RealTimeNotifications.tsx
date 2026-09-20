@@ -89,10 +89,10 @@ export default function RealTimeNotifications() {
 
   const getTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      info: 'bg-blue-50 border-blue-200 text-blue-600',
-      success: 'bg-green-50 border-green-200 text-green-600',
-      warning: 'bg-yellow-50 border-yellow-200 text-yellow-600',
-      error: 'bg-red-50 border-red-200 text-red-600',
+      info: 'bg-primary-50 border-primary-200 text-primary-700 dark:bg-primary-950/30 dark:border-primary-900 dark:text-primary-300',
+      success: 'bg-success-50 border-success-200 text-success-700 dark:bg-success-950/30 dark:border-success-900 dark:text-success-300',
+      warning: 'bg-warning-50 border-warning-200 text-warning-700 dark:bg-warning-950/30 dark:border-warning-900 dark:text-warning-300',
+      error: 'bg-danger-50 border-danger-200 text-danger-700 dark:bg-danger-950/30 dark:border-danger-900 dark:text-danger-300',
     };
     return colors[type] || colors.info;
   };
@@ -103,20 +103,22 @@ export default function RealTimeNotifications() {
   return (
     <>
       {/* Toast Notifications */}
-      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+      <div className="fixed top-4 right-4 z-toast space-y-2 max-w-sm">
         {visibleToasts.map((notification) => (
           <div
             key={notification.id}
-            className={`${getTypeColor(notification.type)} border rounded-lg shadow-lg p-3 flex items-start gap-3 animate-slide-down`}
+            className={`${getTypeColor(notification.type)} border rounded-xl shadow-soft p-3 flex items-start gap-3 animate-slide-down`}
           >
             <BellIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="font-medium text-sm">{notification.title}</p>
-              <p className="text-xs opacity-75 mt-0.5">{notification.message}</p>
+              <p className="text-2xs opacity-75 mt-0.5">{notification.message}</p>
             </div>
             <button
+              type="button"
               onClick={() => dismissNotification(notification.id)}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors duration-250 focus-ring rounded"
+              aria-label={`Dismiss ${notification.title}`}
             >
               <XMarkIcon className="w-4 h-4" />
             </button>
@@ -126,16 +128,18 @@ export default function RealTimeNotifications() {
 
       {/* Notification Bell */}
       <button
+        type="button"
         onClick={() => {
           setShowDropdown(!showDropdown);
           markAllRead();
         }}
-        className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors duration-250 focus-ring"
         title="Notifications"
+        aria-label="Notifications"
       >
-        <BellIcon className="w-6 h-6 text-gray-600" />
+        <BellIcon className="w-6 h-6 text-gray-600 dark:text-gray-400" />
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+          <span className="absolute top-0 right-0 min-w-4 h-4 px-1 bg-danger-500 text-white text-2xs rounded-full flex items-center justify-center tabular-nums animate-badge-pop">
             {unreadCount}
           </span>
         )}
@@ -143,23 +147,30 @@ export default function RealTimeNotifications() {
 
       {/* Dropdown */}
       {showDropdown && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border z-50">
-          <div className="flex justify-between items-center p-3 border-b">
-            <h3 className="font-semibold">Notifications</h3>
-            <button onClick={markAllRead} className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-soft border border-gray-200 dark:border-gray-700 z-modal">
+          <div className="flex justify-between items-center p-3 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
+            <button
+              type="button"
+              onClick={markAllRead}
+              className="text-2xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1 transition-colors duration-250 focus-ring rounded"
+            >
               <CheckIcon className="w-4 h-4" />
               Mark all read
             </button>
           </div>
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No notifications</p>
+              <p className="text-center text-2xs text-gray-500 dark:text-gray-400 py-8">No notifications</p>
             ) : (
               notifications.map((notification) => (
-                <div key={notification.id} className="p-3 border-b last:border-b-0 hover:bg-gray-50">
-                  <p className="font-medium text-sm">{notification.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{notification.message}</p>
-                  <p className="text-xs text-gray-400 mt-1">
+                <div
+                  key={notification.id}
+                  className="p-3 border-b border-gray-200 dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-250"
+                >
+                  <p className="font-medium text-sm text-gray-900 dark:text-white">{notification.title}</p>
+                  <p className="text-2xs text-gray-500 dark:text-gray-400 mt-0.5">{notification.message}</p>
+                  <p className="text-2xs text-gray-400 dark:text-gray-500 mt-1 tabular-nums">
                     {notification.timestamp.toLocaleTimeString()}
                   </p>
                 </div>

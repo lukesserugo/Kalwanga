@@ -189,7 +189,7 @@ export default function CashRegistersPage() {
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-b-2 border-blue-600 rounded-full"></div>
+        <div className="animate-spin h-8 w-8 border-b-2 border-brand-600 rounded-full"></div>
       </div>
     );
   }
@@ -222,14 +222,14 @@ export default function CashRegistersPage() {
                   </div>
                   <span
                     className={`w-3 h-3 rounded-full ${
-                      openSession ? 'bg-green-500' : 'bg-gray-300'
+                      openSession ? 'bg-success-500' : 'bg-gray-300'
                     }`}
                   />
                 </div>
                 <div className="space-y-2 mb-4">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Balance</span>
-                    <span className="font-bold">
+                    <span className="font-bold tabular-nums">
                       {formatCurrency(register.cashBalance)}
                     </span>
                   </div>
@@ -237,7 +237,7 @@ export default function CashRegistersPage() {
                     <span className="text-gray-600">Status</span>
                     <span
                       className={
-                        register.isActive ? 'text-green-600' : 'text-red-600'
+                        register.isActive ? 'text-success-600' : 'text-brand-accent-600'
                       }
                     >
                       {register.isActive ? 'Active' : 'Inactive'}
@@ -250,14 +250,14 @@ export default function CashRegistersPage() {
                       setShowEndShift(openSession.id);
                       setEndingBalance(register.cashBalance);
                     }}
-                    className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700"
+                    className="w-full bg-brand-accent-600 text-white py-2 rounded-lg hover:bg-brand-accent-700 focus-ring transition-colors shadow-brand"
                   >
                     End Shift
                   </button>
                 ) : (
                   <button
                     onClick={() => setShowStartShift(register.id)}
-                    className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
+                    className="w-full bg-success-600 text-white py-2 rounded-lg hover:bg-success-700 focus-ring transition-colors shadow-brand"
                   >
                     Start Shift
                   </button>
@@ -282,7 +282,7 @@ export default function CashRegistersPage() {
               onChange={(e) =>
                 setStartingBalance(parseFloat(e.target.value) || 0)
               }
-              className="w-full px-4 py-2 border rounded-lg text-lg"
+              className="w-full px-4 py-2 border rounded-lg text-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-colors tabular-nums"
               step="0.01"
               min="0"
               autoFocus
@@ -290,14 +290,14 @@ export default function CashRegistersPage() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowStartShift(null)}
-                className="flex-1 py-2 bg-gray-200 rounded-lg"
+                className="flex-1 py-2 bg-gray-200 rounded-lg focus-ring hover:bg-gray-300 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleStartShift(showStartShift)}
                 disabled={isSubmitting}
-                className="flex-1 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50"
+                className="flex-1 py-2 bg-success-600 text-white rounded-lg disabled:opacity-50 focus-ring hover:bg-success-700 transition-colors shadow-brand"
               >
                 Start
               </button>
@@ -320,7 +320,7 @@ export default function CashRegistersPage() {
               onChange={(e) =>
                 setEndingBalance(parseFloat(e.target.value) || 0)
               }
-              className="w-full px-4 py-2 border rounded-lg text-lg"
+              className="w-full px-4 py-2 border rounded-lg text-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-colors tabular-nums"
               step="0.01"
               min="0"
               autoFocus
@@ -328,14 +328,14 @@ export default function CashRegistersPage() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => setShowEndShift(null)}
-                className="flex-1 py-2 bg-gray-200 rounded-lg"
+                className="flex-1 py-2 bg-gray-200 rounded-lg focus-ring hover:bg-gray-300 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleEndShift(showEndShift)}
                 disabled={isSubmitting}
-                className="flex-1 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50"
+                className="flex-1 py-2 bg-brand-accent-600 text-white rounded-lg disabled:opacity-50 focus-ring hover:bg-brand-accent-700 transition-colors shadow-brand"
               >
                 End Shift
               </button>

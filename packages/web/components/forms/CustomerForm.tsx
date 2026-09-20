@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import Input from '../common/Input';
 import Button from '../common/Button';
-import { validateEmail, validatePhone, validateRequired } from '../../utils/validators';
+import {
+  validateEmail,
+  validatePhone,
+  validateRequired,
+} from '../../utils/validators';
 
 interface CustomerFormData {
   firstName: string;
@@ -46,10 +50,13 @@ export default function CustomerForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    // Clear error when user types
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: '' }));
     }
@@ -156,14 +163,14 @@ export default function CustomerForm({
           disabled={isLoading}
         />
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Country
           </label>
           <select
             name="country"
             value={formData.country}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-shadow"
             disabled={isLoading}
           >
             <option value="US">United States</option>
@@ -177,7 +184,7 @@ export default function CustomerForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Notes
         </label>
         <textarea
@@ -185,7 +192,7 @@ export default function CustomerForm({
           value={formData.notes}
           onChange={handleChange}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-shadow"
           disabled={isLoading}
         />
       </div>

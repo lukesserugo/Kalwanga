@@ -4,7 +4,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wifi, WifiOff, Loader2, RefreshCw } from 'lucide-react';
-import type { StreamStatus } from '../../hooks/notifications/useNotificationStream';
+import type { StreamStatus } from '../../hooks/useNotificationStream';
 
 export function ConnectionStatusPill({
   status,
@@ -22,7 +22,7 @@ export function ConnectionStatusPill({
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-medium"
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-warning-50 dark:bg-warning-900/30 border border-warning-200 dark:border-warning-800 text-warning-800 dark:text-warning-300 text-xs font-medium z-fab shadow-soft"
           role="status"
         >
           {status === 'reconnecting' ? (
@@ -39,7 +39,7 @@ export function ConnectionStatusPill({
             <button
               type="button"
               onClick={onRetry}
-              className="ml-1 inline-flex items-center gap-1 text-amber-900 dark:text-amber-200 hover:underline font-semibold"
+              className="ml-1 inline-flex items-center gap-1 text-warning-900 dark:text-warning-200 hover:underline font-semibold transition duration-250 focus-ring rounded"
             >
               <RefreshCw className="w-3 h-3" />
               Retry
@@ -59,9 +59,9 @@ export function ConnectionStatusDot({
 }) {
   const color =
     status === 'connected'
-      ? 'bg-emerald-500'
+      ? 'bg-success-500'
       : status === 'connecting' || status === 'reconnecting'
-      ? 'bg-amber-500'
+      ? 'bg-warning-500'
       : 'bg-gray-400';
 
   const label =
@@ -75,7 +75,7 @@ export function ConnectionStatusDot({
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-[10px] font-medium text-gray-500 dark:text-gray-400"
+      className="inline-flex items-center gap-1.5 text-2xs font-medium text-gray-500 dark:text-gray-400"
       title={`Stream: ${label}`}
     >
       <span className={`inline-block w-1.5 h-1.5 rounded-full ${color}`} />

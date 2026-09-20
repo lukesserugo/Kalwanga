@@ -37,11 +37,11 @@ interface LocationAuditLogProps {
 }
 
 const SEVERITY_STYLES: Record<string, string> = {
-  INFO: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  INFO: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
   LOW: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
-  MEDIUM: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-  HIGH: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-  CRITICAL: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  MEDIUM: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  HIGH: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+  CRITICAL: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
 };
 
 export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProps) {
@@ -107,7 +107,7 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
       key: 'when',
       header: 'When',
       render: (r) => (
-        <span className="text-gray-600 dark:text-gray-400 whitespace-nowrap">
+        <span className="text-gray-600 dark:text-gray-400 whitespace-nowrap tabular-nums">
           {formatDate(r.createdAt)}
         </span>
       ),
@@ -141,7 +141,7 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
             {r.user.firstName} {r.user.lastName}
           </span>
         ) : (
-          <span className="text-gray-400">System</span>
+          <span className="text-gray-400 dark:text-gray-500">System</span>
         ),
     },
     {
@@ -150,7 +150,7 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
       hideBelow: 'lg',
       render: (r) => (
         <span
-          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+          className={`inline-flex px-2 py-0.5 rounded-full text-2xs font-medium ${
             SEVERITY_STYLES[r.severity] ?? SEVERITY_STYLES.INFO
           }`}
         >
@@ -173,16 +173,16 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by action, location, or user…"
-            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           />
         </div>
 
         <button
           type="button"
           onClick={() => setShowFilters((v) => !v)}
-          className={`px-3 py-2 border rounded-lg text-sm transition-colors inline-flex items-center gap-1.5 ${
+          className={`px-3 py-2 border rounded-lg text-sm transition duration-250 inline-flex items-center gap-1.5 focus-ring ${
             showFilters || actionFilter
-              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+              ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
               : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         >
@@ -194,19 +194,20 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
           type="button"
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 disabled:opacity-50 focus-ring"
           title="Refresh"
+          aria-label="Refresh audit log"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
       {showFilters && (
-        <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 flex flex-wrap items-center gap-3">
+        <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-3 flex flex-wrap items-center gap-3 animate-slide-down">
           <select
             value={actionFilter}
             onChange={(e) => setActionFilter(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
           >
             <option value="">All actions</option>
             <option value="CREATE">Create</option>
@@ -218,7 +219,7 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
             <button
               type="button"
               onClick={() => setActionFilter('')}
-              className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 flex items-center gap-1"
+              className="text-sm text-danger-600 hover:text-danger-700 dark:text-danger-400 flex items-center gap-1 transition duration-250 focus-ring rounded"
             >
               <X className="w-4 h-4" />
               Clear
@@ -228,9 +229,9 @@ export function LocationAuditLog({ initialBusinessUnitId }: LocationAuditLogProp
       )}
 
       {!businessUnitId ? (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
-          <AlertCircle className="w-10 h-10 text-yellow-500 mx-auto mb-2" />
-          <p className="text-sm text-yellow-700 dark:text-yellow-300">
+        <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-2xl p-6 text-center">
+          <AlertCircle className="w-10 h-10 text-warning-500 mx-auto mb-2" />
+          <p className="text-sm text-warning-700 dark:text-warning-300">
             Select a business unit to view its audit log.
           </p>
         </div>

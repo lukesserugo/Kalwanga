@@ -7,48 +7,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Tag,
-  Plus,
-  Edit,
-  Trash2,
-  RefreshCw,
-  FolderTree,
-  FolderOpen,
-  Package,
-  Search,
-  Loader2,
-  Lock,
-  Eye,
-  ArrowUpDown,
-  Grid,
-  List,
-  X,
-  AlertCircle,
-  CheckCircle,
-  Info,
-  HelpCircle,
-  ChevronRight,
-  ChevronDown,
-  MoreVertical,
-  Copy,
-  Link2,
-  ExternalLink,
-  Star,
-  Award,
-  Globe,
-  Archive,
-  Clock,
-  Calendar,
-  Hash,
-  Building2,
-  Database,
-  Users,
-  BarChart3,
-  PieChart,
-  TrendingUp,
-  TrendingDown,
-  Filter,           // ✅ FIXED: Added Filter import
-  AlertTriangle,    // ✅ FIXED: Added AlertTriangle import
+  Tag, Plus, Edit, Trash2, RefreshCw,
+  FolderTree, FolderOpen, Package, Search,
+  Loader2, Lock, Eye, ArrowUpDown, Grid, List,
+  X, AlertCircle, CheckCircle, Info, HelpCircle,
+  ChevronRight, ChevronDown, MoreVertical, Copy,
+  Link2, ExternalLink, Star, Award, Globe, Archive,
+  Clock, Calendar, Hash, Building2, Database,
+  Users, BarChart3, PieChart, TrendingUp, TrendingDown,
+  Filter, AlertTriangle,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { useAuth } from '../../../../../hooks/useAuth';
@@ -82,22 +49,20 @@ const CategoryCard: React.FC<{
   canEdit: boolean;
   canDelete: boolean;
 }> = ({ category, onEdit, onDelete, onView, canEdit, canDelete }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ y: -2 }}
-      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-all"
+      className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md hover:border-brand-200 dark:hover:border-brand-800 transition-all"
     >
       <div className="flex items-start justify-between">
         <button
           onClick={() => onView(category)}
-          className="flex items-center gap-3 min-w-0 flex-1"
+          className="flex items-center gap-3 min-w-0 flex-1 text-left"
         >
-          <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex-shrink-0">
-            <Tag className="w-5 h-5 text-blue-500" />
+          <div className="p-2 bg-brand-50 dark:bg-brand-950/20 rounded-lg flex-shrink-0">
+            <Tag className="w-5 h-5 text-brand-500" />
           </div>
           <div className="min-w-0">
             <h4 className="font-medium text-gray-900 dark:text-white truncate">
@@ -132,7 +97,7 @@ const CategoryCard: React.FC<{
         <div className="flex gap-1 flex-shrink-0 ml-2">
           <button
             onClick={() => onView(category)}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
             title="View"
           >
             <Eye className="w-4 h-4 text-gray-500" />
@@ -140,19 +105,19 @@ const CategoryCard: React.FC<{
           {canEdit && (
             <button
               onClick={() => onEdit(category)}
-              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+              className="p-1 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
               title="Edit"
             >
-              <Edit className="w-4 h-4 text-blue-500" />
+              <Edit className="w-4 h-4 text-brand-500" />
             </button>
           )}
           {canDelete && (
             <button
               onClick={() => onDelete(category)}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+              className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
               title="Delete"
             >
-              <Trash2 className="w-4 h-4 text-red-500" />
+              <Trash2 className="w-4 h-4 text-brand-accent-500" />
             </button>
           )}
         </div>
@@ -160,12 +125,12 @@ const CategoryCard: React.FC<{
 
       <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 tabular-nums">
             <Package className="w-3.5 h-3.5" />
             {category.productCount || 0} products
           </span>
           {category.childrenCount !== undefined && category.childrenCount > 0 && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1 tabular-nums">
               <FolderTree className="w-3.5 h-3.5" />
               {category.childrenCount} sub-categories
             </span>
@@ -177,41 +142,13 @@ const CategoryCard: React.FC<{
         </div>
         <button
           onClick={() => onView(category)}
-          className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1"
+          className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 flex items-center gap-1 focus-ring transition-colors"
         >
           <ChevronRight className="w-3 h-3" />
           View Details
         </button>
       </div>
     </motion.div>
-  );
-};
-
-const LoadingSkeleton: React.FC<{ count?: number }> = ({ count = 6 }) => {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {[...Array(count)].map((_, i) => (
-        <div key={i} className="animate-pulse bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-lg" />
-              <div>
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-24 mb-2" />
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-32" />
-              </div>
-            </div>
-            <div className="flex gap-1">
-              <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded" />
-              <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded" />
-            </div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between">
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-20" />
-            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-16" />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 };
 
@@ -224,7 +161,6 @@ export default function InventoryCategoriesPage() {
   const { user, isAuthenticated } = useAuth();
   const { canView, canCreate, canEdit, canDelete, canManage } = usePermission();
   
-  // Refs
   const initialLoadRef = useRef(false);
   const loadDataRef = useRef(false);
   
@@ -248,15 +184,10 @@ export default function InventoryCategoriesPage() {
                           (user?.businessUnits?.[0] as any)?.id || 
                           localStorage.getItem('businessUnitId') || '';
 
-  // Permission checks
   const canViewCategories = canView(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
   const canCreateCategories = canCreate(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
   const canEditCategories = canEdit(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
   const canDeleteCategories = canDelete(PermissionResource.CATEGORY) || canManage(PermissionResource.CATEGORY);
-
-  // ============================================
-  // DATA LOADING
-  // ============================================
 
   const loadCategories = useCallback(async (showLoading = true) => {
     if (loadDataRef.current) {
@@ -275,10 +206,8 @@ export default function InventoryCategoriesPage() {
       if (showLoading) setLoading(true);
       setError(null);
       
-      // Load categories from inventory service
       const data = await inventoryService.getCategories(businessUnitId);
       
-      // Transform data with additional stats
       const categoriesWithStats = (data || []).map((cat: any) => ({
         id: cat.id || '',
         name: cat.name || 'Unnamed',
@@ -319,10 +248,6 @@ export default function InventoryCategoriesPage() {
     toast.success('Categories refreshed');
   };
 
-  // ============================================
-  // CRUD OPERATIONS
-  // ============================================
-
   const handleDelete = async () => {
     if (!categoryToDelete) return;
     setDeleting(true);
@@ -352,14 +277,9 @@ export default function InventoryCategoriesPage() {
     setShowDetailModal(true);
   };
 
-  // ============================================
-  // FILTERING & SORTING
-  // ============================================
-
   const filteredCategories = useMemo(() => {
     let result = [...categories];
     
-    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       result = result.filter(cat =>
@@ -368,14 +288,12 @@ export default function InventoryCategoriesPage() {
       );
     }
     
-    // Active filter
     if (filterActive === 'active') {
       result = result.filter(cat => cat.isActive !== false);
     } else if (filterActive === 'inactive') {
       result = result.filter(cat => cat.isActive === false);
     }
     
-    // Sort
     result.sort((a, b) => {
       let aVal: any = a[sortField];
       let bVal: any = b[sortField];
@@ -404,19 +322,11 @@ export default function InventoryCategoriesPage() {
     return { total, active, inactive, totalProducts, categoriesWithChildren };
   }, [categories]);
 
-  // ============================================
-  // EFFECTS
-  // ============================================
-
   useEffect(() => {
     if (isAuthenticated && businessUnitId && !initialLoadRef.current) {
       loadCategories();
     }
   }, [isAuthenticated, businessUnitId, loadCategories]);
-
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
 
   if (!isAuthenticated) {
     return (
@@ -448,7 +358,7 @@ export default function InventoryCategoriesPage() {
           </p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Back to Inventory
           </button>
@@ -460,53 +370,47 @@ export default function InventoryCategoriesPage() {
   if (loading && categories.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
-
-  // ============================================
-  // RENDER
-  // ============================================
 
   const hasActiveFilters = searchQuery || filterActive !== 'all';
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      {/* Error Banner */}
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
 
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <FolderTree className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
+            <FolderTree className="w-7 h-7 sm:w-8 sm:h-8 text-brand-500" />
             Categories
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
             {stats.total} categories • {stats.totalProducts} products • {stats.categoriesWithChildren} with sub-categories
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`p-2 border rounded-lg transition-colors ${
+            className={`p-2 border rounded-lg transition-colors focus-ring ${
               showFilters || hasActiveFilters
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20 text-brand-600 dark:text-brand-400'
+                : 'border-gray-300 dark:border-gray-600 hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700'
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -514,7 +418,7 @@ export default function InventoryCategoriesPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -524,9 +428,9 @@ export default function InventoryCategoriesPage() {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 focus-ring ${
                   viewMode === mode
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-brand-600 text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
@@ -537,7 +441,7 @@ export default function InventoryCategoriesPage() {
           </div>
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
             title="Toggle sort order"
           >
             <ArrowUpDown className="w-4 h-4" />
@@ -545,7 +449,7 @@ export default function InventoryCategoriesPage() {
           {canCreateCategories && (
             <Link
               href="/admin/categories/create"
-              className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
+              className="px-3 sm:px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add Category</span>
@@ -554,27 +458,25 @@ export default function InventoryCategoriesPage() {
         </div>
       </div>
 
-      {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Total Categories</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">{stats.total}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Active</p>
-          <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.active}</p>
+          <p className="text-2xl font-bold text-success-600 dark:text-success-400 tabular-nums">{stats.active}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Inactive</p>
-          <p className="text-2xl font-bold text-gray-400 dark:text-gray-500">{stats.inactive}</p>
+          <p className="text-2xl font-bold text-gray-400 dark:text-gray-500 tabular-nums">{stats.inactive}</p>
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Total Products</p>
-          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.totalProducts}</p>
+          <p className="text-2xl font-bold text-brand-600 dark:text-brand-400 tabular-nums">{stats.totalProducts}</p>
         </div>
       </div>
 
-      {/* Search & Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap gap-3">
           <div className="flex-1 min-w-[200px] relative">
@@ -584,13 +486,13 @@ export default function InventoryCategoriesPage() {
               placeholder="Search categories..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
             />
           </div>
           <select
             value={sortField}
             onChange={(e) => setSortField(e.target.value as 'name' | 'productCount' | 'createdAt')}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
           >
             <option value="name">Sort by Name</option>
             <option value="productCount">Sort by Products</option>
@@ -602,7 +504,7 @@ export default function InventoryCategoriesPage() {
                 setSearchQuery('');
                 setFilterActive('all');
               }}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1"
+              className="text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 flex items-center gap-1 focus-ring transition-colors"
             >
               <X className="w-4 h-4" />
               Clear
@@ -610,7 +512,6 @@ export default function InventoryCategoriesPage() {
           )}
         </div>
 
-        {/* Filters Panel */}
         <AnimatePresence>
           {showFilters && (
             <motion.div
@@ -625,9 +526,9 @@ export default function InventoryCategoriesPage() {
                   <span className="text-sm text-gray-500 dark:text-gray-400">Status:</span>
                   <button
                     onClick={() => setFilterActive('all')}
-                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors focus-ring ${
                       filterActive === 'all'
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                        ? 'bg-brand-100 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
@@ -635,9 +536,9 @@ export default function InventoryCategoriesPage() {
                   </button>
                   <button
                     onClick={() => setFilterActive('active')}
-                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors focus-ring ${
                       filterActive === 'active'
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                        ? 'bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
@@ -645,7 +546,7 @@ export default function InventoryCategoriesPage() {
                   </button>
                   <button
                     onClick={() => setFilterActive('inactive')}
-                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors focus-ring ${
                       filterActive === 'inactive'
                         ? 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -660,7 +561,6 @@ export default function InventoryCategoriesPage() {
         </AnimatePresence>
       </div>
 
-      {/* Categories Display */}
       {filteredCategories.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
           <FolderOpen className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
@@ -671,7 +571,7 @@ export default function InventoryCategoriesPage() {
           {canCreateCategories && !searchQuery && filterActive === 'all' && (
             <Link
               href="/admin/categories/create"
-              className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="mt-4 inline-block px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
             >
               <Plus className="w-4 h-4 inline mr-2" />
               Add Category
@@ -697,7 +597,7 @@ export default function InventoryCategoriesPage() {
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
@@ -710,26 +610,26 @@ export default function InventoryCategoriesPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredCategories.map((category) => (
-                  <tr key={category.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <tr key={category.id} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
                     <td className="px-4 py-3">
                       <button
                         onClick={() => handleView(category)}
-                        className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400"
+                        className="flex items-center gap-2 hover:text-brand-600 dark:hover:text-brand-400 transition-colors focus-ring"
                       >
-                        <Tag className="w-4 h-4 text-blue-500" />
+                        <Tag className="w-4 h-4 text-brand-500" />
                         <span className="font-medium text-gray-900 dark:text-white">{category.name}</span>
                       </button>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate hidden md:table-cell">
                       {category.description || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400 tabular-nums">
                       {category.productCount || 0}
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                         category.isActive !== false
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
                           : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
                       }`}>
                         {category.isActive !== false ? 'Active' : 'Inactive'}
@@ -739,7 +639,7 @@ export default function InventoryCategoriesPage() {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleView(category)}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                           title="View"
                         >
                           <Eye className="w-4 h-4 text-gray-500" />
@@ -747,10 +647,10 @@ export default function InventoryCategoriesPage() {
                         {canEditCategories && (
                           <button
                             onClick={() => handleEdit(category)}
-                            className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                            className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-950/30 rounded transition-colors focus-ring"
                             title="Edit"
                           >
-                            <Edit className="w-4 h-4 text-blue-500" />
+                            <Edit className="w-4 h-4 text-brand-500" />
                           </button>
                         )}
                         {canDeleteCategories && (
@@ -759,10 +659,10 @@ export default function InventoryCategoriesPage() {
                               setCategoryToDelete(category);
                               setShowDeleteModal(true);
                             }}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                            className="p-1.5 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-950/30 rounded transition-colors focus-ring"
                             title="Delete"
                           >
-                            <Trash2 className="w-4 h-4 text-red-500" />
+                            <Trash2 className="w-4 h-4 text-brand-accent-500" />
                           </button>
                         )}
                       </div>
@@ -788,28 +688,28 @@ export default function InventoryCategoriesPage() {
             >
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
               
               <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                <div className="w-16 h-16 bg-brand-accent-100 dark:bg-brand-accent-950/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete Category</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{categoryToDelete.name}</strong>?
                 </p>
                 {categoryToDelete.productCount && categoryToDelete.productCount > 0 && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg mb-4 text-sm text-yellow-700 dark:text-yellow-300">
+                  <div className="p-3 bg-warning-50 dark:bg-warning-950/20 border border-warning-200 dark:border-warning-800 rounded-lg mb-4 text-sm text-warning-700 dark:text-warning-300">
                     <AlertTriangle className="w-4 h-4 inline mr-1" />
                     This category has {categoryToDelete.productCount} product(s) associated with it.
                     Deleting it will remove the category from all products.
                   </div>
                 )}
                 {categoryToDelete.childrenCount && categoryToDelete.childrenCount > 0 && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg mb-4 text-sm text-yellow-700 dark:text-yellow-300">
+                  <div className="p-3 bg-warning-50 dark:bg-warning-950/20 border border-warning-200 dark:border-warning-800 rounded-lg mb-4 text-sm text-warning-700 dark:text-warning-300">
                     <FolderTree className="w-4 h-4 inline mr-1" />
                     This category has {categoryToDelete.childrenCount} sub-category(s). They will be moved to the parent category.
                   </div>
@@ -819,14 +719,14 @@ export default function InventoryCategoriesPage() {
               <div className="flex justify-center gap-3 mt-6">
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                  className="px-4 py-2 bg-brand-accent-600 text-white rounded-lg hover:bg-brand-accent-700 flex items-center gap-2 disabled:opacity-50 transition-colors shadow-brand focus-ring"
                 >
                   {deleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -850,18 +750,18 @@ export default function InventoryCategoriesPage() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6"
+              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 custom-scrollbar"
             >
               <button
                 onClick={() => setShowDetailModal(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
               </button>
 
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <FolderTree className="w-6 h-6 text-blue-500" />
+                <div className="p-3 bg-brand-50 dark:bg-brand-950/20 rounded-lg">
+                  <FolderTree className="w-6 h-6 text-brand-500" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -882,7 +782,7 @@ export default function InventoryCategoriesPage() {
                   <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                     selectedCategory.isActive !== false
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                      ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
                       : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
                   }`}>
                     {selectedCategory.isActive !== false ? 'Active' : 'Inactive'}
@@ -902,13 +802,13 @@ export default function InventoryCategoriesPage() {
                 )}
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Products</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
                     {selectedCategory.productCount || 0}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <p className="text-xs text-gray-500 dark:text-gray-400">Sub-Categories</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">
+                  <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
                     {selectedCategory.childrenCount || 0}
                   </p>
                 </div>
@@ -931,7 +831,7 @@ export default function InventoryCategoriesPage() {
               <div className="flex flex-wrap justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                 >
                   Close
                 </button>
@@ -941,7 +841,7 @@ export default function InventoryCategoriesPage() {
                       setShowDetailModal(false);
                       handleEdit(selectedCategory);
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+                    className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 transition-colors shadow-brand focus-ring"
                   >
                     <Edit className="w-4 h-4" />
                     Edit Category
@@ -952,7 +852,7 @@ export default function InventoryCategoriesPage() {
                     setShowDetailModal(false);
                     router.push(`/admin/inventory?category=${selectedCategory.id}`);
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors focus-ring"
                 >
                   <Package className="w-4 h-4" />
                   View Products

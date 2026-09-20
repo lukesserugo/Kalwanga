@@ -114,7 +114,7 @@ export default function EditCategoryPage() {
           </p>
           <button
             onClick={handleNavigateBack}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             Back to Categories
           </button>
@@ -163,8 +163,8 @@ export default function EditCategoryPage() {
           transition={{ duration: 0.3 }}
           className="text-center max-w-md"
         >
-          <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-12 h-12 text-red-600 dark:text-red-400" />
+          <div className="w-24 h-24 bg-danger-100 dark:bg-danger-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-12 h-12 text-danger-600 dark:text-danger-400" />
           </div>
           <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
             Category Not Found
@@ -174,7 +174,7 @@ export default function EditCategoryPage() {
           </p>
           <button
             onClick={handleNavigateBack}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             Back to Categories
           </button>
@@ -191,7 +191,7 @@ export default function EditCategoryPage() {
         <button
           onClick={handleNavigateBack}
           disabled={isSubmitting}
-          className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors disabled:opacity-50"
+          className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors disabled:opacity-50 focus-ring rounded"
         >
           Categories
         </button>
@@ -202,7 +202,7 @@ export default function EditCategoryPage() {
             router.push(`/admin/categories/${category.id}`)
           }
           disabled={isSubmitting}
-          className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors truncate max-w-[12rem] disabled:opacity-50"
+          className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors truncate max-w-[12rem] disabled:opacity-50 focus-ring rounded"
         >
           {category.name}
         </button>
@@ -217,7 +217,7 @@ export default function EditCategoryPage() {
         <button
           onClick={handleNavigateBack}
           disabled={isSubmitting}
-          className="mt-1 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-1 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
           aria-label="Go back"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -225,7 +225,7 @@ export default function EditCategoryPage() {
 
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-            <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shrink-0">
+            <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-brand-gradient text-white shadow-lg shrink-0">
               <FolderTree className="w-5 h-5" />
             </span>
             <span className="truncate">Edit Category</span>
@@ -242,7 +242,7 @@ export default function EditCategoryPage() {
             router.push(`/admin/categories/${category.id}`)
           }
           disabled={isSubmitting}
-          className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
           title="View public detail page"
         >
           <ExternalLink className="w-4 h-4" />
@@ -255,14 +255,14 @@ export default function EditCategoryPage() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+        className="card-brand p-0 overflow-hidden"
       >
         <div
           className="h-1.5"
           style={{
             background:
               category.color ||
-              'linear-gradient(to right, #3B82F6, #6366F1)',
+              'linear-gradient(to right, #F97316, #EF4444)',
           }}
         />
         <div className="p-5 sm:p-6 flex items-center gap-4">
@@ -288,7 +288,7 @@ export default function EditCategoryPage() {
               <span className="inline-flex items-center gap-1">
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
-                    category.isActive ? 'bg-emerald-500' : 'bg-gray-400'
+                    category.isActive ? 'bg-success-500' : 'bg-gray-400'
                   }`}
                 />
                 {category.isActive ? 'Active' : 'Inactive'}
@@ -296,7 +296,7 @@ export default function EditCategoryPage() {
               {(category as any).featured && (
                 <>
                   <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
-                  <span className="text-amber-600 dark:text-amber-400 font-medium">
+                  <span className="text-warning-600 dark:text-warning-400 font-medium">
                     ★ Featured
                   </span>
                 </>
@@ -311,7 +311,7 @@ export default function EditCategoryPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, delay: 0.05 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 sm:p-8"
+        className="card-brand p-5 sm:p-8"
       >
         <CategoryForm
           initialData={category}
@@ -328,8 +328,8 @@ export default function EditCategoryPage() {
           <span
             className={`w-1.5 h-1.5 rounded-full ${
               isSubmitting
-                ? 'bg-amber-500 animate-pulse'
-                : 'bg-emerald-500'
+                ? 'bg-warning-500 animate-pulse'
+                : 'bg-success-500'
             }`}
           />
           {isSubmitting ? (
@@ -337,7 +337,9 @@ export default function EditCategoryPage() {
           ) : (
             <>
               Editing category:{' '}
-              <span className="font-mono">{category.id.slice(0, 12)}…</span>
+              <span className="font-mono">
+                {category.id.slice(0, 12)}…
+              </span>
             </>
           )}
         </span>

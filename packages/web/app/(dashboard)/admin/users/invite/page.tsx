@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { InviteUserModal } from '../../../../../components/users/InviteUserModal';
-import { 
+import {
   ArrowLeft, Lock, Send, Users, Mail, Shield, Building,
   Loader2, AlertCircle, CheckCircle, XCircle, Info,
   TrendingUp, TrendingDown, Calendar, Clock, BarChart3
@@ -61,7 +61,7 @@ export default function InviteUsersPage() {
         </p>
         <button
           onClick={() => router.push('/admin/users')}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Users
@@ -73,7 +73,7 @@ export default function InviteUsersPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
         <p className="mt-4 text-gray-500 dark:text-gray-400">Loading invitation stats...</p>
       </div>
     );
@@ -86,14 +86,14 @@ export default function InviteUsersPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/admin/users')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Back to users"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Send className="w-6 h-6 text-blue-500" />
+              <Send className="w-6 h-6 text-brand-500" />
               Invite Users
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -101,7 +101,7 @@ export default function InviteUsersPage() {
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/50 px-3 py-1.5 rounded-lg">
             <Users className="w-4 h-4" />
@@ -112,59 +112,59 @@ export default function InviteUsersPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div className="p-2 bg-brand-100 dark:bg-brand-900/30 rounded-lg">
+              <Mail className="w-5 h-5 text-brand-600 dark:text-brand-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Invitations</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">{stats.total}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-              <Clock className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <div className="p-2 bg-warning-100 dark:bg-warning-900/30 rounded-lg">
+              <Clock className="w-5 h-5 text-warning-600 dark:text-warning-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Pending</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.pending}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">{stats.pending}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div className="p-2 bg-success-100 dark:bg-success-900/30 rounded-lg">
+              <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Accepted</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.accepted}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">{stats.accepted}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <div className="p-2 bg-secondary-100 dark:bg-secondary-900/30 rounded-lg">
+              <TrendingUp className="w-5 h-5 text-secondary-600 dark:text-secondary-400" />
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Acceptance Rate</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.acceptanceRate}%</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">{stats.acceptanceRate}%</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Info Card */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+      <div className="bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-4">
         <div className="flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+          <Info className="w-5 h-5 text-brand-600 dark:text-brand-400 flex-shrink-0 mt-0.5" />
           <div>
-            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">How Invitations Work</h4>
-            <ul className="mt-2 space-y-1 text-sm text-blue-700 dark:text-blue-400">
+            <h4 className="text-sm font-medium text-brand-800 dark:text-brand-300">How Invitations Work</h4>
+            <ul className="mt-2 space-y-1 text-sm text-brand-700 dark:text-brand-400">
               <li>• Invitations are sent via email with a unique link</li>
               <li>• Users can accept or decline the invitation</li>
               <li>• Invitations expire after the specified period</li>
@@ -175,10 +175,10 @@ export default function InviteUsersPage() {
       </div>
 
       {/* Recent Invitations */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <div className="card-brand p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Invitations</h3>
-          <button className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400">
+          <button className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 focus-ring rounded">
             View All
           </button>
         </div>
@@ -191,20 +191,20 @@ export default function InviteUsersPage() {
             <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className={`w-2 h-2 rounded-full ${
-                  invitation.status === 'pending' ? 'bg-yellow-500' :
-                  invitation.status === 'accepted' ? 'bg-green-500' :
-                  'bg-red-500'
+                  invitation.status === 'pending' ? 'bg-warning-500' :
+                  invitation.status === 'accepted' ? 'bg-success-500' :
+                  'bg-danger-500'
                 }`} />
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">{invitation.email}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-brand-100 text-brand-800 dark:bg-brand-900/30 dark:text-brand-400">
                       {invitation.role}
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      invitation.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                      invitation.status === 'accepted' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                      'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                      invitation.status === 'pending' ? 'bg-warning-100 text-warning-800 dark:bg-warning-900/30 dark:text-warning-400' :
+                      invitation.status === 'accepted' ? 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-400' :
+                      'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-400'
                     }`}>
                       {invitation.status.charAt(0).toUpperCase() + invitation.status.slice(1)}
                     </span>

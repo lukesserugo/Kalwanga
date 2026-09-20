@@ -248,60 +248,15 @@ const inventorySubLinks: SubLink[] = [
 ];
 
 const locationsSubLinks: SubLink[] = [
-  {
-    name: 'Locations Dashboard',
-    href: '/admin/locations',
-    icon: MapPinIcon,
-    permission: 'canViewInventory',
-  },
-  {
-    name: 'Add Location',
-    href: '/admin/locations/add',
-    icon: PlusCircleIcon,
-    permission: 'canManageInventory',
-  },
-  {
-    name: 'Transfer Stock',
-    href: '/admin/locations/transfer',
-    icon: TruckIcon,
-    permission: 'canTransferInventory',
-  },
-  {
-    name: 'Stock Count',
-    href: '/admin/locations/stock-count',
-    icon: CalculatorIcon,
-    permission: 'canManageStockCount',
-  },
-  {
-    name: 'Import Locations',
-    href: '/admin/locations/import',
-    icon: ArrowUpTrayIcon,
-    permission: 'canImportInventory',
-  },
-  {
-    name: 'Export Locations',
-    href: '/admin/locations/export',
-    icon: DocumentArrowDownIcon,
-    permission: 'canExportInventory',
-  },
-  {
-    name: 'Location Reports',
-    href: '/admin/locations/reports',
-    icon: ChartPieIcon,
-    permission: 'canViewInventoryReports',
-  },
-  {
-    name: 'Location Audit',
-    href: '/admin/locations/audit',
-    icon: ClipboardDocumentListIcon,
-    permission: 'canViewInventoryAudit',
-  },
-  {
-    name: 'Location Settings',
-    href: '/admin/locations/settings',
-    icon: Cog6ToothIcon,
-    permission: 'canManageSettings',
-  },
+  { name: 'Locations Dashboard', href: '/admin/locations', icon: MapPinIcon, permission: 'canViewInventory' },
+  { name: 'Add Location', href: '/admin/locations/add', icon: PlusCircleIcon, permission: 'canManageInventory' },
+  { name: 'Transfer Stock', href: '/admin/locations/transfer', icon: TruckIcon, permission: 'canTransferInventory' },
+  { name: 'Stock Count', href: '/admin/locations/stock-count', icon: CalculatorIcon, permission: 'canManageStockCount' },
+  { name: 'Import Locations', href: '/admin/locations/import', icon: ArrowUpTrayIcon, permission: 'canImportInventory' },
+  { name: 'Export Locations', href: '/admin/locations/export', icon: DocumentArrowDownIcon, permission: 'canExportInventory' },
+  { name: 'Location Reports', href: '/admin/locations/reports', icon: ChartPieIcon, permission: 'canViewInventoryReports' },
+  { name: 'Location Audit', href: '/admin/locations/audit', icon: ClipboardDocumentListIcon, permission: 'canViewInventoryAudit' },
+  { name: 'Location Settings', href: '/admin/locations/settings', icon: Cog6ToothIcon, permission: 'canManageSettings' },
 ];
 
 const barcodeSubLinks: SubLink[] = [
@@ -385,24 +340,9 @@ const bookkeepingSubLinks: SubLink[] = [
 // the `permission` on the specific SubLink — nothing else changes.
 
 const notificationSubLinks: SubLink[] = [
-  {
-    name: 'Inbox',
-    href: '/admin/notifications',
-    icon: BellIcon,
-    permission: 'canViewDashboard',
-  },
-  {
-    name: 'Templates',
-    href: '/admin/notifications/templates',
-    icon: DocumentDuplicateIcon,
-    permission: 'canViewDashboard',
-  },
-  {
-    name: 'Settings',
-    href: '/admin/notifications/settings',
-    icon: Cog6ToothIcon,
-    permission: 'canViewDashboard',
-  },
+  { name: 'Inbox', href: '/admin/notifications', icon: BellIcon, permission: 'canViewDashboard' },
+  { name: 'Templates', href: '/admin/notifications/templates', icon: DocumentDuplicateIcon, permission: 'canViewDashboard' },
+  { name: 'Settings', href: '/admin/notifications/settings', icon: Cog6ToothIcon, permission: 'canViewDashboard' },
 ];
 
 const dashboardLinks: NavItem[] = [
@@ -423,14 +363,7 @@ const dashboardLinks: NavItem[] = [
   { name: 'Customers', href: '/admin/customers', icon: UserGroupIcon, permission: 'canViewCustomers', subLinks: customersSubLinks },
   { name: 'Suppliers', href: '/admin/suppliers', icon: TruckIcon, permission: 'canViewSuppliers', subLinks: supplierSubLinks },
   { name: 'Users', href: '/admin/users', icon: UsersIcon, permission: 'canViewUsers', subLinks: userManagementSubLinks },
-  // Notifications — expandable group with Inbox / Templates / Settings
-  {
-    name: 'Notifications',
-    href: '/admin/notifications',
-    icon: BellIcon,
-    permission: 'canViewDashboard',
-    subLinks: notificationSubLinks,
-  },
+  { name: 'Notifications', href: '/admin/notifications', icon: BellIcon, permission: 'canViewDashboard', subLinks: notificationSubLinks },
   { name: 'Reports', href: '/admin/reports', icon: ChartPieIcon, permission: 'canViewReports' },
   { name: 'Categories', href: '/admin/categories', icon: FolderIcon, permission: 'canViewCategories' },
   { name: 'Settings', href: '/admin/settings', icon: Cog6ToothIcon, permission: 'canManageSettings' },
@@ -459,13 +392,10 @@ export default function Sidebar({
     if (!user) return false;
     const meta = user.publicMetadata as Record<string, unknown> | undefined;
     const unsafe = user.unsafeMetadata as Record<string, unknown> | undefined;
-    const roleFromMeta =
-      typeof meta?.role === 'string' ? meta.role : null;
+    const roleFromMeta = typeof meta?.role === 'string' ? meta.role : null;
     const roleFromUnsafe =
       typeof unsafe?.role === 'string' ? unsafe.role : null;
-    return (
-      isSuperAdminRole(roleFromMeta) || isSuperAdminRole(roleFromUnsafe)
-    );
+    return isSuperAdminRole(roleFromMeta) || isSuperAdminRole(roleFromUnsafe);
   }, [user]);
 
   const permissions = useMemo<UserPermissions>(() => {
@@ -526,7 +456,9 @@ export default function Sidebar({
 
   const filteredDashboardLinks = useMemo(
     () =>
-      dashboardLinks.filter((item) => isLinkVisible(item.href, item.permission)),
+      dashboardLinks.filter((item) =>
+        isLinkVisible(item.href, item.permission)
+      ),
     [isLinkVisible]
   );
 
@@ -560,8 +492,6 @@ export default function Sidebar({
       { base: '/admin/locations', menuKey: '/admin/locations' },
       { base: '/admin/barcodes', menuKey: '/admin/barcodes' },
       { base: '/admin/users', menuKey: '/admin/users' },
-      // Notifications — matches /admin/notifications, /admin/notifications/templates,
-      // /admin/notifications/templates/new, /admin/notifications/settings, etc.
       { base: '/admin/notifications', menuKey: '/admin/notifications' },
       { base: '/admin/catalog', menuKey: '/admin/catalog' },
       { base: '/admin/sales', menuKey: '/admin/sales' },
@@ -592,10 +522,10 @@ export default function Sidebar({
         title={isCollapsed ? item.name : undefined}
         className={`group flex items-center ${
           isCollapsed ? 'justify-center' : 'gap-3'
-        } px-2 py-2 rounded-lg transition-all duration-150 relative ${
+        } px-2 py-2 rounded-lg transition-all duration-150 relative focus-ring ${
           active
-            ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
+            ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+            : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
         } ${isCollapsed ? 'w-full' : ''}`}
         onClick={() => {
           if (isMobileOpen) onToggleMobile();
@@ -604,7 +534,7 @@ export default function Sidebar({
         <item.icon
           className={`w-5 h-5 flex-shrink-0 ${
             active
-              ? 'text-blue-600 dark:text-blue-400'
+              ? 'text-brand-600 dark:text-brand-400'
               : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300'
           }`}
         />
@@ -613,7 +543,7 @@ export default function Sidebar({
           <span
             className={`font-medium text-sm flex-1 ${
               active
-                ? 'text-blue-600 dark:text-blue-400'
+                ? 'text-brand-600 dark:text-brand-400'
                 : 'text-gray-700 dark:text-gray-300'
             }`}
           >
@@ -622,11 +552,11 @@ export default function Sidebar({
         )}
 
         {!isCollapsed && active && (
-          <span className="w-1.5 h-1.5 bg-blue-600 rounded-full flex-shrink-0" />
+          <span className="w-1.5 h-1.5 bg-brand-500 rounded-full flex-shrink-0" />
         )}
 
         {isCollapsed && active && (
-          <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-l-full" />
+          <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-500 rounded-l-full" />
         )}
       </Link>
     );
@@ -642,7 +572,7 @@ export default function Sidebar({
     }
     return (
       <div className="px-2 py-1">
-        <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+        <p className="text-2xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
           {title}
         </p>
       </div>
@@ -669,28 +599,28 @@ export default function Sidebar({
       return (
         <div key={item.href} className="relative group">
           <button
-            className={`flex items-center justify-center px-2 py-2 rounded-lg transition-all duration-150 relative w-full ${
+            className={`flex items-center justify-center px-2 py-2 rounded-lg transition-all duration-150 relative w-full focus-ring ${
               isItemActive
-                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
+                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
             }`}
             title={item.name}
           >
             <item.icon
               className={`w-5 h-5 ${
                 isItemActive
-                  ? 'text-blue-600 dark:text-blue-400'
+                  ? 'text-brand-600 dark:text-brand-400'
                   : 'text-gray-500 dark:text-gray-400'
               }`}
             />
             {isItemActive && (
-              <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-l-full" />
+              <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-500 rounded-l-full" />
             )}
 
             {hasSubLinks && visibleSubLinks.length > 0 && (
-              <div className="absolute left-full top-0 ml-1 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 z-50 hidden group-hover:block">
+              <div className="absolute left-full top-0 ml-1 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover border border-gray-200 dark:border-gray-700 z-toast hidden group-hover:block custom-scrollbar">
                 <div className="p-2">
-                  <p className="px-3 py-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase">
+                  <p className="px-3 py-1 text-2xs font-semibold text-gray-400 dark:text-gray-500 uppercase">
                     {item.name}
                   </p>
                   {visibleSubLinks.map((subLink) => {
@@ -700,10 +630,10 @@ export default function Sidebar({
                         key={subLink.href}
                         href={subLink.href}
                         prefetch={false}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors focus-ring ${
                           subActive
-                            ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700'
                         }`}
                         onClick={() => {
                           if (isMobileOpen) onToggleMobile();
@@ -712,7 +642,7 @@ export default function Sidebar({
                         <subLink.icon className="w-4 h-4 flex-shrink-0" />
                         <span>{subLink.name}</span>
                         {subActive && (
-                          <span className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />
+                          <span className="ml-auto w-1.5 h-1.5 bg-brand-500 rounded-full" />
                         )}
                       </Link>
                     );
@@ -729,23 +659,23 @@ export default function Sidebar({
       <div key={item.href}>
         <button
           onClick={() => handleSubMenuToggle(item.href)}
-          className={`group w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-all duration-150 ${
+          className={`group w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-all duration-150 focus-ring ${
             isItemActive
-              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
+              ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-white'
           }`}
         >
           <item.icon
             className={`w-5 h-5 flex-shrink-0 ${
               isItemActive
-                ? 'text-blue-600 dark:text-blue-400'
+                ? 'text-brand-600 dark:text-brand-400'
                 : 'text-gray-500 dark:text-gray-400'
             }`}
           />
           <span
             className={`font-medium text-sm flex-1 text-left ${
               isItemActive
-                ? 'text-blue-600 dark:text-blue-400'
+                ? 'text-brand-600 dark:text-brand-400'
                 : 'text-gray-700 dark:text-gray-300'
             }`}
           >
@@ -757,7 +687,7 @@ export default function Sidebar({
             } text-gray-400`}
           />
           {isItemActive && !isExpanded && (
-            <span className="w-1.5 h-1.5 bg-blue-600 rounded-full flex-shrink-0" />
+            <span className="w-1.5 h-1.5 bg-brand-500 rounded-full flex-shrink-0" />
           )}
         </button>
 
@@ -776,10 +706,10 @@ export default function Sidebar({
                   key={subLink.href}
                   href={subLink.href}
                   prefetch={false}
-                  className={`flex items-center gap-3 px-2 py-1.5 rounded-lg transition-all duration-150 text-sm ${
+                  className={`flex items-center gap-3 px-2 py-1.5 rounded-lg transition-all duration-150 text-sm focus-ring ${
                     subActive
-                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-300'
+                      ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                   onClick={() => {
                     if (isMobileOpen) onToggleMobile();
@@ -788,7 +718,7 @@ export default function Sidebar({
                   <subLink.icon className="w-4 h-4 flex-shrink-0" />
                   <span>{subLink.name}</span>
                   {subActive && (
-                    <span className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />
+                    <span className="ml-auto w-1.5 h-1.5 bg-brand-500 rounded-full" />
                   )}
                 </Link>
               );
@@ -807,7 +737,7 @@ export default function Sidebar({
     <>
       <aside
         ref={sidebarRef}
-        className={`hidden lg:flex fixed inset-y-0 left-0 z-40 bg-white dark:bg-gray-900 shadow-xl flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-800 transition-all duration-300 ${
+        className={`hidden lg:flex fixed inset-y-0 left-0 z-header bg-white dark:bg-gray-900 shadow-soft flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-800 transition-all duration-300 sidebar-scroll ${
           isCollapsed ? 'w-[72px]' : 'w-[280px]'
         }`}
       >
@@ -820,22 +750,22 @@ export default function Sidebar({
             <Link
               href="/"
               prefetch={false}
-              className="flex items-center gap-2 group"
+              className="flex items-center gap-2 group focus-ring rounded-lg"
             >
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-all">
+              <div className="w-8 h-8 bg-brand-gradient rounded-xl flex items-center justify-center shadow-brand group-hover:shadow-brand-lg transition-all">
                 <span className="text-white font-bold text-sm">P</span>
               </div>
               <div>
-                <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <h1 className="text-lg font-bold text-brand-gradient">
                   POS System
                 </h1>
-                <p className="text-[10px] text-gray-400 -mt-0.5">Point of Sale</p>
+                <p className="text-2xs text-gray-400 -mt-0.5">Point of Sale</p>
               </div>
             </Link>
           ) : (
             <button
               onClick={onToggleCollapse}
-              className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+              className="p-1 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-800 transition-all focus-ring"
               title="Expand sidebar"
               aria-label="Expand sidebar"
             >
@@ -846,7 +776,7 @@ export default function Sidebar({
           {!isCollapsed && (
             <button
               onClick={onToggleCollapse}
-              className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+              className="p-1 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-800 transition-all focus-ring"
               title="Collapse sidebar"
               aria-label="Collapse sidebar"
             >
@@ -878,14 +808,14 @@ export default function Sidebar({
           {!isCollapsed ? (
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 p-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold text-xs shadow-md flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-xs shadow-brand flex-shrink-0">
                   {getInitials()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
                     {getFullName()}
                   </p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                  <p className="text-2xs text-gray-500 dark:text-gray-400 truncate">
                     {getUserEmail()}
                   </p>
                 </div>
@@ -893,7 +823,7 @@ export default function Sidebar({
               {isLoaded && isSignedIn ? (
                 <button
                   onClick={handleSignOut}
-                  className="w-full flex items-center justify-center px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all duration-200 border border-red-200 dark:border-red-800"
+                  className="w-full flex items-center justify-center px-3 py-1.5 text-xs font-medium text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-all duration-200 border border-danger-200 dark:border-danger-800 focus-ring"
                 >
                   <ArrowRightOnRectangleIcon className="w-4 h-4 mr-1.5" />
                   Sign Out
@@ -902,7 +832,7 @@ export default function Sidebar({
                 <Link
                   href="/sign-in"
                   prefetch={false}
-                  className="w-full flex items-center justify-center px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all duration-200 border border-blue-200 dark:border-blue-800"
+                  className="w-full flex items-center justify-center px-3 py-1.5 text-xs font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-all duration-200 border border-brand-200 dark:border-brand-800 focus-ring"
                 >
                   <ArrowRightOnRectangleIcon className="w-4 h-4 mr-1.5" />
                   Sign In
@@ -911,13 +841,13 @@ export default function Sidebar({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-1">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold text-xs shadow-md">
+              <div className="w-8 h-8 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-xs shadow-brand">
                 {getInitials()}
               </div>
               {isLoaded && isSignedIn ? (
                 <button
                   onClick={handleSignOut}
-                  className="p-1 text-gray-700 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all duration-200"
+                  className="p-1 text-gray-700 dark:text-gray-300 hover:text-danger-600 dark:hover:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg transition-all duration-200 focus-ring"
                   title="Sign Out"
                 >
                   <ArrowRightOnRectangleIcon className="w-4 h-4" />
@@ -926,7 +856,7 @@ export default function Sidebar({
                 <Link
                   href="/sign-in"
                   prefetch={false}
-                  className="p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all duration-200"
+                  className="p-1 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-all duration-200 focus-ring"
                   title="Sign In"
                 >
                   <ArrowRightOnRectangleIcon className="w-4 h-4" />
@@ -941,7 +871,7 @@ export default function Sidebar({
         {isMobileOpen && (
           <>
             <div
-              className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+              className="fixed inset-0 z-drawer bg-black/50 backdrop-blur-sm"
               onClick={onToggleMobile}
             />
             <motion.div
@@ -949,28 +879,28 @@ export default function Sidebar({
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 left-0 z-50 w-[280px] bg-white dark:bg-gray-900 shadow-2xl flex flex-col"
+              className="fixed inset-y-0 left-0 z-modal w-[280px] bg-white dark:bg-gray-900 shadow-card-hover flex flex-col"
             >
               <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
+                  <div className="w-8 h-8 bg-brand-gradient rounded-xl flex items-center justify-center shadow-brand">
                     <span className="text-white font-bold text-sm">P</span>
                   </div>
-                  <h1 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  <h1 className="text-lg font-bold text-brand-gradient">
                     POS System
                   </h1>
                 </div>
                 <button
                   onClick={onToggleMobile}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all"
+                  className="p-2 hover:bg-orange-50 dark:hover:bg-gray-800 rounded-xl transition-all focus-ring"
                 >
                   <XMarkIcon className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-3 py-4">
+              <div className="flex-1 overflow-y-auto px-3 py-4 sidebar-scroll">
                 <div className="mb-4">
-                  <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
+                  <p className="text-2xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
                     Shop
                   </p>
                   {publicLinks.map((item) => (
@@ -979,16 +909,16 @@ export default function Sidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={onToggleMobile}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${
+                      className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 focus-ring ${
                         isActive(item.href)
-                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/50'
+                          ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-800/50'
                       }`}
                     >
                       <item.icon className="w-5 h-5" />
                       <span className="font-medium text-sm">{item.name}</span>
                       {isActive(item.href) && (
-                        <span className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />
+                        <span className="ml-auto w-2 h-2 bg-brand-500 rounded-full" />
                       )}
                     </Link>
                   ))}
@@ -996,7 +926,7 @@ export default function Sidebar({
 
                 {isLoaded && isSignedIn && (
                   <div className="mb-4">
-                    <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
+                    <p className="text-2xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
                       Admin Dashboard
                     </p>
                     {filteredDashboardLinks.map((item) => {
@@ -1022,10 +952,10 @@ export default function Sidebar({
                                 window.location.href = item.href;
                               }
                             }}
-                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 focus-ring ${
                               isItemActive
-                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/50'
+                                ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-800/50'
                             }`}
                           >
                             <item.icon className="w-5 h-5" />
@@ -1040,7 +970,7 @@ export default function Sidebar({
                               />
                             )}
                             {!hasSubLinks && isItemActive && (
-                              <span className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />
+                              <span className="ml-auto w-2 h-2 bg-brand-500 rounded-full" />
                             )}
                           </button>
                           {hasSubLinks &&
@@ -1053,16 +983,16 @@ export default function Sidebar({
                                     href={subLink.href}
                                     prefetch={false}
                                     onClick={onToggleMobile}
-                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm focus-ring ${
                                       isActive(subLink.href)
-                                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/50'
+                                        ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
+                                        : 'text-gray-500 dark:text-gray-400 hover:bg-orange-50 dark:hover:bg-gray-800/50'
                                     }`}
                                   >
                                     <subLink.icon className="w-4 h-4" />
                                     <span>{subLink.name}</span>
                                     {isActive(subLink.href) && (
-                                      <span className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />
+                                      <span className="ml-auto w-1.5 h-1.5 bg-brand-500 rounded-full" />
                                     )}
                                   </Link>
                                 ))}
@@ -1079,7 +1009,7 @@ export default function Sidebar({
                 {isLoaded && isSignedIn ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-3 p-2 rounded-xl bg-gray-50 dark:bg-gray-800/50">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold text-sm shadow-md">
+                      <div className="w-10 h-10 rounded-full bg-brand-gradient flex items-center justify-center text-white font-semibold text-sm shadow-brand">
                         {getInitials()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1096,7 +1026,7 @@ export default function Sidebar({
                         onToggleMobile();
                         handleSignOut();
                       }}
-                      className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all duration-200 border border-red-200 dark:border-red-800"
+                      className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-xl transition-all duration-200 border border-danger-200 dark:border-danger-800 focus-ring"
                     >
                       <ArrowRightOnRectangleIcon className="w-5 h-5 mr-2" />
                       Sign Out
@@ -1106,7 +1036,7 @@ export default function Sidebar({
                   <Link
                     href="/sign-in"
                     prefetch={false}
-                    className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all duration-200 border border-blue-200 dark:border-blue-800"
+                    className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-xl transition-all duration-200 border border-brand-200 dark:border-brand-800 focus-ring"
                   >
                     <ArrowRightOnRectangleIcon className="w-5 h-5 mr-2" />
                     Sign In
@@ -1126,4 +1056,3 @@ export default function Sidebar({
     </>
   );
 }
-

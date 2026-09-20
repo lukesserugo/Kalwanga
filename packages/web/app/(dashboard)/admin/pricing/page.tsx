@@ -68,7 +68,7 @@ export default function PricingPage() {
       interval: 'monthly',
       description: 'Perfect for small businesses just getting started.',
       icon: '🚀',
-      color: 'from-blue-400 to-blue-600',
+      color: 'from-primary-400 to-primary-600',
       features: [
         'Up to 50 products',
         'Basic POS features',
@@ -89,7 +89,7 @@ export default function PricingPage() {
       interval: 'monthly',
       description: 'Ideal for growing businesses with more needs.',
       icon: '💼',
-      color: 'from-purple-400 to-blue-600',
+      color: 'from-secondary-400 to-primary-600',
       features: [
         'Up to 500 products',
         'Advanced POS features',
@@ -115,7 +115,7 @@ export default function PricingPage() {
       interval: 'monthly',
       description: 'For large businesses with complex needs.',
       icon: '🏢',
-      color: 'from-indigo-400 to-purple-600',
+      color: 'from-indigo-400 to-secondary-600',
       features: [
         'Unlimited products',
         'Full POS features',
@@ -163,10 +163,10 @@ export default function PricingPage() {
     try {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
       // Replace with actual API call
       // await apiService.post('/subscription', { planId, interval: billingInterval });
-      
+
       showToast(`Successfully selected ${planId} plan!`, 'success');
       setSelectedPlan(null);
     } catch (error) {
@@ -193,7 +193,7 @@ export default function PricingPage() {
   const planVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0 },
-    hover: { 
+    hover: {
       scale: 1.02,
       transition: { duration: 0.2 }
     }
@@ -209,17 +209,17 @@ export default function PricingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900">
       <PublicNavigation />
 
       {/* Hero Section */}
-      <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-700 text-white overflow-hidden">
+      <div className="relative bg-brand-gradient-hero text-white overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-0 left-0 w-96 h-96 bg-white rounded-full blur-3xl"></div>
           <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full blur-3xl"></div>
         </div>
-        <div className="relative max-w-7xl mx-auto px-4 pt-32 pb-16 text-center">
-          <motion.h1 
+        <div className="relative max-w-container mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 pt-32 pb-16 text-center">
+          <motion.h1
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
@@ -227,17 +227,17 @@ export default function PricingPage() {
           >
             Simple, Transparent Pricing
           </motion.h1>
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.5 }}
-            className="text-xl text-blue-100 max-w-2xl mx-auto"
+            className="text-xl text-white/80 max-w-2xl mx-auto"
           >
             Choose the plan that fits your business needs. All plans include a 14-day free trial.
           </motion.p>
 
           {/* Billing Toggle with Animation */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3, duration: 0.3 }}
@@ -245,9 +245,9 @@ export default function PricingPage() {
           >
             <button
               onClick={() => setBillingInterval('monthly')}
-              className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all duration-300 ${
+              className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all duration-250 focus-ring ${
                 billingInterval === 'monthly'
-                  ? 'bg-white text-blue-600 shadow-lg'
+                  ? 'bg-white text-brand-600 shadow-lg'
                   : 'text-white hover:text-white/80'
               }`}
             >
@@ -255,14 +255,14 @@ export default function PricingPage() {
             </button>
             <button
               onClick={() => setBillingInterval('yearly')}
-              className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all duration-300 ${
+              className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all duration-250 focus-ring ${
                 billingInterval === 'yearly'
-                  ? 'bg-white text-blue-600 shadow-lg'
+                  ? 'bg-white text-brand-600 shadow-lg'
                   : 'text-white hover:text-white/80'
               }`}
             >
               Yearly
-              <span className="ml-2 text-xs bg-green-500 text-white px-2.5 py-0.5 rounded-full animate-pulse">
+              <span className="ml-2 text-2xs bg-success-500 text-white px-2.5 py-0.5 rounded-full animate-pulse">
                 Save 20%
               </span>
             </button>
@@ -270,11 +270,11 @@ export default function PricingPage() {
 
           {/* Savings Indicator */}
           {billingInterval === 'yearly' && annualSavings > 0 && (
-            <motion.p 
+            <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="mt-4 text-green-300 text-sm font-medium"
+              className="mt-4 text-white/90 text-sm font-medium tabular-nums"
             >
               💰 Save up to ${annualSavings} per month with yearly billing
             </motion.p>
@@ -283,7 +283,7 @@ export default function PricingPage() {
       </div>
 
       {/* Pricing Cards */}
-      <div className="max-w-7xl mx-auto px-4 py-16">
+      <div className="max-w-container mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-16">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <AnimatePresence>
             {displayPlans.map((plan, index) => (
@@ -294,20 +294,22 @@ export default function PricingPage() {
                 whileHover="hover"
                 variants={planVariants}
                 transition={{ delay: index * 0.1 }}
-                className={`relative bg-white rounded-2xl shadow-xl overflow-hidden transition-all duration-300 ${
-                  plan.popular ? 'ring-2 ring-blue-600 scale-105 z-10' : 'hover:shadow-2xl'
+                className={`relative bg-white dark:bg-gray-800 rounded-2xl shadow-soft overflow-hidden transition-all duration-250 ${
+                  plan.popular
+                    ? 'ring-2 ring-brand-500 scale-105 z-10 shadow-brand-lg'
+                    : 'hover:shadow-card-hover'
                 }`}
                 onMouseEnter={() => setHoveredPlan(plan.id)}
                 onMouseLeave={() => setHoveredPlan(null)}
               >
                 {plan.popular && (
-                  <div className="absolute top-0 right-0 bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-1.5 text-sm font-medium rounded-bl-xl shadow-lg">
+                  <div className="absolute top-0 right-0 bg-brand-gradient text-white px-4 py-1.5 text-sm font-medium rounded-bl-xl shadow-brand">
                     🌟 Most Popular
                   </div>
                 )}
 
                 {isCurrentPlan(plan.id) && (
-                  <div className="absolute top-4 left-4 bg-green-500 text-white text-xs px-3 py-1 rounded-full font-medium shadow-lg">
+                  <div className="absolute top-4 left-4 bg-success-500 text-white text-2xs px-3 py-1 rounded-full font-medium shadow-lg">
                     ✓ Current Plan
                   </div>
                 )}
@@ -316,30 +318,30 @@ export default function PricingPage() {
                   {/* Plan Icon & Name */}
                   <div className="flex items-center gap-3 mb-2">
                     <span className="text-3xl">{plan.icon}</span>
-                    <h3 className="text-2xl font-bold text-gray-900">{plan.name}</h3>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{plan.name}</h3>
                   </div>
-                  
-                  <p className="text-gray-600 mt-2 min-h-[48px]">{plan.description}</p>
+
+                  <p className="text-gray-600 dark:text-gray-400 mt-2 min-h-[48px]">{plan.description}</p>
 
                   {/* Price with Animation */}
-                  <motion.div 
+                  <motion.div
                     className="mt-6"
                     key={`price-${plan.id}-${billingInterval}`}
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ duration: 0.3 }}
                   >
-                    <span className="text-5xl font-bold text-gray-900">
+                    <span className="text-5xl font-bold tabular-nums text-gray-900 dark:text-white">
                       {getPriceDisplay(plan.price)}
                     </span>
-                    <span className="text-gray-600 ml-2">/ {plan.interval}</span>
+                    <span className="text-gray-600 dark:text-gray-400 ml-2">/ {plan.interval}</span>
                   </motion.div>
 
                   {plan.savings && billingInterval === 'yearly' && (
-                    <motion.p 
+                    <motion.p
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="text-green-600 text-sm font-medium mt-1"
+                      className="text-success-600 dark:text-success-400 text-sm font-medium mt-1"
                     >
                       💰 Save ${plan.savings}% vs monthly
                     </motion.p>
@@ -354,9 +356,9 @@ export default function PricingPage() {
                         initial="hidden"
                         animate="visible"
                         variants={featureVariants}
-                        className="flex items-start gap-2 text-sm text-gray-600"
+                        className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400"
                       >
-                        <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-success-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                         {feature}
@@ -367,17 +369,17 @@ export default function PricingPage() {
                   {/* Action Button */}
                   <div className="mt-8">
                     {isCurrentPlan(plan.id) ? (
-                      <div className="block w-full text-center px-6 py-3 rounded-lg font-medium bg-green-100 text-green-700">
+                      <div className="block w-full text-center px-6 py-3 rounded-lg font-medium bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300">
                         ✓ Current Plan
                       </div>
                     ) : (
                       <Link
                         href={plan.buttonLink}
                         onClick={() => handlePlanSelect(plan.id)}
-                        className={`block w-full text-center px-6 py-3 rounded-lg font-medium transition-all duration-300 ${
+                        className={`block w-full text-center px-6 py-3 rounded-xl font-medium transition-all duration-250 focus-ring ${
                           plan.popular
-                            ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:shadow-lg hover:scale-105'
-                            : 'bg-gray-100 text-gray-900 hover:bg-gray-200 hover:scale-105'
+                            ? 'bg-brand-gradient hover:bg-brand-gradient-hover text-white shadow-brand hover:shadow-brand-lg hover:scale-105'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600 hover:scale-105'
                         } ${isLoading && selectedPlan === plan.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         {isLoading && selectedPlan === plan.id ? (
@@ -394,7 +396,7 @@ export default function PricingPage() {
                       </Link>
                     )}
                     {plan.popular && !isCurrentPlan(plan.id) && (
-                      <p className="text-xs text-gray-500 text-center mt-2">
+                      <p className="text-2xs text-gray-500 dark:text-gray-400 text-center mt-2">
                         🎯 14-day free trial. No credit card required.
                       </p>
                     )}
@@ -406,7 +408,7 @@ export default function PricingPage() {
         </div>
 
         {/* Trust Indicators */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
@@ -418,10 +420,10 @@ export default function PricingPage() {
             { icon: '💳', label: 'No Hidden Fees', desc: 'Transparent pricing' },
             { icon: '🚀', label: '14-Day Trial', desc: 'Try risk-free' },
           ].map((item, index) => (
-            <div key={index} className="text-center p-4 bg-white rounded-xl shadow">
+            <div key={index} className="text-center p-4 card-brand shadow-soft hover:shadow-card-hover transition duration-250">
               <div className="text-2xl mb-1">{item.icon}</div>
-              <p className="font-semibold text-gray-900 text-sm">{item.label}</p>
-              <p className="text-xs text-gray-500">{item.desc}</p>
+              <p className="font-semibold text-gray-900 dark:text-white text-sm">{item.label}</p>
+              <p className="text-2xs text-gray-500 dark:text-gray-400">{item.desc}</p>
             </div>
           ))}
         </motion.div>
@@ -430,7 +432,7 @@ export default function PricingPage() {
         <div className="mt-12 text-center">
           <button
             onClick={() => setShowCompare(!showCompare)}
-            className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+            className="text-brand-600 hover:text-brand-800 dark:text-brand-400 dark:hover:text-brand-300 font-medium transition duration-250 focus-ring"
           >
             {showCompare ? 'Hide Comparison Table ↑' : 'View Full Feature Comparison ↓'}
           </button>
@@ -446,24 +448,24 @@ export default function PricingPage() {
               transition={{ duration: 0.3 }}
               className="mt-6"
             >
-              <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-                <div className="overflow-x-auto">
+              <div className="card-brand shadow-soft overflow-hidden">
+                <div className="overflow-x-auto custom-scrollbar">
                   <table className="w-full">
                     <thead>
-                      <tr className="bg-gradient-to-r from-gray-50 to-gray-100">
-                        <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Features</th>
+                      <tr className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700">
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900 dark:text-white">Features</th>
                         {displayPlans.map((plan) => (
                           <th key={plan.id} className="px-6 py-4 text-center text-sm font-semibold">
                             {plan.popular ? (
-                              <span className="text-blue-600">{plan.name} ⭐</span>
+                              <span className="text-brand-600 dark:text-brand-400">{plan.name} ⭐</span>
                             ) : (
-                              <span className="text-gray-900">{plan.name}</span>
+                              <span className="text-gray-900 dark:text-white">{plan.name}</span>
                             )}
                           </th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                       {[
                         { feature: 'Products', values: ['50', '500', 'Unlimited'] },
                         { feature: 'User Accounts', values: ['1', '5', 'Unlimited'] },
@@ -482,15 +484,15 @@ export default function PricingPage() {
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ delay: index * 0.05 }}
-                          className="hover:bg-gray-50 transition-colors"
+                          className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-250"
                         >
-                          <td className="px-6 py-3 text-sm font-medium text-gray-900">{row.feature}</td>
+                          <td className="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white">{row.feature}</td>
                           {row.values.map((value, idx) => (
-                            <td key={idx} className="px-6 py-3 text-center text-sm text-gray-600">
+                            <td key={idx} className="px-6 py-3 text-center text-sm tabular-nums text-gray-600 dark:text-gray-400">
                               {value === '✓' ? (
-                                <span className="text-green-500 font-bold">✓</span>
+                                <span className="text-success-500 font-bold">✓</span>
                               ) : value === '✗' ? (
-                                <span className="text-red-400">✗</span>
+                                <span className="text-danger-400">✗</span>
                               ) : (
                                 value
                               )}
@@ -507,13 +509,13 @@ export default function PricingPage() {
         </AnimatePresence>
 
         {/* FAQ Section */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
           className="mt-16"
         >
-          <h2 className="text-3xl font-bold text-gray-900 text-center mb-8">
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white text-center mb-8">
             Frequently Asked Questions
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
@@ -548,34 +550,34 @@ export default function PricingPage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.7 + index * 0.1 }}
-                className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition-shadow"
+                className="card-brand shadow-soft p-6 hover:shadow-card-hover transition duration-250"
               >
-                <h3 className="font-semibold text-gray-900 mb-2">{faq.q}</h3>
-                <p className="text-gray-600 text-sm">{faq.a}</p>
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-2">{faq.q}</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">{faq.a}</p>
               </motion.div>
             ))}
           </div>
         </motion.div>
 
         {/* CTA Section */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8 }}
-          className="mt-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-center text-white shadow-xl"
+          className="mt-16 bg-brand-gradient rounded-2xl p-8 text-center text-white shadow-brand-lg"
         >
           <h2 className="text-2xl font-bold mb-2">Ready to Get Started?</h2>
-          <p className="text-blue-100 mb-6">Join thousands of businesses using our POS system today.</p>
+          <p className="text-white/90 mb-6">Join thousands of businesses using our POS system today.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               href="/sign-up"
-              className="bg-white text-blue-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-all hover:scale-105 shadow-lg"
+              className="bg-white text-brand-600 px-8 py-3 rounded-xl font-semibold hover:bg-gray-100 transition-all duration-250 hover:scale-105 shadow-lg focus-ring"
             >
               Start Free Trial
             </Link>
             <Link
               href="/contact"
-              className="bg-blue-500/30 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-500/40 transition-all hover:scale-105 backdrop-blur-sm"
+              className="bg-white/20 text-white px-8 py-3 rounded-xl font-semibold hover:bg-white/30 transition-all duration-250 hover:scale-105 backdrop-blur-sm focus-ring"
             >
               Contact Sales
             </Link>

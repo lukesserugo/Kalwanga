@@ -83,7 +83,7 @@ export default function LocationDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+        <Loader2 className="w-10 h-10 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -91,13 +91,13 @@ export default function LocationDetailPage() {
   if (error || !location) {
     return (
       <div className="max-w-2xl mx-auto p-6 text-center">
-        <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <AlertCircle className="w-12 h-12 text-danger-500 mx-auto mb-4" />
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
           {error || 'Location not found'}
         </h2>
         <Link
           href="/admin/locations"
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Locations
@@ -110,7 +110,7 @@ export default function LocationDetailPage() {
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
       <Link
         href="/admin/locations"
-        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-ring rounded"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Locations
@@ -119,18 +119,18 @@ export default function LocationDetailPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <MapPin className="w-6 h-6 text-blue-500" />
+            <MapPin className="w-6 h-6 text-brand-500" />
             {location.name}
           </h1>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             {location.isDefault && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                 <Star className="w-3 h-3" />
                 Default
               </span>
             )}
             {location.isActive ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300">
                 <CheckCircle className="w-3 h-3" />
                 Active
               </span>
@@ -145,14 +145,14 @@ export default function LocationDetailPage() {
         <div className="flex items-center gap-2">
           <Link
             href={`/admin/locations/${location.id}/edit`}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1 text-sm"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1 text-sm focus-ring"
           >
             <Edit className="w-4 h-4" />
             Edit
           </Link>
           <button
             onClick={handleDelete}
-            className="px-3 py-2 border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-1 text-sm"
+            className="px-3 py-2 border border-danger-300 dark:border-danger-600 text-danger-600 dark:text-danger-400 rounded-lg hover:bg-danger-50 dark:hover:bg-danger-900/20 flex items-center gap-1 text-sm focus-ring"
           >
             <Trash2 className="w-4 h-4" />
             Delete
@@ -161,28 +161,28 @@ export default function LocationDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
           <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
             {location.type?.replace(/_/g, ' ').toLowerCase() || 'Other'}
           </p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <p className="text-xs text-gray-500 dark:text-gray-400">Code</p>
           <p className="text-lg font-mono text-gray-900 dark:text-white">
             {location.code || '—'}
           </p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+        <div className="card-brand p-4">
           <p className="text-xs text-gray-500 dark:text-gray-400">Inventory Items</p>
-          <p className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-1">
+          <p className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-1 tabular-nums">
             <Package className="w-4 h-4 text-gray-400" />
             {inventoryCount}
           </p>
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+      <div className="card-brand p-6 space-y-4">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           Details
         </h3>

@@ -4,9 +4,22 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Edit, Trash2, Building, MapPin, Phone, Mail,
-  Users, Package, DollarSign, ShoppingBag, Loader2,
-  CheckCircle, XCircle, Clock, Calendar,
+  ArrowLeft,
+  Edit,
+  Trash2,
+  Building,
+  MapPin,
+  Phone,
+  Mail,
+  Users,
+  Package,
+  DollarSign,
+  ShoppingBag,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import {
   businessUnitService,
@@ -20,15 +33,6 @@ import type { BusinessUnitType } from '../../types/businessUnit';
 // LOCAL TYPES — describe what the detail endpoint actually returns
 // ============================================
 
-/**
- * Shape of a user row as returned inside GET /business-units/:id.
- *
- * ⚠️ This intentionally does NOT extend BusinessUnit's `users` type.
- * BusinessUnit.users is BusinessUnitUser[] (full Prisma shape with
- * businessUnitId/createdAt/updatedAt). The detail endpoint returns a
- * slimmer projection, so we model it as a standalone type instead of
- * trying to narrow an inherited property (which TS forbids).
- */
 interface BusinessUnitDetailUser {
   id: string;
   userId: string;
@@ -59,10 +63,6 @@ interface BusinessUnitDetailCounts {
   users?: number;
 }
 
-/**
- * Full shape of a business unit as rendered on the detail page.
- * Standalone — does not extend BusinessUnit.
- */
 interface BusinessUnitWithDetails {
   id: string;
   name: string;
@@ -108,12 +108,6 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
-  /**
-   * Single source of truth for whether this component should attempt
-   * to load data. Uses the same `isValidID` the service layer uses,
-   * so "users", "reports", "settings", etc. are rejected here — before
-   * any network request is issued.
-   */
   const hasValidId = isValidID(id);
 
   const loadData = useCallback(async () => {
@@ -180,12 +174,12 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
 
   const getStatusBadge = (isActive: boolean) => {
     return isActive ? (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-medium bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-300">
         <CheckCircle className="w-3 h-3" />
         Active
       </span>
     ) : (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
         <XCircle className="w-3 h-3" />
         Inactive
       </span>
@@ -219,7 +213,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
       </div>
     );
   }
@@ -238,7 +232,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
           </p>
           <button
             onClick={() => router.push('/admin/business-units')}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="mt-4 px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all focus-ring"
           >
             Back to Business Units
           </button>
@@ -248,13 +242,13 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/admin/business-units')}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Back to business units"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -268,7 +262,10 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
             </div>
             <div className="flex items-center gap-4 mt-1">
               <p className="text-gray-600 dark:text-gray-400">
-                Code: <span className="font-mono font-medium">{unit.code}</span>
+                Code:{' '}
+                <span className="font-mono font-medium tabular-nums">
+                  {unit.code}
+                </span>
               </p>
               {unit.type && (
                 <p className="text-gray-600 dark:text-gray-400">
@@ -282,7 +279,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
         <div className="flex flex-wrap gap-2">
           <Link
             href={`/admin/business-units/${unit.id}/edit`}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 focus-ring"
           >
             <Edit className="w-4 h-4" />
             Edit
@@ -290,7 +287,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+            className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 focus-ring"
           >
             {deleting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -304,7 +301,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
 
       {/* Info Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand">
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
             Business Unit Information
           </h3>
@@ -329,7 +326,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <a
                   href={`tel:${unit.phone}`}
-                  className="text-blue-600 hover:underline"
+                  className="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 transition-colors"
                 >
                   {unit.phone}
                 </a>
@@ -340,7 +337,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <a
                   href={`mailto:${unit.email}`}
-                  className="text-blue-600 hover:underline"
+                  className="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 transition-colors"
                 >
                   {unit.email}
                 </a>
@@ -351,7 +348,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
               <span className="text-gray-600 dark:text-gray-400">
                 Created:
               </span>
-              <span className="font-medium text-gray-900 dark:text-white">
+              <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                 {new Date(unit.createdAt).toLocaleString()}
               </span>
             </div>
@@ -360,54 +357,54 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
               <span className="text-gray-600 dark:text-gray-400">
                 Last Updated:
               </span>
-              <span className="font-medium text-gray-900 dark:text-white">
+              <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                 {new Date(unit.updatedAt).toLocaleString()}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand">
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
             Quick Statistics
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-1">
+            <div className="p-3 bg-brand-50 dark:bg-brand-900/20 rounded-lg">
+              <div className="flex items-center gap-2 text-brand-600 dark:text-brand-400 mb-1">
                 <Users className="w-4 h-4" />
                 <span className="text-sm font-medium">Users</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                 {stats?.totalEmployees ||
                   unit._count?.userBusinessUnits ||
                   unit._count?.users ||
                   0}
               </p>
             </div>
-            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <div className="flex items-center gap-2 text-green-600 dark:text-green-400 mb-1">
+            <div className="p-3 bg-success-50 dark:bg-success-900/20 rounded-lg">
+              <div className="flex items-center gap-2 text-success-600 dark:text-success-400 mb-1">
                 <Package className="w-4 h-4" />
                 <span className="text-sm font-medium">Products</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                 {stats?.products || unit._count?.products || 0}
               </p>
             </div>
-            <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-              <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400 mb-1">
+            <div className="p-3 bg-secondary-50 dark:bg-secondary-900/20 rounded-lg">
+              <div className="flex items-center gap-2 text-secondary-600 dark:text-secondary-400 mb-1">
                 <ShoppingBag className="w-4 h-4" />
                 <span className="text-sm font-medium">Sales</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                 {stats?.sales || 0}
               </p>
             </div>
-            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-              <div className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400 mb-1">
+            <div className="p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
+              <div className="flex items-center gap-2 text-warning-600 dark:text-warning-400 mb-1">
                 <DollarSign className="w-4 h-4" />
                 <span className="text-sm font-medium">Revenue</span>
               </div>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(stats?.totalRevenue || 0)}
               </p>
             </div>
@@ -421,7 +418,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                   <span className="text-gray-500 dark:text-gray-400">
                     Low Stock Items:
                   </span>
-                  <span className="font-medium text-orange-600 dark:text-orange-400">
+                  <span className="font-medium text-brand-600 dark:text-brand-400 tabular-nums">
                     {stats.lowStockItems}
                   </span>
                 </div>
@@ -431,7 +428,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                   <span className="text-gray-500 dark:text-gray-400">
                     Out of Stock:
                   </span>
-                  <span className="font-medium text-red-600 dark:text-red-400">
+                  <span className="font-medium text-danger-600 dark:text-danger-400 tabular-nums">
                     {stats.outOfStockItems}
                   </span>
                 </div>
@@ -447,7 +444,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                   <span className="text-gray-500 dark:text-gray-400">
                     Monthly Revenue:
                   </span>
-                  <span className="font-medium text-green-600 dark:text-green-400">
+                  <span className="font-medium text-success-600 dark:text-success-400 tabular-nums">
                     {formatCurrency(stats.monthlyRevenue)}
                   </span>
                 </div>
@@ -457,7 +454,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                   <span className="text-gray-500 dark:text-gray-400">
                     Monthly Sales:
                   </span>
-                  <span className="font-medium text-blue-600 dark:text-blue-400">
+                  <span className="font-medium text-brand-600 dark:text-brand-400 tabular-nums">
                     {stats.monthlySales}
                   </span>
                 </div>
@@ -469,7 +466,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
 
       {/* Additional Details Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand">
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
             Additional Information
           </h3>
@@ -478,7 +475,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
               <span className="text-gray-500 dark:text-gray-400">
                 Business Unit ID
               </span>
-              <span className="font-mono text-gray-600 dark:text-gray-300">
+              <span className="font-mono text-gray-600 dark:text-gray-300 tabular-nums">
                 {unit.id}
               </span>
             </div>
@@ -497,14 +494,14 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="card-brand">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
               Users
             </h3>
             <Link
               href={`/admin/business-units/${unit.id}/users`}
-              className="text-sm text-blue-600 hover:underline"
+              className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 transition-colors focus-ring rounded"
             >
               View All
             </Link>
@@ -528,15 +525,15 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                             }`.trim() || 'Unknown User'
                           : user.userId}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                      <p className="text-2xs text-gray-500 dark:text-gray-400">
                         {user.role}
                       </p>
                     </div>
                   </div>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
+                    className={`text-2xs px-2 py-0.5 rounded-full ${
                       user.isActive
-                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                        ? 'bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-300'
                         : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                     }`}
                   >
@@ -545,7 +542,7 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 </div>
               ))}
               {unit.users.length > 5 && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 text-center pt-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400 text-center pt-2 tabular-nums">
                   +{unit.users.length - 5} more users
                 </p>
               )}
@@ -559,14 +556,14 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
       </div>
 
       {/* Products Preview */}
-      <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <div className="mt-6 card-brand">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
             Products
           </h3>
           <Link
             href={`/admin/business-units/${unit.id}/products`}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 transition-colors focus-ring rounded"
           >
             View All Products
           </Link>
@@ -581,17 +578,17 @@ export function BusinessUnitDetail({ id }: BusinessUnitDetailProps) {
                 <p className="font-medium text-sm truncate text-gray-900 dark:text-white">
                   {product.name}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-2xs text-gray-500 dark:text-gray-400 font-mono">
                   SKU: {product.sku}
                 </p>
-                <p className="text-sm font-semibold text-gray-900 dark:text-white mt-1">
+                <p className="text-sm font-semibold text-gray-900 dark:text-white mt-1 tabular-nums">
                   {formatCurrency(product.unitPrice)}
                 </p>
               </div>
             ))}
             {unit.products.length > 6 && (
               <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                   +{unit.products.length - 6} more
                 </p>
               </div>

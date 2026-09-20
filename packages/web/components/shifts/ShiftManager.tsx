@@ -189,7 +189,7 @@ export function ShiftManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400" />
       </div>
     );
   }
@@ -214,7 +214,7 @@ export function ShiftManager() {
           <div className="flex gap-2">
             <button
               onClick={loadData}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors duration-200"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors duration-200 focus-ring"
             >
               <RefreshCw className="w-4 h-4" />
               Refresh
@@ -222,7 +222,7 @@ export function ShiftManager() {
             {!currentShift ? (
               <button
                 onClick={() => setShowOpenModal(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700 flex items-center gap-2 transition-colors duration-200"
+                className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 dark:bg-success-600 dark:hover:bg-success-700 flex items-center gap-2 transition-colors duration-200 focus-ring"
               >
                 <Plus className="w-4 h-4" />
                 Open Shift
@@ -230,7 +230,7 @@ export function ShiftManager() {
             ) : (
               <button
                 onClick={() => setShowCloseModal(true)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 flex items-center gap-2 transition-colors duration-200"
+                className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 dark:bg-danger-600 dark:hover:bg-danger-700 flex items-center gap-2 transition-colors duration-200 focus-ring"
               >
                 <XCircle className="w-4 h-4" />
                 Close Shift
@@ -241,39 +241,39 @@ export function ShiftManager() {
 
         {/* Current Shift Card */}
         {currentShift ? (
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 rounded-xl shadow-lg p-6 text-white transition-colors duration-200">
+          <div className="bg-brand-gradient-hero rounded-xl shadow-brand-lg p-6 text-white transition-colors duration-200">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-3">
                   <Clock className="w-6 h-6" />
                   <h2 className="text-xl font-bold">Current Shift</h2>
-                  <span className="px-2 py-1 bg-green-500 rounded-full text-xs font-medium">
+                  <span className="px-2 py-1 bg-success-500 rounded-full text-2xs font-medium animate-badge-pop">
                     OPEN
                   </span>
                 </div>
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-6">
                   <div>
-                    <p className="text-blue-200 text-sm">Cash Register</p>
+                    <p className="text-white/70 text-sm">Cash Register</p>
                     <p className="text-lg font-semibold">
                       {currentShift.cashRegister?.name || 'N/A'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-blue-200 text-sm">Started</p>
+                    <p className="text-white/70 text-sm">Started</p>
                     <p className="text-lg font-semibold">
                       {new Date(currentShift.openedAt).toLocaleString()}
                     </p>
                   </div>
                   <div>
-                    <p className="text-blue-200 text-sm">Starting Balance</p>
-                    <p className="text-lg font-semibold">
+                    <p className="text-white/70 text-sm">Starting Balance</p>
+                    <p className="text-lg font-semibold tabular-nums">
                       ${currentShift.startingBalance.toFixed(2)}
                     </p>
                   </div>
                 </div>
               </div>
               <div className="text-left lg:text-right">
-                <p className="text-blue-200 text-sm">Cashier</p>
+                <p className="text-white/70 text-sm">Cashier</p>
                 <p className="text-lg font-semibold">
                   {currentShift.user?.firstName} {currentShift.user?.lastName}
                 </p>
@@ -295,46 +295,46 @@ export function ShiftManager() {
         {/* Shift Stats */}
         {currentShift && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+            <div className="card-brand p-4 shadow-soft">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <ShoppingBag className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <div className="p-2 bg-brand-100 dark:bg-brand-950/40 rounded-lg">
+                  <ShoppingBag className="w-5 h-5 text-brand-600 dark:text-brand-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-2xs text-gray-500 dark:text-gray-400">
                     Total Sales
                   </p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
                     {getShiftStats(currentShift).totalSales}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+            <div className="card-brand p-4 shadow-soft">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                  <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+                <div className="p-2 bg-success-100 dark:bg-success-950/40 rounded-lg">
+                  <DollarSign className="w-5 h-5 text-success-600 dark:text-success-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-2xs text-gray-500 dark:text-gray-400">
                     Revenue
                   </p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
                     ${getShiftStats(currentShift).totalRevenue.toFixed(2)}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 border border-gray-200 dark:border-gray-700 transition-colors duration-200">
+            <div className="card-brand p-4 shadow-soft">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                  <TrendingUp className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                <div className="p-2 bg-warning-100 dark:bg-warning-950/40 rounded-lg">
+                  <TrendingUp className="w-5 h-5 text-warning-600 dark:text-warning-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-2xs text-gray-500 dark:text-gray-400">
                     Cash Received
                   </p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">
+                  <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
                     ${getShiftStats(currentShift).cashReceived.toFixed(2)}
                   </p>
                 </div>
@@ -344,7 +344,7 @@ export function ShiftManager() {
         )}
 
         {/* Recent Shifts */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
+        <div className="card-brand p-0 overflow-hidden shadow-soft">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <h3 className="font-semibold text-gray-900 dark:text-white">
               Recent Shifts
@@ -354,19 +354,19 @@ export function ShiftManager() {
             {shifts.slice(0, 5).map((shift) => (
               <div
                 key={shift.id}
-                className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150"
+                className="p-4 hover:bg-brand-50/40 dark:hover:bg-gray-700/50 transition-colors duration-150"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div
                       className={`p-2 rounded-lg ${
                         shift.status === 'OPEN'
-                          ? 'bg-green-100 dark:bg-green-900/30'
+                          ? 'bg-success-100 dark:bg-success-950/40'
                           : 'bg-gray-100 dark:bg-gray-700'
                       }`}
                     >
                       {shift.status === 'OPEN' ? (
-                        <Clock className="w-5 h-5 text-green-600 dark:text-green-400" />
+                        <Clock className="w-5 h-5 text-success-600 dark:text-success-400" />
                       ) : (
                         <CheckCircle className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                       )}
@@ -375,12 +375,12 @@ export function ShiftManager() {
                       <p className="font-medium text-gray-900 dark:text-white">
                         {shift.cashRegister?.name || 'Register'} - {shift.status}
                       </p>
-                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                        <span>
+                      <div className="flex items-center gap-4 text-2xs text-gray-500 dark:text-gray-400">
+                        <span className="tabular-nums">
                           Opened: {new Date(shift.openedAt).toLocaleString()}
                         </span>
                         {shift.closedAt && (
-                          <span>
+                          <span className="tabular-nums">
                             Closed: {new Date(shift.closedAt).toLocaleString()}
                           </span>
                         )}
@@ -389,20 +389,20 @@ export function ShiftManager() {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                      <p className="text-2xs text-gray-500 dark:text-gray-400">
                         Starting Balance
                       </p>
-                      <p className="font-medium text-gray-900 dark:text-white">
+                      <p className="font-medium text-gray-900 dark:text-white tabular-nums">
                         ${shift.startingBalance.toFixed(2)}
                       </p>
                     </div>
                     {shift.endingBalance !== undefined &&
                       shift.endingBalance !== null && (
                         <div className="text-right">
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                          <p className="text-2xs text-gray-500 dark:text-gray-400">
                             Ending Balance
                           </p>
-                          <p className="font-medium text-gray-900 dark:text-white">
+                          <p className="font-medium text-gray-900 dark:text-white tabular-nums">
                             ${shift.endingBalance.toFixed(2)}
                           </p>
                         </div>
@@ -412,12 +412,12 @@ export function ShiftManager() {
                         <div
                           className={`text-right ${
                             shift.discrepancy === 0
-                              ? 'text-green-600 dark:text-green-400'
-                              : 'text-red-600 dark:text-red-400'
+                              ? 'text-success-600 dark:text-success-400'
+                              : 'text-danger-600 dark:text-danger-400'
                           }`}
                         >
-                          <p className="text-sm">Discrepancy</p>
-                          <p className="font-medium">
+                          <p className="text-2xs">Discrepancy</p>
+                          <p className="font-medium tabular-nums">
                             {shift.discrepancy === 0
                               ? '✓'
                               : `${shift.discrepancy > 0 ? '+' : ''}${shift.discrepancy.toFixed(2)}`}
@@ -452,7 +452,7 @@ export function ShiftManager() {
                 name="cashRegisterId"
                 value={openData.cashRegisterId}
                 onChange={handleOpenDataChange}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+                className="input-brand"
               >
                 <option value="">Select Register</option>
                 {registers.map((reg) => (
@@ -475,7 +475,7 @@ export function ShiftManager() {
                   onChange={handleOpenDataChange}
                   step="0.01"
                   min="0"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+                  className="input-brand pl-10 tabular-nums"
                 />
               </div>
             </div>
@@ -484,13 +484,13 @@ export function ShiftManager() {
             <Button
               variant="outline"
               onClick={() => setShowOpenModal(false)}
-              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus-ring"
             >
               Cancel
             </Button>
             <Button
               onClick={handleOpenShift}
-              className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white"
+              className="btn-brand focus-ring"
             >
               Open Shift
             </Button>
@@ -513,19 +513,19 @@ export function ShiftManager() {
             <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
               <div className="flex justify-between text-gray-700 dark:text-gray-300">
                 <span>Starting Balance</span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   ${currentShift?.startingBalance.toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between mt-1 text-gray-700 dark:text-gray-300">
                 <span>Total Sales</span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   {currentShift ? getShiftStats(currentShift).totalSales : 0}
                 </span>
               </div>
               <div className="flex justify-between mt-1 text-gray-700 dark:text-gray-300">
                 <span>Revenue</span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   ${currentShift
                     ? getShiftStats(currentShift).totalRevenue.toFixed(2)
                     : '0.00'}
@@ -533,7 +533,7 @@ export function ShiftManager() {
               </div>
               <div className="flex justify-between mt-1 text-gray-700 dark:text-gray-300">
                 <span>Cash Received</span>
-                <span className="font-medium text-gray-900 dark:text-white">
+                <span className="font-medium text-gray-900 dark:text-white tabular-nums">
                   ${currentShift
                     ? getShiftStats(currentShift).cashReceived.toFixed(2)
                     : '0.00'}
@@ -541,7 +541,7 @@ export function ShiftManager() {
               </div>
               <div className="flex justify-between mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 font-bold text-gray-900 dark:text-white">
                 <span>Expected Balance</span>
-                <span>
+                <span className="tabular-nums">
                   $
                   {(
                     currentShift?.startingBalance ||
@@ -565,7 +565,7 @@ export function ShiftManager() {
                   onChange={handleCloseDataChange}
                   step="0.01"
                   min="0"
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+                  className="input-brand pl-10 tabular-nums"
                 />
               </div>
             </div>
@@ -576,7 +576,7 @@ export function ShiftManager() {
                 value={closeData.notes}
                 onChange={handleCloseDataChange}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none transition-colors duration-200"
+                className="input-brand"
                 placeholder="Any notes about this shift..."
               />
             </div>
@@ -585,14 +585,14 @@ export function ShiftManager() {
             <Button
               variant="outline"
               onClick={() => setShowCloseModal(false)}
-              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus-ring"
             >
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={handleCloseShift}
-              className="bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 text-white"
+              className="bg-danger-600 hover:bg-danger-700 dark:bg-danger-600 dark:hover:bg-danger-700 text-white focus-ring"
             >
               Close Shift
             </Button>

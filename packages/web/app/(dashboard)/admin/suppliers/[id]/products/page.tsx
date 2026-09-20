@@ -98,7 +98,7 @@ const ProductFiltersBar: React.FC<{
   ].reduce((a, b) => a + b, 0);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+    <div className="card-brand p-4">
       <div className="flex flex-wrap gap-3">
         <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -108,7 +108,7 @@ const ProductFiltersBar: React.FC<{
             value={filters.search}
             onChange={(e) => onFilterChange('search', e.target.value)}
             disabled={loading}
-            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
           />
         </div>
 
@@ -117,7 +117,7 @@ const ProductFiltersBar: React.FC<{
             value={filters.status}
             onChange={(e) => onFilterChange('status', e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {statusOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -128,7 +128,7 @@ const ProductFiltersBar: React.FC<{
             value={filters.preferred}
             onChange={(e) => onFilterChange('preferred', e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {preferredOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -139,7 +139,7 @@ const ProductFiltersBar: React.FC<{
             value={filters.sortBy}
             onChange={(e) => onFilterChange('sortBy', e.target.value)}
             disabled={loading}
-            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 border-0 disabled:opacity-50"
+            className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>Sort by {opt.label}</option>
@@ -149,7 +149,7 @@ const ProductFiltersBar: React.FC<{
           <button
             onClick={() => onFilterChange('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
             disabled={loading}
-            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 focus-ring"
           >
             {filters.sortOrder === 'asc' ? '↑' : '↓'}
           </button>
@@ -158,7 +158,7 @@ const ProductFiltersBar: React.FC<{
             <button
               onClick={onReset}
               disabled={loading}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 flex items-center gap-1 disabled:opacity-50"
+              className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 flex items-center gap-1 disabled:opacity-50 focus-ring rounded"
             >
               <X className="w-4 h-4" />
               Clear
@@ -188,16 +188,16 @@ const ProductCard: React.FC<{
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ y: -4 }}
-      className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border p-4 hover:shadow-md transition-all ${
+      className={`card-brand p-4 hover:shadow-card-hover transition-all ${
         isActive
-          ? 'border-gray-200 dark:border-gray-700'
-          : 'border-gray-200 dark:border-gray-700 opacity-60'
+          ? ''
+          : 'opacity-60'
       }`}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex-shrink-0">
-            <Package className="w-5 h-5 text-blue-500" />
+          <div className="p-2 bg-brand-50 dark:bg-brand-900/20 rounded-lg flex-shrink-0">
+            <Package className="w-5 h-5 text-brand-500" />
           </div>
           <div className="min-w-0">
             <h4 className="font-medium text-gray-900 dark:text-white truncate">{productName}</h4>
@@ -212,8 +212,8 @@ const ProductCard: React.FC<{
         </div>
         <div className="flex gap-1 flex-shrink-0 ml-2">
           {isPreferred && (
-            <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 rounded-full text-xs font-medium flex items-center gap-1">
-              <Star className="w-3 h-3 fill-yellow-400" />
+            <span className="px-2 py-0.5 bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-300 rounded-full text-xs font-medium flex items-center gap-1">
+              <Star className="w-3 h-3 fill-warning-400" />
               Preferred
             </span>
           )}
@@ -223,13 +223,13 @@ const ProductCard: React.FC<{
       <div className="mt-3 grid grid-cols-3 gap-2">
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
           <p className="text-xs text-gray-500 dark:text-gray-400">Price</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
             {formatCurrency(price)}
           </p>
         </div>
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
           <p className="text-xs text-gray-500 dark:text-gray-400">Lead Time</p>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
             {leadTime ? `${leadTime} days` : 'N/A'}
           </p>
         </div>
@@ -237,8 +237,8 @@ const ProductCard: React.FC<{
           <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
             isActive
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+              ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+              : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
           }`}>
             {isActive ? 'Active' : 'Inactive'}
           </span>
@@ -260,8 +260,8 @@ const ProductTable: React.FC<{
   products: SupplierProduct[];
 }> = ({ products }) => {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="overflow-x-auto">
+    <div className="card-brand p-0 overflow-hidden">
+      <div className="overflow-x-auto sidebar-scroll">
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
@@ -291,7 +291,7 @@ const ProductTable: React.FC<{
                       <div>
                         <span className="font-medium text-gray-900 dark:text-white">{productName}</span>
                         {isPreferred && (
-                          <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400">★ Preferred</span>
+                          <span className="ml-2 text-xs text-warning-600 dark:text-warning-400">★ Preferred</span>
                         )}
                         {product.variant && (
                           <span className="block text-xs text-gray-400 dark:text-gray-500">
@@ -307,17 +307,17 @@ const ProductTable: React.FC<{
                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden lg:table-cell">
                     {categoryName}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-white">
+                  <td className="px-4 py-3 text-sm text-right font-medium text-gray-900 dark:text-white tabular-nums">
                     {formatCurrency(price)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden sm:table-cell">
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden sm:table-cell tabular-nums">
                     {leadTime ? `${leadTime} days` : '-'}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       isActive
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                        ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                        : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                     }`}>
                       {isActive ? 'Active' : 'Inactive'}
                     </span>
@@ -342,7 +342,7 @@ export default function SupplierProductsPage() {
   const supplierId = params?.id as string;
   const { user } = useAuth();
   const { canView, canManage, isLoading: permissionLoading } = usePermission();
-  
+
   const [products, setProducts] = useState<SupplierProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -378,7 +378,7 @@ export default function SupplierProductsPage() {
       if (showLoading) setLoading(true);
       setError(null);
       const data = await supplierService.getSupplierProducts(supplierId);
-      
+
       let productsData: any[] = [];
       if (data && typeof data === 'object') {
         if ('data' in data && Array.isArray(data.data)) {
@@ -387,7 +387,7 @@ export default function SupplierProductsPage() {
           productsData = data;
         }
       }
-      
+
       setProducts(productsData);
     } catch (error) {
       console.error('Failed to load supplier products:', error);
@@ -480,7 +480,7 @@ export default function SupplierProductsPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading products...</p>
         </div>
       </div>
@@ -500,7 +500,7 @@ export default function SupplierProductsPage() {
         </p>
         <button
           onClick={() => router.push(`/admin/suppliers/${supplierId}`)}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors flex items-center gap-2 focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Supplier
@@ -517,29 +517,29 @@ export default function SupplierProductsPage() {
           <div className="flex items-center gap-4">
             <Link
               href={`/admin/suppliers/${supplierId}`}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </Link>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Package className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500" />
+                <Package className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500" />
                 Supplier Products
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
-                <span>{products.length} products</span>
+                <span className="tabular-nums">{products.length} products</span>
                 {filteredProducts.length !== products.length && (
-                  <span className="text-blue-600 dark:text-blue-400">
+                  <span className="text-brand-600 dark:text-brand-400 tabular-nums">
                     ({filteredProducts.length} filtered)
                   </span>
                 )}
                 <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span className="w-2 h-2 rounded-full bg-success-500"></span>
                   {products.filter(p => p.isActive !== false).length} active
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span className="w-2 h-2 rounded-full bg-warning-400"></span>
                   {products.filter(p => p.isPreferred).length} preferred
                 </span>
               </p>
@@ -548,7 +548,7 @@ export default function SupplierProductsPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Toggle view mode"
             >
               {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
@@ -556,13 +556,13 @@ export default function SupplierProductsPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
             >
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => window.print()}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
             >
               <Printer className="w-4 h-4" />
             </button>
@@ -571,12 +571,12 @@ export default function SupplierProductsPage() {
 
         {/* Error State */}
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">{error}</span>
+          <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+            <span className="text-danger-700 dark:text-danger-300">{error}</span>
             <button
               onClick={() => loadProducts(false)}
-              className="ml-auto px-3 py-1 bg-red-100 dark:bg-red-800/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800/50 transition-colors text-sm"
+              className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-800/30 text-danger-700 dark:text-danger-300 rounded-lg hover:bg-danger-200 dark:hover:bg-danger-800/50 transition-colors text-sm focus-ring"
             >
               Retry
             </button>
@@ -593,7 +593,7 @@ export default function SupplierProductsPage() {
 
         {/* Products Display */}
         {filteredProducts.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+          <div className="card-brand p-12 text-center">
             <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No products found</h3>
             <p className="text-gray-500 dark:text-gray-400 mt-2">
@@ -614,12 +614,12 @@ export default function SupplierProductsPage() {
 
         {/* Footer Info */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400 dark:text-gray-500">
-          <span>
+          <span className="tabular-nums">
             Showing {filteredProducts.length} of {products.length} products
             {filters.status !== 'all' && ` (filtered by ${filters.status})`}
             {filters.preferred !== 'all' && ` (${filters.preferred})`}
           </span>
-          <span>
+          <span className="tabular-nums">
             Last updated: {new Date().toLocaleTimeString()}
           </span>
         </div>

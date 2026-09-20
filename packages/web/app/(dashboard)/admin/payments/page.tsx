@@ -103,15 +103,15 @@ interface PaymentFilters {
 // ============================================
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
-  PAID: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-  PENDING: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-  FAILED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  PENDING: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  FAILED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
   REFUNDED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  PARTIAL: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  PROCESSING: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  AUTHORIZED: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
-  DECLINED: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-  DISPUTED: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  PARTIAL: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  PROCESSING: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  AUTHORIZED: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  DECLINED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  DISPUTED: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
   CANCELLED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
 };
 
@@ -168,26 +168,26 @@ const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
 const PROVIDER_CONFIGS: Record<string, { icon: string; color: string; bgColor: string; borderColor: string; textColor: string; description: string }> = {
   STRIPE: {
     icon: '💳',
-    color: 'blue',
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    borderColor: 'border-blue-200 dark:border-blue-800',
-    textColor: 'text-blue-600 dark:text-blue-400',
+    color: 'primary',
+    bgColor: 'bg-primary-50 dark:bg-primary-900/20',
+    borderColor: 'border-primary-200 dark:border-primary-800',
+    textColor: 'text-primary-600 dark:text-primary-400',
     description: 'Credit and debit card payments via Stripe'
   },
   CASH: {
     icon: '💰',
-    color: 'green',
-    bgColor: 'bg-green-50 dark:bg-green-900/20',
-    borderColor: 'border-green-200 dark:border-green-800',
-    textColor: 'text-green-600 dark:text-green-400',
+    color: 'success',
+    bgColor: 'bg-success-50 dark:bg-success-900/20',
+    borderColor: 'border-success-200 dark:border-success-800',
+    textColor: 'text-success-600 dark:text-success-400',
     description: 'Cash payments at the counter'
   },
   MOBILE_MONEY: {
     icon: '📱',
-    color: 'purple',
-    bgColor: 'bg-purple-50 dark:bg-purple-900/20',
-    borderColor: 'border-purple-200 dark:border-purple-800',
-    textColor: 'text-purple-600 dark:text-purple-400',
+    color: 'secondary',
+    bgColor: 'bg-secondary-50 dark:bg-secondary-900/20',
+    borderColor: 'border-secondary-200 dark:border-secondary-800',
+    textColor: 'text-secondary-600 dark:text-secondary-400',
     description: 'Mobile money payments (M-Pesa, Airtel Money, etc.)'
   },
   BANK_TRANSFER: {
@@ -200,26 +200,26 @@ const PROVIDER_CONFIGS: Record<string, { icon: string; color: string; bgColor: s
   },
   GIFT_CARD: {
     icon: '🎁',
-    color: 'pink',
-    bgColor: 'bg-pink-50 dark:bg-pink-900/20',
-    borderColor: 'border-pink-200 dark:border-pink-800',
-    textColor: 'text-pink-600 dark:text-pink-400',
+    color: 'brand',
+    bgColor: 'bg-brand-50 dark:bg-brand-900/20',
+    borderColor: 'border-brand-200 dark:border-brand-800',
+    textColor: 'text-brand-600 dark:text-brand-400',
     description: 'Gift card redemptions'
   },
   LOYALTY_POINTS: {
     icon: '⭐',
-    color: 'yellow',
-    bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
-    borderColor: 'border-yellow-200 dark:border-yellow-800',
-    textColor: 'text-yellow-600 dark:text-yellow-400',
+    color: 'warning',
+    bgColor: 'bg-warning-50 dark:bg-warning-900/20',
+    borderColor: 'border-warning-200 dark:border-warning-800',
+    textColor: 'text-warning-600 dark:text-warning-400',
     description: 'Loyalty points redemptions'
   },
   PAYPAL: {
     icon: '💸',
-    color: 'blue',
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    borderColor: 'border-blue-200 dark:border-blue-800',
-    textColor: 'text-blue-600 dark:text-blue-400',
+    color: 'primary',
+    bgColor: 'bg-primary-50 dark:bg-primary-900/20',
+    borderColor: 'border-primary-200 dark:border-primary-800',
+    textColor: 'text-primary-600 dark:text-primary-400',
     description: 'PayPal wallet payments'
   },
   FLUTTERWAVE: {
@@ -964,7 +964,7 @@ export default function AdminPaymentsPage() {
     return Object.entries(summary.byMethod).map(([method, amount]) => {
       const percentage = (amount / total) * 100;
       return (
-        <div key={method} className={`p-3 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+        <div key={method} className={`p-3 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
           <div className="flex items-center gap-2">
             {getPaymentIcon(method)}
             <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
@@ -982,7 +982,7 @@ export default function AdminPaymentsPage() {
             </div>
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-1">
               <div
-                className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                className="bg-brand-gradient h-1.5 rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(percentage, 100)}%` }}
               />
             </div>
@@ -1022,7 +1022,7 @@ export default function AdminPaymentsPage() {
         <button
           onClick={() => goToPage(pagination.page - 1)}
           disabled={pagination.page === 1}
-          className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 disabled:cursor-not-allowed focus-ring ${
             isDark
               ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
               : 'border-gray-300 text-gray-600 hover:bg-gray-100'
@@ -1035,9 +1035,9 @@ export default function AdminPaymentsPage() {
           <button
             key={pageNum}
             onClick={() => goToPage(pageNum)}
-            className={`px-3 py-1 rounded-lg text-sm transition ${
+            className={`px-3 py-1 rounded-lg text-sm transition duration-250 focus-ring ${
               pagination.page === pageNum
-                ? 'bg-blue-600 text-white'
+                ? 'bg-brand-gradient text-white'
                 : isDark
                   ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
                   : 'border-gray-300 text-gray-600 hover:bg-gray-100'
@@ -1049,7 +1049,7 @@ export default function AdminPaymentsPage() {
         <button
           onClick={() => goToPage(pagination.page + 1)}
           disabled={pagination.page === pagination.totalPages}
-          className={`px-3 py-1 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 disabled:cursor-not-allowed focus-ring ${
             isDark
               ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
               : 'border-gray-300 text-gray-600 hover:bg-gray-100'
@@ -1069,7 +1069,7 @@ export default function AdminPaymentsPage() {
   if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -1086,7 +1086,7 @@ export default function AdminPaymentsPage() {
         </p>
         <button
           onClick={() => router.push('/dashboard')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 btn-brand"
         >
           Go to Dashboard
         </button>
@@ -1102,17 +1102,17 @@ export default function AdminPaymentsPage() {
     <div className={`min-h-screen p-4 md:p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
       {/* Error Banner */}
       {providerError && (
-        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="mb-4 p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-xl flex items-start gap-3 animate-slide-down">
+          <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300 font-medium">Error loading data</p>
-            <p className="text-sm text-red-600 dark:text-red-400">{providerError}</p>
+            <p className="text-sm text-danger-700 dark:text-danger-300 font-medium">Error loading data</p>
+            <p className="text-sm text-danger-600 dark:text-danger-400">{providerError}</p>
           </div>
           <button
             onClick={() => setProviderError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded-lg transition"
+            className="p-1 hover:bg-danger-100 dark:hover:bg-danger-800/30 rounded-lg transition duration-250 focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-danger-600 dark:text-danger-400" />
           </button>
         </div>
       )}
@@ -1131,7 +1131,7 @@ export default function AdminPaymentsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className={`p-2 rounded-lg transition ${
+            className={`p-2 rounded-lg transition duration-250 focus-ring ${
               isDark
                 ? 'bg-gray-800 hover:bg-gray-700 text-white'
                 : 'bg-white hover:bg-gray-100 text-gray-700'
@@ -1142,7 +1142,7 @@ export default function AdminPaymentsPage() {
           </button>
           <button
             onClick={() => router.push('/admin/payments/export')}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            className="btn-brand"
           >
             <Download className="w-4 h-4" />
             Export
@@ -1151,14 +1151,14 @@ export default function AdminPaymentsPage() {
             <>
               <button
                 onClick={() => router.push('/admin/payments/settings')}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                className="btn-secondary"
               >
                 <Settings className="w-4 h-4" />
                 Settings
               </button>
               <button
                 onClick={() => setShowProviderModal(true)}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                className="btn-success"
               >
                 <PlusCircle className="w-4 h-4" />
                 Add Provider
@@ -1170,7 +1170,7 @@ export default function AdminPaymentsPage() {
 
       {/* Provider Management Section */}
       {canManagePayments && (
-        <div className={`p-4 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+        <div className="card-brand mb-6 animate-fade-in">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <div>
               <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
@@ -1192,7 +1192,7 @@ export default function AdminPaymentsPage() {
 
           {loadingProviders ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -1205,7 +1205,7 @@ export default function AdminPaymentsPage() {
                 return (
                   <div
                     key={provider.id}
-                    className={`p-4 rounded-xl border transition-all ${
+                    className={`p-4 rounded-xl border transition-all duration-250 ${
                       isActive
                         ? `${config.bgColor} ${config.borderColor}`
                         : isDark
@@ -1247,7 +1247,7 @@ export default function AdminPaymentsPage() {
                           <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'} truncate`}>
                             {provider.provider || ''}
                             {isDefault && (
-                              <span className="ml-1 text-yellow-500 dark:text-yellow-400" title="Default provider - needs database setup">
+                              <span className="ml-1 text-warning-500 dark:text-warning-400" title="Default provider - needs database setup">
                                 ⚠️
                               </span>
                             )}
@@ -1257,29 +1257,29 @@ export default function AdminPaymentsPage() {
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <div className="flex items-center gap-1" title={`Active: ${provider.isActive}, Healthy: ${provider.isHealthy}, Configured: ${provider.configured}`}>
                           {provider.isActive ? (
-                            <span className="w-2 h-2 rounded-full bg-green-500" title="Active" />
+                            <span className="w-2 h-2 rounded-full bg-success-500" title="Active" />
                           ) : (
                             <span className="w-2 h-2 rounded-full bg-gray-400" title="Inactive" />
                           )}
                           {provider.isHealthy ? (
-                            <span className="w-2 h-2 rounded-full bg-green-500" title="Healthy" />
+                            <span className="w-2 h-2 rounded-full bg-success-500" title="Healthy" />
                           ) : (
-                            <span className="w-2 h-2 rounded-full bg-red-500" title="Unhealthy" />
+                            <span className="w-2 h-2 rounded-full bg-danger-500" title="Unhealthy" />
                           )}
                           {provider.configured ? (
-                            <span className="w-2 h-2 rounded-full bg-green-500" title="Configured" />
+                            <span className="w-2 h-2 rounded-full bg-success-500" title="Configured" />
                           ) : (
-                            <span className="w-2 h-2 rounded-full bg-yellow-500" title="Not Configured" />
+                            <span className="w-2 h-2 rounded-full bg-warning-500" title="Not Configured" />
                           )}
                         </div>
                         <button
                           onClick={() => handleToggleProvider(provider.id, provider.isActive)}
-                          className={`p-1 rounded-lg transition ${isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
+                          className={`p-1 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
                           title={provider.isActive ? 'Deactivate' : 'Activate'}
                           aria-label={provider.isActive ? 'Deactivate provider' : 'Activate provider'}
                         >
                           {provider.isActive ? (
-                            <ToggleRight className="w-5 h-5 text-green-500" />
+                            <ToggleRight className="w-5 h-5 text-success-500" />
                           ) : (
                             <ToggleLeft className="w-5 h-5 text-gray-400" />
                           )}
@@ -1295,22 +1295,22 @@ export default function AdminPaymentsPage() {
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        <span className={`text-2xs px-2 py-0.5 rounded-full ${
                           provider.type === 'ONLINE'
-                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                            ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                             : provider.type === 'OFFLINE'
                               ? 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
-                              : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                              : 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300'
                         }`}>
                           {provider.type}
                         </span>
                         {provider.isActive && provider.isHealthy && provider.configured ? (
-                          <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <span className="text-2xs text-success-600 dark:text-success-400 flex items-center gap-1">
                             <Check className="w-3 h-3" />
                             Live
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                          <span className="text-2xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                             <X className="w-3 h-3" />
                             {!provider.isActive ? 'Inactive' : !provider.isHealthy ? 'Unhealthy' : 'Not Configured'}
                           </span>
@@ -1319,7 +1319,7 @@ export default function AdminPaymentsPage() {
                       {canManagePayments && isProviderConfigurable(provider) && (
                         <button
                           onClick={() => setShowProviderSettings(provider.id === showProviderSettings ? null : provider.id ?? null)}
-                          className={`p-1 rounded-lg transition ${isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
+                          className={`p-1 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}
                           title="Configure provider"
                           aria-label="Configure provider"
                         >
@@ -1330,20 +1330,20 @@ export default function AdminPaymentsPage() {
 
                     <div className="mt-2 grid grid-cols-3 gap-1">
                       <div className="text-center">
-                        <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>24h</p>
-                        <p className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`text-2xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>24h</p>
+                        <p className={`text-2xs tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {provider.transactions24h || 0}
                         </p>
                       </div>
                       <div className="text-center">
-                        <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>7d</p>
-                        <p className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`text-2xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>7d</p>
+                        <p className={`text-2xs tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {provider.transactions7d || 0}
                         </p>
                       </div>
                       <div className="text-center">
-                        <p className={`text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>30d</p>
-                        <p className={`text-xs ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`text-2xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>30d</p>
+                        <p className={`text-2xs tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {provider.transactions30d || 0}
                         </p>
                       </div>
@@ -1363,32 +1363,32 @@ export default function AdminPaymentsPage() {
             label: 'Total Revenue',
             value: formatCurrency(summary?.totalAmount || 0),
             icon: DollarSign,
-            color: 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400',
+            color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
             change: '+12.5%'
           },
           {
             label: 'Total Payments',
             value: summary?.count || 0,
             icon: CreditCard,
-            color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
+            color: 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
             change: '+8.3%'
           },
           {
             label: 'Average Amount',
             value: formatCurrency(summary?.averageAmount || 0),
             icon: BarChart3,
-            color: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
+            color: 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
             change: '+5.2%'
           },
           {
             label: 'Net Amount',
             value: formatCurrency(summary?.netAmount || 0),
             icon: TrendingUp,
-            color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+            color: 'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400',
             change: summary?.netAmount && summary?.netAmount > 0 ? '+2.1%' : '-0.5%'
           }
         ].map((stat, index) => (
-          <div key={index} className={`p-4 sm:p-6 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+          <div key={index} className="card-brand shadow-soft">
             <div className="flex items-start justify-between">
               <div>
                 <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -1399,19 +1399,19 @@ export default function AdminPaymentsPage() {
                     <div className={`h-8 w-24 rounded animate-pulse ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`} />
                   </div>
                 ) : (
-                  <p className={`text-xl sm:text-2xl font-bold mt-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <p className={`text-xl sm:text-2xl font-bold mt-2 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     {stat.value}
                   </p>
                 )}
                 {stat.change && !loadingSummary && (
                   <div className="flex items-center gap-1 mt-2">
                     {stat.change.startsWith('+') ? (
-                      <TrendingUp className="w-4 h-4 text-green-500" />
+                      <TrendingUp className="w-4 h-4 text-success-500" />
                     ) : (
-                      <TrendingDown className="w-4 h-4 text-red-500" />
+                      <TrendingDown className="w-4 h-4 text-danger-500" />
                     )}
                     <span className={`text-sm font-medium ${
-                      stat.change.startsWith('+') ? 'text-green-500' : 'text-red-500'
+                      stat.change.startsWith('+') ? 'text-success-500' : 'text-danger-500'
                     }`}>
                       {stat.change}
                     </span>
@@ -1430,13 +1430,13 @@ export default function AdminPaymentsPage() {
       </div>
 
       {/* Payment Methods Breakdown */}
-      <div className={`p-4 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+      <div className="card-brand mb-6">
         <h2 className={`text-lg font-semibold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
           Payment Methods Breakdown
         </h2>
         {loadingSummary ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -1446,7 +1446,7 @@ export default function AdminPaymentsPage() {
       </div>
 
       {/* Filters */}
-      <div className={`p-4 rounded-xl mb-6 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+      <div className="card-brand mb-6">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px] relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1460,7 +1460,7 @@ export default function AdminPaymentsPage() {
                 isDark
                   ? 'bg-gray-700 text-white placeholder-gray-400'
                   : 'bg-gray-100 text-gray-900 placeholder-gray-500'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
             />
           </div>
 
@@ -1471,7 +1471,7 @@ export default function AdminPaymentsPage() {
               isDark
                 ? 'bg-gray-700 border-gray-600 text-white'
                 : 'bg-white border-gray-300 text-gray-900'
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            } focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
           >
             <option value="today">Today</option>
             <option value="week">Last 7 Days</option>
@@ -1483,9 +1483,9 @@ export default function AdminPaymentsPage() {
 
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition whitespace-nowrap ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition duration-250 whitespace-nowrap focus-ring ${
               showFilters || (filters.status !== 'all' || filters.paymentMethod !== 'all' || filters.provider !== 'all' || filters.startDate || filters.endDate)
-                ? 'bg-blue-600 text-white'
+                ? 'bg-brand-gradient text-white'
                 : isDark
                   ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -1494,7 +1494,7 @@ export default function AdminPaymentsPage() {
             <Filter className="w-4 h-4" />
             Filters
             {(filters.status !== 'all' || filters.paymentMethod !== 'all' || filters.provider !== 'all' || filters.startDate || filters.endDate) && (
-              <span className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">
+              <span className="w-5 h-5 rounded-full bg-white/20 text-white text-xs flex items-center justify-center">
                 {(filters.status !== 'all' ? 1 : 0) + (filters.paymentMethod !== 'all' ? 1 : 0) + (filters.provider !== 'all' ? 1 : 0) + (filters.startDate ? 1 : 0) + (filters.endDate ? 1 : 0)}
               </span>
             )}
@@ -1502,14 +1502,14 @@ export default function AdminPaymentsPage() {
 
           <button
             onClick={loadPayments}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+            className="btn-brand"
           >
             Apply
           </button>
         </div>
 
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 animate-slide-down">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
               <div>
                 <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -1522,7 +1522,7 @@ export default function AdminPaymentsPage() {
                     isDark
                       ? 'bg-gray-700 text-white border-gray-600'
                       : 'bg-gray-100 text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 >
                   <option value="all">All Status</option>
                   <option value="PAID">Paid</option>
@@ -1548,7 +1548,7 @@ export default function AdminPaymentsPage() {
                     isDark
                       ? 'bg-gray-700 text-white border-gray-600'
                       : 'bg-gray-100 text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 >
                   <option value="all">All Methods</option>
                   <option value="CASH">Cash</option>
@@ -1576,7 +1576,7 @@ export default function AdminPaymentsPage() {
                     isDark
                       ? 'bg-gray-700 text-white border-gray-600'
                       : 'bg-gray-100 text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 >
                   <option value="all">All Providers</option>
                   <option value="STRIPE">Stripe</option>
@@ -1603,7 +1603,7 @@ export default function AdminPaymentsPage() {
                     isDark
                       ? 'bg-gray-700 text-white border-gray-600'
                       : 'bg-gray-100 text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 />
               </div>
               <div>
@@ -1618,14 +1618,14 @@ export default function AdminPaymentsPage() {
                     isDark
                       ? 'bg-gray-700 text-white border-gray-600'
                       : 'bg-gray-100 text-gray-900 border-gray-300'
-                  } border focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } border focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                 />
               </div>
             </div>
             <div className="mt-4 flex justify-end">
               <button
                 onClick={clearFilters}
-                className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring"
               >
                 Clear All Filters
               </button>
@@ -1635,10 +1635,10 @@ export default function AdminPaymentsPage() {
       </div>
 
       {/* Payments Table */}
-      <div className={`rounded-xl overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+      <div className={`rounded-2xl overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-soft`}>
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
           </div>
         ) : payments.length === 0 ? (
           <div className="text-center py-12">
@@ -1652,41 +1652,41 @@ export default function AdminPaymentsPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full min-w-[800px]">
                 <thead className={`border-b ${isDark ? 'border-gray-700 bg-gray-700/30' : 'border-gray-200 bg-gray-50'}`}>
                   <tr>
-                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Reference
                     </th>
-                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Date
                     </th>
-                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Customer
                     </th>
-                    <th className={`px-3 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-right text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Amount
                     </th>
-                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Method
                     </th>
-                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Provider
                     </th>
-                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-left text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Status
                     </th>
-                    <th className={`px-3 py-3 text-right text-xs font-medium uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th className={`px-3 py-3 text-right text-xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Actions
                     </th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-200'}`}>
                   {payments.map((payment) => (
-                    <tr key={payment.id} className={`transition-colors ${isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'}`}>
+                    <tr key={payment.id} className={`transition-colors duration-250 ${isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'}`}>
                       <td className="px-3 py-3">
-                        <p className={`font-mono text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`font-mono text-sm font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
                         </p>
                         {payment.sale?.receiptNumber && (
@@ -1714,7 +1714,7 @@ export default function AdminPaymentsPage() {
                         )}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <p className={`text-sm font-bold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                           {formatCurrency(payment.amount)}
                         </p>
                       </td>
@@ -1744,22 +1744,22 @@ export default function AdminPaymentsPage() {
                               setSelectedPayment(payment);
                               setShowDetailModal(true);
                             }}
-                            className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                            className={`p-1.5 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                             title="View details"
                             aria-label="View payment details"
                           >
-                            <Eye className="w-4 h-4 text-blue-500" />
+                            <Eye className="w-4 h-4 text-primary-500" />
                           </button>
                           <button
                             onClick={() => {
                               setSelectedPayment(payment);
                               setShowReceiptModal(true);
                             }}
-                            className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                            className={`p-1.5 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                             title="View receipt"
                             aria-label="View receipt"
                           >
-                            <Receipt className="w-4 h-4 text-green-500" />
+                            <Receipt className="w-4 h-4 text-success-500" />
                           </button>
                           {canManagePayments && payment.status === 'PAID' && (
                             <button
@@ -1769,16 +1769,16 @@ export default function AdminPaymentsPage() {
                                 setRefundReason('');
                                 setShowRefundModal(true);
                               }}
-                              className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                              className={`p-1.5 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                               title="Refund payment"
                               aria-label="Refund payment"
                             >
-                              <ArrowDownRight className="w-4 h-4 text-orange-500" />
+                              <ArrowDownRight className="w-4 h-4 text-brand-500" />
                             </button>
                           )}
                           <button
                             onClick={() => copyReference(payment.reference || payment.id)}
-                            className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                            className={`p-1.5 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                             title="Copy reference"
                             aria-label="Copy reference"
                           >
@@ -1807,20 +1807,20 @@ export default function AdminPaymentsPage() {
 
       {/* Detail Modal */}
       {showDetailModal && selectedPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-xl shadow-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+        <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className={`max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-2xl shadow-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
             <div className={`sticky top-0 z-10 p-4 border-b ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'} flex items-center justify-between`}>
               <div>
                 <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                   Payment Details
                 </h3>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'} font-mono tabular-nums`}>
                   {selectedPayment.reference || `PAY-${selectedPayment.id.slice(0, 8)}`}
                 </p>
               </div>
               <button
                 onClick={() => setShowDetailModal(false)}
-                className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                 aria-label="Close details"
               >
                 <XCircle className="w-5 h-5" />
@@ -1828,13 +1828,13 @@ export default function AdminPaymentsPage() {
             </div>
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Amount</p>
-                  <p className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <p className={`text-2xl font-bold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     {formatCurrency(selectedPayment.amount)}
                   </p>
                 </div>
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Status</p>
                   <span className={`px-2 py-1 text-sm font-medium rounded-full inline-flex items-center gap-1 ${getStatusColor(selectedPayment.status)}`}>
                     {getStatusIcon(selectedPayment.status)}
@@ -1844,7 +1844,7 @@ export default function AdminPaymentsPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Payment Method</p>
                   <div className="flex items-center gap-2 mt-1">
                     {getPaymentIcon(selectedPayment.paymentMethod)}
@@ -1853,13 +1853,13 @@ export default function AdminPaymentsPage() {
                     </span>
                   </div>
                 </div>
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Provider</p>
                   <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     {getProviderName(selectedPayment.provider || selectedPayment.gatewayId || '')}
                   </p>
                   {selectedPayment.providerTransactionId && (
-                    <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'} font-mono tabular-nums`}>
                       TXN: {selectedPayment.providerTransactionId}
                     </p>
                   )}
@@ -1867,7 +1867,7 @@ export default function AdminPaymentsPage() {
               </div>
 
               {selectedPayment.user && (
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Customer</p>
                   <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
                     {selectedPayment.user.firstName || ''} {selectedPayment.user.lastName || ''}
@@ -1879,20 +1879,20 @@ export default function AdminPaymentsPage() {
               )}
 
               {selectedPayment.sale && (
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Sale</p>
-                  <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'} tabular-nums`}>
                     Receipt: {selectedPayment.sale.receiptNumber}
                   </p>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'} tabular-nums`}>
                     Total: {formatCurrency(selectedPayment.sale.total)}
                   </p>
                 </div>
               )}
 
               {selectedPayment.refundedAt && (
-                <div className={`p-4 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800`}>
-                  <p className={`text-sm font-medium text-orange-700 dark:text-orange-300`}>
+                <div className={`p-4 rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800`}>
+                  <p className={`text-sm font-medium text-brand-700 dark:text-brand-300`}>
                     Refunded
                   </p>
                   <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
@@ -1907,7 +1907,7 @@ export default function AdminPaymentsPage() {
               )}
 
               {selectedPayment.notes && (
-                <div className={`p-4 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
+                <div className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
                   <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Notes</p>
                   <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                     {selectedPayment.notes}
@@ -1924,7 +1924,7 @@ export default function AdminPaymentsPage() {
                       setRefundReason('');
                       setShowRefundModal(true);
                     }}
-                    className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                    className="px-4 py-2 bg-brand-gradient hover:bg-brand-gradient-hover text-white rounded-xl transition duration-250 flex items-center gap-2 focus-ring shadow-brand"
                   >
                     <ArrowDownRight className="w-4 h-4" />
                     Refund Payment
@@ -1936,7 +1936,7 @@ export default function AdminPaymentsPage() {
                     setSelectedPayment(selectedPayment);
                     setShowReceiptModal(true);
                   }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                  className="btn-secondary"
                 >
                   <Receipt className="w-4 h-4" />
                   View Receipt
@@ -1949,15 +1949,15 @@ export default function AdminPaymentsPage() {
 
       {/* Refund Modal */}
       {showRefundModal && selectedPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className={`max-w-md w-full rounded-xl shadow-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+        <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className={`max-w-md w-full rounded-2xl shadow-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
             <div className={`p-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
               <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 Refund Payment
               </h3>
               <button
                 onClick={() => setShowRefundModal(false)}
-                className={`p-2 rounded-lg transition ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
                 aria-label="Close refund"
               >
                 <XCircle className="w-5 h-5" />
@@ -1977,7 +1977,7 @@ export default function AdminPaymentsPage() {
                     min={0}
                     max={selectedPayment.amount}
                     step={0.01}
-                    className={`w-full pl-8 pr-4 py-2 border rounded-lg ${isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    className={`w-full pl-8 pr-4 py-2 border rounded-lg ${isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250 tabular-nums`}
                   />
                 </div>
                 <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -1993,7 +1993,7 @@ export default function AdminPaymentsPage() {
                   value={refundReason}
                   onChange={(e) => setRefundReason(e.target.value)}
                   rows={3}
-                  className={`w-full px-4 py-2 border rounded-lg ${isDark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  className={`w-full px-4 py-2 border rounded-lg ${isDark ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'} focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250`}
                   placeholder="Enter refund reason..."
                 />
               </div>
@@ -2001,14 +2001,14 @@ export default function AdminPaymentsPage() {
               <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => setShowRefundModal(false)}
-                  className={`flex-1 px-4 py-2 border rounded-lg transition ${isDark ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                  className={`flex-1 px-4 py-2 border rounded-xl transition duration-250 focus-ring ${isDark ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleRefund}
                   disabled={refundLoading || refundAmount <= 0}
-                  className="flex-1 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2 bg-brand-gradient hover:bg-brand-gradient-hover text-white rounded-xl transition duration-250 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring shadow-brand"
                 >
                   {refundLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -2027,7 +2027,7 @@ export default function AdminPaymentsPage() {
 
       {/* Receipt Modal */}
       {showReceiptModal && selectedPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
+        <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto animate-fade-in">
           <div className="max-w-2xl w-full">
             <PaymentReceipt
               payment={{
@@ -2056,3 +2056,4 @@ export default function AdminPaymentsPage() {
     </div>
   );
 }
+

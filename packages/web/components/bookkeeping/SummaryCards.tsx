@@ -26,11 +26,11 @@ export default function SummaryCards({ cards, columns = 3 }: Props) {
   const toneClass = (tone?: Card['tone']) => {
     switch (tone) {
       case 'positive':
-        return 'text-green-600 dark:text-green-400';
+        return 'text-success-600 dark:text-success-400';
       case 'negative':
-        return 'text-red-600 dark:text-red-400';
+        return 'text-danger-600 dark:text-danger-400';
       case 'warning':
-        return 'text-yellow-600 dark:text-yellow-400';
+        return 'text-warning-600 dark:text-warning-400';
       default:
         return 'text-gray-900 dark:text-white';
     }
@@ -39,20 +39,21 @@ export default function SummaryCards({ cards, columns = 3 }: Props) {
   return (
     <div className={`grid ${colClass} gap-4`}>
       {cards.map((card, i) => (
-        <div
-          key={i}
-          className="bg-white dark:bg-gray-800 rounded-lg shadow p-4"
-        >
+        <div key={i} className="card-brand !p-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {card.label}
           </p>
-          <p className={`text-2xl font-bold mt-1 ${toneClass(card.tone)}`}>
+          <p
+            className={`text-2xl font-bold mt-1 tabular-nums ${toneClass(
+              card.tone
+            )}`}
+          >
             {typeof card.value === 'number'
               ? formatCurrency(card.value)
               : card.value}
           </p>
           {card.subtitle && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-2xs text-gray-500 dark:text-gray-400 mt-1">
               {card.subtitle}
             </p>
           )}

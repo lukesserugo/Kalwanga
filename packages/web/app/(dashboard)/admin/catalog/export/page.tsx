@@ -15,26 +15,22 @@ export default function ExportProductsPage() {
   const { canExport, canManage, isLoading: permissionLoading } = usePermission();
   const [isClient, setIsClient] = useState(false);
   
-  // Check permissions - canExport is a function that returns boolean
   const canExportProducts = typeof canExport === 'function' 
     ? canExport() 
     : false || canManage(PermissionResource.PRODUCT);
 
-  // Set isClient to true once component mounts
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Loading state
   if (permissionLoading || !isClient) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600"></div>
       </div>
     );
   }
 
-  // Permission denied
   if (!canExportProducts) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
@@ -47,7 +43,7 @@ export default function ExportProductsPage() {
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors flex items-center gap-2 shadow-brand focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Catalog
@@ -58,20 +54,19 @@ export default function ExportProductsPage() {
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/admin/catalog')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
               aria-label="Back to catalog"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Download className="w-6 h-6 text-blue-500" />
+                <Download className="w-6 h-6 text-brand-500" />
                 Export Products
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -82,16 +77,15 @@ export default function ExportProductsPage() {
         </div>
         <button
           onClick={() => router.push('/admin/catalog')}
-          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+          className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
         >
           Cancel
         </button>
       </div>
 
-      {/* Info Banner */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-start gap-3">
-        <CheckCircle2 className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-blue-700 dark:text-blue-300">
+      <div className="bg-brand-50 dark:bg-brand-950/20 border border-brand-200 dark:border-brand-800 rounded-lg p-4 flex items-start gap-3">
+        <CheckCircle2 className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-brand-700 dark:text-brand-300">
           <p className="font-medium">Export Information</p>
           <ul className="mt-1 space-y-1 list-disc list-inside">
             <li>Export all your products with complete details</li>
@@ -102,17 +96,15 @@ export default function ExportProductsPage() {
         </div>
       </div>
 
-      {/* Export Component */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <ProductImportExport />
       </div>
 
-      {/* Format Info Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
-              <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div className="p-2 bg-success-100 dark:bg-success-950/30 rounded-lg">
+              <FileText className="w-5 h-5 text-success-600 dark:text-success-400" />
             </div>
             <h4 className="font-medium text-gray-900 dark:text-white">CSV</h4>
           </div>
@@ -123,8 +115,8 @@ export default function ExportProductsPage() {
 
         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <FileSpreadsheet className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div className="p-2 bg-brand-100 dark:bg-brand-950/30 rounded-lg">
+              <FileSpreadsheet className="w-5 h-5 text-brand-600 dark:text-brand-400" />
             </div>
             <h4 className="font-medium text-gray-900 dark:text-white">Excel</h4>
           </div>
@@ -135,8 +127,8 @@ export default function ExportProductsPage() {
 
         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-              <FileJson className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+            <div className="p-2 bg-warning-100 dark:bg-warning-950/30 rounded-lg">
+              <FileJson className="w-5 h-5 text-warning-600 dark:text-warning-400" />
             </div>
             <h4 className="font-medium text-gray-900 dark:text-white">JSON</h4>
           </div>
@@ -146,7 +138,6 @@ export default function ExportProductsPage() {
         </div>
       </div>
 
-      {/* Help Section */}
       <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
         <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">💡 Tips for Exporting</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">

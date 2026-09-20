@@ -88,7 +88,7 @@ const InfoCard: React.FC<{
   children: React.ReactNode;
   className?: string;
 }> = ({ title, icon, children, className = '' }) => (
-  <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 ${className}`}>
+  <div className={`card-brand p-6 ${className}`}>
     <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
       {icon}
       {title}
@@ -113,14 +113,15 @@ const StatBadge: React.FC<{
   label: string;
   value: number | string;
   icon?: React.ReactNode;
-  color?: 'blue' | 'green' | 'red' | 'yellow' | 'purple' | 'gray';
-}> = ({ label, value, icon, color = 'blue' }) => {
+  color?: 'brand' | 'brand-accent' | 'secondary' | 'success' | 'warning' | 'danger' | 'gray';
+}> = ({ label, value, icon, color = 'brand' }) => {
   const colorClasses = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800',
-    red: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800',
+    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-700 dark:text-brand-accent-300 border-brand-accent-200 dark:border-brand-accent-800',
+    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-700 dark:text-secondary-300 border-secondary-200 dark:border-secondary-800',
+    success: 'bg-success-50 dark:bg-success-900/20 text-success-700 dark:text-success-300 border-success-200 dark:border-success-800',
+    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-700 dark:text-warning-300 border-warning-200 dark:border-warning-800',
+    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-700 dark:text-danger-300 border-danger-200 dark:border-danger-800',
     gray: 'bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600',
   };
 
@@ -128,7 +129,7 @@ const StatBadge: React.FC<{
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${colorClasses[color]}`}>
       {icon}
       <span className="text-xs font-medium">{label}:</span>
-      <span className="text-xs font-bold">{value}</span>
+      <span className="text-xs font-bold tabular-nums">{value}</span>
     </div>
   );
 };
@@ -139,7 +140,7 @@ const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto sidebar-scroll">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
@@ -153,7 +154,7 @@ const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
             <tr key={product.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
               <td className="px-3 py-2 text-gray-900 dark:text-white">{product.name}</td>
               <td className="px-3 py-2 text-gray-500 dark:text-gray-400 font-mono">{product.sku || 'N/A'}</td>
-              <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">
+              <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(product.unitPrice || 0)}
               </td>
             </tr>
@@ -162,7 +163,7 @@ const ProductsTable: React.FC<{ products: any[] }> = ({ products }) => {
         {products.length > 10 && (
           <tfoot>
             <tr>
-              <td colSpan={3} className="px-3 py-2 text-center text-gray-400 text-xs">
+              <td colSpan={3} className="px-3 py-2 text-center text-gray-400 text-xs tabular-nums">
                 Showing 10 of {products.length} products
               </td>
             </tr>
@@ -180,19 +181,19 @@ const OrdersTable: React.FC<{ orders: any[] }> = ({ orders }) => {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'COMPLETED': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-      'PENDING': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
-      'CANCELLED': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
-      'APPROVED': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+      'COMPLETED': 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+      'PENDING': 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+      'CANCELLED': 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+      'APPROVED': 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
       'DRAFT': 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-      'RECEIVED': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-      'PARTIALLY_RECEIVED': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+      'RECEIVED': 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+      'PARTIALLY_RECEIVED': 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
     };
     return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
   };
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto sidebar-scroll">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
@@ -207,7 +208,7 @@ const OrdersTable: React.FC<{ orders: any[] }> = ({ orders }) => {
             <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
               <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{order.orderNumber}</td>
               <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{formatDate(order.createdAt)}</td>
-              <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">
+              <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white tabular-nums">
                 {formatCurrency(order.total || 0)}
               </td>
               <td className="px-3 py-2">
@@ -221,7 +222,7 @@ const OrdersTable: React.FC<{ orders: any[] }> = ({ orders }) => {
         {orders.length > 10 && (
           <tfoot>
             <tr>
-              <td colSpan={4} className="px-3 py-2 text-center text-gray-400 text-xs">
+              <td colSpan={4} className="px-3 py-2 text-center text-gray-400 text-xs tabular-nums">
                 Showing 10 of {orders.length} orders
               </td>
             </tr>
@@ -242,7 +243,7 @@ export default function SupplierDetailPage() {
   const id = params?.id as string;
   const { user } = useAuth();
   const { canEdit, canDelete, canManage, isLoading: permissionLoading } = usePermission();
-  
+
   const [supplier, setSupplier] = useState<SupplierDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -259,12 +260,12 @@ export default function SupplierDetailPage() {
   const [loadingCompanies, setLoadingCompanies] = useState(false);
 
   const companyId = useMemo(() => user?.companyId || 'default', [user]);
-  
-  const canEditSupplier = useMemo(() => 
+
+  const canEditSupplier = useMemo(() =>
     canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
     [canEdit, canManage]
   );
-  const canDeleteSupplier = useMemo(() => 
+  const canDeleteSupplier = useMemo(() =>
     canDelete(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
     [canDelete, canManage]
   );
@@ -285,7 +286,7 @@ export default function SupplierDetailPage() {
     try {
       const response: any = await api.get('/companies');
       let companiesData: Company[] = [];
-      
+
       if (response) {
         if (Array.isArray(response)) {
           companiesData = response;
@@ -302,10 +303,10 @@ export default function SupplierDetailPage() {
           companiesData = response.companies;
         }
       }
-      
+
       const activeCompanies = companiesData.filter((c: Company) => c.isActive !== false);
       setCompanies(activeCompanies);
-      
+
       // Store company ID if not already stored
       if (activeCompanies.length > 0 && !localStorage.getItem('companyId')) {
         const firstCompany = activeCompanies[0];
@@ -324,13 +325,13 @@ export default function SupplierDetailPage() {
       setLoading(true);
       setError(null);
       const data = await supplierService.getSupplierById(id, companyId);
-      
+
       // Get the company name from the fetched companies
       const company = companies.find((c: Company) => c.id === data.companyId);
       if (company) {
         data.companyName = company.name;
       }
-      
+
       setSupplier(data);
     } catch (error: any) {
       console.error('Failed to load supplier:', error);
@@ -378,18 +379,18 @@ export default function SupplierDetailPage() {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
     const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <Star key={`full-${i}`} className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+          <Star key={`full-${i}`} className="w-4 h-4 text-warning-400 fill-warning-400" />
         ))}
-        {hasHalfStar && <StarHalf className="w-4 h-4 text-yellow-400 fill-yellow-400" />}
+        {hasHalfStar && <StarHalf className="w-4 h-4 text-warning-400 fill-warning-400" />}
         {[...Array(emptyStars)].map((_, i) => (
           <Star key={`empty-${i}`} className="w-4 h-4 text-gray-300 dark:text-gray-600" />
         ))}
         {rating > 0 && (
-          <span className="text-sm text-gray-500 ml-1">{rating.toFixed(1)}</span>
+          <span className="text-sm text-gray-500 ml-1 tabular-nums">{rating.toFixed(1)}</span>
         )}
       </div>
     );
@@ -400,7 +401,7 @@ export default function SupplierDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading supplier...</p>
         </div>
       </div>
@@ -420,7 +421,7 @@ export default function SupplierDetailPage() {
         </p>
         <Link
           href="/admin/catalog/suppliers"
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Suppliers
@@ -444,19 +445,19 @@ export default function SupplierDetailPage() {
           <div className="flex items-center gap-4">
             <Link
               href="/admin/catalog/suppliers"
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </Link>
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Truck className="w-6 h-6 sm:w-7 sm:h-7 text-blue-500" />
+                  <Truck className="w-6 h-6 sm:w-7 sm:h-7 text-brand-500" />
                   {supplier.name}
                 </h1>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                   supplier.isActive
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                    ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
                     : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
                 }`}>
                   {supplier.isActive ? 'Active' : 'Inactive'}
@@ -482,7 +483,7 @@ export default function SupplierDetailPage() {
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => window.print()}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-700 dark:text-gray-300"
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-700 dark:text-gray-300 focus-ring"
             >
               <Printer className="w-4 h-4" />
               <span className="hidden sm:inline">Print</span>
@@ -490,7 +491,7 @@ export default function SupplierDetailPage() {
             {canEditSupplier && (
               <Link
                 href={`/admin/suppliers/${id}/edit`}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 transition-colors focus-ring"
               >
                 <Edit className="w-4 h-4" />
                 Edit
@@ -499,7 +500,7 @@ export default function SupplierDetailPage() {
             {canDeleteSupplier && (
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 transition-colors focus-ring"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -514,32 +515,32 @@ export default function SupplierDetailPage() {
             label="Products"
             value={productCount}
             icon={<Package className="w-3 h-3" />}
-            color="blue"
+            color="brand"
           />
           <StatBadge
             label="Total Spent"
             value={formatCurrency(totalPurchases)}
             icon={<DollarSign className="w-3 h-3" />}
-            color="green"
+            color="success"
           />
           <StatBadge
             label="Completed Orders"
             value={completedOrders}
             icon={<CheckCircle className="w-3 h-3" />}
-            color="purple"
+            color="secondary"
           />
           <StatBadge
             label="Pending Orders"
             value={pendingOrders}
             icon={<Clock className="w-3 h-3" />}
-            color="yellow"
+            color="warning"
           />
         </div>
 
         {/* Company Information Card */}
         <InfoCard
           title="Company Information"
-          icon={<Database className="w-5 h-5 text-indigo-500" />}
+          icon={<Database className="w-5 h-5 text-brand-accent-500" />}
         >
           <div className="space-y-1">
             <div className="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-gray-700/50">
@@ -551,7 +552,7 @@ export default function SupplierDetailPage() {
                 {supplier.companyId && (
                   <button
                     onClick={() => copyToClipboard(supplier.companyId!)}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                     title="Copy Company ID"
                   >
                     <Copy className="w-3.5 h-3.5 text-gray-400" />
@@ -577,7 +578,7 @@ export default function SupplierDetailPage() {
         {/* Contact Information */}
         <InfoCard
           title="Contact Information"
-          icon={<Mail className="w-5 h-5 text-blue-500" />}
+          icon={<Mail className="w-5 h-5 text-brand-500" />}
         >
           <div className="space-y-1">
             {supplier.contactPerson && (
@@ -590,7 +591,7 @@ export default function SupplierDetailPage() {
             <InfoRow
               label="Email"
               value={
-                <a href={`mailto:${supplier.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">
+                <a href={`mailto:${supplier.email}`} className="text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded">
                   {supplier.email}
                 </a>
               }
@@ -599,7 +600,7 @@ export default function SupplierDetailPage() {
             <InfoRow
               label="Phone"
               value={
-                <a href={`tel:${supplier.phone}`} className="text-blue-600 dark:text-blue-400 hover:underline">
+                <a href={`tel:${supplier.phone}`} className="text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded">
                   {supplier.phone}
                 </a>
               }
@@ -620,7 +621,7 @@ export default function SupplierDetailPage() {
                     href={supplier.website.startsWith('http') ? supplier.website : `https://${supplier.website}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    className="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 focus-ring rounded"
                   >
                     {supplier.website}
                     <ExternalLink className="w-3 h-3" />
@@ -635,7 +636,7 @@ export default function SupplierDetailPage() {
         {/* Business Information */}
         <InfoCard
           title="Business Information"
-          icon={<Building className="w-5 h-5 text-purple-500" />}
+          icon={<Building className="w-5 h-5 text-secondary-500" />}
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
@@ -666,7 +667,7 @@ export default function SupplierDetailPage() {
         {supplier.notes && (
           <InfoCard
             title="Notes"
-            icon={<FileText className="w-5 h-5 text-yellow-500" />}
+            icon={<FileText className="w-5 h-5 text-warning-500" />}
           >
             <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{supplier.notes}</p>
           </InfoCard>
@@ -675,14 +676,14 @@ export default function SupplierDetailPage() {
         {/* Products Section */}
         <InfoCard
           title={`Products (${productCount})`}
-          icon={<Package className="w-5 h-5 text-blue-500" />}
+          icon={<Package className="w-5 h-5 text-brand-500" />}
         >
           <div className="mt-2">
             <ProductsTable products={supplier.products || []} />
             {productCount > 10 && (
               <Link
                 href={`/admin/suppliers/${id}/products`}
-                className="mt-3 inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
               >
                 View all products
                 <ExternalLink className="w-3 h-3" />
@@ -694,14 +695,14 @@ export default function SupplierDetailPage() {
         {/* Orders Section */}
         <InfoCard
           title={`Purchase Orders (${(supplier.purchaseOrders || []).length})`}
-          icon={<ShoppingBag className="w-5 h-5 text-green-500" />}
+          icon={<ShoppingBag className="w-5 h-5 text-success-500" />}
         >
           <div className="mt-2">
             <OrdersTable orders={supplier.purchaseOrders || []} />
             {(supplier.purchaseOrders || []).length > 10 && (
               <Link
                 href={`/admin/suppliers/${id}/orders`}
-                className="mt-3 inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                className="mt-3 inline-flex items-center gap-1 text-sm text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
               >
                 View all orders
                 <ExternalLink className="w-3 h-3" />
@@ -713,7 +714,7 @@ export default function SupplierDetailPage() {
         {/* Delete Modal */}
         <AnimatePresence>
           {showDeleteModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
               <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -723,13 +724,13 @@ export default function SupplierDetailPage() {
               >
                 <button
                   onClick={() => setShowDeleteModal(false)}
-                  className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                  className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
                 >
                   <X className="w-5 h-5" />
                 </button>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                    <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                  <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
+                    <AlertCircle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Supplier</h3>
@@ -739,12 +740,12 @@ export default function SupplierDetailPage() {
                 <p className="text-gray-600 dark:text-gray-300 mb-6">
                   Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{supplier.name}</strong>?
                   {productCount > 0 && (
-                    <span className="block mt-2 text-red-600">
+                    <span className="block mt-2 text-danger-600">
                       ⚠️ This supplier has {productCount} associated product{productCount !== 1 ? 's' : ''}.
                     </span>
                   )}
                   {totalPurchases > 0 && (
-                    <span className="block mt-1 text-yellow-600">
+                    <span className="block mt-1 text-warning-600 tabular-nums">
                       💰 Total purchases: {formatCurrency(totalPurchases)}
                     </span>
                   )}
@@ -752,14 +753,14 @@ export default function SupplierDetailPage() {
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => setShowDeleteModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2 disabled:opacity-50 transition-colors"
+                    className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 transition-colors focus-ring"
                   >
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {deleting ? 'Deleting...' : 'Delete Supplier'}

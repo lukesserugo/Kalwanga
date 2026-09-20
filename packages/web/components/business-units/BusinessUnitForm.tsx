@@ -16,7 +16,6 @@ import type {
   UpdateBusinessUnitDto,
 } from '../../types/businessUnit';
 
-// Add interface for props with optional id
 interface BusinessUnitFormProps {
   id?: string;
 }
@@ -189,7 +188,6 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
       return;
     }
 
-    // Ensure we have a company ID for create mode
     if (
       !isEdit &&
       (!companyId || companyId === 'default-company-id' || companyId.length < 10)
@@ -278,14 +276,14 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+    <div className="p-6 max-w-2xl mx-auto animate-fade-in">
+      <div className="card-brand">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -300,7 +298,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           <button
             type="button"
             onClick={handleCancel}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Close"
             disabled={saving}
           >
@@ -309,8 +307,8 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
         </div>
 
         {!isEdit && (
-          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <p className="text-sm text-blue-700 dark:text-blue-300">
+          <div className="mb-4 p-3 bg-brand-50 dark:bg-brand-900/20 rounded-lg">
+            <p className="text-sm text-brand-700 dark:text-brand-300">
               <span className="font-semibold">Company ID:</span>{' '}
               {companyId || 'Loading...'}
             </p>
@@ -323,7 +321,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               htmlFor="name"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
             >
-              Business Unit Name <span className="text-red-500">*</span>
+              Business Unit Name <span className="text-danger-500">*</span>
             </label>
             <div className="relative">
               <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
@@ -333,9 +331,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
                   errors.name
-                    ? 'border-red-500'
+                    ? 'border-danger-500'
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="Main Store"
@@ -345,7 +343,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               />
             </div>
             {errors.name && (
-              <p className="mt-1 text-sm text-red-500">{errors.name}</p>
+              <p className="mt-1 text-sm text-danger-500">{errors.name}</p>
             )}
           </div>
 
@@ -354,7 +352,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               htmlFor="code"
               className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
             >
-              Business Unit Code <span className="text-red-500">*</span>
+              Business Unit Code <span className="text-danger-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 font-mono">
@@ -366,9 +364,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 name="code"
                 value={formData.code}
                 onChange={handleChange}
-                className={`w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                className={`w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent uppercase text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 font-mono tabular-nums ${
                   errors.code
-                    ? 'border-red-500'
+                    ? 'border-danger-500'
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="STORE001"
@@ -378,7 +376,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               />
             </div>
             {errors.code ? (
-              <p className="mt-1 text-sm text-red-500">{errors.code}</p>
+              <p className="mt-1 text-sm text-danger-500">{errors.code}</p>
             ) : (
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 Unique identifier (2-20 alphanumeric characters)
@@ -399,7 +397,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 name="type"
                 value={formData.type || 'STORE'}
                 onChange={handleChange}
-                className="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white appearance-none"
+                className="input-brand appearance-none"
                 disabled={saving}
               >
                 <option value="HEADQUARTERS">Headquarters</option>
@@ -425,7 +423,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 name="address"
                 value={formData.address || ''}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 placeholder="123 Main St, City, State"
                 disabled={saving}
               />
@@ -447,7 +445,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 name="phone"
                 value={formData.phone || ''}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
                 placeholder="+1 234 567 890"
                 disabled={saving}
               />
@@ -469,9 +467,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 name="email"
                 value={formData.email || ''}
                 onChange={handleChange}
-                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
+                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
                   errors.email
-                    ? 'border-red-500'
+                    ? 'border-danger-500'
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="store@example.com"
@@ -479,7 +477,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               />
             </div>
             {errors.email && (
-              <p className="mt-1 text-sm text-red-500">{errors.email}</p>
+              <p className="mt-1 text-sm text-danger-500">{errors.email}</p>
             )}
           </div>
 
@@ -494,7 +492,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                   className="sr-only peer"
                   disabled={saving}
                 />
-                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300 dark:peer-focus:ring-brand-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-500"></div>
                 <span className="ms-3 text-sm font-medium text-gray-700 dark:text-gray-300">
                   {formData.isActive !== false ? 'Active' : 'Inactive'}
                 </span>
@@ -506,7 +504,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
             <button
               type="button"
               onClick={handleCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+              className="btn-secondary focus-ring disabled:opacity-50"
               disabled={saving}
             >
               Cancel
@@ -514,7 +512,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+              className="px-4 py-2 bg-brand-gradient hover:shadow-brand-lg text-white rounded-lg shadow-brand transition-all flex items-center gap-2 disabled:opacity-50 focus-ring"
             >
               {saving ? (
                 <>

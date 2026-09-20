@@ -13,9 +13,7 @@ import {
   Shield, Clock, Calendar, User, DollarSign,
   Tag, Hash, Globe, Star, Award, Archive,
   FileText, Printer, Download, Eye, Edit,
-  ChevronUp,   // ✅ ADDED
-  ChevronDown, // ✅ ADDED
-  History,     // ✅ ADDED (as icon, not type)
+  ChevronUp, ChevronDown, History,
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
@@ -127,7 +125,7 @@ const ProductCard: React.FC<{
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
+      className="p-4 bg-brand-50 dark:bg-brand-950/20 rounded-lg border border-brand-200 dark:border-brand-800"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3 min-w-0">
@@ -149,12 +147,12 @@ const ProductCard: React.FC<{
             <p className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
               {product.name}
               {product.isDigital && (
-                <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full">
+                <span className="text-xs bg-brand-100 dark:bg-brand-950/30 text-brand-600 dark:text-brand-400 px-1.5 py-0.5 rounded-full">
                   Digital
                 </span>
               )}
               {product.featured && (
-                <span className="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded-full">
+                <span className="text-xs bg-warning-100 dark:bg-warning-950/30 text-warning-600 dark:text-warning-400 px-1.5 py-0.5 rounded-full">
                   ★ Featured
                 </span>
               )}
@@ -163,7 +161,7 @@ const ProductCard: React.FC<{
             {product.barcode && (
               <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">Barcode: {product.barcode}</p>
             )}
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 tabular-nums">
               Price: {formatCurrency(product.unitPrice)}
             </p>
             {product.category && (
@@ -180,18 +178,18 @@ const ProductCard: React.FC<{
         </div>
         <div className="text-right flex-shrink-0 ml-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">Available Stock</p>
-          <p className={`text-lg font-bold ${
-            availableStock === 0 ? 'text-red-600 dark:text-red-400' :
-            availableStock <= (inventory?.reorderPoint || 5) ? 'text-yellow-600 dark:text-yellow-400' :
-            'text-green-600 dark:text-green-400'
+          <p className={`text-lg font-bold tabular-nums ${
+            availableStock === 0 ? 'text-danger-600 dark:text-danger-400' :
+            availableStock <= (inventory?.reorderPoint || 5) ? 'text-warning-600 dark:text-warning-400' :
+            'text-success-600 dark:text-success-400'
           }`}>
             {availableStock} {inventory?.unit || 'units'}
           </p>
           {inventory && inventory.reserved > 0 && (
-            <p className="text-xs text-gray-400">({inventory.reserved} reserved)</p>
+            <p className="text-xs text-gray-400 tabular-nums">({inventory.reserved} reserved)</p>
           )}
           {inventory && inventory.reorderPoint && (
-            <p className="text-xs text-gray-400">Reorder at {inventory.reorderPoint}</p>
+            <p className="text-xs text-gray-400 tabular-nums">Reorder at {inventory.reorderPoint}</p>
           )}
         </div>
       </div>
@@ -209,7 +207,7 @@ const ProductCard: React.FC<{
           )}
           {inventory.status && (
             <span className={`px-1.5 py-0.5 rounded-full ${
-              inventory.status === 'ACTIVE' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+              inventory.status === 'ACTIVE' ? 'bg-success-100 dark:bg-success-950/30 text-success-700 dark:text-success-300' :
               'bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-400'
             }`}>
               {inventory.status}
@@ -220,7 +218,7 @@ const ProductCard: React.FC<{
       <button
         type="button"
         onClick={onClear}
-        className="mt-3 text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors flex items-center gap-1"
+        className="mt-3 text-sm text-brand-accent-600 dark:text-brand-accent-400 hover:text-brand-accent-800 dark:hover:text-brand-accent-300 transition-colors flex items-center gap-1 focus-ring"
       >
         <X className="w-4 h-4" />
         Remove Selection
@@ -234,7 +232,7 @@ const TransferHistoryItem: React.FC<{ transfer: TransferHistory }> = ({ transfer
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
+      className="px-4 py-3 hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -246,12 +244,12 @@ const TransferHistoryItem: React.FC<{ transfer: TransferHistory }> = ({ transfer
               <Warehouse className="w-3 h-3" />
               {transfer.fromLocation}
             </span>
-            <ArrowRight className="w-3 h-3 flex-shrink-0" />
+            <ArrowRight className="w-3 h-3 flex-shrink-0 text-brand-500" />
             <span className="flex items-center gap-0.5">
               <Building className="w-3 h-3" />
               {transfer.toLocation}
             </span>
-            <span className="font-medium text-gray-700 dark:text-gray-300">
+            <span className="font-medium text-gray-700 dark:text-gray-300 tabular-nums">
               Qty: {transfer.quantity}
             </span>
           </div>
@@ -335,7 +333,6 @@ export default function TransferPage() {
       
       let units: BusinessUnit[] = [];
       
-      // Try from localStorage first
       try {
         const stored = localStorage.getItem('businessUnits');
         if (stored) {
@@ -359,7 +356,6 @@ export default function TransferPage() {
         console.warn('Failed to parse from localStorage:', storageError);
       }
 
-      // Try from user context if no localStorage
       if (units.length === 0 && user) {
         const userAny = user as any;
         if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
@@ -381,7 +377,6 @@ export default function TransferPage() {
         }
       }
 
-      // Try from company service
       if (units.length === 0) {
         try {
           const companies = await companyService.getAll({ limit: 100 });
@@ -409,7 +404,6 @@ export default function TransferPage() {
         }
       }
 
-      // Fallback to saved ID
       if (units.length === 0) {
         const savedId = localStorage.getItem('businessUnitId');
         if (savedId && savedId !== 'default' && savedId !== 'default-business-unit') {
@@ -424,7 +418,6 @@ export default function TransferPage() {
         }
       }
 
-      // Remove duplicates
       const uniqueUnits = units.filter((unit, index, self) => 
         index === self.findIndex((u) => u.id === unit.id)
       );
@@ -432,7 +425,6 @@ export default function TransferPage() {
       console.log(`📊 Total unique business units: ${uniqueUnits.length}`);
       setBusinessUnits(uniqueUnits);
 
-      // Auto-select business unit
       if (uniqueUnits.length > 0) {
         const savedId = localStorage.getItem('selectedBusinessUnitId') || localStorage.getItem('businessUnitId');
         if (savedId) {
@@ -732,10 +724,6 @@ export default function TransferPage() {
     }
   };
 
-  // ============================================
-  // CLEAR SELECTION
-  // ============================================
-
   const handleClearSelection = () => {
     setSelectedProduct(null);
     setInventory(null);
@@ -750,17 +738,9 @@ export default function TransferPage() {
     setError(null);
   };
 
-  // ============================================
-  // LOCATION CHANGE
-  // ============================================
-
   const handleLocationChange = (field: 'fromLocation' | 'toLocation', value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
-
-  // ============================================
-  // BUSINESS UNIT SELECT
-  // ============================================
 
   const handleBusinessUnitSelect = (businessUnitId: string) => {
     const selected = businessUnits.find(bu => bu.id === businessUnitId);
@@ -778,10 +758,6 @@ export default function TransferPage() {
       toast.error('Invalid business unit selected');
     }
   };
-
-  // ============================================
-  // EFFECTS
-  // ============================================
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -804,15 +780,11 @@ export default function TransferPage() {
     };
   }, []);
 
-  // ============================================
-  // RENDER HELPERS
-  // ============================================
-
   const renderSearchResults = () => {
     if (searching) {
       return (
         <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 p-4 text-center">
-          <Loader2 className="w-5 h-5 animate-spin text-blue-600 mx-auto" />
+          <Loader2 className="w-5 h-5 animate-spin text-brand-600 mx-auto" />
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Searching...</p>
         </div>
       );
@@ -830,13 +802,13 @@ export default function TransferPage() {
 
     if (searchResults.length > 0 && !selectedProduct) {
       return (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto custom-scrollbar">
           {searchResults.map((product) => (
             <button
               key={product.id}
               type="button"
               onClick={() => handleSelectProduct(product)}
-              className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
+              className="w-full px-4 py-3 text-left hover:bg-brand-50 dark:hover:bg-brand-950/20 flex items-center justify-between transition-colors border-b border-gray-100 dark:border-gray-700 last:border-0"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -862,11 +834,11 @@ export default function TransferPage() {
                 </div>
               </div>
               <div className="text-right flex-shrink-0 ml-4">
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                   {formatCurrency(product.unitPrice)}
                 </span>
                 {product.isDigital && (
-                  <p className="text-xs text-blue-500">Digital</p>
+                  <p className="text-xs text-brand-500">Digital</p>
                 )}
               </div>
             </button>
@@ -877,10 +849,6 @@ export default function TransferPage() {
 
     return null;
   };
-
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
 
   if (!isAuthenticated) {
     return (
@@ -910,7 +878,7 @@ export default function TransferPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to transfer stock.</p>
           <button
             onClick={() => router.push('/admin/inventory')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Back to Inventory
           </button>
@@ -919,10 +887,6 @@ export default function TransferPage() {
     );
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
   const availableStock = inventory ? (inventory.available || inventory.quantity) : 0;
   const selectedBU = businessUnits.find(bu => bu.id === selectedBusinessUnitId);
 
@@ -930,7 +894,7 @@ export default function TransferPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
+          <Loader2 className="w-12 h-12 text-brand-500 animate-spin mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">Loading business units...</p>
         </div>
       </div>
@@ -946,7 +910,7 @@ export default function TransferPage() {
           <p className="text-gray-500 dark:text-gray-400 mt-2">Please create a business unit first.</p>
           <button
             onClick={() => router.push('/admin/settings')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
           >
             Go to Settings
           </button>
@@ -962,21 +926,21 @@ export default function TransferPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.back()}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-brand-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
             aria-label="Go back"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Truck className="w-6 h-6 text-blue-500" />
+              <Truck className="w-6 h-6 text-brand-500" />
               Transfer Stock
             </h1>
             <p className="text-gray-500 dark:text-gray-400">Move inventory between locations</p>
           </div>
         </div>
         {selectedBU && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg text-sm text-green-700 dark:text-green-300">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-success-100 dark:bg-success-950/30 rounded-lg text-sm text-success-700 dark:text-success-300">
             <Building2 className="w-4 h-4" />
             <span>{selectedBU.name}</span>
           </div>
@@ -985,16 +949,16 @@ export default function TransferPage() {
 
       {/* Error Banner */}
       {error && (
-        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+        <div className="mb-6 p-4 bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-xl flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-brand-accent-600 dark:text-brand-accent-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            <p className="text-sm text-brand-accent-700 dark:text-brand-accent-300">{error}</p>
           </div>
           <button
             onClick={() => setError(null)}
-            className="p-1 hover:bg-red-100 dark:hover:bg-red-800/30 rounded transition"
+            className="p-1 hover:bg-brand-accent-100 dark:hover:bg-brand-accent-800/30 rounded transition focus-ring"
           >
-            <X className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <X className="w-4 h-4 text-brand-accent-600 dark:text-brand-accent-400" />
           </button>
         </div>
       )}
@@ -1003,12 +967,12 @@ export default function TransferPage() {
       {businessUnits.length > 1 && (
         <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Business Unit <span className="text-red-500">*</span>
+            Business Unit <span className="text-brand-accent-500">*</span>
           </label>
           <select
             value={selectedBusinessUnitId}
             onChange={(e) => handleBusinessUnitSelect(e.target.value)}
-            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-700 dark:text-white"
+            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white transition-colors"
           >
             <option value="">Select a business unit</option>
             {businessUnits.map((bu) => (
@@ -1018,7 +982,7 @@ export default function TransferPage() {
             ))}
           </select>
           {businessUnitError && (
-            <p className="mt-1 text-sm text-red-600 dark:text-red-400">{businessUnitError}</p>
+            <p className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400">{businessUnitError}</p>
           )}
         </div>
       )}
@@ -1033,7 +997,7 @@ export default function TransferPage() {
         {/* PRODUCT SELECTION */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Product <span className="text-red-500">*</span>
+            Product <span className="text-brand-accent-500">*</span>
           </label>
           <div className="relative">
             <div className="flex gap-2">
@@ -1045,14 +1009,14 @@ export default function TransferPage() {
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                   disabled={loading || !!selectedProduct || !selectedBusinessUnitId || selectedBusinessUnitId === 'default'}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-700 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
                 />
               </div>
               {selectedProduct && (
                 <button
                   type="button"
                   onClick={handleClearSelection}
-                  className="px-3 py-2.5 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/30 transition-colors"
+                  className="px-3 py-2.5 bg-brand-accent-100 dark:bg-brand-accent-950/20 text-brand-accent-600 dark:text-brand-accent-400 rounded-lg hover:bg-brand-accent-200 dark:hover:bg-brand-accent-950/30 transition-colors focus-ring"
                   aria-label="Clear selection"
                 >
                   <X className="w-5 h-5" />
@@ -1065,7 +1029,6 @@ export default function TransferPage() {
             </AnimatePresence>
           </div>
 
-          {/* Selected Product Display */}
           <AnimatePresence>
             {selectedProduct && (
               <ProductCard
@@ -1079,7 +1042,7 @@ export default function TransferPage() {
           </AnimatePresence>
 
           {!selectedBusinessUnitId || selectedBusinessUnitId === 'default' ? (
-            <p className="mt-2 text-sm text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+            <p className="mt-2 text-sm text-warning-600 dark:text-warning-400 flex items-center gap-1">
               <AlertCircle className="w-4 h-4" />
               Please select a business unit first
             </p>
@@ -1090,7 +1053,7 @@ export default function TransferPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              From Location <span className="text-red-500">*</span>
+              From Location <span className="text-brand-accent-500">*</span>
             </label>
             <div className="relative">
               <Warehouse className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -1098,7 +1061,7 @@ export default function TransferPage() {
                 type="text"
                 value={formData.fromLocation}
                 onChange={(e) => handleLocationChange('fromLocation', e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-700 dark:text-white"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white transition-colors"
                 placeholder="Enter source location"
                 list="locationList"
                 required
@@ -1117,7 +1080,7 @@ export default function TransferPage() {
               </p>
             )}
             {inventory && inventory.location && formData.fromLocation !== inventory.location && (
-              <p className="mt-1 text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+              <p className="mt-1 text-xs text-warning-600 dark:text-warning-400 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
                 Current location is "{inventory.location}"
               </p>
@@ -1125,7 +1088,7 @@ export default function TransferPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              To Location <span className="text-red-500">*</span>
+              To Location <span className="text-brand-accent-500">*</span>
             </label>
             <div className="relative">
               <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -1133,7 +1096,7 @@ export default function TransferPage() {
                 type="text"
                 value={formData.toLocation}
                 onChange={(e) => handleLocationChange('toLocation', e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-700 dark:text-white"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white transition-colors"
                 placeholder="Enter destination location"
                 list="locationList"
                 required
@@ -1141,7 +1104,7 @@ export default function TransferPage() {
               />
             </div>
             {formData.fromLocation && formData.toLocation && formData.fromLocation === formData.toLocation && (
-              <p className="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+              <p className="mt-1 text-xs text-brand-accent-600 dark:text-brand-accent-400 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3" />
                 Source and destination must be different
               </p>
@@ -1152,14 +1115,14 @@ export default function TransferPage() {
         {/* QUANTITY */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Quantity to Transfer <span className="text-red-500">*</span>
+            Quantity to Transfer <span className="text-brand-accent-500">*</span>
           </label>
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setFormData(prev => ({ ...prev, quantity: Math.max(1, prev.quantity - 1) }))}
-                className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                 disabled={loading || !selectedProduct || formData.quantity <= 1}
               >
                 <Minus className="w-4 h-4" />
@@ -1170,21 +1133,21 @@ export default function TransferPage() {
                 onChange={(e) => setFormData({ ...formData, quantity: Math.max(0, parseInt(e.target.value) || 0) })}
                 min="1"
                 max={availableStock || 0}
-                className="w-20 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-700 dark:text-white text-center"
+                className="w-20 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white text-center tabular-nums transition-colors"
                 required
                 disabled={loading || !selectedProduct}
               />
               <button
                 type="button"
                 onClick={() => setFormData(prev => ({ ...prev, quantity: Math.min(availableStock || 1, prev.quantity + 1) }))}
-                className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                className="p-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
                 disabled={loading || !selectedProduct || formData.quantity >= availableStock}
               >
                 <Plus className="w-4 h-4" />
               </button>
             </div>
             {inventory && (
-              <span className="text-sm text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                 Max: {availableStock}
               </span>
             )}
@@ -1192,7 +1155,7 @@ export default function TransferPage() {
               <button
                 type="button"
                 onClick={() => setFormData(prev => ({ ...prev, quantity: availableStock }))}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 transition-colors focus-ring"
                 disabled={loading || !selectedProduct}
               >
                 Max
@@ -1203,7 +1166,7 @@ export default function TransferPage() {
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="mt-1 text-sm text-red-600 dark:text-red-400 flex items-center gap-1"
+              className="mt-1 text-sm text-brand-accent-600 dark:text-brand-accent-400 flex items-center gap-1"
             >
               <AlertCircle className="w-4 h-4" />
               Not enough stock available. Available: {availableStock}
@@ -1220,7 +1183,7 @@ export default function TransferPage() {
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
             rows={3}
-            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-700 dark:text-white resize-y"
+            className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none dark:bg-gray-700 dark:text-white resize-y transition-colors"
             placeholder="Reason for transfer..."
             disabled={loading}
           />
@@ -1229,14 +1192,14 @@ export default function TransferPage() {
         {/* ACTIONS */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <Info className="w-4 h-4 text-blue-500" />
+            <Info className="w-4 h-4 text-brand-500" />
             <span>Stock will be deducted from source and added to destination</span>
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => router.back()}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex-1 sm:flex-none"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex-1 sm:flex-none focus-ring"
               disabled={loading}
             >
               Cancel
@@ -1252,7 +1215,7 @@ export default function TransferPage() {
                 formData.fromLocation === formData.toLocation || 
                 formData.quantity > availableStock
               }
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 flex-1 sm:flex-none transition-colors"
+              className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 flex-1 sm:flex-none transition-colors shadow-brand focus-ring"
             >
               {loading ? (
                 <>
@@ -1273,15 +1236,15 @@ export default function TransferPage() {
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
           <span className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full ${
-              selectedProduct && selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'bg-green-500' : 'bg-yellow-500'
+              selectedProduct && selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'bg-success-500' : 'bg-warning-500'
             }`} />
             {selectedProduct ? 'Product selected' : 'Select a product to transfer'}
           </span>
           <span className="flex items-center gap-2">
-            <CheckCircle className={`w-3 h-3 ${selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'text-green-500' : 'text-gray-400'}`} />
+            <CheckCircle className={`w-3 h-3 ${selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'text-success-500' : 'text-gray-400'}`} />
             {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'Business unit selected' : 'Select business unit'}
           </span>
-          <span>
+          <span className="tabular-nums">
             {locations.length} location{locations.length !== 1 ? 's' : ''} available
           </span>
         </div>
@@ -1293,7 +1256,7 @@ export default function TransferPage() {
           setShowHistory(!showHistory);
           if (!showHistory) fetchTransferHistory();
         }}
-        className="mt-6 w-full px-4 py-2 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors flex items-center justify-between text-sm text-gray-600 dark:text-gray-400"
+        className="mt-6 w-full px-4 py-2 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600/30 hover:border-brand-300 dark:hover:border-brand-700 transition-colors flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 focus-ring"
       >
         <span className="flex items-center gap-2">
           <Clock className="w-4 h-4" />
@@ -1314,18 +1277,17 @@ export default function TransferPage() {
             <div className="mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               {loadingHistory ? (
                 <div className="p-8 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-500" />
                   <p className="text-sm text-gray-500 dark:text-gray-400">Loading history...</p>
                 </div>
               ) : transferHistory.length === 0 ? (
                 <div className="p-8 text-center">
-                  {/* ✅ FIXED: Use History icon correctly */}
                   <History className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
                   <p className="text-sm text-gray-500 dark:text-gray-400">No transfer history yet</p>
                   <p className="text-xs text-gray-400 dark:text-gray-500">Transfers will appear here</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-60 overflow-y-auto">
+                <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-60 overflow-y-auto custom-scrollbar">
                   {transferHistory.map((transfer) => (
                     <TransferHistoryItem key={transfer.id} transfer={transfer} />
                   ))}

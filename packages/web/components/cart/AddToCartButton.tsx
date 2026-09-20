@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\cart\AddToCartButton.tsx
-
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -22,12 +20,6 @@ interface AddToCartButtonProps {
   variant?: 'primary' | 'secondary' | 'outline';
   showIcon?: boolean;
   disabled?: boolean;
-  /**
-   * When true (default), a 401 on an authenticated add-to-cart request
-   * redirects the user to login with a redirect_url back to the
-   * current page. Set to false if the caller wants to handle 401s
-   * itself.
-   */
   redirectOnAuthError?: boolean;
 }
 
@@ -56,8 +48,6 @@ export function AddToCartButton({
     [isAuthenticated],
   );
 
-  // Reset the transient "Added!" confirmation after a short delay.
-  // Uses an effect so unmount during the timeout is safe.
   useEffect(() => {
     if (state !== 'added') return;
     const t = setTimeout(() => setState('idle'), 2000);
@@ -72,11 +62,11 @@ export function AddToCartButton({
 
   const variantClasses = {
     primary:
-      'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-md hover:shadow-lg',
+      'bg-brand-gradient hover:shadow-brand-lg text-white shadow-brand',
     secondary:
       'bg-gray-800 hover:bg-gray-900 text-white shadow-md hover:shadow-lg',
     outline:
-      'border-2 border-orange-500 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20',
+      'border-2 border-brand-500 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20',
   };
 
   const handleAddToCart = useCallback(async () => {
@@ -103,9 +93,6 @@ export function AddToCartButton({
     } catch (err: any) {
       console.error('Failed to add to cart:', err);
 
-      // Session expiry on an authenticated cart. Guests never get 401
-      // from the guest cart endpoint, so a 401 always means the
-      // session has gone away.
       if (
         err?.response?.status === 401 &&
         isAuthenticated &&
@@ -154,7 +141,7 @@ export function AddToCartButton({
     variantClasses[variant],
     'rounded-lg font-medium transition-all duration-200',
     'inline-flex items-center justify-center gap-2',
-    'focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900',
+    'focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900',
     isDisabled ? 'opacity-60 cursor-not-allowed' : '',
     className,
   ]

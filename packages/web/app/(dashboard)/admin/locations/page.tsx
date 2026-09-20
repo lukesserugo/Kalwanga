@@ -290,7 +290,7 @@ export default function LocationsPage() {
   if (booting) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+        <Loader2 className="w-10 h-10 animate-spin text-brand-600" />
       </div>
     );
   }
@@ -310,7 +310,7 @@ export default function LocationsPage() {
           </p>
           <button
             onClick={() => router.push('/login')}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors focus-ring"
           >
             Go to Login
           </button>
@@ -328,7 +328,7 @@ export default function LocationsPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <MapPin className="w-6 h-6 text-blue-500" />
+            <MapPin className="w-6 h-6 text-brand-500" />
             Locations
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -338,7 +338,7 @@ export default function LocationsPage() {
         <button
           onClick={openCreate}
           disabled={!isValidBU(selectedBUId)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
         >
           <Plus className="w-4 h-4" />
           Add Location
@@ -352,7 +352,7 @@ export default function LocationsPage() {
             type="button"
             onClick={() => setShowBUDropdown(!showBUDropdown)}
             disabled={loadingBUs || businessUnits.length === 0}
-            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors min-w-[200px] disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors min-w-[200px] disabled:opacity-50 focus-ring"
           >
             <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
@@ -366,7 +366,7 @@ export default function LocationsPage() {
           </button>
 
           {showBUDropdown && (
-            <div className="absolute z-50 mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            <div className="absolute z-header mt-1 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto sidebar-scroll">
               {businessUnits.length === 0 ? (
                 <div className="p-4 text-center text-sm text-gray-500">
                   No business units available
@@ -385,9 +385,9 @@ export default function LocationsPage() {
                         /* ignore */
                       }
                     }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring ${
                       bu.id === selectedBUId
-                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                        ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
                         : 'text-gray-700 dark:text-gray-300'
                     }`}
                   >
@@ -411,26 +411,26 @@ export default function LocationsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search locations..."
-            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
       </div>
 
       {/* LIST */}
       {loading ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
+        <div className="card-brand p-12 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
           <p className="mt-2 text-sm text-gray-500">Loading locations...</p>
         </div>
       ) : !isValidBU(selectedBUId) ? (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-6 text-center">
-          <AlertCircle className="w-10 h-10 text-yellow-500 mx-auto mb-2" />
-          <p className="text-sm text-yellow-700 dark:text-yellow-300">
+        <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-6 text-center">
+          <AlertCircle className="w-10 h-10 text-warning-500 mx-auto mb-2" />
+          <p className="text-sm text-warning-700 dark:text-warning-300">
             Please select a business unit to view its locations.
           </p>
         </div>
       ) : filteredLocations.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+        <div className="card-brand p-12 text-center">
           <MapPin className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             No locations yet
@@ -443,7 +443,7 @@ export default function LocationsPage() {
           {!search && (
             <button
               onClick={openCreate}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+              className="mt-4 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors inline-flex items-center gap-2 focus-ring"
             >
               <Plus className="w-4 h-4" />
               Add Location
@@ -451,7 +451,7 @@ export default function LocationsPage() {
           )}
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="card-brand p-0 overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
@@ -485,7 +485,7 @@ export default function LocationsPage() {
                         {loc.name}
                       </span>
                       {loc.isDefault && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                           <Star className="w-3 h-3" />
                           Default
                         </span>
@@ -508,7 +508,7 @@ export default function LocationsPage() {
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     {loc.isActive ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300">
                         <CheckCircle className="w-3 h-3" />
                         Active
                       </span>
@@ -522,17 +522,17 @@ export default function LocationsPage() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => openEdit(loc)}
-                        className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                        className="p-1.5 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded transition-colors focus-ring"
                         title="Edit"
                       >
-                        <Edit className="w-4 h-4 text-blue-500" />
+                        <Edit className="w-4 h-4 text-brand-500" />
                       </button>
                       <button
                         onClick={() => setDeleteTarget(loc)}
-                        className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                        className="p-1.5 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded transition-colors focus-ring"
                         title="Delete"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-4 h-4 text-danger-500" />
                       </button>
                     </div>
                   </td>
@@ -546,7 +546,7 @@ export default function LocationsPage() {
       {/* CREATE/EDIT FORM MODAL */}
       <AnimatePresence>
         {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-black/50 backdrop-blur-sm"
               onClick={closeForm}
@@ -564,7 +564,7 @@ export default function LocationsPage() {
                 <button
                   onClick={closeForm}
                   disabled={saving}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                   aria-label="Close"
                 >
                   <X className="w-5 h-5 text-gray-500" />
@@ -572,9 +572,9 @@ export default function LocationsPage() {
               </div>
 
               {formError && (
-                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-700 dark:text-red-300">
+                <div className="mb-4 p-3 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-danger-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-danger-700 dark:text-danger-300">
                     {formError}
                   </p>
                 </div>
@@ -583,7 +583,7 @@ export default function LocationsPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Name <span className="text-red-500">*</span>
+                    Name <span className="text-danger-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -593,7 +593,7 @@ export default function LocationsPage() {
                     }
                     placeholder="e.g. Main Warehouse"
                     disabled={saving}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
                     autoFocus
                   />
                 </div>
@@ -609,7 +609,7 @@ export default function LocationsPage() {
                         setForm((p) => ({ ...p, type: e.target.value }))
                       }
                       disabled={saving}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
                     >
                       {/*
                         ✅ LOCATION_TYPES is a string[] of raw enum values.
@@ -637,7 +637,7 @@ export default function LocationsPage() {
                         }
                         placeholder="WH-01"
                         disabled={saving}
-                        className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
                       />
                     </div>
                   </div>
@@ -660,7 +660,7 @@ export default function LocationsPage() {
                       rows={2}
                       placeholder="Optional description"
                       disabled={saving}
-                      className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50"
+                      className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -677,7 +677,7 @@ export default function LocationsPage() {
                         setForm((p) => ({ ...p, address: e.target.value }))
                       }
                       disabled={saving}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
                     />
                   </div>
                   <div>
@@ -693,7 +693,7 @@ export default function LocationsPage() {
                           setForm((p) => ({ ...p, phone: e.target.value }))
                         }
                         disabled={saving}
-                        className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
                       />
                     </div>
                   </div>
@@ -710,7 +710,7 @@ export default function LocationsPage() {
                       }))
                     }
                     disabled={saving}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                   />
                   Set as default location for this business unit
                 </label>
@@ -720,14 +720,14 @@ export default function LocationsPage() {
                 <button
                   onClick={closeForm}
                   disabled={saving}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving || !form.name.trim()}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                  className="flex-1 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors focus-ring"
                 >
                   {saving ? (
                     <>
@@ -750,7 +750,7 @@ export default function LocationsPage() {
       {/* DELETE CONFIRMATION */}
       <AnimatePresence>
         {deleteTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-modal flex items-center justify-center p-4">
             <div
               className="fixed inset-0 bg-black/50 backdrop-blur-sm"
               onClick={() => !deleting && setDeleteTarget(null)}
@@ -762,8 +762,8 @@ export default function LocationsPage() {
               className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6"
             >
               <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600" />
+                <div className="w-16 h-16 bg-danger-100 dark:bg-danger-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-danger-600" />
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
                   Delete Location
@@ -780,14 +780,14 @@ export default function LocationsPage() {
                   <button
                     onClick={() => setDeleteTarget(null)}
                     disabled={deleting}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                    className="flex-1 px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors focus-ring"
                   >
                     {deleting ? (
                       <>

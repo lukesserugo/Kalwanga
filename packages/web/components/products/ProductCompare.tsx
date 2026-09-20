@@ -515,12 +515,12 @@ export function ProductCompare({
             key={star}
             className={`w-4 h-4 ${
               star <= Math.round(rating)
-                ? 'text-yellow-400 fill-current'
+                ? 'text-warning-400 fill-current'
                 : 'text-gray-300 dark:text-gray-600'
             }`}
           />
         ))}
-        <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">
+        <span className="text-sm tabular-nums text-gray-500 dark:text-gray-400 ml-1">
           ({rating.toFixed(1)})
         </span>
       </div>
@@ -534,7 +534,7 @@ export function ProductCompare({
   if (loading && products.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
         <span className="ml-3 text-gray-600 dark:text-gray-400">
           Loading comparison...
         </span>
@@ -544,7 +544,7 @@ export function ProductCompare({
 
   if (products.length === 0) {
     return (
-      <div className="text-center py-12 bg-gray-50 dark:bg-gray-800 rounded-xl">
+      <div className="text-center py-12 card-brand shadow-soft animate-fade-in">
         <Scale className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           No products to compare
@@ -554,7 +554,7 @@ export function ProductCompare({
         </p>
         <Link
           href="/shop"
-          className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="mt-4 btn-brand"
         >
           Browse Products
         </Link>
@@ -568,14 +568,14 @@ export function ProductCompare({
 
   return (
     <div
-      className={`bg-white dark:bg-gray-900 rounded-xl shadow-lg overflow-hidden ${className}`}
+      className={`card-brand shadow-card overflow-hidden animate-fade-in ${className}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <Scale className="w-5 h-5 text-blue-600" />
+          <Scale className="w-5 h-5 text-brand-600 dark:text-brand-400" />
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            Compare Products ({products.length})
+            Compare Products (<span className="tabular-nums">{products.length}</span>)
           </h2>
         </div>
         <div className="flex items-center gap-2">
@@ -583,7 +583,7 @@ export function ProductCompare({
             <button
               type="button"
               onClick={clearCompare}
-              className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors"
+              className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring rounded"
             >
               Clear All
             </button>
@@ -592,7 +592,7 @@ export function ProductCompare({
             <button
               type="button"
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition duration-250 focus-ring"
               aria-label="Close comparison"
             >
               <X className="w-5 h-5" />
@@ -602,12 +602,12 @@ export function ProductCompare({
       </div>
 
       {/* Grid */}
-      <div className="overflow-x-auto p-4">
+      <div className="overflow-x-auto p-4 custom-scrollbar">
         <div className="min-w-[640px]">
           <table className="w-full">
             <thead>
               <tr>
-                <th className="w-32 text-left text-sm font-medium text-gray-500 dark:text-gray-400 py-2">
+                <th className="w-32 text-left text-sm font-medium text-gray-500 dark:text-gray-400 py-2 eyebrow">
                   Feature
                 </th>
                 {products.map((product) => (
@@ -619,13 +619,13 @@ export function ProductCompare({
                       <button
                         type="button"
                         onClick={() => removeFromCompare(product.id)}
-                        className="absolute -top-2 -right-2 p-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        className="absolute -top-2 -right-2 p-1 bg-danger-100 dark:bg-danger-900/30 text-danger-600 dark:text-danger-400 rounded-full hover:bg-danger-200 dark:hover:bg-danger-900/50 transition duration-250 opacity-0 group-hover:opacity-100 focus:opacity-100 focus-ring"
                         aria-label={`Remove ${product.name} from comparison`}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
 
-                      <div className="w-24 h-24 mx-auto rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 relative">
+                      <div className="w-24 h-24 mx-auto rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-700 relative">
                         {product.images?.[0] ? (
                           <img
                             src={getValidImage(product.images[0])}
@@ -637,12 +637,12 @@ export function ProductCompare({
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <Package className="w-8 h-8 text-gray-300" />
+                            <Package className="w-8 h-8 text-gray-300 dark:text-gray-600" />
                           </div>
                         )}
 
                         {getVariantCount(product) > 0 && (
-                          <div className="absolute bottom-0 left-0 right-0 bg-purple-500/80 text-white text-[10px] py-0.5 flex items-center justify-center gap-0.5">
+                          <div className="absolute bottom-0 left-0 right-0 bg-secondary-500/80 text-white text-2xs tabular-nums py-0.5 flex items-center justify-center gap-0.5">
                             <Layers className="w-3 h-3" />
                             {getVariantCount(product)}
                             {hasVariantImages(product) && (
@@ -652,7 +652,7 @@ export function ProductCompare({
                         )}
 
                         {isInventoryLinked(product) && (
-                          <div className="absolute top-0 right-0 p-0.5 bg-blue-500/80 text-white rounded-bl-lg">
+                          <div className="absolute top-0 right-0 p-0.5 bg-brand-500/80 text-white rounded-bl-lg">
                             <Link2 className="w-3 h-3" />
                           </div>
                         )}
@@ -660,12 +660,12 @@ export function ProductCompare({
 
                       <Link
                         href={`/shop/${product.id}`}
-                        className="block mt-2 text-sm font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors line-clamp-2"
+                        className="block mt-2 text-sm font-medium text-gray-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400 transition duration-250 line-clamp-2"
                       >
                         {product.name}
                       </Link>
 
-                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                      <p className="text-lg font-bold tabular-nums text-brand-600 dark:text-brand-400">
                         {formatCurrency(product.unitPrice)}
                       </p>
 
@@ -673,7 +673,7 @@ export function ProductCompare({
                         <WishlistButton productId={product.id} size="sm" />
                         <Link
                           href={`/shop/${product.id}`}
-                          className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          className="p-1.5 btn-brand focus-ring"
                           aria-label={`View ${product.name}`}
                         >
                           <ShoppingCart className="w-4 h-4" />
@@ -688,10 +688,10 @@ export function ProductCompare({
                     <button
                       type="button"
                       onClick={openSelector}
-                      className="w-full h-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 hover:border-blue-500 dark:hover:border-blue-400 transition-colors flex flex-col items-center justify-center"
+                      className="w-full h-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-4 hover:border-brand-500 dark:hover:border-brand-400 transition duration-250 flex flex-col items-center justify-center focus-ring"
                     >
-                      <Plus className="w-8 h-8 text-gray-400" />
-                      <span className="text-sm text-gray-400 mt-2">
+                      <Plus className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+                      <span className="text-sm text-gray-400 dark:text-gray-500 mt-2">
                         Add Product
                       </span>
                     </button>
@@ -709,7 +709,7 @@ export function ProductCompare({
                 {products.map((product) => (
                   <td
                     key={product.id}
-                    className="text-center text-sm text-gray-700 dark:text-gray-300 py-2"
+                    className="text-center text-sm tabular-nums text-gray-700 dark:text-gray-300 py-2"
                   >
                     {product.sku}
                   </td>
@@ -757,18 +757,18 @@ export function ProductCompare({
                   return (
                     <td key={product.id} className="text-center py-2">
                       <span
-                        className={`text-sm font-medium ${
+                        className={`text-sm font-medium tabular-nums ${
                           stock > 10
-                            ? 'text-green-600 dark:text-green-400'
+                            ? 'text-success-600 dark:text-success-400'
                             : stock > 0
-                            ? 'text-yellow-600 dark:text-yellow-400'
-                            : 'text-red-600 dark:text-red-400'
+                            ? 'text-warning-600 dark:text-warning-400'
+                            : 'text-danger-600 dark:text-danger-400'
                         }`}
                       >
                         {stock > 0 ? `${stock} in stock` : 'Out of stock'}
                       </span>
                       {variantStock > 0 && (
-                        <p className="text-xs text-gray-400 mt-0.5">
+                        <p className="text-xs tabular-nums text-gray-400 dark:text-gray-500 mt-0.5">
                           Includes {variantStock} variant stock
                         </p>
                       )}
@@ -788,11 +788,11 @@ export function ProductCompare({
                 </td>
                 {products.map((product) => (
                   <td key={product.id} className="text-center py-2">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="text-sm tabular-nums text-gray-700 dark:text-gray-300">
                       {getVariantCount(product)}
                     </span>
                     {hasVariantImages(product) && (
-                      <span className="ml-1 text-xs text-purple-500 inline-flex items-center gap-0.5">
+                      <span className="ml-1 text-xs text-secondary-500 dark:text-secondary-400 inline-flex items-center gap-0.5">
                         <ImageIcon className="w-3 h-3" />
                         with images
                       </span>
@@ -815,8 +815,8 @@ export function ProductCompare({
                     <span
                       className={`text-sm inline-flex items-center justify-center gap-1 ${
                         isInventoryLinked(product)
-                          ? 'text-blue-600 dark:text-blue-400'
-                          : 'text-gray-400'
+                          ? 'text-brand-600 dark:text-brand-400'
+                          : 'text-gray-400 dark:text-gray-500'
                       }`}
                     >
                       {isInventoryLinked(product) ? (
@@ -841,10 +841,10 @@ export function ProductCompare({
                 {products.map((product) => (
                   <td key={product.id} className="text-center py-2">
                     <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      className={`px-2 py-0.5 rounded-full text-2xs font-medium ${
                         product.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                          ? 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300'
+                          : 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300'
                       }`}
                     >
                       {product.isActive ? 'Active' : 'Inactive'}
@@ -883,7 +883,7 @@ export function ProductCompare({
                       <button
                         type="button"
                         onClick={() => removeFromCompare(product.id)}
-                        className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        className="p-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-100 dark:hover:bg-danger-900/30 rounded-lg transition duration-250 focus-ring"
                         title="Remove from comparison"
                         aria-label={`Remove ${product.name} from comparison`}
                       >
@@ -891,7 +891,7 @@ export function ProductCompare({
                       </button>
                       <Link
                         href={`/shop/${product.id}`}
-                        className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                        className="p-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/30 rounded-lg transition duration-250 focus-ring"
                         aria-label={`View ${product.name}`}
                       >
                         <Eye className="w-4 h-4" />
@@ -910,20 +910,20 @@ export function ProductCompare({
       {products.length > 0 && (
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
               Comparing {products.length} of {maxCompare} products
             </p>
             <div className="flex gap-2">
               <Link
                 href="/shop"
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+                className="btn-secondary"
               >
                 Browse More
               </Link>
               <button
                 type="button"
                 onClick={handleShare}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
+                className="btn-brand"
               >
                 <Share2 className="w-4 h-4" />
                 Share Comparison
@@ -940,7 +940,7 @@ export function ProductCompare({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-modal flex items-center justify-center p-4"
           >
             <div
               className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
@@ -950,12 +950,12 @@ export function ProductCompare({
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto"
+              className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-card max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto custom-scrollbar animate-slide-down"
             >
               <button
                 type="button"
                 onClick={() => setShowProductSelector(false)}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition duration-250 focus-ring"
                 aria-label="Close product selector"
               >
                 <X className="w-5 h-5" />
@@ -971,20 +971,20 @@ export function ProductCompare({
                   placeholder="Search products..."
                   value={selectorSearch}
                   onChange={(e) => setSelectorSearch(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition duration-250"
                 />
               </div>
 
               {loadingAvailable ? (
                 <div className="flex justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                  <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
                 </div>
               ) : availableProducts.length === 0 ? (
                 <p className="text-center text-gray-500 dark:text-gray-400 py-8">
                   No products found
                 </p>
               ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
+                <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
                   {availableProducts
                     .filter((p) => !compareList.includes(p.id))
                     .map((product) => (
@@ -992,7 +992,7 @@ export function ProductCompare({
                         key={product.id}
                         type="button"
                         onClick={() => addToCompare(product.id)}
-                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border border-gray-100 dark:border-gray-700 text-left"
+                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition duration-250 border border-gray-100 dark:border-gray-700 text-left focus-ring"
                       >
                         <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
                           {product.images?.[0] ? (
@@ -1005,18 +1005,18 @@ export function ProductCompare({
                               }
                             />
                           ) : (
-                            <Package className="w-full h-full p-2 text-gray-400" />
+                            <Package className="w-full h-full p-2 text-gray-400 dark:text-gray-500" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 dark:text-white truncate">
                             {product.name}
                           </p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                          <p className="text-sm tabular-nums text-gray-500 dark:text-gray-400">
                             {product.sku} • {formatCurrency(product.unitPrice)}
                           </p>
                         </div>
-                        <Plus className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                        <Plus className="w-5 h-5 text-brand-500 flex-shrink-0" />
                       </button>
                     ))}
                 </div>

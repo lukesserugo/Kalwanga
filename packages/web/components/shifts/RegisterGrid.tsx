@@ -104,7 +104,7 @@ export function RegisterGrid({
           return (
             <div
               key={register.id}
-              className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 transition-colors duration-200 hover:shadow-md"
+              className="card-brand shadow-soft hover:shadow-card-hover transition duration-250 p-5 animate-fade-in"
             >
               {/* Header */}
               <div className="flex items-start justify-between mb-3">
@@ -114,12 +114,12 @@ export function RegisterGrid({
                       {register.name}
                     </h3>
                     {!register.isActive && (
-                      <Badge variant="destructive" className="text-xs shrink-0">
+                      <Badge variant="destructive" className="text-2xs shrink-0">
                         Inactive
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono tabular-nums mt-0.5">
                     {register.code}
                   </p>
                 </div>
@@ -129,24 +129,24 @@ export function RegisterGrid({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 focus-ring"
                     >
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
-                    className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                    className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl shadow-card"
                   >
                     <DropdownMenuItem
                       onClick={() => onEdit(register)}
-                      className="text-gray-700 dark:text-gray-300 focus:bg-gray-100 dark:focus:bg-gray-700"
+                      className="text-gray-700 dark:text-gray-300 focus:bg-gray-100 dark:focus:bg-gray-700 focus-ring"
                     >
                       <Edit className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="text-red-600 dark:text-red-400 focus:bg-red-50 dark:focus:bg-red-900/20"
+                      className="text-danger-600 dark:text-danger-400 focus:bg-danger-50 dark:focus:bg-danger-900/20 focus-ring"
                       onClick={() => onDelete(register.id)}
                       disabled={isOpen}
                     >
@@ -167,7 +167,7 @@ export function RegisterGrid({
               {/* Balance */}
               <div className="flex items-center gap-2 mb-3">
                 <DollarSign className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                <span className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
                   {formatCurrency(register.cashBalance || 0)}
                 </span>
               </div>
@@ -186,7 +186,7 @@ export function RegisterGrid({
                   {openedAt && (
                     <div className="flex items-center gap-1.5">
                       <Calendar className="w-3 h-3" />
-                      <span>since {formatDateTime(openedAt)}</span>
+                      <span className="tabular-nums">since {formatDateTime(openedAt)}</span>
                     </div>
                   )}
                 </div>
@@ -200,7 +200,7 @@ export function RegisterGrid({
                     variant="outline"
                     onClick={() => onStartShift(register)}
                     disabled={!register.isActive}
-                    className="flex-1 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="flex-1 btn-secondary"
                   >
                     <Clock className="w-3 h-3 mr-1" />
                     Start Shift
@@ -214,7 +214,7 @@ export function RegisterGrid({
                         endingBalance: register.cashBalance,
                       })
                     }
-                    className="flex-1 border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    className="flex-1 border-danger-300 dark:border-danger-700 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-xl transition duration-250 focus-ring"
                   >
                     End Shift
                   </Button>
@@ -232,7 +232,7 @@ export function RegisterGrid({
                     size="sm"
                     variant="outline"
                     onClick={() => setCashModal({ register, type: 'add' })}
-                    className="flex-1 border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                    className="flex-1 border-success-300 dark:border-success-700 text-success-600 dark:text-success-400 hover:bg-success-50 dark:hover:bg-success-900/20 rounded-xl transition duration-250 focus-ring"
                   >
                     <Plus className="w-3 h-3 mr-1" />
                     Add Cash
@@ -241,7 +241,7 @@ export function RegisterGrid({
                     size="sm"
                     variant="outline"
                     onClick={() => setCashModal({ register, type: 'remove' })}
-                    className="flex-1 border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                    className="flex-1 border-brand-300 dark:border-brand-700 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-xl transition duration-250 focus-ring"
                   >
                     <Minus className="w-3 h-3 mr-1" />
                     Remove
@@ -255,8 +255,8 @@ export function RegisterGrid({
 
       {/* Cash Modal */}
       {cashModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 w-full max-w-md">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-card border border-gray-200 dark:border-gray-700 p-6 w-full max-w-md animate-slide-down">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               {cashModal.type === 'add' ? 'Add Cash' : 'Remove Cash'} —{' '}
               {cashModal.register.name}
@@ -273,7 +273,7 @@ export function RegisterGrid({
                   min="0"
                   value={cashAmount}
                   onChange={(e) => setCashAmount(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="0.00"
                   autoFocus
                 />
@@ -287,7 +287,7 @@ export function RegisterGrid({
                   type="text"
                   value={cashDescription}
                   onChange={(e) => setCashDescription(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
                   placeholder="Reason for transaction"
                 />
               </div>
@@ -300,14 +300,14 @@ export function RegisterGrid({
                     setCashAmount('');
                     setCashDescription('');
                   }}
-                  className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  className="btn-secondary"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleCashSubmit}
                   disabled={!cashAmount || parseFloat(cashAmount) <= 0}
-                  className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 disabled:opacity-50"
+                  className="btn-brand disabled:opacity-50"
                 >
                   {cashModal.type === 'add' ? 'Add Cash' : 'Remove Cash'}
                 </Button>
