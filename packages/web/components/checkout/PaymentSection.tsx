@@ -14,15 +14,24 @@ import {
 import { useThemeStore } from '../../app/stores/themeStore';
 import { formatCurrency } from '../../utils/formatters';
 import { toast } from '../../utils/toast-manager';
+import type { PaymentMethod } from '../../services/saleService';
 
 // ============================================
 // TYPES
 // ============================================
 
-interface PaymentMethod {
+/**
+ * Local option shape for rendering a payment-method button.
+ * The `code` field is narrowed to the shared `PaymentMethod` union so
+ * the value handed to `onPaymentComplete` is always a valid method.
+ *
+ * Renamed from `PaymentMethod` to `PaymentMethodOption` to avoid
+ * colliding with the shared union imported above.
+ */
+interface PaymentMethodOption {
   id: string;
   name: string;
-  code: string;
+  code: PaymentMethod;
   icon: React.ReactNode;
   description: string;
   enabled: boolean;
@@ -44,10 +53,15 @@ interface PaymentDetails {
 interface PaymentSectionProps {
   total: number;
   currency?: string;
-  onPaymentComplete: (paymentMethod: string, details: PaymentDetails) => void;
+  /**
+   * Narrowed to the shared `PaymentMethod` union. Callers receive a value
+   * that is guaranteed to be one of the canonical methods, which lets
+   * downstream code (e.g. `checkoutService.processCheckout`) stay typed.
+   */
+  onPaymentComplete: (paymentMethod: PaymentMethod, details: PaymentDetails) => void;
   onPaymentCancel?: () => void;
   isProcessing?: boolean;
-  availablePaymentMethods?: PaymentMethod[];
+  availablePaymentMethods?: PaymentMethodOption[];
   customerLoyaltyPoints?: number;
   className?: string;
 }
@@ -56,7 +70,7 @@ interface PaymentSectionProps {
 // CONSTANTS
 // ============================================
 
-const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
+const DEFAULT_PAYMENT_METHODS: PaymentMethodOption[] = [
   {
     id: 'CASH',
     name: 'Cash',
@@ -136,7 +150,7 @@ export function PaymentSection({
   className = '',
 }: PaymentSectionProps) {
   const { isDark } = useThemeStore();
-  const [selectedMethod, setSelectedMethod] = useState<string>('CASH');
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('CASH');
   const [showDetails, setShowDetails] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState<PaymentDetails>({});
   const [step, setStep] = useState<'select' | 'details' | 'processing' | 'complete'>('select');
@@ -237,6 +251,7 @@ export function PaymentSection({
     };
 
     try {
+      // `selectedMethod` is now `PaymentMethod`, so this call is type-safe.
       await onPaymentComplete(selectedMethod, details);
       setStep('complete');
     } catch (error) {
@@ -263,7 +278,7 @@ export function PaymentSection({
             <button
               key={method.id}
               onClick={() => {
-                setSelectedMethod(method.id);
+                setSelectedMethod(method.code);
                 setShowDetails(method.requiresDetails || false);
                 setStep('select');
               }}

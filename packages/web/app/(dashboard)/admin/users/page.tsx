@@ -7,9 +7,8 @@ import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PermissionGuard } from '../../../../components/common/PermissionGuard';
-import { PERMISSIONS } from '../../../../types/permissions';
-import { 
-  Shield, UserCog, UserPlus, RefreshCw, AlertCircle, 
+import {
+  Shield, UserCog, UserPlus, RefreshCw, AlertCircle,
   Search, Download, Filter, Users as UsersIcon,
   UserCheck, UserX, Trash2, ChevronLeft, ChevronRight,
   CheckCircle, XCircle, Lock, Loader2, Eye, EyeOff,
@@ -27,24 +26,49 @@ import { userService } from '../../../../services/userService';
 import { User as UserType, UserGroup } from '../../../../types/user';
 import { toast } from 'react-hot-toast';
 
-// Define interface for the user list item
+// ============================================
+// PERMISSION CONSTANTS
+// ============================================
+//
+// The canonical `types/permissions.ts` exposes the boolean-flag
+// `UserPermissions` interface and a `buildPermissionsFromSet`
+// resolver — it does NOT export a string registry. This page only
+// needs the `USER_MANAGE` string for its group-management gate, so
+// we declare it locally.
+//
+// ⚠️ Keep this in sync with the backend's permission strings in
+//    `packages/backend/src/middleware/auth.ts`.
+
+const PERMISSIONS = {
+  USER_MANAGE: 'user:manage',
+} as const;
+
+// ============================================
+// UserListItem — page-local view model
+// ============================================
+//
+// Mirrors the canonical `User` shape with all nullable fields
+// preserved. Aligning the nullables with the source type prevents
+// "Type 'User' is not assignable to type 'UserListItem'" errors
+// when the service response is assigned into local state.
+
 interface UserListItem {
   id: string;
-  clerkId?: string;
+  clerkId?: string | null;
   email: string;
   firstName: string;
   lastName: string;
-  phoneNumber?: string;
+  phoneNumber?: string | null;
   role: string;
   isActive: boolean;
-  lastLoginAt?: string;
+  lastLoginAt?: string | null;
   createdAt: string;
   updatedAt: string;
   permissions?: string[];
   businessUnits?: any[];
   groupMemberships?: any[];
   company?: any;
-  avatar?: string;
+  avatar?: string | null;
 }
 
 // Stats Card Component
@@ -66,10 +90,10 @@ const StatsCard = ({ title, value, icon, color, subtitle }: any) => (
 export default function UsersManagementPage() {
   const router = useRouter();
   const { user: clerkUser } = useUser();
-  const { 
-    user: currentUser, 
-    can, 
-    isSuperAdmin, 
+  const {
+    user: currentUser,
+    can,
+    isSuperAdmin,
     isAdmin,
     canViewUsers,
     canManageUsers,
@@ -77,7 +101,7 @@ export default function UsersManagementPage() {
     canExportUsers,
     canDeleteUsers
   } = useAuth();
-  
+
   // State Management
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,7 +139,7 @@ export default function UsersManagementPage() {
   const [assigningToGroup, setAssigningToGroup] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
+
   // Refs
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
   const isPolling = useRef(false);
@@ -123,12 +147,12 @@ export default function UsersManagementPage() {
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
   // Get role from Clerk metadata or useAuth
-  const userRole = (clerkUser?.publicMetadata?.role as string) || 
-                   (clerkUser?.unsafeMetadata?.role as string) || 
-                   currentUser?.role || 
+  const userRole = (clerkUser?.publicMetadata?.role as string) ||
+                   (clerkUser?.unsafeMetadata?.role as string) ||
+                   currentUser?.role ||
                    'USER';
 
-  const hasAccess = isSuperAdmin || isAdmin || canViewUsers || 
+  const hasAccess = isSuperAdmin || isAdmin || canViewUsers ||
                     userRole === 'SUPER_ADMIN' || userRole === 'ADMIN';
 
   const canManageGroups = isSuperAdmin || isAdmin || can(PERMISSIONS.USER_MANAGE);
@@ -142,7 +166,7 @@ export default function UsersManagementPage() {
       setDebouncedSearch(searchQuery);
       setPagination(prev => ({ ...prev, page: 1 }));
     }, 500);
-    
+
     return () => {
       if (searchTimeout.current) {
         clearTimeout(searchTimeout.current);
@@ -168,25 +192,25 @@ export default function UsersManagementPage() {
     try {
       if (showLoading) setLoading(true);
       setError(null);
-      
+
       const params: any = {
         page: pagination.page,
         limit: pagination.limit,
         sortBy: sortConfig.key,
         sortOrder: sortConfig.direction,
       };
-      
+
       if (debouncedSearch) params.search = debouncedSearch;
       if (filters.role) params.role = filters.role;
       if (filters.status !== 'all') params.isActive = filters.status === 'active';
       if (filters.businessUnitId) params.businessUnitId = filters.businessUnitId;
 
       const response = await userService.getAllUsers(params);
-      
+
       let userData: UserListItem[] = [];
       let total = 0;
       let pages = 1;
-      
+
       if (response && typeof response === 'object') {
         if ('data' in response && Array.isArray(response.data)) {
           userData = response.data;
@@ -198,23 +222,23 @@ export default function UsersManagementPage() {
           pages = 1;
         }
       }
-      
+
       // Filter out SUPER_ADMIN for non-superadmins
       if (!isSuperAdmin) {
         userData = userData.filter(u => u.role !== 'SUPER_ADMIN');
         total = userData.length;
         pages = 1;
       }
-      
+
       // Filter by group if selected
       if (filters.groupId) {
-        userData = userData.filter(u => 
+        userData = userData.filter(u =>
           u.groupMemberships?.some((gm: any) => gm.groupId === filters.groupId || gm.group?.id === filters.groupId)
         );
         total = userData.length;
         pages = Math.ceil(total / pagination.limit) || 1;
       }
-      
+
       setUsers(userData);
       setPagination(prev => ({
         ...prev,
@@ -236,7 +260,7 @@ export default function UsersManagementPage() {
   const startPolling = useCallback(() => {
     if (isPolling.current) return;
     isPolling.current = true;
-    
+
     pollingInterval.current = setInterval(() => {
       loadUsers(false);
     }, 30000);
@@ -262,7 +286,7 @@ export default function UsersManagementPage() {
     } else {
       setLoading(false);
     }
-    
+
     return () => {
       stopPolling();
     };
@@ -275,7 +299,7 @@ export default function UsersManagementPage() {
         setShowSortMenu(false);
       }
     };
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
@@ -362,7 +386,7 @@ export default function UsersManagementPage() {
       setRefreshing(true);
       await userService.deleteUser(userId);
       console.log('✅ User deleted:', userId);
-      
+
       setShowDeleteModal(false);
       setUserToDelete(null);
       setSelectedUsers(prev => {
@@ -370,9 +394,9 @@ export default function UsersManagementPage() {
         newSet.delete(userId);
         return newSet;
       });
-      
+
       await loadUsers(false);
-      
+
       showSuccess('User deleted successfully!');
     } catch (error: any) {
       console.error('Failed to delete user:', error);
@@ -390,11 +414,11 @@ export default function UsersManagementPage() {
       toast.error('You do not have permission to export users');
       return;
     }
-    
+
     setExporting(true);
     try {
       const response = await userService.exportUsers(format);
-      
+
       if (format === 'csv' && typeof response === 'string') {
         const blob = new Blob([response], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
@@ -484,7 +508,7 @@ export default function UsersManagementPage() {
       toast.error('Select users and a group first');
       return;
     }
-    
+
     setAssigningToGroup(true);
     try {
       await userService.assignUsersToGroup(selectedGroupForAssign, Array.from(selectedUsers));
@@ -565,7 +589,7 @@ export default function UsersManagementPage() {
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
-    
+
     if (days > 0) return `${days}d ago`;
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
@@ -630,7 +654,7 @@ export default function UsersManagementPage() {
             </p>
           )}
         </div>
-        
+
         {/* Action Buttons - Mobile Friendly */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* View Mode Toggle */}
@@ -666,15 +690,15 @@ export default function UsersManagementPage() {
               )}
             </button>
             <div className="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 hidden group-hover:block z-10">
-              <button 
-                onClick={() => handleExport('csv')} 
-                className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors flex items-center gap-2"
+              <button
+                onClick={() => handleExport('csv')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors flex items-center gap-2"
               >
                 <FileDown className="w-4 h-4" /> Export CSV
               </button>
-              <button 
-                onClick={() => handleExport('json')} 
-                className="block w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors flex items-center gap-2"
+              <button
+                onClick={() => handleExport('json')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm transition-colors flex items-center gap-2"
               >
                 <FileJson className="w-4 h-4" /> Export JSON
               </button>
@@ -693,7 +717,7 @@ export default function UsersManagementPage() {
 
           {/* Manage Groups */}
           {canManageGroups && (
-            <button 
+            <button
               onClick={handleManageGroups}
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
             >
@@ -704,7 +728,7 @@ export default function UsersManagementPage() {
 
           {/* Manage Roles */}
           {canManageGroups && (
-            <button 
+            <button
               onClick={handleManageRoles}
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
             >
@@ -715,7 +739,7 @@ export default function UsersManagementPage() {
 
           {/* Settings */}
           {canManageGroups && (
-            <button 
+            <button
               onClick={handleSettings}
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
             >
@@ -726,7 +750,7 @@ export default function UsersManagementPage() {
 
           {/* Invite Users */}
           {canCreateUsers && (
-            <button 
+            <button
               onClick={handleInviteUsers}
               className="px-3 py-2 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors flex items-center gap-2 text-sm"
             >
@@ -737,7 +761,7 @@ export default function UsersManagementPage() {
 
           {/* Import Users */}
           {canCreateUsers && (
-            <button 
+            <button
               onClick={handleImportUsers}
               className="px-3 py-2 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors flex items-center gap-2 text-sm"
             >
@@ -748,7 +772,7 @@ export default function UsersManagementPage() {
 
           {/* Add User */}
           {canCreateUsers && (
-            <button 
+            <button
               onClick={handleAddUser}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm"
             >
@@ -871,7 +895,7 @@ export default function UsersManagementPage() {
               </button>
             )}
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <select
               value={filters.role}
@@ -983,36 +1007,36 @@ export default function UsersManagementPage() {
             {selectedUsers.size} user{selectedUsers.size !== 1 ? 's' : ''} selected
           </span>
           <div className="flex flex-wrap items-center gap-2">
-            <button 
-              onClick={handleBulkActivate} 
+            <button
+              onClick={handleBulkActivate}
               className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors flex items-center gap-1"
             >
               <UserCheck className="w-4 h-4" /> Activate
             </button>
-            <button 
-              onClick={handleBulkDeactivate} 
+            <button
+              onClick={handleBulkDeactivate}
               className="px-3 py-1.5 bg-yellow-600 text-white rounded-lg text-sm hover:bg-yellow-700 transition-colors flex items-center gap-1"
             >
               <UserX className="w-4 h-4" /> Deactivate
             </button>
             {canManageGroups && (
-              <button 
-                onClick={() => setShowGroupAssignModal(true)} 
+              <button
+                onClick={() => setShowGroupAssignModal(true)}
                 className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors flex items-center gap-1"
               >
                 <UsersRound className="w-4 h-4" /> Assign to Group
               </button>
             )}
             {(canDeleteUsers || isSuperAdmin || isAdmin) && (
-              <button 
-                onClick={handleBulkDelete} 
+              <button
+                onClick={handleBulkDelete}
                 className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
               >
                 <Trash2 className="w-4 h-4" /> Delete
               </button>
             )}
-            <button 
-              onClick={() => setSelectedUsers(new Set())} 
+            <button
+              onClick={() => setSelectedUsers(new Set())}
               className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
             >
               Cancel
@@ -1070,15 +1094,15 @@ export default function UsersManagementPage() {
                       <p className="text-gray-500 dark:text-gray-400">No users found</p>
                       <p className="text-sm text-gray-400 dark:text-gray-500">
                         {searchQuery || filters.role || filters.status !== 'all' || filters.groupId
-                          ? 'Try adjusting your search or filters' 
+                          ? 'Try adjusting your search or filters'
                           : 'Add a user to get started'}
                       </p>
                     </td>
                   </tr>
                 ) : (
                   users.map((user) => (
-                    <tr 
-                      key={user.id} 
+                    <tr
+                      key={user.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
                       onClick={() => handleUserSelect(user)}
                     >
@@ -1127,7 +1151,7 @@ export default function UsersManagementPage() {
                       )}
                       <td className="px-3 sm:px-4 py-3 hidden md:table-cell">
                         <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                          {user.lastLoginAt 
+                          {user.lastLoginAt
                             ? getTimeAgo(user.lastLoginAt)
                             : 'Never'}
                         </span>
@@ -1168,7 +1192,7 @@ export default function UsersManagementPage() {
                 <p className="text-gray-500 dark:text-gray-400">No users found</p>
                 <p className="text-sm text-gray-400 dark:text-gray-500">
                   {searchQuery || filters.role || filters.status !== 'all' || filters.groupId
-                    ? 'Try adjusting your search or filters' 
+                    ? 'Try adjusting your search or filters'
                     : 'Add a user to get started'}
                 </p>
               </div>
@@ -1201,14 +1225,14 @@ export default function UsersManagementPage() {
                       className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 flex-shrink-0"
                     />
                   </div>
-                  
+
                   <div className="flex flex-wrap items-center gap-2 mb-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
                       {user.role.replace('_', ' ')}
                     </span>
                     {getStatusBadge(user.isActive)}
                   </div>
-                  
+
                   <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                     <span className="flex items-center gap-1">
                       <Building className="w-3 h-3" />
@@ -1225,7 +1249,7 @@ export default function UsersManagementPage() {
                       {user.lastLoginAt ? getTimeAgo(user.lastLoginAt) : 'Never'}
                     </span>
                   </div>
-                  
+
                   <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                     <button
                       onClick={(e) => {
@@ -1271,9 +1295,9 @@ export default function UsersManagementPage() {
             </button>
             <div className="flex items-center gap-1">
               {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
-                .filter(page => 
-                  page === 1 || 
-                  page === pagination.totalPages || 
+                .filter(page =>
+                  page === 1 ||
+                  page === pagination.totalPages ||
                   Math.abs(page - pagination.page) <= 2
                 )
                 .map((page, index, array) => (
@@ -1382,7 +1406,7 @@ export default function UsersManagementPage() {
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete User</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{userToDelete.firstName} {userToDelete.lastName}</strong>? 
+                  Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{userToDelete.firstName} {userToDelete.lastName}</strong>?
                   <br />
                   <span className="text-sm text-red-600 dark:text-red-400">This action cannot be undone.</span>
                 </p>

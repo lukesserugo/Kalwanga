@@ -1,11 +1,16 @@
-// D:\Projects\Kalwanga\packages\web\components\categories\CategoryGrid.tsx
+// packages/web/components/categories/CategoryGrid.tsx
 
 'use client';
 
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { FolderTree, Plus } from 'lucide-react';
 import { Category } from '../../types/category';
 import { CategoryCard } from './CategoryCard';
+
+// ============================================
+// TYPES
+// ============================================
 
 interface CategoryGridProps {
   categories: Category[];
@@ -13,6 +18,10 @@ interface CategoryGridProps {
   onDelete?: (category: Category) => void;
   onView?: (category: Category) => void;
   onToggleStatus?: (category: Category) => void;
+  /** Forwarded to cards. Defaults to true. */
+  canEdit?: boolean;
+  /** Forwarded to cards. Defaults to true. */
+  canDelete?: boolean;
   isLoading?: boolean;
   className?: string;
   emptyMessage?: string;
@@ -20,7 +29,45 @@ interface CategoryGridProps {
   columns?: 2 | 3 | 4 | 5;
   showCreateButton?: boolean;
   onCreateClick?: () => void;
+  /** Card variant forwarded to every card. Defaults to "default". */
+  cardVariant?: 'default' | 'featured' | 'compact' | 'minimal';
 }
+
+// ============================================
+// LAYOUT
+// ============================================
+
+const COLUMN_CLASSES: Record<NonNullable<CategoryGridProps['columns']>, string> = {
+  2: 'grid-cols-1 sm:grid-cols-2',
+  3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+  4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
+  5: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
+};
+
+// ============================================
+// ANIMATION
+// ============================================
+
+const CONTAINER_VARIANTS = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05 },
+  },
+};
+
+const ITEM_VARIANTS = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.3, ease: 'easeOut' as const },
+  },
+};
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function CategoryGrid({
   categories,
@@ -28,6 +75,8 @@ export function CategoryGrid({
   onDelete,
   onView,
   onToggleStatus,
+  canEdit = true,
+  canDelete = true,
   isLoading = false,
   className = '',
   emptyMessage = 'No categories found',
@@ -35,117 +84,162 @@ export function CategoryGrid({
   columns = 4,
   showCreateButton = false,
   onCreateClick,
+  cardVariant = 'default',
 }: CategoryGridProps) {
-  const columnClasses = {
-    2: 'grid-cols-1 sm:grid-cols-2',
-    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
-    4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
-    5: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
-  };
+  const columnClass = COLUMN_CLASSES[columns];
 
-  // Animation variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.05,
-      },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.3,
-        ease: 'easeOut',
-      },
-    },
-  };
-
+  // ---- Loading skeleton ----
   if (isLoading) {
-    return (
-      <div className={`grid ${columnClasses[columns]} gap-4 ${className}`}>
-        {[...Array(8)].map((_, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.05 }}
-            className="bg-gray-100 dark:bg-gray-700 rounded-xl h-48 animate-pulse"
-          />
-        ))}
-      </div>
-    );
+    return <CategoryGridSkeleton columns={columns} className={className} />;
   }
 
+  // ---- Empty state ----
   if (categories.length === 0) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="text-center py-12"
-      >
-        <motion.div
-          animate={{ 
-            scale: [1, 1.05, 1],
-            rotate: [0, -5, 5, 0]
-          }}
-          transition={{ 
-            duration: 2,
-            repeat: Infinity,
-            repeatDelay: 3
-          }}
-          className="text-6xl mb-4"
-        >
-          📂
-        </motion.div>
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white">{emptyMessage}</h3>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">{emptySubMessage}</p>
-        {showCreateButton && onCreateClick && (
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={onCreateClick}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
-          >
-            <span>+</span>
-            Create Category
-          </motion.button>
-        )}
-      </motion.div>
+      <EmptyState
+        message={emptyMessage}
+        subMessage={emptySubMessage}
+        showCreateButton={showCreateButton}
+        onCreateClick={onCreateClick}
+      />
     );
   }
 
+  // ---- Grid ----
   return (
     <motion.div
       initial="hidden"
       animate="visible"
-      variants={containerVariants}
-      className={`grid ${columnClasses[columns]} gap-4 ${className}`}
+      variants={CONTAINER_VARIANTS}
+      className={`grid ${columnClass} gap-4 ${className}`}
     >
       {categories.map((category) => (
         <motion.div
           key={category.id}
-          variants={itemVariants}
-          whileHover={{ y: -4 }}
+          variants={ITEM_VARIANTS}
           className="h-full"
         >
+          {/* Card owns its own hover lift — the wrapper does not */}
           <CategoryCard
             category={category}
+            variant={cardVariant}
             onEdit={onEdit}
             onDelete={onDelete}
             onView={onView}
             onToggleStatus={onToggleStatus}
             showActions={true}
-            variant="default"
           />
         </motion.div>
       ))}
+    </motion.div>
+  );
+}
+
+// ============================================
+// SUB-COMPONENTS
+// ============================================
+
+// ---- Skeleton ----
+
+interface SkeletonProps {
+  columns: NonNullable<CategoryGridProps['columns']>;
+  className: string;
+}
+
+function CategoryGridSkeleton({ columns, className }: SkeletonProps) {
+  const columnClass = COLUMN_CLASSES[columns];
+  const count = columns * 2; // two rows of placeholders
+
+  return (
+    <div className={`grid ${columnClass} gap-4 ${className}`}>
+      {Array.from({ length: count }).map((_, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: Math.min(i * 0.04, 0.3) }}
+          className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-pulse"
+        >
+          {/* Accent strip placeholder */}
+          <div className="h-1 bg-gray-200 dark:bg-gray-700" />
+
+          {/* Avatar area */}
+          <div className="relative h-32 bg-gray-100 dark:bg-gray-700/50" />
+
+          {/* Body */}
+          <div className="p-4 space-y-3">
+            <div className="h-4 w-3/4 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="h-3 w-1/2 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="space-y-2 pt-1">
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded" />
+              <div className="h-3 w-5/6 bg-gray-200 dark:bg-gray-700 rounded" />
+            </div>
+            <div className="pt-2 flex items-center justify-between">
+              <div className="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded" />
+              <div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded-full" />
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// ---- Empty state ----
+
+interface EmptyStateProps {
+  message: string;
+  subMessage: string;
+  showCreateButton: boolean;
+  onCreateClick?: () => void;
+}
+
+function EmptyState({
+  message,
+  subMessage,
+  showCreateButton,
+  onCreateClick,
+}: EmptyStateProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="text-center py-16 px-4"
+    >
+      <motion.div
+        animate={{
+          y: [0, -6, 0],
+        }}
+        transition={{
+          duration: 2.4,
+          repeat: Infinity,
+          repeatDelay: 1.6,
+          ease: 'easeInOut',
+        }}
+        className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 mb-5"
+      >
+        <FolderTree className="w-10 h-10 text-blue-600 dark:text-blue-400" />
+      </motion.div>
+
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+        {message}
+      </h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 max-w-sm mx-auto">
+        {subMessage}
+      </p>
+
+      {showCreateButton && onCreateClick && (
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={onCreateClick}
+          className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-sm font-medium shadow-sm hover:shadow transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          Create Category
+        </motion.button>
+      )}
     </motion.div>
   );
 }

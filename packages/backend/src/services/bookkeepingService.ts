@@ -2,7 +2,11 @@
 
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { AccountType, AccountCategory, Prisma } from '../generated/prisma/index.js';
+import {
+  AccountType,
+  AccountCategory,
+  Prisma,
+} from '../generated/prisma/index.js';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -106,7 +110,7 @@ export class BookkeepingService {
     try {
       const sale = await prisma.sale.findUnique({
         where: { id: saleId },
-        include: { 
+        include: {
           items: {
             include: { product: true },
           },
@@ -129,13 +133,15 @@ export class BookkeepingService {
       });
 
       if (existingEntries.length > 0) {
-        console.log(`Journal entries already exist for sale ${sale.receiptNumber}`);
+        console.log(
+          `Journal entries already exist for sale ${sale.receiptNumber}`
+        );
         return existingEntries;
       }
 
       // Find or create accounts
       const accounts = await this.ensureDefaultAccounts(businessUnitId);
-      
+
       // Create journal entry for the sale
       const journalEntry = await prisma.journalEntry.create({
         data: {
@@ -162,20 +168,32 @@ export class BookkeepingService {
                 description: `Revenue from sale ${sale.receiptNumber}`,
               },
               // Credit: Sales Tax Payable (if applicable)
-              ...(sale.tax && sale.tax > 0 ? [{
-                accountId: accounts.salesTaxPayable.id,
-                debit: 0,
-                credit: sale.tax,
-                description: `Tax collected on sale ${sale.receiptNumber}`,
-              }] : []),
+              ...(sale.tax && sale.tax > 0
+                ? [
+                    {
+                      accountId: accounts.salesTaxPayable.id,
+                      debit: 0,
+                      credit: sale.tax,
+                      description: `Tax collected on sale ${sale.receiptNumber}`,
+                    },
+                  ]
+                : []),
               // Debit: Cost of Goods Sold
-              ...(sale.items && sale.items.length > 0 ? [{
-                accountId: accounts.cogs.id,
-                debit: sale.items.reduce((sum: number, item: any) => 
-                  sum + (item.quantity * (item.product.costPrice || 0)), 0),
-                credit: 0,
-                description: `Cost of goods sold for sale ${sale.receiptNumber}`,
-              }] : []),
+              ...(sale.items && sale.items.length > 0
+                ? [
+                    {
+                      accountId: accounts.cogs.id,
+                      debit: sale.items.reduce(
+                        (sum: number, item: any) =>
+                          sum +
+                          item.quantity * (item.product.costPrice || 0),
+                        0
+                      ),
+                      credit: 0,
+                      description: `Cost of goods sold for sale ${sale.receiptNumber}`,
+                    },
+                  ]
+                : []),
             ],
           },
         },
@@ -193,8 +211,9 @@ export class BookkeepingService {
           data: { journalRecorded: true } as any,
         });
       } catch (updateError) {
-        // If journalRecorded field doesn't exist, just log and continue
-        console.log('Could not update journalRecorded field (may not exist in schema)');
+        console.log(
+          'Could not update journalRecorded field (may not exist in schema)'
+        );
       }
 
       console.log(`Journal entries created for sale ${sale.receiptNumber}`);
@@ -211,7 +230,10 @@ export class BookkeepingService {
   /**
    * Calculate taxes automatically
    */
-  async calculateTax(subtotal: number, businessUnitId: string): Promise<TaxCalculation> {
+  async calculateTax(
+    subtotal: number,
+    businessUnitId: string
+  ): Promise<TaxCalculation> {
     try {
       if (subtotal < 0) {
         throw new AppError('Subtotal cannot be negative', 400);
@@ -219,7 +241,7 @@ export class BookkeepingService {
 
       const businessUnit = await prisma.businessUnit.findUnique({
         where: { id: businessUnitId },
-        include: { 
+        include: {
           company: {
             include: {
               settings: true,
@@ -267,7 +289,11 @@ export class BookkeepingService {
   /**
    * Generate financial reports
    */
-  async generateFinancialReport(businessUnitId: string, startDate: Date, endDate: Date): Promise<FinancialReport> {
+  async generateFinancialReport(
+    businessUnitId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<FinancialReport> {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);
@@ -282,7 +308,7 @@ export class BookkeepingService {
           saleDate: { gte: startDate, lte: endDate },
           status: { not: 'CANCELLED' },
         },
-        include: { 
+        include: {
           payments: true,
           items: {
             include: { product: true },
@@ -290,23 +316,39 @@ export class BookkeepingService {
         },
       });
 
-      const totalRevenue = sales.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
-      const totalTax = sales.reduce((sum: number, s: any) => sum + (s.tax || 0), 0);
-      const totalDiscount = sales.reduce((sum: number, s: any) => sum + (s.discount || 0), 0);
-      
+      const totalRevenue = sales.reduce(
+        (sum: number, s: any) => sum + (s.total || 0),
+        0
+      );
+      const totalTax = sales.reduce(
+        (sum: number, s: any) => sum + (s.tax || 0),
+        0
+      );
+      const totalDiscount = sales.reduce(
+        (sum: number, s: any) => sum + (s.discount || 0),
+        0
+      );
+
       // Calculate cost of goods sold
       const totalCOGS = sales.reduce((sum: number, sale: any) => {
-        return sum + (sale.items || []).reduce((itemSum: number, item: any) => {
-          const costPrice = item.product?.costPrice || item.product?.unitPrice || 0;
-          return itemSum + (costPrice * (item.quantity || 0));
-        }, 0);
+        return (
+          sum +
+          (sale.items || []).reduce((itemSum: number, item: any) => {
+            const costPrice =
+              item.product?.costPrice || item.product?.unitPrice || 0;
+            return itemSum + costPrice * (item.quantity || 0);
+          }, 0)
+        );
       }, 0);
 
-      const paymentsByMethod = sales.reduce((acc: Record<string, number>, sale: any) => {
-        const method = sale.payments?.[0]?.paymentMethod || 'UNKNOWN';
-        acc[method] = (acc[method] || 0) + (sale.total || 0);
-        return acc;
-      }, {});
+      const paymentsByMethod = sales.reduce(
+        (acc: Record<string, number>, sale: any) => {
+          const method = sale.payments?.[0]?.paymentMethod || 'UNKNOWN';
+          acc[method] = (acc[method] || 0) + (sale.total || 0);
+          return acc;
+        },
+        {}
+      );
 
       const report: FinancialReport = {
         period: { startDate, endDate },
@@ -348,7 +390,11 @@ export class BookkeepingService {
       });
 
       const inventoryValue = inventory.reduce((sum: number, inv: any) => {
-        return sum + ((inv.quantity || 0) * (inv.product?.costPrice || inv.product?.unitPrice || 0));
+        return (
+          sum +
+          (inv.quantity || 0) *
+            (inv.product?.costPrice || inv.product?.unitPrice || 0)
+        );
       }, 0);
 
       // Get cash balance
@@ -356,7 +402,10 @@ export class BookkeepingService {
         where: { businessUnitId, isActive: true },
       });
 
-      const totalCash = cashRegisters.reduce((sum: number, cr: any) => sum + (cr.cashBalance || 0), 0);
+      const totalCash = cashRegisters.reduce(
+        (sum: number, cr: any) => sum + (cr.cashBalance || 0),
+        0
+      );
 
       // Calculate totals
       const totalAssets = totalCash + inventoryValue;
@@ -398,27 +447,35 @@ export class BookkeepingService {
   /**
    * Generate trial balance
    */
-  async generateTrialBalance(businessUnitId: string): Promise<TrialBalanceItem[]> {
+  async generateTrialBalance(
+    businessUnitId: string
+  ): Promise<TrialBalanceItem[]> {
     try {
       if (!businessUnitId) {
         throw new AppError('Business unit ID is required', 400);
       }
 
       const accounts = await prisma.account.findMany({
-        where: { 
+        where: {
           businessUnitId,
           isActive: true,
         },
-        include: { 
+        include: {
           lines: true,
         },
       });
 
       const trialBalance: TrialBalanceItem[] = accounts.map((account: any) => {
-        const totalDebit = (account.lines || []).reduce((sum: number, line: any) => sum + (line.debit || 0), 0);
-        const totalCredit = (account.lines || []).reduce((sum: number, line: any) => sum + (line.credit || 0), 0);
+        const totalDebit = (account.lines || []).reduce(
+          (sum: number, line: any) => sum + (line.debit || 0),
+          0
+        );
+        const totalCredit = (account.lines || []).reduce(
+          (sum: number, line: any) => sum + (line.credit || 0),
+          0
+        );
         const balance = totalDebit - totalCredit;
-        
+
         return {
           id: account.id,
           code: account.code,
@@ -427,16 +484,25 @@ export class BookkeepingService {
           debit: totalDebit,
           credit: totalCredit,
           balance: balance,
-          balanceType: balance > 0 ? 'DEBIT' : balance < 0 ? 'CREDIT' : 'BALANCED',
+          balanceType:
+            balance > 0 ? 'DEBIT' : balance < 0 ? 'CREDIT' : 'BALANCED',
         };
       });
 
       // Verify trial balance
-      const totalDebits = trialBalance.reduce((sum: number, account: any) => sum + account.debit, 0);
-      const totalCredits = trialBalance.reduce((sum: number, account: any) => sum + account.credit, 0);
-      
+      const totalDebits = trialBalance.reduce(
+        (sum: number, account: any) => sum + account.debit,
+        0
+      );
+      const totalCredits = trialBalance.reduce(
+        (sum: number, account: any) => sum + account.credit,
+        0
+      );
+
       if (Math.abs(totalDebits - totalCredits) > 0.01) {
-        console.warn(`Trial balance out of balance: Debits=${totalDebits}, Credits=${totalCredits}`);
+        console.warn(
+          `Trial balance out of balance: Debits=${totalDebits}, Credits=${totalCredits}`
+        );
       }
 
       return trialBalance;
@@ -452,7 +518,10 @@ export class BookkeepingService {
   /**
    * Get account balance
    */
-  async getAccountBalance(accountId: string, businessUnitId: string): Promise<AccountBalance> {
+  async getAccountBalance(
+    accountId: string,
+    businessUnitId: string
+  ): Promise<AccountBalance> {
     try {
       if (!accountId) {
         throw new AppError('Account ID is required', 400);
@@ -475,8 +544,14 @@ export class BookkeepingService {
         throw new AppError('Account not found', 404);
       }
 
-      const totalDebit = (account.lines || []).reduce((sum: number, line: any) => sum + (line.debit || 0), 0);
-      const totalCredit = (account.lines || []).reduce((sum: number, line: any) => sum + (line.credit || 0), 0);
+      const totalDebit = (account.lines || []).reduce(
+        (sum: number, line: any) => sum + (line.debit || 0),
+        0
+      );
+      const totalCredit = (account.lines || []).reduce(
+        (sum: number, line: any) => sum + (line.credit || 0),
+        0
+      );
 
       return {
         accountId: account.id,
@@ -498,7 +573,11 @@ export class BookkeepingService {
   /**
    * Void journal entry
    */
-  async voidJournalEntry(entryId: string, businessUnitId: string, userId: string): Promise<any> {
+  async voidJournalEntry(
+    entryId: string,
+    businessUnitId: string,
+    userId: string
+  ): Promise<any> {
     try {
       if (!entryId) {
         throw new AppError('Journal entry ID is required', 400);
@@ -555,8 +634,9 @@ export class BookkeepingService {
           data: { status: 'VOIDED' } as any,
         });
       } catch (updateError) {
-        // If status field doesn't exist, just log and continue
-        console.log('Could not update journal entry status (field may not exist)');
+        console.log(
+          'Could not update journal entry status (field may not exist)'
+        );
       }
 
       return reversingEntry;
@@ -575,11 +655,20 @@ export class BookkeepingService {
   async createJournalEntry(data: CreateJournalEntryData): Promise<any> {
     try {
       // Validate lines balance
-      const totalDebit = data.lines.reduce((sum: number, line: any) => sum + (line.debit || 0), 0);
-      const totalCredit = data.lines.reduce((sum: number, line: any) => sum + (line.credit || 0), 0);
-      
+      const totalDebit = data.lines.reduce(
+        (sum: number, line: any) => sum + (line.debit || 0),
+        0
+      );
+      const totalCredit = data.lines.reduce(
+        (sum: number, line: any) => sum + (line.credit || 0),
+        0
+      );
+
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        throw new AppError('Journal entry must balance (debits must equal credits)', 400);
+        throw new AppError(
+          'Journal entry must balance (debits must equal credits)',
+          400
+        );
       }
 
       if (data.lines.length < 2) {
@@ -587,7 +676,7 @@ export class BookkeepingService {
       }
 
       // Validate all accounts exist
-      const accountIds = data.lines.map(line => line.accountId);
+      const accountIds = data.lines.map((line) => line.accountId);
       const accounts = await prisma.account.findMany({
         where: {
           id: { in: accountIds },
@@ -631,49 +720,103 @@ export class BookkeepingService {
   }
 
   /**
-   * Ensure default accounts exist for a business unit
+   * Ensure default accounts exist for a business unit.
+   *
+   * ⭐ CRITICAL FIX: Uses valid AccountCategory enum values from
+   * the schema. The previous version used `CURRENT_ASSET`,
+   * `OPERATING_REVENUE`, and `CURRENT_LIABILITY` — none of which
+   * exist in the enum, so every call threw a Prisma validation
+   * error at runtime.
+   *
+   * Also `public` now (was `private`), so the controller can call
+   * it for seeding on first visit to the accounts page.
+   *
+   * Idempotent: findFirst + create per account, scoped by the
+   * compound unique [businessUnitId, code]. Safe to call
+   * repeatedly.
    */
-  private async ensureDefaultAccounts(businessUnitId: string): Promise<Record<string, any>> {
-    const defaultAccounts = [
-      { code: '1000', name: 'Cash', type: 'ASSET' as AccountType, category: 'CURRENT_ASSET' as AccountCategory },
-      { code: '4000', name: 'Sales Revenue', type: 'REVENUE' as AccountType, category: 'OPERATING_REVENUE' as AccountCategory },
-      { code: '2000', name: 'Sales Tax Payable', type: 'LIABILITY' as AccountType, category: 'CURRENT_LIABILITY' as AccountCategory },
-      { code: '5000', name: 'Cost of Goods Sold', type: 'EXPENSE' as AccountType, category: 'OPERATING_EXPENSE' as AccountCategory },
-      { code: '1100', name: 'Accounts Receivable', type: 'ASSET' as AccountType, category: 'CURRENT_ASSET' as AccountCategory },
-      { code: '2100', name: 'Accounts Payable', type: 'LIABILITY' as AccountType, category: 'CURRENT_LIABILITY' as AccountCategory },
+  async ensureDefaultAccounts(
+    businessUnitId: string
+  ): Promise<Record<string, any>> {
+    const defaultAccounts: Array<{
+      code: string;
+      name: string;
+      type: AccountType;
+      category: AccountCategory;
+      key: string;
+    }> = [
+      {
+        code: '1000',
+        name: 'Cash',
+        type: 'ASSET' as AccountType,
+        category: 'CASH' as AccountCategory,
+        key: 'cash',
+      },
+      {
+        code: '1100',
+        name: 'Accounts Receivable',
+        type: 'ASSET' as AccountType,
+        category: 'ACCOUNTS_RECEIVABLE' as AccountCategory,
+        key: 'accountsReceivable',
+      },
+      {
+        code: '1200',
+        name: 'Inventory',
+        type: 'ASSET' as AccountType,
+        category: 'INVENTORY' as AccountCategory,
+        key: 'inventory',
+      },
+      {
+        code: '2000',
+        name: 'Sales Tax Payable',
+        type: 'LIABILITY' as AccountType,
+        category: 'SALES_TAX_PAYABLE' as AccountCategory,
+        key: 'salesTaxPayable',
+      },
+      {
+        code: '2100',
+        name: 'Accounts Payable',
+        type: 'LIABILITY' as AccountType,
+        category: 'ACCOUNTS_PAYABLE' as AccountCategory,
+        key: 'accountsPayable',
+      },
+      {
+        code: '4000',
+        name: 'Sales Revenue',
+        type: 'REVENUE' as AccountType,
+        category: 'SALES_REVENUE' as AccountCategory,
+        key: 'salesRevenue',
+      },
+      {
+        code: '5000',
+        name: 'Cost of Goods Sold',
+        type: 'EXPENSE' as AccountType,
+        category: 'COST_OF_GOODS_SOLD' as AccountCategory,
+        key: 'cogs',
+      },
     ];
 
     const accounts: Record<string, any> = {};
 
-    for (const accountData of defaultAccounts) {
+    for (const def of defaultAccounts) {
       let dbAccount = await prisma.account.findFirst({
-        where: {
-          businessUnitId,
-          code: accountData.code,
-        },
+        where: { businessUnitId, code: def.code },
       });
 
       if (!dbAccount) {
         dbAccount = await prisma.account.create({
           data: {
-            ...accountData,
+            code: def.code,
+            name: def.name,
+            type: def.type,
+            category: def.category,
             businessUnitId,
             isActive: true,
           },
         });
       }
 
-      // Map to friendly names
-      const keyMap: Record<string, string> = {
-        '1000': 'cash',
-        '4000': 'salesRevenue',
-        '2000': 'salesTaxPayable',
-        '5000': 'cogs',
-        '1100': 'accountsReceivable',
-        '2100': 'accountsPayable',
-      };
-
-      accounts[keyMap[accountData.code]] = dbAccount;
+      accounts[def.key] = dbAccount;
     }
 
     return accounts;

@@ -23,24 +23,19 @@ import { businessUnitService } from '../../../../../../services/businessUnitServ
 import { toast } from '../../../../../../utils/toast-manager';
 import { formatDistanceToNow } from 'date-fns';
 
-interface BusinessUnitUser {
-  id: string;
-  userId: string;
-  businessUnitId: string;
-  role: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  user?: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: string;
-    phoneNumber?: string;
-    avatar?: string;
-  };
-}
+// ============================================
+// CANONICAL TYPE IMPORT
+// ============================================
+//
+// ⚠️ Use the canonical `BusinessUnitUser` directly from
+//    `types/businessUnit.ts`. Its nested `user` field is the full
+//    canonical `User` (with `isActive`, `permissions`, `createdAt`,
+//    `updatedAt`, etc.).
+//
+//    Do NOT redeclare it locally. Narrowing `user` in a local
+//    interface produces TS2430 "incorrectly extends interface".
+
+import type { BusinessUnitUser } from '../../../../../../types/businessUnit';
 
 export default function BusinessUnitUsersPage() {
   const params = useParams();
@@ -92,7 +87,7 @@ export default function BusinessUnitUsersPage() {
 
   const handleRemoveUser = async (userId: string, userName: string) => {
     if (!window.confirm(`Remove ${userName} from this business unit?`)) return;
-    
+
     try {
       await businessUnitService.removeUserFromBusinessUnit(id, userId);
       toast.success('User removed successfully');
@@ -102,13 +97,15 @@ export default function BusinessUnitUsersPage() {
     }
   };
 
-  const filteredUsers = users.filter(u => {
+  const filteredUsers = users.filter((u) => {
     const fullName = u.user ? `${u.user.firstName} ${u.user.lastName}` : '';
     const email = u.user?.email || '';
     const searchLower = search.toLowerCase();
-    return fullName.toLowerCase().includes(searchLower) || 
-           email.toLowerCase().includes(searchLower) ||
-           u.role.toLowerCase().includes(searchLower);
+    return (
+      fullName.toLowerCase().includes(searchLower) ||
+      email.toLowerCase().includes(searchLower) ||
+      u.role.toLowerCase().includes(searchLower)
+    );
   });
 
   if (loading) {
@@ -247,26 +244,37 @@ export default function BusinessUnitUsersPage() {
             </thead>
             <tbody>
               {filteredUsers.map((user, index) => {
-                const fullName = user.user ? `${user.user.firstName} ${user.user.lastName}` : 'Unknown User';
+                const fullName = user.user
+                  ? `${user.user.firstName} ${user.user.lastName}`
+                  : 'Unknown User';
                 const email = user.user?.email || 'No email';
-                const initials = user.user 
-                  ? `${user.user.firstName[0]}${user.user.lastName[0]}` 
+                const initials = user.user
+                  ? `${user.user.firstName[0]}${user.user.lastName[0]}`
                   : 'U';
                 const avatarColor = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500'][
                   index % 5
                 ];
 
                 return (
-                  <tr key={user.id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                  <tr
+                    key={user.id}
+                    className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white text-xs font-medium`}>
+                        <div
+                          className={`w-8 h-8 rounded-full ${avatarColor} flex items-center justify-center text-white text-xs font-medium`}
+                        >
                           {initials}
                         </div>
-                        <span className="font-medium text-gray-900 dark:text-white text-sm">{fullName}</span>
+                        <span className="font-medium text-gray-900 dark:text-white text-sm">
+                          {fullName}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{email}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                      {email}
+                    </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400">
                         <Shield className="w-3 h-3" />

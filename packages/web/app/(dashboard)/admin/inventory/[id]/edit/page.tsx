@@ -2,27 +2,171 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { inventoryService } from '../../../../../../services/inventoryService';
 import { barcodeService } from '../../../../../../services/barcodeService';
 import { companyService } from '../../../../../../services/companyService';
+import { locationService } from '../../../../../../services/locationService';
 import { api } from '../../../../../../services/api';
 import { toast } from '../../../../../../utils/toast-manager';
-import { formatCurrency } from '../../../../../../utils/formatters';
-import { 
-  ArrowLeft, Package, Save, Loader2, AlertCircle,
-  DollarSign, Tag, MapPin, Lock, Info, CheckCircle,
-  X, Plus, Minus, Building, User, Calendar,
-  Barcode, QrCode, Scan, RefreshCw, Copy, Check,
-  Download, Printer, HelpCircle, AlertTriangle,
-  ShoppingBag, Layers, Weight, Ruler, Truck, Eye,
-  ChevronDown, ChevronUp, Building2, Database, Wand2,
-  Edit3, Percent, Archive, Star, Hash, FileText,
-  Globe, Link2, Image as ImageIcon, Trash2,
-  ShoppingCart, TruckIcon, CalendarDays, Clock
+import {
+  ArrowLeft,
+  Package,
+  Save,
+  Loader2,
+  AlertCircle,
+  DollarSign,
+  Tag,
+  MapPin,
+  Lock,
+  CheckCircle,
+  X,
+  Plus,
+  Minus,
+  Building,
+  Wand2,
+  Building2,
+  Database,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Barcode,
+  QrCode,
+  RefreshCw,
+  Copy,
+  Check,
+  Download,
+  Printer,
+  Edit3,
+  Star,
+  Globe,
+  Image as ImageIcon,
+  Archive,
+  Eye,
+  AlertTriangle,
 } from 'lucide-react';
+
+// ============================================
+// BACKEND CONTRACT
+// ============================================
+//
+// `GET  /inventory/items/:id`         → { success, data: FlatInventoryItem }
+// `PUT  /inventory/items/:id`         → updates product + inventory rows
+// `POST /inventory/:id/generate-barcode` → { success, data: { barcode, barcodeUrl, qrCodeUrl } }
+// `POST /inventory/:id/generate-qr`      → { success, data: { qrCodeUrl, qrData } }
+//
+// `FlatInventoryItem` carries `reorderPoint` and `reorderQuantity` (not
+// `minStock` / `maxStock`). `Product.images` on the wire is either
+// `ProductImage[]` (`{ url, alt, order, isPrimary }[]`) or `string[]`
+// depending on the include. `toImageUrls` flattens both.
+
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+// ============================================
+// HELPERS
+// ============================================
+
+function toImageUrls(input: unknown): string[] {
+  if (!input) return [];
+  if (typeof input === 'string') return [input];
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((v) => {
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof (v as any).url === 'string') {
+        return (v as any).url as string;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Unwrap a service response that may be a raw payload, a `{ data }`
+ * envelope, or a `{ success, data }` envelope.
+ */
+function unwrapPayload<T = any>(response: any): T | null {
+  if (!response) return null;
+  if (typeof response !== 'object') return response as T;
+  if ('data' in response && response.data !== undefined) return response.data;
+  return response as T;
+}
+
+/**
+ * Only reject literal sentinel strings. Anything else is a legitimate
+ * barcode.
+ */
+function validateBarcodeString(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return 'Barcode was not returned by the server';
+  }
+  if (typeof value !== 'string') return 'Barcode is not a string';
+  const trimmed = value.trim();
+  if (!trimmed) return 'Barcode is empty';
+  if (/^(nan|undefined|null)$/i.test(trimmed)) {
+    return `Barcode is invalid: "${trimmed}"`;
+  }
+  return null;
+}
+
+function buildBarcodeUrl(barcode: string): string {
+  return `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+    barcode
+  )}&code=EAN-13&dpi=96`;
+}
+
+function buildQrCodeUrl(qrData: Record<string, any>): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+    JSON.stringify(qrData)
+  )}`;
+}
+
+function buildQrDataForItem(args: {
+  itemId: string;
+  formData: InventoryFormData;
+  barcode: string;
+}): Record<string, any> {
+  const { itemId, formData, barcode } = args;
+  return {
+    type: 'INVENTORY_ITEM',
+    id: itemId,
+    productId: itemId,
+    name: formData.name || 'Unknown',
+    sku: formData.sku || 'N/A',
+    barcode,
+    location: formData.location || 'Warehouse',
+    quantity: Number(formData.quantity) || 0,
+    minStock: Number(formData.minStock) || 5,
+    description: formData.description || '',
+    weight: Number(formData.weight) || 0,
+    taxRate: Number(formData.taxRate) || 0,
+    tags: formData.tags
+      ? formData.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [],
+    timestamp: new Date().toISOString(),
+  };
+}
 
 // ============================================
 // TYPES
@@ -34,12 +178,12 @@ interface InventoryFormData {
   category: string;
   categoryId?: string;
   quantity: number;
-  unit: string;
   unitPrice: number;
   costPrice: number;
   minStock: number;
   maxStock: number;
   location: string;
+  locationId?: string;
   supplier: string;
   supplierId?: string;
   notes: string;
@@ -53,8 +197,6 @@ interface InventoryFormData {
   taxRate: number;
   images: string[];
   businessUnitId: string;
-  expiryDate?: string;
-  batchNumber?: string;
 }
 
 interface FormErrors {
@@ -62,7 +204,6 @@ interface FormErrors {
   sku?: string;
   category?: string;
   quantity?: string;
-  unit?: string;
   unitPrice?: string;
   costPrice?: string;
   minStock?: string;
@@ -74,14 +215,13 @@ interface FormErrors {
   taxRate?: string;
   tags?: string;
   businessUnit?: string;
-  expiryDate?: string;
-  batchNumber?: string;
 }
 
 interface BarcodeInfo {
   barcode: string;
   barcodeUrl: string;
   qrCodeUrl: string;
+  qrData?: Record<string, any>;
   isGenerated: boolean;
 }
 
@@ -95,6 +235,13 @@ interface SupplierOption {
   name: string;
 }
 
+interface LocationOption {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+  isActive?: boolean;
+}
+
 interface BusinessUnitOption {
   id: string;
   name: string;
@@ -105,74 +252,16 @@ interface BusinessUnitOption {
   companyName?: string;
 }
 
-interface InventoryItem {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  categoryId?: string;
-  quantity: number;
-  stock?: number;
-  unit: string;
-  unitPrice: number;
-  price?: number;
-  costPrice: number;
-  minStock: number;
-  reorderPoint?: number;
-  maxStock: number;
-  reorderQuantity?: number;
-  location: string;
-  supplier: string;
-  supplierId?: string;
-  notes: string;
-  description: string;
-  barcode: string;
-  weight: number;
-  isActive: boolean;
-  isDigital: boolean;
-  featured: boolean;
-  tags: string[] | string;
-  taxRate: number;
-  images: string[];
-  businessUnitId: string;
-  expiryDate?: string;
-  batchNumber?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 // ============================================
 // CONSTANTS
 // ============================================
 
-const UNITS = [
-  { value: 'each', label: 'Each' },
-  { value: 'kg', label: 'Kilogram (kg)' },
-  { value: 'g', label: 'Gram (g)' },
-  { value: 'l', label: 'Liter (L)' },
-  { value: 'ml', label: 'Milliliter (mL)' },
-  { value: 'box', label: 'Box' },
-  { value: 'pack', label: 'Pack' },
-  { value: 'piece', label: 'Piece' },
-  { value: 'carton', label: 'Carton' },
-  { value: 'dozen', label: 'Dozen' },
-  { value: 'set', label: 'Set' },
-  { value: 'roll', label: 'Roll' },
-  { value: 'meter', label: 'Meter' },
-  { value: 'square_meter', label: 'Square Meter' },
-  { value: 'cubic_meter', label: 'Cubic Meter' },
-];
-
-const LOCATIONS = [
-  { value: 'Warehouse', label: 'Warehouse' },
-  { value: 'Storefront', label: 'Storefront' },
-  { value: 'Backroom', label: 'Backroom' },
-  { value: 'Supplier', label: 'Supplier' },
-  { value: 'In Transit', label: 'In Transit' },
-  { value: 'Distribution Center', label: 'Distribution Center' },
-  { value: 'Store A', label: 'Store A' },
-  { value: 'Store B', label: 'Store B' },
-  { value: 'Online Store', label: 'Online Store' },
+const FALLBACK_LOCATIONS = [
+  'Warehouse',
+  'Storefront',
+  'Backroom',
+  'In Transit',
+  'Distribution Center',
 ];
 
 const TAX_RATES = [
@@ -186,25 +275,43 @@ const TAX_RATES = [
   { value: 25, label: '25%' },
 ];
 
+const SENTINEL_BUSINESS_UNIT_IDS = new Set([
+  'default',
+  'default-business-unit',
+  'undefined',
+  'null',
+  '',
+]);
+
+const SENTINEL_LOCATION_VALUES = new Set(['', 'undefined', 'null', 'default']);
+
 // ============================================
-// SKU GENERATION FUNCTION
+// LOCAL HELPERS
 // ============================================
 
-const generateInventorySKU = (itemName: string): string => {
-  if (!itemName || itemName.trim().length === 0) {
-    return '';
-  }
-  
-  const prefix = itemName
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .slice(0, 3)
-    .toUpperCase() || 'INV';
-  
+function generateInventorySKU(itemName: string): string {
+  if (!itemName || itemName.trim().length === 0) return '';
+  const prefix =
+    itemName
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 3)
+      .toUpperCase() || 'INV';
   const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
   const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-  
   return `${prefix}-${timestamp}-${random}`;
-};
+}
+
+function isValidBusinessUnitId(id: string | null | undefined): id is string {
+  if (!id) return false;
+  return !SENTINEL_BUSINESS_UNIT_IDS.has(id);
+}
+
+function isValidLocationValue(
+  value: string | null | undefined
+): value is string {
+  if (!value) return false;
+  return !SENTINEL_LOCATION_VALUES.has(value);
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -213,15 +320,17 @@ const generateInventorySKU = (itemName: string): string => {
 export default function EditInventoryItemPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuth();
-  
-  // Refs to prevent infinite loops
+
+  // Guards
   const isLoadingRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const hasLoadedOptionsRef = useRef(false);
   const hasLoadedBusinessUnitsRef = useRef(false);
-  const initialLoadDoneRef = useRef(false);
-  
+  const loadedOptionsBuIdRef = useRef<string | null>(null);
+  const loadedItemIdRef = useRef<string | null>(null);
+
   // State
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -230,35 +339,53 @@ export default function EditInventoryItemPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [itemLoaded, setItemLoaded] = useState(false);
-  
-  // Business Unit selection
+
+  // Business Unit
+  //
+  // ⚠️ `loadingBusinessUnits` MUST start `false`, not `true`.
+  //    When it started `true`, the guard at the top of
+  //    `fetchBusinessUnits` returned immediately on the very first
+  //    call, so the fetch never ran, `businessUnits` stayed empty,
+  //    and the effect that gates `loadItem` on
+  //    `businessUnits.length > 0` never fired. The page hung on
+  //    "Loading item data..." forever.
   const [businessUnits, setBusinessUnits] = useState<BusinessUnitOption[]>([]);
-  const [selectedBusinessUnitId, setSelectedBusinessUnitId] = useState<string>('');
-  const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(true);
-  const [showBusinessUnitDropdown, setShowBusinessUnitDropdown] = useState(false);
-  const [businessUnitError, setBusinessUnitError] = useState<string | null>(null);
-  
-  // Barcode/QR Code states
+  const [selectedBusinessUnitId, setSelectedBusinessUnitId] = useState('');
+  const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(false);
+  const [showBusinessUnitDropdown, setShowBusinessUnitDropdown] =
+    useState(false);
+  const [businessUnitError, setBusinessUnitError] = useState<string | null>(
+    null
+  );
+
+  // Barcode / QR
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [barcodeInfo, setBarcodeInfo] = useState<BarcodeInfo | null>(null);
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean | null>(null);
   const [checkingBarcode, setCheckingBarcode] = useState(false);
-  
-  // Categories and suppliers
+  const [barcodeSource, setBarcodeSource] = useState<
+    'manual' | 'generated' | 'existing' | null
+  >(null);
+
+  // Options
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
+
+  // Custom-entry modes
   const [isCustomCategory, setIsCustomCategory] = useState(false);
-  const [isCustomSupplier, setIsCustomSupplier] = useState(false);
-  
-  // Auto SKU State
+  const [isCustomLocation, setIsCustomLocation] = useState(false);
+
+  // Auto SKU
   const [autoGenerateSKU, setAutoGenerateSKU] = useState(false);
-  
-  // Image handling
+
+  // Images
   const [imageInput, setImageInput] = useState('');
   const [showImageInput, setShowImageInput] = useState(false);
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
 
   const [formData, setFormData] = useState<InventoryFormData>({
     name: '',
@@ -266,12 +393,12 @@ export default function EditInventoryItemPage() {
     category: '',
     categoryId: '',
     quantity: 0,
-    unit: 'each',
     unitPrice: 0,
     costPrice: 0,
     minStock: 5,
     maxStock: 100,
     location: 'Warehouse',
+    locationId: '',
     supplier: '',
     supplierId: '',
     notes: '',
@@ -285,49 +412,41 @@ export default function EditInventoryItemPage() {
     taxRate: 0,
     images: [],
     businessUnitId: '',
-    expiryDate: '',
-    batchNumber: '',
   });
 
   // ============================================
-  // FETCH BUSINESS UNITS - IMPROVED
+  // FETCH BUSINESS UNITS
   // ============================================
 
   const fetchBusinessUnits = useCallback(async () => {
-    if (hasLoadedBusinessUnitsRef.current || loadingBusinessUnits) {
-      console.log('⏭️ Business units already loaded or loading');
-      return;
-    }
-    
+    // ⚠️ Only guard on the ref, NOT on `loadingBusinessUnits`.
+    //    Gating this function on its own loading state made the
+    //    very first call return without doing anything, because
+    //    the state started as `true` and only flipped to `false`
+    //    after this function ran — a chicken-and-egg deadlock.
+    if (hasLoadedBusinessUnitsRef.current) return;
+
     setLoadingBusinessUnits(true);
     setBusinessUnitError(null);
-    
+
     try {
-      console.log('📤 Fetching business units from database...');
-      
       let units: BusinessUnitOption[] = [];
-      
-      // METHOD 1: Get from /business-units endpoint
+
       try {
-        console.log('📤 Method 1: Fetching from /business-units...');
         const response = await api.get('/business-units');
-        console.log('📥 Business units response:', response);
-        
-        let data = response;
-        
+        let data: any = response;
+
         if (data && typeof data === 'object') {
-          if ('success' in data && data.success && 'data' in data) {
-            data = data.data;
+          if ('success' in data && (data as any).success && 'data' in data) {
+            data = (data as any).data;
           } else if ('data' in data) {
-            data = data.data;
+            data = (data as any).data;
           }
         }
-        
-        console.log('📊 Parsed data type:', Array.isArray(data) ? 'Array' : typeof data);
-        
+
         if (Array.isArray(data) && data.length > 0) {
           units = data
-            .filter((bu: any) => bu.id && bu.id !== 'default' && bu.id !== 'default-business-unit')
+            .filter((bu: any) => isValidBusinessUnitId(bu?.id))
             .map((bu: any) => ({
               id: bu.id,
               name: bu.name || 'Unnamed Business Unit',
@@ -337,43 +456,47 @@ export default function EditInventoryItemPage() {
               companyId: bu.companyId || bu.company?.id || undefined,
               companyName: bu.company?.name || undefined,
             }));
-          console.log(`✅ Fetched ${units.length} business units from /business-units`);
-          
+
           if (units.length > 0) {
-            localStorage.setItem('businessUnits', JSON.stringify(units));
-            
-            const activeUnit = units.find(bu => bu.isActive !== false);
+            try {
+              localStorage.setItem('businessUnits', JSON.stringify(units));
+            } catch {
+              /* ignore */
+            }
+            const activeUnit = units.find((bu) => bu.isActive !== false);
             if (activeUnit) {
               setSelectedBusinessUnitId(activeUnit.id);
-              setFormData(prev => ({ ...prev, businessUnitId: activeUnit.id }));
-              localStorage.setItem('businessUnitId', activeUnit.id);
-              console.log('✅ Auto-selected business unit:', activeUnit.id, activeUnit.name);
+              setFormData((prev) => ({
+                ...prev,
+                businessUnitId: activeUnit.id,
+              }));
+              try {
+                localStorage.setItem('businessUnitId', activeUnit.id);
+              } catch {
+                /* ignore */
+              }
             }
-            
             setBusinessUnits(units);
             setLoadingBusinessUnits(false);
             hasLoadedBusinessUnitsRef.current = true;
             return;
           }
-        } else {
-          console.warn('⚠️ No business units found in /business-units response');
         }
       } catch (apiError) {
-        console.warn('❌ Failed to fetch from /business-units:', apiError);
+        console.warn('/business-units failed:', apiError);
       }
-      
-      // METHOD 2: Try to get from company service
+
       if (units.length === 0) {
         try {
-          console.log('🔄 Method 2: Attempting to fetch from company service...');
           const companies = await companyService.getAll({ limit: 100 });
-          console.log('📥 Companies response:', companies);
-          
           if (companies && companies.data && Array.isArray(companies.data)) {
             for (const company of companies.data) {
-              if (company.businessUnits && Array.isArray(company.businessUnits)) {
+              if (
+                company.businessUnits &&
+                Array.isArray(company.businessUnits)
+              ) {
                 company.businessUnits.forEach((bu: any) => {
-                  if (bu.id && bu.id !== 'default' && bu.id !== 'default-business-unit') {
+                  if (isValidBusinessUnitId(bu?.id)) {
                     units.push({
                       id: bu.id,
                       name: bu.name || `${company.name} - Business Unit`,
@@ -387,397 +510,354 @@ export default function EditInventoryItemPage() {
                 });
               }
             }
-            console.log(`✅ Fetched ${units.length} business units from companies`);
           }
         } catch (companyError) {
-          console.warn('❌ Failed to fetch from company service:', companyError);
+          console.warn('companyService failed:', companyError);
         }
       }
-      
-      // METHOD 3: Try from user's context
+
       if (units.length === 0) {
         try {
           const userAny = user as any;
           if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
             userAny.businessUnits.forEach((bu: any) => {
-              const id = bu.businessUnitId || bu.id || bu;
-              const name = bu.businessUnit?.name || bu.name || bu.businessUnitName || 'Unnamed Business Unit';
+              const buId = bu.businessUnitId || bu.id || bu;
+              const name =
+                bu.businessUnit?.name ||
+                bu.name ||
+                bu.businessUnitName ||
+                'Unnamed Business Unit';
               const code = bu.businessUnit?.code || bu.code || '';
               const type = bu.businessUnit?.type || bu.type || '';
-              const isActive = bu.businessUnit?.isActive !== undefined ? bu.businessUnit.isActive : (bu.isActive !== undefined ? bu.isActive : true);
-              
-              if (id && id !== 'default' && id !== 'default-business-unit') {
+              const isActive =
+                bu.businessUnit?.isActive !== undefined
+                  ? bu.businessUnit.isActive
+                  : bu.isActive !== undefined
+                  ? bu.isActive
+                  : true;
+
+              if (isValidBusinessUnitId(buId)) {
                 units.push({
-                  id: id,
-                  name: name,
-                  code: code,
-                  type: type,
-                  isActive: isActive,
+                  id: buId,
+                  name,
+                  code,
+                  type,
+                  isActive,
                   companyId: bu.businessUnit?.companyId || undefined,
-                  companyName: undefined,
                 });
               }
             });
-            console.log(`✅ Found ${units.length} business units in user context`);
           }
         } catch (userError) {
-          console.warn('❌ Failed to fetch from user context:', userError);
+          console.warn('user context failed:', userError);
         }
       }
-      
-      // METHOD 4: Try localStorage
+
       if (units.length === 0) {
         try {
           const stored = localStorage.getItem('businessUnits');
           if (stored) {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              units = parsed.filter((bu: any) => bu.id && bu.id !== 'default' && bu.id !== 'default-business-unit');
-              console.log(`✅ Found ${units.length} business units in localStorage`);
+              units = parsed.filter((bu: any) =>
+                isValidBusinessUnitId(bu?.id)
+              );
             }
           }
         } catch (storageError) {
-          console.warn('❌ Failed to parse from localStorage:', storageError);
+          console.warn('localStorage failed:', storageError);
         }
       }
-      
-      // METHOD 5: Try to get a default one
+
       if (units.length === 0) {
         const defaultBU = localStorage.getItem('businessUnitId');
-        if (defaultBU && defaultBU !== 'default' && defaultBU !== 'default-business-unit') {
+        if (isValidBusinessUnitId(defaultBU)) {
           units.push({
             id: defaultBU,
             name: 'Default Business Unit',
             code: 'DEFAULT',
             type: 'STORE',
             isActive: true,
-            companyId: undefined,
-            companyName: undefined,
           });
-          console.log(`✅ Using default business unit from localStorage: ${defaultBU}`);
         }
       }
-      
-      // Remove duplicates by ID
-      const uniqueUnits = units.filter((unit, index, self) => 
-        index === self.findIndex((u) => u.id === unit.id)
+
+      const uniqueUnits = units.filter(
+        (unit, index, self) =>
+          index === self.findIndex((u) => u.id === unit.id)
       );
-      
-      console.log(`📊 Total unique business units: ${uniqueUnits.length}`);
+
       setBusinessUnits(uniqueUnits);
-      
-      // Auto-select the first active business unit
+
       if (uniqueUnits.length > 0) {
-        const activeUnit = uniqueUnits.find(bu => bu.isActive !== false && bu.id !== 'default');
-        if (activeUnit) {
-          setSelectedBusinessUnitId(activeUnit.id);
-          setFormData(prev => ({ ...prev, businessUnitId: activeUnit.id }));
+        const activeUnit =
+          uniqueUnits.find((bu) => bu.isActive !== false) || uniqueUnits[0];
+        setSelectedBusinessUnitId(activeUnit.id);
+        setFormData((prev) => ({
+          ...prev,
+          businessUnitId: activeUnit.id,
+        }));
+        try {
           localStorage.setItem('businessUnitId', activeUnit.id);
-          console.log('✅ Auto-selected business unit:', activeUnit.id, activeUnit.name);
-        } else if (uniqueUnits[0] && uniqueUnits[0].id !== 'default') {
-          setSelectedBusinessUnitId(uniqueUnits[0].id);
-          setFormData(prev => ({ ...prev, businessUnitId: uniqueUnits[0].id }));
-          localStorage.setItem('businessUnitId', uniqueUnits[0].id);
-          console.log('✅ Selected first business unit:', uniqueUnits[0].id, uniqueUnits[0].name);
+        } catch {
+          /* ignore */
         }
       } else {
-        console.warn('⚠️ No valid business units found');
-        setBusinessUnitError('No business units available. Please create a business unit first.');
+        setBusinessUnitError(
+          'No business units available. Please create a business unit first.'
+        );
         toast.warning('No business units available');
       }
-      
+
       hasLoadedBusinessUnitsRef.current = true;
-      
-    } catch (error) {
-      console.error('❌ Error fetching business units:', error);
-      setBusinessUnitError('Failed to load business units. Please refresh and try again.');
+    } catch (err) {
+      console.error('fetchBusinessUnits failed:', err);
+      setBusinessUnitError('Failed to load business units. Please refresh.');
       toast.error('Failed to load business units');
     } finally {
       setLoadingBusinessUnits(false);
     }
-  }, [user]);
+  }, [user]); // ⚠️ was [user, loadingBusinessUnits]
 
   // ============================================
-  // LOAD CATEGORIES AND SUPPLIERS - IMPROVED
+  // LOAD OPTIONS (scoped per BU id)
   // ============================================
+  //
+  // The ref guards by BU id, not by a boolean, so changing the BU
+  // re-runs the loader.
 
   const loadOptions = useCallback(async (buId: string) => {
-    if (!buId || buId === 'default' || buId === 'default-business-unit') {
-      console.warn('⚠️ Invalid business unit ID, skipping options load');
+    if (!isValidBusinessUnitId(buId)) {
       setLoadingOptions(false);
       return;
     }
-    
-    if (hasLoadedOptionsRef.current) {
-      console.log('⏭️ Options already loaded');
-      return;
-    }
-    
-    console.log('📤 Loading options with businessUnitId:', buId);
-    setLoadingOptions(true);
-    
-    try {
-      // Load Categories - Multiple attempts
-      let categoriesLoaded = false;
-      
-      // Attempt 1: getCategories
-      try {
-        console.log('📤 Attempt 1: Fetching categories with getCategories...');
-        const categoriesData = await inventoryService.getCategories(buId);
-        console.log('📥 getCategories response:', categoriesData);
-        
-        if (categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0) {
-          setCategories(categoriesData.map((cat: any) => ({
-            id: cat.id || cat.categoryId || cat.category,
-            name: cat.name || cat.category || 'Uncategorized',
-          })));
-          console.log('✅ Categories loaded from getCategories:', categoriesData.length);
-          categoriesLoaded = true;
-        } else {
-          console.warn('⚠️ getCategories returned empty or invalid data');
-        }
-      } catch (e) {
-        console.warn('❌ getCategories failed:', e);
-      }
 
-      // Attempt 2: getCategorySummary
-      if (!categoriesLoaded) {
-        try {
-          console.log('📤 Attempt 2: Fetching categories with getCategorySummary...');
-          const summaryData = await inventoryService.getCategorySummary(buId);
-          console.log('📥 getCategorySummary response:', summaryData);
-          
-          if (summaryData && Array.isArray(summaryData) && summaryData.length > 0) {
-            setCategories(summaryData.map((cat: any) => ({
+    if (loadedOptionsBuIdRef.current === buId) return;
+    loadedOptionsBuIdRef.current = buId;
+
+    setLoadingOptions(true);
+
+    try {
+      // Categories
+      let categoriesLoaded = false;
+      try {
+        const categoriesData = await inventoryService.getCategories(buId);
+        if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+          setCategories(
+            categoriesData.map((cat: any) => ({
               id: cat.id || cat.categoryId || cat.category,
               name: cat.name || cat.category || 'Uncategorized',
-            })));
-            console.log('✅ Categories loaded from getCategorySummary:', summaryData.length);
-            categoriesLoaded = true;
-          } else {
-            console.warn('⚠️ getCategorySummary returned empty or invalid data');
-          }
-        } catch (e) {
-          console.warn('❌ getCategorySummary failed:', e);
+            }))
+          );
+          categoriesLoaded = true;
         }
+      } catch (e) {
+        console.warn('[inventory/edit] getCategories failed:', e);
       }
 
-      // Attempt 3: Extract from inventory data
       if (!categoriesLoaded) {
         try {
-          console.log('📤 Attempt 3: Extracting categories from inventory data...');
           const inventoryData = await inventoryService.getAllInventory(buId);
-          console.log('📥 getAllInventory response:', inventoryData?.items?.length || 0, 'items');
-          
-          if (inventoryData && inventoryData.items && inventoryData.items.length > 0) {
-            const categoryMap = new Map<string, { id: string; name: string; count: number }>();
+          if (inventoryData?.items && inventoryData.items.length > 0) {
+            const map = new Map<string, { id: string; name: string }>();
             inventoryData.items.forEach((item: any) => {
-              const categoryName = item.category || item.product?.category?.name || 'Uncategorized';
-              const categoryId = item.categoryId || item.product?.category?.id || categoryName;
-              if (!categoryMap.has(categoryName)) {
-                categoryMap.set(categoryName, {
-                  id: categoryId,
-                  name: categoryName,
-                  count: 0,
-                });
-              }
-              const existing = categoryMap.get(categoryName)!;
-              existing.count += 1;
+              const name =
+                item.category ||
+                item.product?.category?.name ||
+                'Uncategorized';
+              const catId =
+                item.categoryId || item.product?.category?.id || name;
+              if (!map.has(name)) map.set(name, { id: catId, name });
             });
-            const result = Array.from(categoryMap.values());
+            const result = Array.from(map.values());
             if (result.length > 0) {
-              setCategories(result.map(cat => ({
-                id: cat.id,
-                name: cat.name,
-              })));
-              console.log('✅ Categories extracted from inventory data:', result.length);
+              setCategories(result);
               categoriesLoaded = true;
             }
           }
         } catch (e) {
-          console.warn('❌ Extracting from inventory data failed:', e);
+          console.warn(
+            '[inventory/edit] extract categories failed:',
+            e
+          );
         }
       }
 
-      // Attempt 4: Fetch ALL categories without business unit filter
-      if (!categoriesLoaded) {
-        try {
-          console.log('📤 Attempt 4: Fetching ALL categories (no filter)...');
-          const allCategories = await inventoryService.getCategories();
-          console.log('📥 All categories response:', allCategories);
-          
-          if (allCategories && Array.isArray(allCategories) && allCategories.length > 0) {
-            setCategories(allCategories.map((cat: any) => ({
-              id: cat.id || cat.categoryId || cat.category,
-              name: cat.name || cat.category || 'Uncategorized',
-            })));
-            console.log('✅ Categories loaded from ALL categories:', allCategories.length);
-            categoriesLoaded = true;
-          }
-        } catch (e) {
-          console.warn('❌ Fetching ALL categories failed:', e);
-        }
-      }
+      if (!categoriesLoaded) setCategories([]);
 
-      if (!categoriesLoaded) {
-        console.warn('⚠️ No categories found from any source');
-        setCategories([]);
-      }
-
-      // Load Suppliers
+      // Suppliers
       let suppliersLoaded = false;
-
       try {
-        console.log('📤 Fetching suppliers with getSuppliers...');
         const suppliersData = await inventoryService.getSuppliers(buId);
-        console.log('📥 getSuppliers response:', suppliersData);
-        
-        if (suppliersData && Array.isArray(suppliersData) && suppliersData.length > 0) {
-          setSuppliers(suppliersData.map((sup: any) => ({
-            id: sup.id,
-            name: sup.name,
-          })));
-          console.log('✅ Suppliers loaded:', suppliersData.length);
+        if (Array.isArray(suppliersData) && suppliersData.length > 0) {
+          setSuppliers(
+            suppliersData.map((sup: any) => ({
+              id: sup.id,
+              name: sup.name,
+            }))
+          );
           suppliersLoaded = true;
         }
       } catch (e) {
-        console.warn('❌ getSuppliers failed:', e);
+        console.warn('[inventory/edit] getSuppliers failed:', e);
       }
 
-      // Attempt 2: Extract from inventory data
-      if (!suppliersLoaded) {
-        try {
-          console.log('📤 Attempt 2: Extracting suppliers from inventory data...');
-          const inventoryData = await inventoryService.getAllInventory(buId);
-          if (inventoryData && inventoryData.items && inventoryData.items.length > 0) {
-            const uniqueSuppliers = new Map();
-            inventoryData.items.forEach((item: any) => {
-              if (item.supplier) {
-                uniqueSuppliers.set(item.supplier, { 
-                  id: item.supplierId || item.supplier, 
-                  name: item.supplier 
-                });
-              }
-            });
-            const supplierList = Array.from(uniqueSuppliers.values());
-            if (supplierList.length > 0) {
-              setSuppliers(supplierList);
-              console.log('✅ Suppliers extracted from inventory:', supplierList.length);
-              suppliersLoaded = true;
-            }
-          }
-        } catch (e) {
-          console.warn('❌ Extracting suppliers from inventory failed:', e);
+      if (!suppliersLoaded) setSuppliers([]);
+
+      // Locations
+      let locationsLoaded = false;
+      try {
+        const locationsData = await locationService.list(buId);
+        if (Array.isArray(locationsData) && locationsData.length > 0) {
+          setLocations(
+            locationsData.map((loc: any) => ({
+              id: loc.id,
+              name: loc.name,
+              isDefault: loc.isDefault,
+              isActive: loc.isActive !== false,
+            }))
+          );
+          locationsLoaded = true;
         }
+      } catch (e) {
+        console.warn('[inventory/edit] locationService.list failed:', e);
       }
 
-      if (!suppliersLoaded) {
-        console.warn('⚠️ No suppliers found from any source');
-        setSuppliers([]);
+      if (!locationsLoaded) {
+        setLocations(FALLBACK_LOCATIONS.map((name) => ({ id: name, name })));
       }
-
-      hasLoadedOptionsRef.current = true;
-
-    } catch (error) {
-      console.error('❌ Error loading options:', error);
+    } catch (err) {
+      console.error('[inventory/edit] loadOptions error:', err);
     } finally {
       setLoadingOptions(false);
-      console.log('✅ Options loading complete. Categories:', categories.length, 'Suppliers:', suppliers.length);
     }
   }, []);
+
+  // ============================================
+  // BUILD BARCODE + QR INFO
+  // ============================================
+  //
+  // Unwraps the barcode service responses and falls back to locally
+  // constructed URLs if the service fails. Same helper the add page
+  // uses, mirrored here for consistency.
+
+  const buildBarcodeInfo = useCallback(
+    async (
+      barcode: string,
+      formSnapshot: InventoryFormData,
+      itemId?: string
+    ): Promise<BarcodeInfo> => {
+      const qrData = buildQrDataForItem({
+        itemId: itemId || id || '',
+        formData: formSnapshot,
+        barcode,
+      });
+
+      try {
+        const [barcodeImageRaw, qrCodeRaw] = await Promise.all([
+          barcodeService.generateBarcodeImage(barcode),
+          barcodeService.generateQRCode(qrData),
+        ]);
+
+        const barcodeImage = unwrapPayload<{ barcodeUrl?: string }>(
+          barcodeImageRaw
+        );
+        const qrCode = unwrapPayload<{ qrCodeUrl?: string }>(qrCodeRaw);
+
+        return {
+          barcode,
+          barcodeUrl:
+            barcodeImage?.barcodeUrl || buildBarcodeUrl(barcode),
+          qrCodeUrl: qrCode?.qrCodeUrl || buildQrCodeUrl(qrData),
+          qrData,
+          isGenerated: true,
+        };
+      } catch (err) {
+        console.warn(
+          '[inventory/edit] barcode service failed, using fallback URLs:',
+          err
+        );
+        return {
+          barcode,
+          barcodeUrl: buildBarcodeUrl(barcode),
+          qrCodeUrl: buildQrCodeUrl(qrData),
+          qrData,
+          isGenerated: true,
+        };
+      }
+    },
+    [id]
+  );
 
   // ============================================
   // LOAD BARCODE INFO
   // ============================================
 
-  const loadBarcodeInfo = useCallback(async (barcode: string) => {
-    if (!barcode) return;
-    try {
-      const [barcodeImage, qrCode] = await Promise.all([
-        barcodeService.generateBarcodeImage(barcode),
-        barcodeService.generateQRCode({
-          itemName: formData.name || 'Item',
-          sku: formData.sku || '',
-          barcode: barcode,
-          price: formData.unitPrice || 0,
-          type: 'INVENTORY_ITEM',
-          id: id || '',
-        }),
-      ]);
-      
-      setBarcodeInfo({
-        barcode: barcode,
-        barcodeUrl: barcodeImage.barcodeUrl,
-        qrCodeUrl: qrCode.qrCodeUrl,
-        isGenerated: true,
-      });
-    } catch (error) {
-      console.warn('Could not generate barcode image:', error);
-      setBarcodeInfo({
-        barcode: barcode,
-        barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=CODE128&dpi=96`,
-        qrCodeUrl: `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify({ barcode, item: formData.name }))}&size=200x200`,
-        isGenerated: true,
-      });
-    }
-  }, [formData.name, formData.sku, formData.unitPrice, id]);
+  const loadBarcodeInfo = useCallback(
+    async (barcode: string) => {
+      if (!barcode) return;
+      const info = await buildBarcodeInfo(barcode, formData, id);
+      setBarcodeInfo(info);
+      setBarcodeSource('existing');
+    },
+    [buildBarcodeInfo, formData, id]
+  );
 
   // ============================================
-  // LOAD ITEM DATA
+  // LOAD ITEM
   // ============================================
 
   const loadItem = useCallback(async () => {
-    if (isLoadingRef.current || hasLoadedRef.current) {
-      console.log('⏭️ Skipping load - already loading or loaded');
-      return;
-    }
-    
-    if (!id) {
-      console.log('⏭️ No ID provided');
-      return;
-    }
-    
+    if (!id) return;
+    if (isLoadingRef.current) return;
+    // Guard scoped to the current item id so navigating between items
+    // re-fetches.
+    if (loadedItemIdRef.current === id) return;
+
     try {
       isLoadingRef.current = true;
       setLoading(true);
-      
-      console.log('📤 Fetching item for edit:', id);
-      
+
       const data = await inventoryService.getInventoryItemById(id);
-      
-      console.log('📥 getInventoryItemById response:', data);
-      
+
       if (!data || !data.id) {
         toast.error('Item not found');
         router.push('/admin/inventory');
         return;
       }
-      
-      // Normalize tags to string
+
       let tagsString = '';
       if (data.tags) {
-        if (Array.isArray(data.tags)) {
-          tagsString = data.tags.join(', ');
-        } else if (typeof data.tags === 'string') {
-          tagsString = data.tags;
-        }
+        if (Array.isArray(data.tags)) tagsString = data.tags.join(', ');
+        else if (typeof data.tags === 'string') tagsString = data.tags;
       }
-      
-      // Get business unit ID with fallback
-      const businessUnitId = data.businessUnitId || localStorage.getItem('businessUnitId') || '';
-      
+
+      const businessUnitId =
+        data.businessUnitId ||
+        localStorage.getItem('businessUnitId') ||
+        '';
+
+      const images = toImageUrls(
+        data.images && data.images.length > 0
+          ? data.images
+          : data.product?.images
+      );
+
+      // Use ?? instead of || for numeric fields so a legitimate 0 is
+      // preserved.
       setFormData({
         name: data.name || data.product?.name || '',
         sku: data.sku || data.product?.sku || '',
         category: data.category || data.product?.category?.name || '',
         categoryId: data.categoryId || data.product?.category?.id || '',
         quantity: data.quantity || data.stock || 0,
-        unit: data.unit || 'each',
-        unitPrice: data.price || data.unitPrice || data.product?.unitPrice || 0,
+        unitPrice:
+          data.price || data.unitPrice || data.product?.unitPrice || 0,
         costPrice: data.costPrice || data.product?.costPrice || 0,
-        minStock: data.reorderPoint || data.minStock || 5,
-        maxStock: data.reorderQuantity || data.maxStock || 100,
+        minStock: data.reorderPoint ?? data.minStock ?? 5,
+        maxStock: data.reorderQuantity ?? data.maxStock ?? 100,
         location: data.location || 'Warehouse',
+        locationId: '',
         supplier: data.supplier || data.product?.supplier?.name || '',
         supplierId: data.supplierId || data.product?.supplier?.id || '',
         notes: data.notes || '',
@@ -789,24 +869,21 @@ export default function EditInventoryItemPage() {
         featured: data.featured || false,
         tags: tagsString,
         taxRate: data.taxRate || 0,
-        images: data.images || [],
-        businessUnitId: businessUnitId,
-        expiryDate: data.expiryDate || '',
-        batchNumber: data.batchNumber || '',
+        images,
+        businessUnitId,
       });
-      
+
       setSelectedBusinessUnitId(businessUnitId);
-      
+
       if (data.barcode) {
         await loadBarcodeInfo(data.barcode);
       }
-      
+
+      loadedItemIdRef.current = id;
       hasLoadedRef.current = true;
       setItemLoaded(true);
-      initialLoadDoneRef.current = true;
-      
-    } catch (error: any) {
-      console.error('Failed to load item:', error);
+    } catch (err: any) {
+      console.error('Failed to load item:', err);
       toast.error('Failed to load item data');
       router.push('/admin/inventory');
     } finally {
@@ -820,82 +897,98 @@ export default function EditInventoryItemPage() {
   // ============================================
 
   useEffect(() => {
-    if (isAuthenticated && !hasLoadedBusinessUnitsRef.current && !loadingBusinessUnits) {
+    if (isAuthenticated && !hasLoadedBusinessUnitsRef.current) {
       fetchBusinessUnits();
     }
-  }, [isAuthenticated, fetchBusinessUnits, loadingBusinessUnits]);
+  }, [isAuthenticated, fetchBusinessUnits]);
 
   useEffect(() => {
-    if (selectedBusinessUnitId && selectedBusinessUnitId !== 'default' && !hasLoadedOptionsRef.current && !loadingOptions) {
+    if (isValidBusinessUnitId(selectedBusinessUnitId)) {
       loadOptions(selectedBusinessUnitId);
     }
-  }, [selectedBusinessUnitId, loadOptions, loadingOptions]);
+  }, [selectedBusinessUnitId, loadOptions]);
 
   useEffect(() => {
-    if (
-      isAuthenticated && 
-      id && 
-      businessUnits.length > 0 && 
-      !hasLoadedRef.current && 
-      !isLoadingRef.current &&
-      !initialLoadDoneRef.current
-    ) {
-      console.log('🔄 Triggering loadItem from useEffect');
+    if (isAuthenticated && id && businessUnits.length > 0) {
       loadItem();
     }
   }, [isAuthenticated, id, businessUnits.length, loadItem]);
 
+  // Reset guards when id changes.
   useEffect(() => {
-    return () => {
-      isLoadingRef.current = false;
-      hasLoadedRef.current = false;
-      hasLoadedOptionsRef.current = false;
-      hasLoadedBusinessUnitsRef.current = false;
-      initialLoadDoneRef.current = false;
-    };
-  }, []);
+    hasLoadedRef.current = false;
+    loadedItemIdRef.current = null;
+  }, [id]);
 
-  // ============================================
-  // BARCODE HANDLERS
-  // ============================================
+  // ?preselectSupplierId=…
+  useEffect(() => {
+    const preselect = searchParams?.get('preselectSupplierId');
+    if (!preselect) return;
 
-  const checkBarcodeUniqueness = useCallback(async (barcode: string): Promise<boolean> => {
-    if (!barcode || barcode.length < 3) return true;
-    
-    setCheckingBarcode(true);
-    try {
-      const result = await import('../../../../../../services/productService').then(m => m.productService.validateBarcode(barcode, id));
-      if (result && !result.valid) {
-        setIsBarcodeValid(false);
-        setErrors(prev => ({ 
-          ...prev, 
-          barcode: result.message || 'This barcode is already assigned to another product' 
+    setFormData((prev) => ({ ...prev, supplierId: preselect }));
+
+    if (suppliers.length > 0) {
+      const match = suppliers.find((s) => s.id === preselect);
+      if (match) {
+        setFormData((prev) => ({
+          ...prev,
+          supplierId: match.id,
+          supplier: match.name,
         }));
-        return false;
       }
-      setIsBarcodeValid(true);
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.barcode;
-        return newErrors;
-      });
-      return true;
-    } catch (error: any) {
-      if (error?.response?.status === 404 || error?.status === 404) {
+    }
+  }, [searchParams, suppliers.length]);
+
+  // ============================================
+  // BARCODE / QR HANDLERS
+  // ============================================
+
+  const checkBarcodeUniqueness = useCallback(
+    async (barcode: string): Promise<boolean> => {
+      if (!barcode || barcode.length < 3) return true;
+
+      setCheckingBarcode(true);
+      try {
+        const result = await import(
+          '../../../../../../services/productService'
+        ).then((m) => m.productService.validateBarcode(barcode, id));
+
+        if (result && !result.valid) {
+          setIsBarcodeValid(false);
+          setErrors((prev) => ({
+            ...prev,
+            barcode:
+              result.message ||
+              'This barcode is already assigned to another product',
+          }));
+          return false;
+        }
+
         setIsBarcodeValid(true);
-        setErrors(prev => {
-          const newErrors = { ...prev };
-          delete newErrors.barcode;
-          return newErrors;
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next.barcode;
+          return next;
         });
         return true;
+      } catch (err: any) {
+        if (err?.response?.status === 404 || err?.status === 404) {
+          setIsBarcodeValid(true);
+          setErrors((prev) => {
+            const next = { ...prev };
+            delete next.barcode;
+            return next;
+          });
+          return true;
+        }
+        console.error('Error checking barcode:', err);
+        return true;
+      } finally {
+        setCheckingBarcode(false);
       }
-      console.error('Error checking barcode:', error);
-      return true;
-    } finally {
-      setCheckingBarcode(false);
-    }
-  }, [id]);
+    },
+    [id]
+  );
 
   const handleGenerateBarcode = async () => {
     if (!formData.name) {
@@ -903,40 +996,57 @@ export default function EditInventoryItemPage() {
       return;
     }
 
+    // Confirm before overwriting an existing barcode. Any printed
+    // labels become invalid.
+    if (formData.barcode && barcodeSource !== 'generated') {
+      const confirmed = window.confirm(
+        `This item already has a barcode (${formData.barcode}). Generating a new one will replace it and invalidate any printed labels. Continue?`
+      );
+      if (!confirmed) return;
+    }
+
     setGeneratingBarcode(true);
     try {
-      const barcode = await barcodeService.generateUniqueBarcode({
+      const raw = await barcodeService.generateUniqueBarcode({
         prefix: 'INV',
         length: 12,
         productName: formData.name,
         sku: formData.sku || undefined,
       });
 
-      setFormData(prev => ({ ...prev, barcode: barcode.barcode }));
+      const payload = unwrapPayload<{ barcode?: string }>(raw);
+      const candidate = payload?.barcode ?? (raw as any)?.barcode ?? null;
+
+      const validationError = validateBarcodeString(candidate);
+      let barcode: string;
+      if (validationError) {
+        console.warn(
+          '[inventory/edit] barcode service returned invalid value, falling back:',
+          candidate,
+          validationError
+        );
+        barcode = `INV-${Date.now().toString(36)
+          .toUpperCase()
+          .slice(-8)}-${Math.random()
+          .toString(36)
+          .substring(2, 5)
+          .toUpperCase()}`;
+        toast.success('Barcode generated locally');
+      } else {
+        barcode = candidate as string;
+        toast.success('Barcode and QR code generated');
+      }
+
+      setFormData((prev) => ({ ...prev, barcode }));
       setIsBarcodeValid(true);
-      
-      const [barcodeImage, qrCode] = await Promise.all([
-        barcodeService.generateBarcodeImage(barcode.barcode),
-        barcodeService.generateQRCode({
-          itemName: formData.name,
-          sku: formData.sku,
-          price: formData.unitPrice,
-          barcode: barcode.barcode,
-          type: 'INVENTORY_ITEM',
-        }),
-      ]);
-      
-      setBarcodeInfo({
-        barcode: barcode.barcode,
-        barcodeUrl: barcodeImage.barcodeUrl,
-        qrCodeUrl: qrCode.qrCodeUrl,
-        isGenerated: true,
-      });
+
+      const info = await buildBarcodeInfo(barcode, formData, id);
+      setBarcodeInfo(info);
+      setBarcodeSource('generated');
       setShowBarcode(true);
-      toast.success('Unique barcode generated successfully');
-    } catch (error: any) {
-      console.error('Failed to generate barcode:', error);
-      toast.error(error?.message || 'Failed to generate barcode');
+    } catch (err: any) {
+      console.error('Failed to generate barcode:', err);
+      toast.error(err?.message || 'Failed to generate barcode');
       setIsBarcodeValid(false);
     } finally {
       setGeneratingBarcode(false);
@@ -945,12 +1055,18 @@ export default function EditInventoryItemPage() {
 
   const handleBarcodeChange = async (value: string) => {
     const cleanValue = value.toUpperCase().trim();
-    setFormData(prev => ({ ...prev, barcode: cleanValue }));
-    
+    setFormData((prev) => ({ ...prev, barcode: cleanValue }));
+    setBarcodeSource('manual');
+
     if (cleanValue.length >= 4) {
       await checkBarcodeUniqueness(cleanValue);
     } else {
       setIsBarcodeValid(null);
+    }
+
+    if (!cleanValue) {
+      setBarcodeInfo(null);
+      setShowBarcode(false);
     }
   };
 
@@ -968,16 +1084,22 @@ export default function EditInventoryItemPage() {
 
   const handlePrintBarcode = () => {
     if (!barcodeInfo) return;
-    
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    
+
+    // Escape all user-controlled fields before interpolating.
+    const safeName = escapeHtml(formData.name || 'Product');
+    const safeSku = escapeHtml(formData.sku || 'N/A');
+    const safeBarcode = escapeHtml(barcodeInfo.barcode);
+    const safeLocation = escapeHtml(formData.location || 'Warehouse');
+
     printWindow.document.write(`
       <html>
         <head>
-          <title>Barcode - ${formData.name}</title>
+          <title>Barcode - ${safeName}</title>
           <style>
-            body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: white; }
+            body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: white; }
             .container { text-align: center; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 400px; }
             .barcode-img { max-width: 300px; margin: 10px 0; }
             .qr-img { max-width: 150px; margin: 10px 0; }
@@ -991,15 +1113,15 @@ export default function EditInventoryItemPage() {
         </head>
         <body>
           <div class="container">
-            <h2 class="product-name">${formData.name}</h2>
-            <p class="sku">SKU: ${formData.sku || 'N/A'}</p>
+            <h2 class="product-name">${safeName}</h2>
+            <p class="sku">SKU: ${safeSku}</p>
             ${barcodeInfo.barcodeUrl ? `<img src="${barcodeInfo.barcodeUrl}" alt="Barcode" class="barcode-img" />` : ''}
             ${barcodeInfo.qrCodeUrl ? `<img src="${barcodeInfo.qrCodeUrl}" alt="QR Code" class="qr-img" />` : ''}
             <div class="info">
-              <p><span class="label">Barcode:</span> <span class="value">${barcodeInfo.barcode}</span></p>
+              <p><span class="label">Barcode:</span> <span class="value">${safeBarcode}</span></p>
               <p><span class="label">Price:</span> <span class="value">$${formData.unitPrice.toFixed(2)}</span></p>
               <p><span class="label">Stock:</span> <span class="value">${formData.quantity}</span></p>
-              <p><span class="label">Location:</span> <span class="value">${formData.location}</span></p>
+              <p><span class="label">Location:</span> <span class="value">${safeLocation}</span></p>
             </div>
           </div>
           <script>
@@ -1022,6 +1144,17 @@ export default function EditInventoryItemPage() {
     toast.success('Barcode downloaded');
   };
 
+  const handleDownloadQRCode = () => {
+    if (!barcodeInfo?.qrCodeUrl) return;
+    const link = document.createElement('a');
+    link.href = barcodeInfo.qrCodeUrl;
+    link.download = `qrcode-${formData.sku || formData.barcode}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('QR code downloaded');
+  };
+
   // ============================================
   // IMAGE HANDLERS
   // ============================================
@@ -1031,7 +1164,7 @@ export default function EditInventoryItemPage() {
       toast.warning('Please enter a valid image URL');
       return;
     }
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       images: [...prev.images, imageInput.trim()],
     }));
@@ -1041,11 +1174,20 @@ export default function EditInventoryItemPage() {
   };
 
   const handleRemoveImage = (index: number) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       images: prev.images.filter((_, i) => i !== index),
     }));
     toast.success('Image removed');
+  };
+
+  const handleImageError = (url: string) => {
+    setBrokenImages((prev) => {
+      if (prev.has(url)) return prev;
+      const next = new Set(prev);
+      next.add(url);
+      return next;
+    });
   };
 
   // ============================================
@@ -1055,7 +1197,7 @@ export default function EditInventoryItemPage() {
   const handleRegenerateSKU = useCallback(() => {
     if (formData.name && formData.name.trim().length >= 2) {
       const newSKU = generateInventorySKU(formData.name);
-      setFormData(prev => ({ ...prev, sku: newSKU }));
+      setFormData((prev) => ({ ...prev, sku: newSKU }));
       setAutoGenerateSKU(true);
       toast.success('SKU regenerated');
     } else {
@@ -1065,94 +1207,107 @@ export default function EditInventoryItemPage() {
 
   const handleSKUChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { value } = e.target;
-    setTouched(prev => ({ ...prev, sku: true }));
-    
+    setTouched((prev) => ({ ...prev, sku: true }));
+
     if (autoGenerateSKU && value.trim().length > 0) {
       setAutoGenerateSKU(false);
     }
-    
-    setFormData(prev => ({ ...prev, sku: value.toUpperCase() }));
+
+    setFormData((prev) => ({ ...prev, sku: value.toUpperCase() }));
     const error = validateField('sku', value);
-    setErrors(prev => ({ ...prev, sku: error }));
+    setErrors((prev) => ({ ...prev, sku: error }));
   };
 
   // ============================================
   // VALIDATION
   // ============================================
 
-  const validateField = useCallback((name: string, value: any): string | undefined => {
-    switch (name) {
-      case 'name':
-        if (!value || value.trim() === '') return 'Item name is required';
-        if (value.trim().length < 2) return 'Item name must be at least 2 characters';
-        if (value.trim().length > 100) return 'Item name must be less than 100 characters';
-        return undefined;
-      case 'sku':
-        if (value && value.trim().length > 50) return 'SKU must be less than 50 characters';
-        return undefined;
-      case 'category':
-        if (value && value.trim().length > 50) return 'Category must be less than 50 characters';
-        return undefined;
-      case 'quantity':
-        const qty = Number(value);
-        if (isNaN(qty)) return 'Quantity must be a number';
-        if (qty < 0) return 'Quantity cannot be negative';
-        if (qty > 999999) return 'Quantity is too large';
-        return undefined;
-      case 'unitPrice':
-        const price = Number(value);
-        if (isNaN(price)) return 'Unit price must be a number';
-        if (price < 0) return 'Unit price cannot be negative';
-        if (price > 999999) return 'Unit price is too large';
-        return undefined;
-      case 'costPrice':
-        const cost = Number(value);
-        if (isNaN(cost)) return 'Cost price must be a number';
-        if (cost < 0) return 'Cost price cannot be negative';
-        if (cost > 999999) return 'Cost price is too large';
-        return undefined;
-      case 'minStock':
-        const min = Number(value);
-        if (isNaN(min)) return 'Min stock must be a number';
-        if (min < 0) return 'Min stock cannot be negative';
-        if (min > 999999) return 'Min stock is too large';
-        return undefined;
-      case 'maxStock':
-        const max = Number(value);
-        if (isNaN(max)) return 'Max stock must be a number';
-        if (max < 0) return 'Max stock cannot be negative';
-        if (max > 999999) return 'Max stock is too large';
-        if (max < formData.minStock) return 'Max stock must be greater than min stock';
-        return undefined;
-      case 'location':
-        if (!value) return 'Location is required';
-        return undefined;
-      case 'supplier':
-        if (value && value.trim().length > 100) return 'Supplier name must be less than 100 characters';
-        return undefined;
-      case 'barcode':
-        if (value && value.trim().length > 50) return 'Barcode must be less than 50 characters';
-        return undefined;
-      case 'weight':
-        const weight = Number(value);
-        if (isNaN(weight)) return 'Weight must be a number';
-        if (weight < 0) return 'Weight cannot be negative';
-        return undefined;
-      case 'taxRate':
-        const tax = Number(value);
-        if (isNaN(tax)) return 'Tax rate must be a number';
-        if (tax < 0 || tax > 100) return 'Tax rate must be between 0 and 100';
-        return undefined;
-      case 'expiryDate':
-        if (value && new Date(value) < new Date()) return 'Expiry date cannot be in the past';
-        return undefined;
-      case 'batchNumber':
-        if (value && value.trim().length > 50) return 'Batch number must be less than 50 characters';
-        return undefined;
-      default:
-        return undefined;
-    }
-  }, [formData.minStock]);
+  const validateField = useCallback(
+    (name: string, value: any): string | undefined => {
+      switch (name) {
+        case 'name':
+          if (!value || value.trim() === '') return 'Item name is required';
+          if (value.trim().length < 2)
+            return 'Item name must be at least 2 characters';
+          if (value.trim().length > 100)
+            return 'Item name must be less than 100 characters';
+          return undefined;
+        case 'sku':
+          if (value && value.trim().length > 50)
+            return 'SKU must be less than 50 characters';
+          return undefined;
+        case 'category':
+          if (value && value.trim().length > 50)
+            return 'Category must be less than 50 characters';
+          return undefined;
+        case 'quantity': {
+          const qty = Number(value);
+          if (isNaN(qty)) return 'Quantity must be a number';
+          if (qty < 0) return 'Quantity cannot be negative';
+          if (qty > 999999) return 'Quantity is too large';
+          return undefined;
+        }
+        case 'unitPrice': {
+          const price = Number(value);
+          if (isNaN(price)) return 'Unit price must be a number';
+          if (price < 0) return 'Unit price cannot be negative';
+          if (price > 999999) return 'Unit price is too large';
+          return undefined;
+        }
+        case 'costPrice': {
+          const cost = Number(value);
+          if (isNaN(cost)) return 'Cost price must be a number';
+          if (cost < 0) return 'Cost price cannot be negative';
+          if (cost > 999999) return 'Cost price is too large';
+          return undefined;
+        }
+        case 'minStock': {
+          const min = Number(value);
+          if (isNaN(min)) return 'Min stock must be a number';
+          if (min < 0) return 'Min stock cannot be negative';
+          if (min > 999999) return 'Min stock is too large';
+          return undefined;
+        }
+        case 'maxStock': {
+          const max = Number(value);
+          if (isNaN(max)) return 'Max stock must be a number';
+          if (max < 0) return 'Max stock cannot be negative';
+          if (max > 999999) return 'Max stock is too large';
+          if (max < formData.minStock)
+            return 'Max stock must be greater than min stock';
+          return undefined;
+        }
+        case 'location':
+          if (!value || String(value).trim().length === 0)
+            return 'Location is required';
+          return undefined;
+        case 'supplier':
+          if (value && value.trim().length > 100)
+            return 'Supplier name must be less than 100 characters';
+          return undefined;
+        case 'barcode':
+          if (value && value.trim().length > 50)
+            return 'Barcode must be less than 50 characters';
+          return undefined;
+        case 'weight': {
+          const weight = Number(value);
+          if (isNaN(weight)) return 'Weight must be a number';
+          if (weight < 0) return 'Weight cannot be negative';
+          return undefined;
+        }
+        case 'taxRate': {
+          const tax = Number(value);
+          if (isNaN(tax)) return 'Tax rate must be a number';
+          if (tax < 0 || tax > 100)
+            return 'Tax rate must be between 0 and 100';
+          return undefined;
+        }
+        default:
+          return undefined;
+      }
+    },
+    [formData.minStock]
+  );
 
   const validateForm = useCallback((): boolean => {
     const newErrors: FormErrors = {};
@@ -1170,30 +1325,32 @@ export default function EditInventoryItemPage() {
       newErrors.quantity = 'Quantity cannot be negative';
       isValid = false;
     }
-
     if (formData.unitPrice < 0) {
       newErrors.unitPrice = 'Unit price cannot be negative';
       isValid = false;
     }
-
     if (!formData.location) {
       newErrors.location = 'Location is required';
       isValid = false;
     }
 
     if (businessUnits.length > 0) {
-      if (!selectedBusinessUnitId || selectedBusinessUnitId === 'default') {
+      if (!isValidBusinessUnitId(selectedBusinessUnitId)) {
         newErrors.businessUnit = 'Please select a valid business unit';
         isValid = false;
       } else {
-        const isValidBU = businessUnits.some(bu => bu.id === selectedBusinessUnitId && bu.isActive !== false);
+        const isValidBU = businessUnits.some(
+          (bu) => bu.id === selectedBusinessUnitId && bu.isActive !== false
+        );
         if (!isValidBU) {
-          newErrors.businessUnit = 'Selected business unit is not valid or inactive';
+          newErrors.businessUnit =
+            'Selected business unit is not valid or inactive';
           isValid = false;
         }
       }
     } else {
-      newErrors.businessUnit = 'No business units available. Please create one first.';
+      newErrors.businessUnit =
+        'No business units available. Please create one first.';
       isValid = false;
     }
 
@@ -1201,29 +1358,20 @@ export default function EditInventoryItemPage() {
       newErrors.sku = 'SKU must be less than 50 characters';
       isValid = false;
     }
-
     if (formData.category && formData.category.trim().length > 50) {
       newErrors.category = 'Category must be less than 50 characters';
       isValid = false;
     }
-
     if (formData.supplier && formData.supplier.trim().length > 100) {
       newErrors.supplier = 'Supplier name must be less than 100 characters';
       isValid = false;
     }
-
     if (formData.barcode && isBarcodeValid === false) {
       newErrors.barcode = 'Barcode is already assigned to another product';
       isValid = false;
     }
-
     if (formData.maxStock && formData.maxStock < formData.minStock) {
       newErrors.maxStock = 'Max stock must be greater than min stock';
-      isValid = false;
-    }
-
-    if (formData.expiryDate && new Date(formData.expiryDate) < new Date()) {
-      newErrors.expiryDate = 'Expiry date cannot be in the past';
       isValid = false;
     }
 
@@ -1232,13 +1380,17 @@ export default function EditInventoryItemPage() {
   }, [formData, isBarcodeValid, selectedBusinessUnitId, businessUnits]);
 
   // ============================================
-  // HANDLERS
+  // CHANGE HANDLERS
   // ============================================
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value, type } = e.target;
-    setTouched(prev => ({ ...prev, [name]: true }));
-    
+    setTouched((prev) => ({ ...prev, [name]: true }));
+
     let parsedValue: any = value;
     if (type === 'number') {
       parsedValue = value === '' ? 0 : parseFloat(value);
@@ -1246,40 +1398,44 @@ export default function EditInventoryItemPage() {
     if (type === 'checkbox') {
       parsedValue = (e.target as HTMLInputElement).checked;
     }
-    
+
     if (name === 'name' && autoGenerateSKU && value.trim().length >= 2) {
       const newSKU = generateInventorySKU(value);
-      setFormData(prev => ({ 
-        ...prev, 
+      setFormData((prev) => ({
+        ...prev,
         [name]: parsedValue,
-        sku: newSKU
+        sku: newSKU,
       }));
     } else {
-      setFormData(prev => ({ ...prev, [name]: parsedValue }));
+      setFormData((prev) => ({ ...prev, [name]: parsedValue }));
     }
-    
+
     const error = validateField(name, parsedValue);
-    setErrors(prev => ({ ...prev, [name]: error }));
+    setErrors((prev) => ({ ...prev, [name]: error }));
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleBlur = (
+    e: React.FocusEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value } = e.target;
-    setTouched(prev => ({ ...prev, [name]: true }));
+    setTouched((prev) => ({ ...prev, [name]: true }));
     const error = validateField(name, value);
-    setErrors(prev => ({ ...prev, [name]: error }));
+    setErrors((prev) => ({ ...prev, [name]: error }));
   };
 
   const handleBusinessUnitSelect = (buId: string) => {
-    const selected = businessUnits.find((bu: BusinessUnitOption) => bu.id === buId);
+    const selected = businessUnits.find((bu) => bu.id === buId);
     if (selected && selected.isActive !== false) {
       setSelectedBusinessUnitId(buId);
       setShowBusinessUnitDropdown(false);
-      setErrors((prev: FormErrors) => {
-        const newErrors = { ...prev };
-        delete newErrors.businessUnit;
-        return newErrors;
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.businessUnit;
+        return next;
       });
-      setFormData(prev => ({ ...prev, businessUnitId: buId }));
+      setFormData((prev) => ({ ...prev, businessUnitId: buId }));
       toast.success(`Selected: ${selected.name}`);
     } else if (selected && selected.isActive === false) {
       toast.error('This business unit is inactive');
@@ -1288,102 +1444,220 @@ export default function EditInventoryItemPage() {
     }
   };
 
+  const handleAddNewSupplier = () => {
+    const returnTo =
+      typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : `/admin/inventory/${id}/edit`;
+    router.push(
+      `/admin/suppliers/add?returnTo=${encodeURIComponent(returnTo)}`
+    );
+  };
+
+  const handleAddNewLocation = () => {
+    const returnTo =
+      typeof window !== 'undefined'
+        ? window.location.pathname + window.location.search
+        : `/admin/inventory/${id}/edit`;
+    router.push(
+      `/admin/locations/add?returnTo=${encodeURIComponent(returnTo)}`
+    );
+  };
+
+  // ============================================
+  // SUBMIT
+  // ============================================
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(false);
-    
-    if (!selectedBusinessUnitId || selectedBusinessUnitId === 'default') {
-      const errorMsg = 'Please select a valid business unit';
-      setError(errorMsg);
-      toast.error(errorMsg);
+
+    if (!isValidBusinessUnitId(selectedBusinessUnitId)) {
+      const msg = 'Please select a valid business unit';
+      setError(msg);
+      toast.error(msg);
       return;
     }
 
-    const selectedBU = businessUnits.find(bu => bu.id === selectedBusinessUnitId);
+    const selectedBU = businessUnits.find(
+      (bu) => bu.id === selectedBusinessUnitId
+    );
     if (!selectedBU || selectedBU.isActive === false) {
-      const errorMsg = 'Selected business unit is not valid or inactive';
-      setError(errorMsg);
-      toast.error(errorMsg);
+      const msg = 'Selected business unit is not valid or inactive';
+      setError(msg);
+      toast.error(msg);
       return;
     }
 
     if (!validateForm()) {
       const allTouched: Record<string, boolean> = {};
-      Object.keys(formData).forEach(key => { allTouched[key] = true; });
+      Object.keys(formData).forEach((key) => {
+        allTouched[key] = true;
+      });
       setTouched(allTouched);
-      const firstError = Object.values(errors).find(err => err);
-      if (firstError) { toast.error(firstError); } else { toast.error('Please fix all validation errors'); }
+      const firstError = Object.values(errors).find((err) => err);
+      if (firstError) toast.error(firstError);
+      else toast.error('Please fix all validation errors');
       return;
     }
 
     setSubmitting(true);
     try {
+      // If the item has no barcode and the user cleared the field,
+      // generate one now so the item always has both codes.
+      let workingBarcode = formData.barcode;
+      let workingInfo = barcodeInfo;
+
+      if (!workingBarcode) {
+        try {
+          const raw = await barcodeService.generateUniqueBarcode({
+            prefix: 'INV',
+            length: 12,
+            productName: formData.name,
+            sku: formData.sku || undefined,
+          });
+          const payload = unwrapPayload<{ barcode?: string }>(raw);
+          const candidate = payload?.barcode ?? (raw as any)?.barcode ?? null;
+          const validationError = validateBarcodeString(candidate);
+          workingBarcode = validationError
+            ? `INV-${Date.now().toString(36)
+                .toUpperCase()
+                .slice(-8)}-${Math.random()
+                .toString(36)
+                .substring(2, 5)
+                .toUpperCase()}`
+            : (candidate as string);
+        } catch (genErr) {
+          console.warn(
+            '[inventory/edit] auto barcode generation failed, using fallback:',
+            genErr
+          );
+          workingBarcode = `INV-${Date.now().toString(36)
+            .toUpperCase()
+            .slice(-8)}-${Math.random()
+            .toString(36)
+            .substring(2, 5)
+            .toUpperCase()}`;
+        }
+
+        workingInfo = await buildBarcodeInfo(workingBarcode, formData, id);
+        setBarcodeInfo(workingInfo);
+        setFormData((prev) => ({ ...prev, barcode: workingBarcode }));
+      } else if (workingBarcode && !barcodeInfo) {
+        // User typed a barcode manually. Build the preview so the
+        // stored item gets a consistent QR after save.
+        workingInfo = await buildBarcodeInfo(workingBarcode, formData, id);
+        setBarcodeInfo(workingInfo);
+      }
+
       const payload: any = {
         businessUnitId: selectedBusinessUnitId,
       };
-      
+
       if (formData.name?.trim()) payload.name = formData.name.trim();
       if (formData.sku?.trim()) payload.sku = formData.sku.trim();
-      if (formData.unit) payload.unit = formData.unit;
-      if (formData.unitPrice !== undefined && formData.unitPrice >= 0) payload.unitPrice = formData.unitPrice;
-      if (formData.costPrice !== undefined && formData.costPrice >= 0) payload.costPrice = formData.costPrice;
-      if (formData.quantity !== undefined && formData.quantity >= 0) payload.quantity = formData.quantity;
-      if (formData.minStock !== undefined && formData.minStock >= 0) payload.minStock = formData.minStock;
-      if (formData.maxStock !== undefined && formData.maxStock >= 0) payload.maxStock = formData.maxStock;
+      if (formData.unitPrice !== undefined && formData.unitPrice >= 0)
+        payload.unitPrice = formData.unitPrice;
+      if (formData.costPrice !== undefined && formData.costPrice >= 0)
+        payload.costPrice = formData.costPrice;
+      if (formData.quantity !== undefined && formData.quantity >= 0)
+        payload.quantity = formData.quantity;
+      if (formData.minStock !== undefined && formData.minStock >= 0)
+        payload.minStock = formData.minStock;
+      if (formData.maxStock !== undefined && formData.maxStock >= 0)
+        payload.maxStock = formData.maxStock;
       if (formData.location) payload.location = formData.location;
-      if (formData.category?.trim()) payload.category = formData.category.trim();
+      if (formData.category?.trim())
+        payload.category = formData.category.trim();
       if (formData.categoryId) payload.categoryId = formData.categoryId;
-      if (formData.supplier?.trim()) payload.supplier = formData.supplier.trim();
+      if (formData.supplier?.trim())
+        payload.supplier = formData.supplier.trim();
       if (formData.supplierId) payload.supplierId = formData.supplierId;
       if (formData.notes?.trim()) payload.notes = formData.notes.trim();
-      if (formData.description?.trim()) payload.description = formData.description.trim();
-      if (formData.barcode?.trim()) payload.barcode = formData.barcode.trim();
-      if (formData.weight !== undefined && formData.weight >= 0) payload.weight = formData.weight;
-      if (formData.taxRate !== undefined && formData.taxRate >= 0) payload.taxRate = formData.taxRate;
+      if (formData.description?.trim())
+        payload.description = formData.description.trim();
+      if (workingBarcode?.trim()) payload.barcode = workingBarcode.trim();
+      if (formData.weight !== undefined && formData.weight >= 0)
+        payload.weight = formData.weight;
+      if (formData.taxRate !== undefined && formData.taxRate >= 0)
+        payload.taxRate = formData.taxRate;
       if (formData.tags?.trim()) {
-        payload.tags = formData.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+        payload.tags = formData.tags
+          .split(',')
+          .map((t: string) => t.trim())
+          .filter(Boolean);
       }
-      if (formData.images && formData.images.length > 0) payload.images = formData.images;
-      if (formData.expiryDate) payload.expiryDate = new Date(formData.expiryDate).toISOString();
-      if (formData.batchNumber?.trim()) payload.batchNumber = formData.batchNumber.trim();
-      
+      if (formData.images && formData.images.length > 0)
+        payload.images = formData.images;
+
       payload.isActive = formData.isActive;
       payload.isDigital = formData.isDigital;
       payload.featured = formData.featured;
 
-      console.log('📤 Updating inventory item:', id, payload);
-      
-      const result = await inventoryService.updateItem(id as string, payload);
-      console.log('✅ Inventory item updated:', result);
+      await inventoryService.updateItem(id as string, payload);
+
+      // Regenerate the QR on the server so it reflects the actual
+      // inventory row (real id, latest price, latest stock).
+      try {
+        const qrResponse = await inventoryService.generateInventoryQRCode(
+          id as string,
+          selectedBusinessUnitId
+        );
+        const qrPayload = unwrapPayload<{
+          qrCodeUrl?: string;
+          qrData?: Record<string, any>;
+        }>(qrResponse);
+
+        if (qrPayload?.qrCodeUrl) {
+          setBarcodeInfo((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  qrCodeUrl: qrPayload.qrCodeUrl!,
+                  qrData: qrPayload.qrData || prev.qrData,
+                }
+              : {
+                  barcode: workingBarcode,
+                  barcodeUrl: buildBarcodeUrl(workingBarcode),
+                  qrCodeUrl: qrPayload.qrCodeUrl!,
+                  qrData: qrPayload.qrData,
+                  isGenerated: true,
+                }
+          );
+        }
+      } catch (qrError) {
+        console.warn(
+          '[inventory/edit] server-side QR regeneration failed, keeping client-side preview:',
+          qrError
+        );
+      }
 
       setSuccess(true);
       toast.success('Inventory item updated successfully');
-      
+
       setTimeout(() => {
         router.push(`/admin/inventory/${id}`);
         router.refresh();
       }, 1500);
-      
-    } catch (error: any) {
-      console.error('Error updating inventory item:', error);
+    } catch (err: any) {
+      console.error('Error updating inventory item:', err);
       let errorMessage = 'Failed to update inventory item';
-      
-      if (error?.response?.data) {
-        const data = error.response.data;
+
+      if (err?.response?.data) {
+        const data = err.response.data;
         if (data.errors && Array.isArray(data.errors)) {
-          errorMessage = data.errors.map((err: any) => 
-            `${err.field || err.path || 'field'}: ${err.message}`
-          ).join(', ');
-        } else if (data.message) {
-          errorMessage = data.message;
-        } else if (data.error) {
-          errorMessage = data.error;
-        }
-      } else if (error?.message) {
-        errorMessage = error.message;
+          errorMessage = data.errors
+            .map(
+              (e: any) => `${e.field || e.path || 'field'}: ${e.message}`
+            )
+            .join(', ');
+        } else if (data.message) errorMessage = data.message;
+        else if (data.error) errorMessage = data.error;
+      } else if (err?.message) {
+        errorMessage = err.message;
       }
-      
+
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -1391,7 +1665,7 @@ export default function EditInventoryItemPage() {
     }
   };
 
-  const handleCancel = () => { 
+  const handleCancel = () => {
     router.push(`/admin/inventory/${id}`);
   };
 
@@ -1399,16 +1673,21 @@ export default function EditInventoryItemPage() {
   // HELPERS
   // ============================================
 
-  const getFieldError = (fieldName: keyof FormErrors): string | undefined => {
-    return touched[fieldName] ? errors[fieldName] : undefined;
-  };
+  const getFieldError = (fieldName: keyof FormErrors): string | undefined =>
+    touched[fieldName] ? errors[fieldName] : undefined;
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
-    const baseClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-    const error = getFieldError(fieldName);
-    if (error) return `${baseClass} border-red-500 dark:border-red-500 focus:ring-red-500`;
-    return `${baseClass} border-gray-300 dark:border-gray-600`;
+    const base =
+      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+    return getFieldError(fieldName)
+      ? `${base} border-red-500 dark:border-red-500 focus:ring-red-500`
+      : `${base} border-gray-300 dark:border-gray-600`;
   };
+
+  const selectedBuName = useMemo(() => {
+    const bu = businessUnits.find((b) => b.id === selectedBusinessUnitId);
+    return bu?.name || '';
+  }, [businessUnits, selectedBusinessUnitId]);
 
   // ============================================
   // RENDER
@@ -1421,9 +1700,16 @@ export default function EditInventoryItemPage() {
           <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
             <Lock className="w-12 h-12 text-gray-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Please Login</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">You need to be logged in to edit inventory items.</p>
-          <button onClick={() => router.push('/login')} className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            Please Login
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            You need to be logged in to edit inventory items.
+          </p>
+          <button
+            onClick={() => router.push('/login')}
+            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
             Go to Login
           </button>
         </div>
@@ -1436,7 +1722,9 @@ export default function EditInventoryItemPage() {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-6">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Loading item data...</p>
+          <p className="text-gray-600 dark:text-gray-400">
+            Loading item data...
+          </p>
         </div>
       </div>
     );
@@ -1448,10 +1736,10 @@ export default function EditInventoryItemPage() {
         {/* HEADER */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={handleCancel} 
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" 
-              aria-label="Go back" 
+            <button
+              onClick={handleCancel}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              aria-label="Go back"
               disabled={submitting}
             >
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -1462,14 +1750,14 @@ export default function EditInventoryItemPage() {
                 Edit Inventory Item
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Update item details and stock information
+                Update item details, stock, barcode, and QR code
               </p>
             </div>
           </div>
-          {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' && (
+          {selectedBuName && (
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg text-sm text-green-700 dark:text-green-300">
               <Building className="w-4 h-4" />
-              <span>BU: {businessUnits.find(bu => bu.id === selectedBusinessUnitId)?.name || selectedBusinessUnitId.slice(0, 8)}</span>
+              <span>BU: {selectedBuName}</span>
             </div>
           )}
         </div>
@@ -1484,7 +1772,9 @@ export default function EditInventoryItemPage() {
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setShowBusinessUnitDropdown(!showBusinessUnitDropdown)}
+                  onClick={() =>
+                    setShowBusinessUnitDropdown(!showBusinessUnitDropdown)
+                  }
                   disabled={loadingBusinessUnits || submitting}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -1492,20 +1782,23 @@ export default function EditInventoryItemPage() {
                     <Building2 className="w-4 h-4 text-gray-400 flex-shrink-0" />
                     {loadingBusinessUnits ? (
                       <span className="text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+                        <Loader2 className="w-4 h-4 animate-spin" />{' '}
+                        Loading...
                       </span>
-                    ) : selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? (
-                      <span className="truncate">
-                        {businessUnits.find(bu => bu.id === selectedBusinessUnitId)?.name || 'Select Business Unit'}
-                      </span>
+                    ) : selectedBuName ? (
+                      <span className="truncate">{selectedBuName}</span>
                     ) : businessUnitError ? (
-                      <span className="text-red-500 truncate">{businessUnitError}</span>
+                      <span className="text-red-500 truncate">
+                        {businessUnitError}
+                      </span>
                     ) : (
-                      <span className="text-gray-400 dark:text-gray-500">Select a business unit</span>
+                      <span className="text-gray-400 dark:text-gray-500">
+                        Select a business unit
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' && (
+                    {isValidBusinessUnitId(selectedBusinessUnitId) && (
                       <span className="w-2 h-2 rounded-full bg-green-500" />
                     )}
                     {showBusinessUnitDropdown ? (
@@ -1531,28 +1824,55 @@ export default function EditInventoryItemPage() {
                     ) : (
                       businessUnits.map((bu) => {
                         const isActive = bu.isActive !== false;
-                        const isSelected = selectedBusinessUnitId === bu.id;
-                        
+                        const isSelected =
+                          selectedBusinessUnitId === bu.id;
+
                         return (
                           <button
                             key={bu.id}
                             type="button"
-                            onClick={() => handleBusinessUnitSelect(bu.id)}
+                            onClick={() =>
+                              handleBusinessUnitSelect(bu.id)
+                            }
                             disabled={!isActive}
-                            className={`w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''} ${!isActive ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            className={`w-full px-4 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                              isSelected
+                                ? 'bg-blue-50 dark:bg-blue-900/20'
+                                : ''
+                            } ${
+                              !isActive
+                                ? 'opacity-50 cursor-not-allowed'
+                                : 'cursor-pointer'
+                            }`}
                           >
                             <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium truncate ${isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'}`}>
+                              <p
+                                className={`text-sm font-medium truncate ${
+                                  isSelected
+                                    ? 'text-blue-600 dark:text-blue-400'
+                                    : 'text-gray-900 dark:text-white'
+                                }`}
+                              >
                                 {bu.name}
                               </p>
                               <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                                 {bu.code && <span>Code: {bu.code}</span>}
                                 {bu.type && <span>• {bu.type}</span>}
-                                {bu.companyName && <span className="text-indigo-500">• {bu.companyName}</span>}
-                                {!isActive && <span className="text-red-500">• Inactive</span>}
+                                {bu.companyName && (
+                                  <span className="text-indigo-500">
+                                    • {bu.companyName}
+                                  </span>
+                                )}
+                                {!isActive && (
+                                  <span className="text-red-500">
+                                    • Inactive
+                                  </span>
+                                )}
                               </div>
                             </div>
-                            {isSelected && <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />}
+                            {isSelected && (
+                              <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />
+                            )}
                           </button>
                         );
                       })
@@ -1561,80 +1881,90 @@ export default function EditInventoryItemPage() {
                 )}
               </div>
               {getFieldError('businessUnit') && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('businessUnit')}</p>
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  {getFieldError('businessUnit')}
+                </p>
               )}
             </div>
 
-            {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' && (
+            {selectedBuName && (
               <div className="flex-shrink-0 bg-gray-50 dark:bg-gray-700/30 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-600">
-                <p className="text-xs text-gray-500 dark:text-gray-400">Selected Unit</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Selected Unit
+                </p>
                 <p className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[150px]">
-                  {businessUnits.find(bu => bu.id === selectedBusinessUnitId)?.name || 'Unknown'}
+                  {selectedBuName}
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Business Unit Warning */}
-        {(!selectedBusinessUnitId || selectedBusinessUnitId === 'default') && (
-          <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Business Unit Required</p>
-              <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                Please select a business unit from the dropdown above to continue editing inventory items.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Success Banner */}
+        {/* Success / Error Banners */}
         {success && (
-          <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+          <div className="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-green-800 dark:text-green-200">Success!</p>
-                <p className="text-sm text-green-700 dark:text-green-300">Item updated successfully.</p>
+                <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                  Success!
+                </p>
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  Item updated successfully.
+                </p>
               </div>
             </div>
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => router.push(`/admin/inventory/${id}`)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-1">
+              <button
+                onClick={() => router.push(`/admin/inventory/${id}`)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-1"
+              >
                 <Eye className="w-4 h-4" /> View Item
               </button>
-              <button onClick={() => router.push('/admin/inventory')} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1">
+              <button
+                onClick={() => router.push('/admin/inventory')}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+              >
                 <Package className="w-4 h-4" /> View Inventory
               </button>
             </div>
           </div>
         )}
 
-        {/* Error Display */}
         {error && !success && (
           <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">Error</p>
-              <p className="text-sm text-red-700 dark:text-red-300 break-words">{error}</p>
+              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                Error
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-300 break-words">
+                {error}
+              </p>
             </div>
-            <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800 dark:text-red-400 p-1" aria-label="Dismiss error">
+            <button
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              aria-label="Dismiss error"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
         {/* FORM */}
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 space-y-6"
+        >
           {/* Basic Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <Package className="w-5 h-5 text-blue-500" />
               Basic Information
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Name */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Item Name <span className="text-red-500">*</span>
@@ -1650,11 +1980,12 @@ export default function EditInventoryItemPage() {
                   disabled={submitting || success}
                 />
                 {getFieldError('name') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('name')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('name')}
+                  </p>
                 )}
               </div>
 
-              {/* SKU */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   SKU
@@ -1681,27 +2012,10 @@ export default function EditInventoryItemPage() {
                   </button>
                 </div>
                 {getFieldError('sku') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('sku')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('sku')}
+                  </p>
                 )}
-              </div>
-
-              {/* Unit */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Unit <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="unit"
-                  value={formData.unit}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={getInputClassName('unit')}
-                  disabled={submitting || success}
-                >
-                  {UNITS.map(unit => (
-                    <option key={unit.value} value={unit.value}>{unit.label}</option>
-                  ))}
-                </select>
               </div>
 
               {/* Category */}
@@ -1712,31 +2026,48 @@ export default function EditInventoryItemPage() {
                 <div className="flex gap-2">
                   <select
                     name="category"
-                    value={formData.categoryId || formData.category}
+                    value={
+                      isCustomCategory
+                        ? '__custom__'
+                        : formData.categoryId || formData.category
+                    }
                     onChange={(e) => {
                       const value = e.target.value;
-                      if (value === 'custom') {
+                      if (value === '__custom__') {
                         setIsCustomCategory(true);
-                        setFormData(prev => ({ ...prev, category: '', categoryId: '' }));
+                        setFormData((prev) => ({
+                          ...prev,
+                          category: '',
+                          categoryId: '',
+                        }));
                       } else {
                         setIsCustomCategory(false);
-                        const selected = categories.find(c => c.id === value);
-                        setFormData(prev => ({ 
-                          ...prev, 
-                          category: selected?.name || '', 
-                          categoryId: selected?.id || '' 
+                        const selected = categories.find(
+                          (c) => c.id === value
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          category: selected?.name || '',
+                          categoryId: selected?.id || '',
                         }));
                       }
-                      setTouched(prev => ({ ...prev, category: true }));
+                      setTouched((prev) => ({
+                        ...prev,
+                        category: true,
+                      }));
                     }}
                     className={getInputClassName('category')}
                     disabled={submitting || success || loadingOptions}
                   >
                     <option value="">Select category</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
                     ))}
-                    <option value="custom">+ Add custom category</option>
+                    <option value="__custom__">
+                      + Add custom category
+                    </option>
                   </select>
                   {isCustomCategory && (
                     <input
@@ -1752,11 +2083,12 @@ export default function EditInventoryItemPage() {
                   )}
                 </div>
                 {getFieldError('category') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('category')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('category')}
+                  </p>
                 )}
               </div>
 
-              {/* Description */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Description
@@ -1781,15 +2113,16 @@ export default function EditInventoryItemPage() {
               <DollarSign className="w-5 h-5 text-green-500" />
               Pricing & Stock
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Unit Price */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Unit Price <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                    $
+                  </span>
                   <input
                     type="number"
                     name="unitPrice"
@@ -1804,17 +2137,20 @@ export default function EditInventoryItemPage() {
                   />
                 </div>
                 {getFieldError('unitPrice') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('unitPrice')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('unitPrice')}
+                  </p>
                 )}
               </div>
 
-              {/* Cost Price */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Cost Price
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                    $
+                  </span>
                   <input
                     type="number"
                     name="costPrice"
@@ -1829,11 +2165,12 @@ export default function EditInventoryItemPage() {
                   />
                 </div>
                 {getFieldError('costPrice') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('costPrice')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('costPrice')}
+                  </p>
                 )}
               </div>
 
-              {/* Tax Rate */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Tax Rate
@@ -1846,16 +2183,19 @@ export default function EditInventoryItemPage() {
                   className={getInputClassName('taxRate')}
                   disabled={submitting || success}
                 >
-                  {TAX_RATES.map(rate => (
-                    <option key={rate.value} value={rate.value}>{rate.label}</option>
+                  {TAX_RATES.map((rate) => (
+                    <option key={rate.value} value={rate.value}>
+                      {rate.label}
+                    </option>
                   ))}
                 </select>
                 {getFieldError('taxRate') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('taxRate')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('taxRate')}
+                  </p>
                 )}
               </div>
 
-              {/* Quantity */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Quantity <span className="text-red-500">*</span>
@@ -1863,8 +2203,15 @@ export default function EditInventoryItemPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, quantity: Math.max(0, prev.quantity - 1) }))}
-                    disabled={submitting || success || formData.quantity <= 0}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        quantity: Math.max(0, prev.quantity - 1),
+                      }))
+                    }
+                    disabled={
+                      submitting || success || formData.quantity <= 0
+                    }
                     className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                   >
                     <Minus className="w-4 h-4" />
@@ -1882,7 +2229,12 @@ export default function EditInventoryItemPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, quantity: prev.quantity + 1 }))}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        quantity: prev.quantity + 1,
+                      }))
+                    }
                     disabled={submitting || success}
                     className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                   >
@@ -1890,11 +2242,12 @@ export default function EditInventoryItemPage() {
                   </button>
                 </div>
                 {getFieldError('quantity') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('quantity')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('quantity')}
+                  </p>
                 )}
               </div>
 
-              {/* Min Stock */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Min Stock
@@ -1911,11 +2264,12 @@ export default function EditInventoryItemPage() {
                   disabled={submitting || success}
                 />
                 {getFieldError('minStock') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('minStock')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('minStock')}
+                  </p>
                 )}
               </div>
 
-              {/* Max Stock */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Max Stock
@@ -1932,7 +2286,9 @@ export default function EditInventoryItemPage() {
                   disabled={submitting || success}
                 />
                 {getFieldError('maxStock') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('maxStock')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('maxStock')}
+                  </p>
                 )}
               </div>
             </div>
@@ -1944,7 +2300,7 @@ export default function EditInventoryItemPage() {
               <MapPin className="w-5 h-5 text-orange-500" />
               Location & Supplier
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Location */}
               <div>
@@ -1953,18 +2309,72 @@ export default function EditInventoryItemPage() {
                 </label>
                 <select
                   name="location"
-                  value={formData.location}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
+                  value={
+                    isCustomLocation ? '__custom__' : formData.location
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '__custom__') {
+                      setIsCustomLocation(true);
+                      setFormData((prev) => ({
+                        ...prev,
+                        location: '',
+                        locationId: '',
+                      }));
+                    } else {
+                      setIsCustomLocation(false);
+                      const match = locations.find(
+                        (l) => l.name === value
+                      );
+                      setFormData((prev) => ({
+                        ...prev,
+                        location: value,
+                        locationId: match?.id || '',
+                      }));
+                    }
+                  }}
                   className={getInputClassName('location')}
-                  disabled={submitting || success}
+                  disabled={submitting || success || loadingOptions}
                 >
-                  {LOCATIONS.map(loc => (
-                    <option key={loc.value} value={loc.value}>{loc.label}</option>
+                  <option value="">Select Location</option>
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.name}>
+                      {loc.name}
+                      {loc.isDefault ? ' (default)' : ''}
+                    </option>
                   ))}
+                  <option value="__custom__">
+                    + Add Custom Location
+                  </option>
                 </select>
+                {isCustomLocation && (
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    className={`mt-2 ${getInputClassName('location')}`}
+                    placeholder="Enter custom location name"
+                    disabled={submitting || success}
+                  />
+                )}
+                <p className="mt-1 text-xs text-gray-400">
+                  Need a new location?{' '}
+                  <button
+                    type="button"
+                    onClick={handleAddNewLocation}
+                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    disabled={submitting || success}
+                  >
+                    Create one
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </p>
                 {getFieldError('location') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('location')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('location')}
+                  </p>
                 )}
               </div>
 
@@ -1973,86 +2383,98 @@ export default function EditInventoryItemPage() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Supplier
                 </label>
-                <div className="flex gap-2">
-                  <select
-                    name="supplier"
-                    value={formData.supplierId || formData.supplier}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value === 'custom') {
-                        setIsCustomSupplier(true);
-                        setFormData(prev => ({ ...prev, supplier: '', supplierId: '' }));
-                      } else {
-                        setIsCustomSupplier(false);
-                        const selected = suppliers.find(s => s.id === value);
-                        setFormData(prev => ({ 
-                          ...prev, 
-                          supplier: selected?.name || '', 
-                          supplierId: selected?.id || '' 
-                        }));
-                      }
-                      setTouched(prev => ({ ...prev, supplier: true }));
-                    }}
-                    className={getInputClassName('supplier')}
-                    disabled={submitting || success || loadingOptions}
+                <select
+                  name="supplierId"
+                  value={formData.supplierId || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '__add_new__') {
+                      handleAddNewSupplier();
+                      return;
+                    }
+                    const match = suppliers.find((s) => s.id === value);
+                    setFormData((prev) => ({
+                      ...prev,
+                      supplierId: value,
+                      supplier: match?.name || '',
+                    }));
+                    setTouched((prev) => ({ ...prev, supplier: true }));
+                  }}
+                  className={getInputClassName('supplier')}
+                  disabled={submitting || success || loadingOptions}
+                >
+                  <option value="">Select Supplier</option>
+                  {suppliers.map((sup) => (
+                    <option key={sup.id} value={sup.id}>
+                      {sup.name}
+                    </option>
+                  ))}
+                  <option value="__add_new__">+ Add New Supplier…</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  Need a new supplier?{' '}
+                  <button
+                    type="button"
+                    onClick={handleAddNewSupplier}
+                    className="text-blue-500 hover:underline inline-flex items-center gap-1"
+                    disabled={submitting || success}
                   >
-                    <option value="">Select supplier</option>
-                    {suppliers.map(sup => (
-                      <option key={sup.id} value={sup.id}>{sup.name}</option>
-                    ))}
-                    <option value="custom">+ Add custom supplier</option>
-                  </select>
-                  {isCustomSupplier && (
-                    <input
-                      type="text"
-                      name="supplier"
-                      value={formData.supplier}
-                      onChange={handleChange}
-                      onBlur={handleBlur}
-                      className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600"
-                      placeholder="Enter custom supplier"
-                      disabled={submitting || success}
-                    />
-                  )}
-                </div>
+                    Create one
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </p>
                 {getFieldError('supplier') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('supplier')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('supplier')}
+                  </p>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Barcode & Additional Info */}
+          {/* Barcode & QR */}
           <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <Barcode className="w-5 h-5 text-purple-500" />
-              Barcode & Additional Info
+              Barcode & QR Code
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Barcode */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Barcode
                 </label>
                 <div className="flex gap-2">
-                  <div className="flex-1">
+                  <div className="flex-1 relative">
                     <input
                       type="text"
                       name="barcode"
                       value={formData.barcode}
-                      onChange={(e) => handleBarcodeChange(e.target.value)}
+                      onChange={(e) =>
+                        handleBarcodeChange(e.target.value)
+                      }
                       onBlur={handleBlur}
                       className={getInputClassName('barcode')}
                       placeholder="Enter barcode or generate"
                       disabled={submitting || success}
                     />
+                    {checkingBarcode && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={handleGenerateBarcode}
-                    disabled={generatingBarcode || submitting || success || !formData.name}
+                    disabled={
+                      generatingBarcode ||
+                      submitting ||
+                      success ||
+                      !formData.name
+                    }
                     className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-1 whitespace-nowrap"
+                    title="Generate a new barcode and QR code"
                   >
                     {generatingBarcode ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -2061,24 +2483,65 @@ export default function EditInventoryItemPage() {
                     )}
                     Generate
                   </button>
+                  {formData.barcode && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleCopyBarcode}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        title="Copy barcode"
+                        disabled={submitting || success}
+                      >
+                        {copied ? (
+                          <Check className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowBarcode(!showBarcode)}
+                        className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-1"
+                        title="Show/hide barcode and QR"
+                        disabled={submitting || success}
+                      >
+                        <QrCode className="w-4 h-4" />
+                        <span className="hidden sm:inline">
+                          {showBarcode ? 'Hide' : 'Show'}
+                        </span>
+                      </button>
+                    </>
+                  )}
                 </div>
                 {getFieldError('barcode') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('barcode')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('barcode')}
+                  </p>
                 )}
                 {isBarcodeValid === false && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">Barcode is already in use</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    Barcode is already in use
+                  </p>
                 )}
                 {isBarcodeValid === true && formData.barcode && (
-                  <p className="mt-1 text-sm text-green-600 dark:text-green-400">✓ Barcode is available</p>
+                  <p className="mt-1 text-sm text-green-600 dark:text-green-400">
+                    ✓ Barcode is available
+                  </p>
                 )}
-                {checkingBarcode && (
-                  <p className="mt-1 text-sm text-gray-500 flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Checking barcode...
+                {barcodeSource === 'generated' && (
+                  <p className="mt-1 text-xs text-purple-600 dark:text-purple-400">
+                    Auto-generated. The QR code will be finalized with the
+                    inventory id after save.
+                  </p>
+                )}
+                {barcodeSource === 'existing' && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Existing barcode. Generating a new one will replace it
+                    and invalidate any printed labels.
                   </p>
                 )}
               </div>
 
-              {/* Weight */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Weight (kg)
@@ -2096,58 +2559,91 @@ export default function EditInventoryItemPage() {
                   disabled={submitting || success}
                 />
                 {getFieldError('weight') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('weight')}</p>
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {getFieldError('weight')}
+                  </p>
                 )}
               </div>
             </div>
 
-            {/* Expiry Date & Batch Number */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Expiry Date
-                </label>
-                <div className="relative">
-                  <CalendarDays className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="date"
-                    name="expiryDate"
-                    value={formData.expiryDate}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`${getInputClassName('expiryDate')} pl-10`}
-                    disabled={submitting || success}
-                  />
+            {formData.barcode && showBarcode && barcodeInfo && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
+                <div className="flex flex-col items-center">
+                  <div className="flex flex-wrap items-center justify-center gap-6">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        Barcode
+                      </p>
+                      {barcodeInfo.barcodeUrl && (
+                        <img
+                          src={barcodeInfo.barcodeUrl}
+                          alt="Barcode"
+                          className="h-12 w-auto bg-white p-1 rounded"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              'none';
+                          }}
+                        />
+                      )}
+                      <p className="text-xs font-mono text-gray-600 dark:text-gray-400 mt-1 text-center">
+                        {formData.barcode}
+                      </p>
+                    </div>
+                    {barcodeInfo.qrCodeUrl && (
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          QR Code
+                        </p>
+                        <img
+                          src={barcodeInfo.qrCodeUrl}
+                          alt="QR Code"
+                          className="w-24 h-24 object-contain bg-white p-1 rounded"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={handleDownloadBarcode}
+                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                      disabled={submitting || success}
+                    >
+                      <Download className="w-3 h-3" /> Barcode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadQRCode}
+                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                      disabled={submitting || success}
+                    >
+                      <Download className="w-3 h-3" /> QR Code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePrintBarcode}
+                      className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
+                      disabled={submitting || success}
+                    >
+                      <Printer className="w-3 h-3" /> Print Both
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowBarcode(false)}
+                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                      disabled={submitting || success}
+                    >
+                      Hide
+                    </button>
+                  </div>
                 </div>
-                {getFieldError('expiryDate') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('expiryDate')}</p>
-                )}
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Batch Number
-                </label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    name="batchNumber"
-                    value={formData.batchNumber}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`${getInputClassName('batchNumber')} pl-10`}
-                    placeholder="Enter batch number"
-                    disabled={submitting || success}
-                  />
-                </div>
-                {getFieldError('batchNumber') && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('batchNumber')}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Tags */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Tags
@@ -2163,12 +2659,15 @@ export default function EditInventoryItemPage() {
                 disabled={submitting || success}
               />
               {getFieldError('tags') && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{getFieldError('tags')}</p>
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                  {getFieldError('tags')}
+                </p>
               )}
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Separate multiple tags with commas</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Separate multiple tags with commas
+              </p>
             </div>
 
-            {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Notes
@@ -2192,18 +2691,16 @@ export default function EditInventoryItemPage() {
               <ImageIcon className="w-5 h-5 text-indigo-500" />
               Images
             </h3>
-            
+
             {formData.images.length > 0 && (
               <div className="flex flex-wrap gap-3">
                 {formData.images.map((url, index) => (
-                  <div key={index} className="relative group">
+                  <div key={`${url}-${index}`} className="relative group">
                     <img
-                      src={url}
+                      src={brokenImages.has(url) ? PLACEHOLDER_IMAGE : url}
                       alt={`Item image ${index + 1}`}
                       className="w-20 h-20 object-cover rounded-lg border border-gray-200 dark:border-gray-600"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/placeholder-image.png';
-                      }}
+                      onError={() => handleImageError(url)}
                     />
                     <button
                       type="button"
@@ -2236,7 +2733,10 @@ export default function EditInventoryItemPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setShowImageInput(false); setImageInput(''); }}
+                  onClick={() => {
+                    setShowImageInput(false);
+                    setImageInput('');
+                  }}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 >
                   Cancel
@@ -2252,7 +2752,9 @@ export default function EditInventoryItemPage() {
                 <Plus className="w-4 h-4" /> Add Image URL
               </button>
             )}
-            <p className="text-xs text-gray-500 dark:text-gray-400">Add image URLs to display product images</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Add image URLs to display product images
+            </p>
           </div>
 
           {/* Status Toggles */}
@@ -2261,9 +2763,8 @@ export default function EditInventoryItemPage() {
               <Archive className="w-5 h-5 text-indigo-500" />
               Status
             </h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Active */}
               <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors">
                 <input
                   type="checkbox"
@@ -2274,12 +2775,15 @@ export default function EditInventoryItemPage() {
                   className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 />
                 <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Active</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Item is available for sale</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Active
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Item is available for sale
+                  </p>
                 </div>
               </label>
 
-              {/* Featured */}
               <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors">
                 <input
                   type="checkbox"
@@ -2293,11 +2797,12 @@ export default function EditInventoryItemPage() {
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
                     <Star className="w-4 h-4 text-yellow-500" /> Featured
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Show in featured section</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Show in featured section
+                  </p>
                 </div>
               </label>
 
-              {/* Digital */}
               <label className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 transition-colors">
                 <input
                   type="checkbox"
@@ -2311,57 +2816,13 @@ export default function EditInventoryItemPage() {
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1">
                     <Globe className="w-4 h-4 text-green-500" /> Digital
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Digital product (no shipping)</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Digital product (no shipping)
+                  </p>
                 </div>
               </label>
             </div>
           </div>
-
-          {/* Barcode Display */}
-          {barcodeInfo && barcodeInfo.isGenerated && (
-            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-              <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    {barcodeInfo.barcodeUrl && (
-                      <img src={barcodeInfo.barcodeUrl} alt="Barcode" className="h-12" />
-                    )}
-                    {barcodeInfo.qrCodeUrl && (
-                      <img src={barcodeInfo.qrCodeUrl} alt="QR Code" className="h-12" />
-                    )}
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">Barcode: {barcodeInfo.barcode}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Generated on {new Date().toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={handleCopyBarcode}
-                      className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
-                    >
-                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                      {copied ? 'Copied!' : 'Copy'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadBarcode}
-                      className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
-                    >
-                      <Download className="w-4 h-4" /> Download
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handlePrintBarcode}
-                      className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-1"
-                    >
-                      <Printer className="w-4 h-4" /> Print
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Form Actions */}
           <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -2375,7 +2836,12 @@ export default function EditInventoryItemPage() {
             </button>
             <button
               type="submit"
-              disabled={submitting || success || !selectedBusinessUnitId || selectedBusinessUnitId === 'default' || businessUnits.length === 0}
+              disabled={
+                submitting ||
+                success ||
+                !isValidBusinessUnitId(selectedBusinessUnitId) ||
+                businessUnits.length === 0
+              }
               className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
             >
               {submitting ? (
@@ -2397,21 +2863,31 @@ export default function EditInventoryItemPage() {
             </button>
           </div>
 
-          {/* Form Footer Info */}
+          {/* Footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
             <span className="flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'bg-green-500' : 'bg-yellow-500'
-              }`} />
-              {selectedBusinessUnitId && selectedBusinessUnitId !== 'default' ? 'Business unit selected' : 'Select business unit'}
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isValidBusinessUnitId(selectedBusinessUnitId)
+                    ? 'bg-green-500'
+                    : 'bg-yellow-500'
+                }`}
+              />
+              {isValidBusinessUnitId(selectedBusinessUnitId)
+                ? 'Business unit selected'
+                : 'Select business unit'}
             </span>
-            <span className="flex items-center gap-2">
-              <CheckCircle className={`w-3 h-3 ${formData.name ? 'text-green-500' : 'text-gray-400'}`} />
-              {formData.name ? 'Name provided' : 'Name required'}
-            </span>
-            <span>
-              ID: {id?.slice(0, 8)}...
-            </span>
+            {formData.barcode && (
+              <span className="flex items-center gap-2">
+                <Barcode className="w-3 h-3" /> Barcode set
+              </span>
+            )}
+            {barcodeInfo?.qrCodeUrl && (
+              <span className="flex items-center gap-2 text-indigo-500">
+                <QrCode className="w-3 h-3" /> QR ready
+              </span>
+            )}
+            <span>ID: {id?.slice(0, 8)}...</span>
           </div>
         </form>
       </div>

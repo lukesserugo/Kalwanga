@@ -34,15 +34,35 @@ interface CreateSaleData {
   cashRegisterSessionId?: string;
   tipAmount?: number;
   loyaltyPointsUsed?: number;
+  /**
+   * Optional client-supplied key. When present, a retry with the same
+   * key returns the original sale instead of creating a duplicate.
+   */
+  idempotencyKey?: string;
 }
 
+/**
+ * Payment data for cart-based checkout. Extended to carry the fields
+ * the controller passes through from `cartCheckoutSchema`:
+ *   - `customerId` — if the cart has no customer, use this one.
+ *   - `discount`   — applied in addition to the cart's own discount.
+ *   - `notes`      — if provided, replaces the default "Checkout from cart: …" note.
+ */
 interface SalePaymentData {
   paymentMethod: string;
   paidAmount: number;
+  customerId?: string;
+  discount?: number;
+  notes?: string;
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
   tipAmount?: number;
   applyLoyaltyPoints?: boolean;
+  /**
+   * Optional client-supplied key. When present, a retry with the same
+   * key returns the original sale instead of creating a duplicate.
+   */
+  idempotencyKey?: string;
 }
 
 interface SalesStatsResult {
@@ -72,6 +92,41 @@ interface RefundItemInput {
   reason?: string;
 }
 
+/**
+ * Loyalty program constants.
+ * 1 point = LOYALTY_POINT_VALUE dollars of discount.
+ * Earn rate: 1 point per LOYALTY_EARN_DIVISOR dollars spent.
+ */
+const LOYALTY_POINT_VALUE = 0.1;
+const LOYALTY_EARN_DIVISOR = 10;
+const DEFAULT_REORDER_POINT = 10;
+
+// ============================================
+// PRISMA ERROR GUARDS
+// ============================================
+
+/**
+ * Duck-typed guard for Prisma P2002 (unique-constraint) errors.
+ *
+ * We can't use `instanceof Prisma.PrismaClientKnownRequestError`
+ * because the generated client under a custom output path can
+ * produce a class identity that differs from the one TypeScript
+ * sees through the barrel import — the narrow silently fails and
+ * `catch (error)` stays `unknown`.
+ *
+ * The runtime contract for P2002 is stable: `code === 'P2002'` and
+ * `meta.target` names the colliding columns.
+ */
+function isPrismaUniqueConstraintError(
+  err: unknown,
+): err is { code: 'P2002'; meta?: { target?: unknown } } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'P2002'
+  );
+}
+
 // ============================================
 // SALE SERVICE CLASS
 // ============================================
@@ -87,6 +142,64 @@ export class SaleService extends BaseService {
       },
       orderBy: { openedAt: 'desc' },
     });
+  }
+
+  // --------------------------------------------
+  // IDEMPOTENCY HELPERS
+  // --------------------------------------------
+
+  /**
+   * Return the sale that already owns this idempotency key, if any.
+   * Used as the fast path before opening a transaction.
+   */
+  private async findSaleByIdempotencyKey(idempotencyKey?: string) {
+    if (!idempotencyKey) return null;
+    return this.prisma.sale.findUnique({
+      where: { idempotencyKey },
+    });
+  }
+
+  /**
+   * Race-safe wrapper. Runs the transaction-producing function `fn`,
+   * and if Prisma reports a unique-constraint violation (P2002) on
+   * `idempotencyKey` — i.e. another request with the same key won the
+   * race — returns the winner's sale instead of surfacing the error.
+   *
+   * P2002s on any other column are re-thrown untouched.
+   */
+  private async withIdempotency<T extends { id: string }>(
+    idempotencyKey: string | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      if (idempotencyKey && isPrismaUniqueConstraintError(error)) {
+        const target = error.meta?.target;
+        const isIdempotencyCollision =
+          Array.isArray(target)
+            ? target.includes('idempotencyKey')
+            : target === 'idempotencyKey' ||
+              target === 'sales_idempotencyKey_key';
+
+        if (isIdempotencyCollision) {
+          const existing = await this.prisma.sale.findUnique({
+            where: { idempotencyKey },
+          });
+          if (existing) {
+            logger.info(
+              `Idempotent replay: returning existing sale ${existing.id} for key ${idempotencyKey}`,
+            );
+            // Two-step cast: `existing` is a concrete `Sale`, and
+            // every caller of `withIdempotency` passes a callback
+            // that returns a `Sale`. TypeScript can't prove the
+            // generic `T` is `Sale`, so we widen through `unknown`.
+            return existing as unknown as T;
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   /**
@@ -185,7 +298,10 @@ export class SaleService extends BaseService {
 
       if (inventory) {
         const newQuantity = inventory.quantity - item.quantity;
-        const newReserved = Math.max(0, inventory.reserved - Math.min(item.quantity, inventory.reserved));
+        const newReserved = Math.max(
+          0,
+          inventory.reserved - Math.min(item.quantity, inventory.reserved)
+        );
 
         await tx.inventory.update({
           where: { id: inventory.id },
@@ -213,12 +329,20 @@ export class SaleService extends BaseService {
           },
         });
 
-        // Check for low stock alert
-        if (newQuantity <= inventory.reorderPoint) {
+        // Check for low stock alert (guard against null reorderPoint)
+        const reorderPoint = inventory.reorderPoint ?? DEFAULT_REORDER_POINT;
+        if (newQuantity <= reorderPoint) {
           try {
+            const product = await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { name: true },
+            });
+
             await notificationService.createNotification({
               title: 'Low Stock Alert',
-              message: `Product ${item.productId} is running low. Current stock: ${newQuantity}`,
+              message: `${
+                product?.name || item.productId
+              } is running low. Current stock: ${newQuantity}, Reorder point: ${reorderPoint}`,
               type: 'INVENTORY',
               userId: userId,
               businessUnitId: businessUnitId,
@@ -273,7 +397,7 @@ export class SaleService extends BaseService {
     receiptNumber: string,
     loyaltyPointsUsed: number = 0
   ): Promise<void> {
-    const loyaltyPointsEarned = Math.floor(total / 10);
+    const loyaltyPointsEarned = Math.floor(total / LOYALTY_EARN_DIVISOR);
 
     const customer = await tx.customer.findUnique({
       where: { id: customerId },
@@ -390,7 +514,7 @@ export class SaleService extends BaseService {
   // ============================================
   // PUBLIC METHODS
   // ============================================
-  
+
   /**
    * Get all sales with pagination and filters
    */
@@ -827,9 +951,9 @@ export class SaleService extends BaseService {
       }
 
       const totalQuantity = sale.items.reduce((sum: number, item: any) => sum + item.quantity, 0);
-      const totalReturns = sale.returns?.reduce((sum: number, r: any) => 
+      const totalReturns = sale.returns?.reduce((sum: number, r: any) =>
         sum + r.items.reduce((s: number, i: any) => s + i.quantity, 0), 0) || 0;
-      const totalRefunds = sale.refunds?.reduce((sum: number, r: any) => 
+      const totalRefunds = sale.refunds?.reduce((sum: number, r: any) =>
         sum + r.items.reduce((s: number, i: any) => s + i.quantity, 0), 0) || 0;
 
       return {
@@ -958,7 +1082,13 @@ export class SaleService extends BaseService {
   }
 
   /**
-   * Create a new sale (legacy direct sale)
+   * Create a new sale (legacy direct sale).
+   *
+   * Idempotent when `data.idempotencyKey` is provided:
+   *   - If a sale already exists with that key, it is returned unchanged.
+   *   - Otherwise, the transaction runs and the key is stored on the sale.
+   *   - Concurrent retries with the same key are collapsed via the
+   *     unique index + P2002 catch in `withIdempotency`.
    */
   async createSale(data: CreateSaleData, userId: string) {
     try {
@@ -972,131 +1102,160 @@ export class SaleService extends BaseService {
         throw new AppError('Payment method is required', 400);
       }
 
-      return await this.prisma.$transaction(async (tx: any) => {
-        await this.validateStock(tx, data.items, data.businessUnitId);
-
-        // ✅ Auto-detect the active shift session for this user
-        const activeSession = await this.findActiveSession(
-          tx,
-          userId,
-          data.businessUnitId
+      // Fast path: same key already processed — return the original sale.
+      const existing = await this.findSaleByIdempotencyKey(data.idempotencyKey);
+      if (existing) {
+        logger.info(
+          `Idempotent createSale: returning existing sale ${existing.id}`,
         );
+        return existing;
+      }
 
-        const cashRegisterId =
-          data.cashRegisterId || activeSession?.cashRegisterId || null;
-        const cashRegisterSessionId =
-          data.cashRegisterSessionId || activeSession?.id || null;
+      return await this.withIdempotency(data.idempotencyKey, () =>
+        this.prisma.$transaction(async (tx: any) => {
+          await this.validateStock(tx, data.items, data.businessUnitId);
 
-        const receiptNumber = generateReceiptNumber();
-        const subtotal = calculateTotal(data.items);
-        const taxRate = data.taxRate || 0;
-        const tax = calculateTax(subtotal, taxRate);
-        const discount = data.discount || 0;
-        const tipAmount = data.tipAmount || 0;
-        const loyaltyDiscount = data.loyaltyPointsUsed
-          ? data.loyaltyPointsUsed * 0.1
-          : 0;
-        const total = subtotal + tax - discount - loyaltyDiscount + tipAmount;
-        const paidAmount = data.paidAmount || total;
-        const changeAmount = Math.max(0, paidAmount - total);
-
-        const sale = await tx.sale.create({
-          data: {
-            receiptNumber,
-            subtotal,
-            tax,
-            discount: discount + loyaltyDiscount,
-            total,
-            paidAmount,
-            changeAmount,
-            notes: data.notes,
-            businessUnitId: data.businessUnitId,
+          // ✅ Auto-detect the active shift session for this user
+          const activeSession = await this.findActiveSession(
+            tx,
             userId,
-            customerId: data.customerId,
-            cashRegisterId,               // ✅ auto-linked
-            cashRegisterSessionId,        // ✅ auto-linked
-            status: 'COMPLETED',
-            saleDate: new Date(),
-          },
-        });
+            data.businessUnitId
+          );
 
-        for (const item of data.items) {
-          const product = await tx.product.findUnique({
-            where: { id: item.productId },
-          });
-          if (!product) {
-            throw new AppError(`Product ${item.productId} not found`, 404);
-          }
+          const cashRegisterId =
+            data.cashRegisterId || activeSession?.cashRegisterId || null;
+          const cashRegisterSessionId =
+            data.cashRegisterSessionId || activeSession?.id || null;
 
-          await tx.saleItem.create({
+          const receiptNumber = generateReceiptNumber();
+          const subtotal = calculateTotal(data.items);
+          const taxRate = data.taxRate || 0;
+          const tax = calculateTax(subtotal, taxRate);
+          const discount = data.discount || 0;
+          const tipAmount = data.tipAmount || 0;
+          const loyaltyDiscount = data.loyaltyPointsUsed
+            ? data.loyaltyPointsUsed * LOYALTY_POINT_VALUE
+            : 0;
+          const total = subtotal + tax - discount - loyaltyDiscount + tipAmount;
+
+          // ✅ Zero-paid is legitimate (loyalty-only / fully-discounted).
+          // Use explicit undefined/null check instead of `|| total` so 0
+          // is honoured.
+          const paidAmount =
+            data.paidAmount !== undefined && data.paidAmount !== null
+              ? data.paidAmount
+              : total;
+          const changeAmount = Math.max(0, paidAmount - total);
+
+          const sale = await tx.sale.create({
             data: {
-              saleId: sale.id,
-              productId: item.productId,
-              variantId: item.variantId || null,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              discount: item.discount || 0,
-              total: item.quantity * item.unitPrice - (item.discount || 0),
-              notes: item.notes,
+              receiptNumber,
+              subtotal,
+              tax,
+              discount: discount + loyaltyDiscount,
+              total,
+              paidAmount,
+              changeAmount,
+              notes: data.notes,
+              businessUnitId: data.businessUnitId,
+              userId,
+              customerId: data.customerId,
+              cashRegisterId,
+              cashRegisterSessionId,
+              status: 'COMPLETED',
+              saleDate: new Date(),
+              // ✅ Persist the client key so retries hit the unique index
+              idempotencyKey: data.idempotencyKey ?? null,
             },
           });
-        }
 
-        await this.updateInventoryForSale(
-          tx,
-          data.items,
-          data.businessUnitId,
-          userId,
-          sale.id,
-          receiptNumber
-        );
+          for (const item of data.items) {
+            const product = await tx.product.findUnique({
+              where: { id: item.productId },
+            });
+            if (!product) {
+              throw new AppError(`Product ${item.productId} not found`, 404);
+            }
 
-        await this.createSalePayment(tx, sale.id, userId, {
-          paymentMethod: data.paymentMethod,
-          paidAmount: paidAmount,
-          cashRegisterId,               // ✅ auto-linked
-          cashRegisterSessionId,        // ✅ auto-linked
-          reference: `PAY-${receiptNumber}`,
-        });
+            await tx.saleItem.create({
+              data: {
+                saleId: sale.id,
+                productId: item.productId,
+                variantId: item.variantId || null,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                discount: item.discount || 0,
+                total: item.quantity * item.unitPrice - (item.discount || 0),
+                notes: item.notes,
+              },
+            });
+          }
 
-        if (data.customerId) {
-          await this.updateCustomerLoyalty(
+          await this.updateInventoryForSale(
             tx,
-            data.customerId,
+            data.items,
+            data.businessUnitId,
+            userId,
+            sale.id,
+            receiptNumber
+          );
+
+          await this.createSalePayment(tx, sale.id, userId, {
+            paymentMethod: data.paymentMethod,
+            paidAmount: paidAmount,
+            cashRegisterId,
+            cashRegisterSessionId,
+            reference: `PAY-${receiptNumber}`,
+          });
+
+          if (data.customerId) {
+            await this.updateCustomerLoyalty(
+              tx,
+              data.customerId,
+              sale.id,
+              userId,
+              total,
+              receiptNumber,
+              data.loyaltyPointsUsed || 0
+            );
+          }
+
+          await this.createAuditLogWithTx(
+            tx,
+            'CREATE',
             sale.id,
             userId,
-            total,
             receiptNumber,
-            data.loyaltyPointsUsed || 0
+            {
+              total,
+              items: data.items.length,
+              paymentMethod: data.paymentMethod,
+              cashRegisterSessionId,
+              idempotencyKey: data.idempotencyKey ?? null,
+            },
+            'INFO'
           );
-        }
 
-        await this.createAuditLogWithTx(
-          tx,
-          'CREATE',
-          sale.id,
-          userId,
-          receiptNumber,
-          {
-            total,
-            items: data.items.length,
-            paymentMethod: data.paymentMethod,
-            cashRegisterSessionId,      // ✅ log the link
-          },
-          'INFO'
-        );
+          this.safeEmitNewSale(sale, data.businessUnitId);
 
-        this.safeEmitNewSale(sale, data.businessUnitId);
-
-        return sale;
-      });
+          return sale;
+        })
+      );
     } catch (error) {
       this.handleError(error, 'SaleService.createSale');
     }
   }
 
   /**
-   * Create sale from cart checkout
+   * Create sale from cart checkout.
+   *
+   * `paymentData` may include `customerId`, `discount`, and `notes` — the
+   * controller passes them through from `cartCheckoutSchema`. When present,
+   * they override the corresponding cart values (or, for notes, replace the
+   * default "Checkout from cart: …" note).
+   *
+   * Idempotent when `paymentData.idempotencyKey` is provided. Same
+   * semantics as `createSale`.
    */
   async createSaleFromCart(
     cartId: string,
@@ -1106,156 +1265,231 @@ export class SaleService extends BaseService {
     try {
       if (!cartId) throw new AppError('Cart ID is required', 400);
 
-      return await this.prisma.$transaction(async (tx: any) => {
-        const cart = await tx.cart.findUnique({
-          where: { id: cartId },
-          include: {
-            items: {
-              include: {
-                product: { include: { inventory: true } },
-                variant: true,
-              },
-            },
-            customer: true,
-          },
-        });
-
-        if (!cart) throw new AppError('Cart not found', 404);
-        if (cart.items.length === 0) throw new AppError('Cart is empty', 400);
-
-        // ✅ Auto-link to the active shift session
-        const activeSession = await this.findActiveSession(tx, userId, cart.businessUnitId);
-        const cashRegisterId = paymentData.cashRegisterId || activeSession?.cashRegisterId || null;
-        const cashRegisterSessionId = paymentData.cashRegisterSessionId || activeSession?.id || null;
-
-        let total = cart.total;
-        let loyaltyPointsUsed = 0;
-        let loyaltyDiscount = 0;
-
-        if (paymentData.applyLoyaltyPoints && cart.customerId) {
-          const customer = await tx.customer.findUnique({
-            where: { id: cart.customerId },
-          });
-
-          if (customer && (customer.loyaltyPoints || 0) > 0) {
-            const maxPoints = Math.min(
-              customer.loyaltyPoints || 0,
-              Math.floor(total / 0.1)
-            );
-            loyaltyPointsUsed = maxPoints;
-            loyaltyDiscount = maxPoints * 0.1;
-            total -= loyaltyDiscount;
-          }
-        }
-
-        const saleItems = cart.items.map((item: any) => ({
-          productId: item.productId,
-          variantId: item.variantId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        }));
-        await this.validateStock(tx, saleItems, cart.businessUnitId);
-
-        const receiptNumber = generateReceiptNumber();
-        const paidAmount = paymentData.paidAmount || total;
-        const changeAmount = Math.max(0, paidAmount - total);
-
-        const sale = await tx.sale.create({
-          data: {
-            receiptNumber,
-            subtotal: cart.subtotal,
-            tax: cart.tax,
-            discount: cart.discount + loyaltyDiscount,
-            total,
-            paidAmount,
-            changeAmount,
-            notes: `Checkout from cart: ${cartId}`,
-            businessUnitId: cart.businessUnitId,
-            userId,
-            customerId: cart.customerId,
-            cashRegisterId,                 // ✅ auto-linked
-            cashRegisterSessionId,          // ✅ auto-linked
-            status: 'COMPLETED',
-            saleDate: new Date(),
-          },
-        });
-
-        for (const cartItem of cart.items) {
-          await tx.saleItem.create({
-            data: {
-              saleId: sale.id,
-              productId: cartItem.productId,
-              variantId: cartItem.variantId || null,
-              quantity: cartItem.quantity,
-              unitPrice: cartItem.unitPrice,
-              discount: cartItem.discount || 0,
-              total: cartItem.total,
-              notes: cartItem.notes,
-            },
-          });
-        }
-
-        await this.updateInventoryForSale(
-          tx,
-          saleItems,
-          cart.businessUnitId,
-          userId,
-          sale.id,
-          receiptNumber
+      // Fast path: same key already processed — return the original sale.
+      const existing = await this.findSaleByIdempotencyKey(
+        paymentData.idempotencyKey,
+      );
+      if (existing) {
+        logger.info(
+          `Idempotent createSaleFromCart: returning existing sale ${existing.id}`,
         );
+        return existing;
+      }
 
-        await this.createSalePayment(tx, sale.id, userId, {
-          paymentMethod: paymentData.paymentMethod,
-          paidAmount: paidAmount,
-          cashRegisterId,                 // ✅ auto-linked
-          cashRegisterSessionId,          // ✅ auto-linked
-          reference: `PAY-${receiptNumber}`,
-        });
+      return await this.withIdempotency(paymentData.idempotencyKey, () =>
+        this.prisma.$transaction(async (tx: any) => {
+          const cart = await tx.cart.findUnique({
+            where: { id: cartId },
+            include: {
+              items: {
+                include: {
+                  product: { include: { inventory: true } },
+                  variant: true,
+                },
+              },
+              customer: true,
+            },
+          });
 
-        if (cart.customerId) {
-          await this.updateCustomerLoyalty(
+          if (!cart) throw new AppError('Cart not found', 404);
+          if (cart.items.length === 0) throw new AppError('Cart is empty', 400);
+
+          // Reject checkout of a cart left in a non-ACTIVE state (e.g. after
+          // a crash or manual DB edit). `Cart.status` defaults to 'ACTIVE'.
+          if (cart.status && cart.status !== 'ACTIVE') {
+            throw new AppError(
+              `Cart is not active (status: ${cart.status}). Please start a new cart.`,
+              400
+            );
+          }
+
+          // ✅ Auto-link to the active shift session.
+          // Require either an explicit session or an open shift for this user.
+          const activeSession = await this.findActiveSession(
             tx,
-            cart.customerId,
+            userId,
+            cart.businessUnitId          );
+          const cashRegisterId =
+            paymentData.cashRegisterId || activeSession?.cashRegisterId || null;
+          const cashRegisterSessionId =
+            paymentData.cashRegisterSessionId || activeSession?.id || null;
+
+          if (!cashRegisterSessionId) {
+            throw new AppError(
+              'No open shift. Please open a shift before making a sale.',
+              400
+            );
+          }
+
+          // Resolve customer: explicit paymentData.customerId wins, else the
+          // cart's customer, else none.
+          const effectiveCustomerId =
+            paymentData.customerId || cart.customerId || null;
+
+          // Resolve extra discount from paymentData (in addition to cart.discount).
+          const extraDiscount =
+            paymentData.discount && paymentData.discount > 0
+              ? paymentData.discount
+              : 0;
+
+          let total = Math.max(0, cart.total - extraDiscount);
+          let loyaltyPointsUsed = 0;
+          let loyaltyDiscount = 0;
+
+          if (paymentData.applyLoyaltyPoints && effectiveCustomerId) {
+            const customer = await tx.customer.findUnique({
+              where: { id: effectiveCustomerId },
+            });
+
+            if (customer && (customer.loyaltyPoints || 0) > 0) {
+              // 1 point = $0.10 discount. Can't discount below zero.
+              const maxPointsByBalance = customer.loyaltyPoints || 0;
+              const maxPointsByTotal = Math.floor(total / LOYALTY_POINT_VALUE);
+
+              loyaltyPointsUsed = Math.max(
+                0,
+                Math.min(maxPointsByBalance, maxPointsByTotal)
+              );
+              loyaltyDiscount =
+                Math.round(loyaltyPointsUsed * LOYALTY_POINT_VALUE * 100) / 100;
+              total = Math.max(0, total - loyaltyDiscount);
+            }
+          }
+
+          const saleItems = cart.items.map((item: any) => ({
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+          }));
+          await this.validateStock(tx, saleItems, cart.businessUnitId);
+
+          const receiptNumber = generateReceiptNumber();
+
+          // ✅ Zero-paid is legitimate.
+          const paidAmount =
+            paymentData.paidAmount !== undefined && paymentData.paidAmount !== null
+              ? paymentData.paidAmount
+              : total;
+          const changeAmount = Math.max(0, paidAmount - total);
+
+          const saleNotes =
+            paymentData.notes && paymentData.notes.trim().length > 0
+              ? paymentData.notes
+              : `Checkout from cart: ${cartId}`;
+
+          const sale = await tx.sale.create({
+            data: {
+              receiptNumber,
+              subtotal: cart.subtotal,
+              tax: cart.tax,
+              discount: cart.discount + extraDiscount + loyaltyDiscount,
+              total,
+              paidAmount,
+              changeAmount,
+              notes: saleNotes,
+              businessUnitId: cart.businessUnitId,
+              userId,
+              customerId: effectiveCustomerId,
+              cashRegisterId,
+              cashRegisterSessionId,
+              status: 'COMPLETED',
+              saleDate: new Date(),
+              // ✅ Persist the client key so retries hit the unique index
+              idempotencyKey: paymentData.idempotencyKey ?? null,
+            },
+          });
+
+          for (const cartItem of cart.items) {
+            await tx.saleItem.create({
+              data: {
+                saleId: sale.id,
+                productId: cartItem.productId,
+                variantId: cartItem.variantId || null,
+                quantity: cartItem.quantity,
+                unitPrice: cartItem.unitPrice,
+                discount: cartItem.discount || 0,
+                total: cartItem.total,
+                notes: cartItem.notes,
+              },
+            });
+          }
+
+          await this.updateInventoryForSale(
+            tx,
+            saleItems,
+            cart.businessUnitId,
+            userId,
+            sale.id,
+            receiptNumber
+          );
+
+          await this.createSalePayment(tx, sale.id, userId, {
+            paymentMethod: paymentData.paymentMethod,
+            paidAmount: paidAmount,
+            cashRegisterId,
+            cashRegisterSessionId,
+            reference: `PAY-${receiptNumber}`,
+          });
+
+          if (effectiveCustomerId) {
+            await this.updateCustomerLoyalty(
+              tx,
+              effectiveCustomerId,
+              sale.id,
+              userId,
+              total,
+              receiptNumber,
+              loyaltyPointsUsed
+            );
+          }
+
+          // Reset the cart. Zeroes the totals, clears the customer, wipes
+          // notes, and restores the ACTIVE status.
+          await tx.cartItem.deleteMany({ where: { cartId } });
+          await tx.cart.update({
+            where: { id: cartId },
+            data: {
+              subtotal: 0,
+              tax: 0,
+              discount: 0,
+              total: 0,
+              customerId: null,
+              notes: null,
+              status: 'ACTIVE',
+              updatedAt: new Date(),
+              // Uncomment if present on your Cart model:
+              // loyaltyPointsUsed: 0,
+              // loyaltyDiscount: 0,
+              // promotionCode: null,
+              // promotionDiscount: 0,
+            },
+          });
+
+          await this.createAuditLogWithTx(
+            tx,
+            'CREATE',
             sale.id,
             userId,
-            total,
             receiptNumber,
-            loyaltyPointsUsed
+            {
+              total,
+              items: cart.items.length,
+              cartId,
+              paymentMethod: paymentData.paymentMethod,
+              cashRegisterSessionId,
+              extraDiscount,
+              loyaltyPointsUsed,
+              idempotencyKey: paymentData.idempotencyKey ?? null,
+            },
+            'INFO'
           );
-        }
 
-        await tx.cartItem.deleteMany({ where: { cartId } });
-        await tx.cart.update({
-          where: { id: cartId },
-          data: {
-            subtotal: 0,
-            tax: 0,
-            discount: 0,
-            total: 0,
-            customerId: null,
-          },
-        });
+          this.safeEmitNewSale(sale, cart.businessUnitId);
 
-        await this.createAuditLogWithTx(
-          tx,
-          'CREATE',
-          sale.id,
-          userId,
-          receiptNumber,
-          {
-            total,
-            items: cart.items.length,
-            cartId,
-            paymentMethod: paymentData.paymentMethod,
-            cashRegisterSessionId,        // ✅ log the link
-          },
-          'INFO'
-        );
-
-        this.safeEmitNewSale(sale, cart.businessUnitId);
-
-        return sale;
-      });
+          return sale;
+        })
+      );
     } catch (error) {
       this.handleError(error, 'SaleService.createSaleFromCart');
     }
@@ -1302,6 +1536,13 @@ export class SaleService extends BaseService {
           throw new AppError('Cannot return a refunded sale', 400);
         }
 
+        if (['CANCELLED', 'DELETED', 'VOID'].includes(sale.status)) {
+          throw new AppError(
+            `Cannot return a ${sale.status.toLowerCase()} sale`,
+            400
+          );
+        }
+
         let returnItems = data.items || sale.items.map((item: any) => ({
           productId: item.productId,
           variantId: item.variantId,
@@ -1315,7 +1556,7 @@ export class SaleService extends BaseService {
 
         for (const item of returnItems) {
           const saleItem = sale.items.find(
-            (si: any) => si.productId === item.productId && 
+            (si: any) => si.productId === item.productId &&
             (si.variantId === item.variantId || (!si.variantId && !item.variantId))
           );
 
@@ -1330,12 +1571,13 @@ export class SaleService extends BaseService {
             );
           }
 
-          const itemTotal = (saleItem.unitPrice * item.quantity) - 
+          const itemTotal = (saleItem.unitPrice * item.quantity) -
             ((saleItem.discount || 0) / saleItem.quantity * item.quantity);
           returnSubtotal += itemTotal;
         }
 
-        const taxProportion = sale.tax / sale.subtotal;
+        const taxProportion =
+          sale.subtotal > 0 ? sale.tax / sale.subtotal : 0;
         returnTax = returnSubtotal * taxProportion;
         returnTotal = returnSubtotal + returnTax;
 
@@ -1362,7 +1604,7 @@ export class SaleService extends BaseService {
 
         for (const item of returnItems) {
           const saleItem = sale.items.find(
-            (si: any) => si.productId === item.productId && 
+            (si: any) => si.productId === item.productId &&
             (si.variantId === item.variantId || (!si.variantId && !item.variantId))
           );
 
@@ -1513,9 +1755,28 @@ export class SaleService extends BaseService {
           throw new AppError('Cannot refund a returned sale', 400);
         }
 
-        let refundTotal = amount || sale.total;
-        let refundSubtotal = (refundTotal / sale.total) * sale.subtotal;
-        let refundTax = (refundTotal / sale.total) * sale.tax;
+        if (['CANCELLED', 'DELETED', 'VOID'].includes(sale.status)) {
+          throw new AppError(
+            `Cannot refund a ${sale.status.toLowerCase()} sale`,
+            400
+          );
+        }
+
+        const refundTotal = amount ?? sale.total;
+        if (refundTotal <= 0) {
+          throw new AppError('Refund amount must be greater than zero', 400);
+        }
+        if (refundTotal > sale.total) {
+          throw new AppError(
+            `Refund amount cannot exceed sale total (${sale.total})`,
+            400
+          );
+        }
+
+        // Guard against divide-by-zero when the sale was fully discounted.
+        const ratio = sale.total > 0 ? refundTotal / sale.total : 0;
+        const refundSubtotal = ratio * sale.subtotal;
+        const refundTax = ratio * sale.tax;
 
         const refundNumber = `REF-${Date.now()}`;
         const refundRecord = await tx.refund.create({
@@ -1541,7 +1802,7 @@ export class SaleService extends BaseService {
         if (items) {
           for (const item of items) {
             const saleItem = sale.items.find(
-              (si: any) => si.productId === item.productId && 
+              (si: any) => si.productId === item.productId &&
               (si.variantId === item.variantId || (!si.variantId && !item.variantId))
             );
 
@@ -3229,32 +3490,30 @@ export class SaleService extends BaseService {
   }
 
   /**
-   * Get abandoned carts
+   * Get abandoned carts.
+   *
+   * A cart is considered abandoned when:
+   *   - it has at least one item,
+   *   - its total >= minValue (default 0),
+   *   - and it hasn't been updated since `olderThan`.
+   *
+   * The controller passes `olderThan` as `now - hours`. Anything updated
+   * BEFORE that moment is abandoned; anything updated AFTER is still live.
    */
   async getAbandonedCarts(params: {
     businessUnitId?: string;
-    startDate?: Date;
-    endDate?: Date;
+    olderThan?: Date;
     minValue?: number;
   }) {
     try {
-      const {
-        businessUnitId,
-        startDate,
-        endDate,
-        minValue = 0,
-      } = params;
+      const { businessUnitId, olderThan, minValue = 0 } = params;
 
       const where: any = {
         total: { gte: minValue },
         items: { some: {} },
       };
       if (businessUnitId) where.businessUnitId = businessUnitId;
-      if (startDate || endDate) {
-        where.updatedAt = {};
-        if (startDate) where.updatedAt.gte = startDate;
-        if (endDate) where.updatedAt.lte = endDate;
-      }
+      if (olderThan) where.updatedAt = { lt: olderThan };
 
       const carts = await this.prisma.cart.findMany({
         where,
@@ -3295,7 +3554,7 @@ export class SaleService extends BaseService {
           },
         },
         orderBy: { updatedAt: 'desc' },
-        take: 50,
+        take: 200,
       });
 
       return carts.map((cart: any) => ({

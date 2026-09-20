@@ -3,10 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Save, X, Building, MapPin, Phone, Mail, Loader2 } from 'lucide-react';
-import { businessUnitService, setBusinessUnitId } from '../../services/businessUnitService';
+import {
+  businessUnitService,
+  setBusinessUnitId,
+} from '../../services/businessUnitService';
 import { companyService } from '../../services/companyService';
 import { toast } from '../../utils/toast-manager';
-import type { BusinessUnit, BusinessUnitType } from '../../types/businessUnit';
+import type {
+  BusinessUnit,
+  BusinessUnitType,
+  CreateBusinessUnitDto,
+  UpdateBusinessUnitDto,
+} from '../../types/businessUnit';
 
 // Add interface for props with optional id
 interface BusinessUnitFormProps {
@@ -51,25 +59,25 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
   useEffect(() => {
     const loadCompanyId = async () => {
       try {
-        // Try to get existing company ID
         let id = companyService.getCompanyId();
         console.log('📦 Company ID from storage:', id);
-        
-        // If no valid company ID, try to get from localStorage
+
         if (!id || id === 'default-company-id' || id.length < 10) {
-          // Try localStorage directly
           try {
             const storedCompany = localStorage.getItem('companyId');
-            if (storedCompany && storedCompany !== 'default-company-id' && storedCompany.length >= 10) {
+            if (
+              storedCompany &&
+              storedCompany !== 'default-company-id' &&
+              storedCompany.length >= 10
+            ) {
               id = storedCompany;
               console.log('📦 Company ID from localStorage:', id);
             }
           } catch (_e) {
-            // Ignore
+            /* ignore */
           }
         }
-        
-        // If still no valid ID, try to fetch companies
+
         if (!id || id === 'default-company-id' || id.length < 10) {
           try {
             const companies = await companyService.getAll();
@@ -82,8 +90,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
             console.warn('Failed to fetch companies:', fetchError);
           }
         }
-        
-        // If we have a valid ID, set it
+
         if (id && id !== 'default-company-id' && id.length >= 10) {
           setCompanyId(id);
         } else {
@@ -93,7 +100,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
         console.error('Failed to load company ID:', error);
       }
     };
-    
+
     loadCompanyId();
   }, []);
 
@@ -113,7 +120,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
         address: data.address || null,
         phone: data.phone || null,
         email: data.email || null,
-        type: ((data as any).type as BusinessUnitType) || ('STORE' as BusinessUnitType),
+        type:
+          ((data as any).type as BusinessUnitType) ||
+          ('STORE' as BusinessUnitType),
         isActive: data.isActive !== undefined ? data.isActive : true,
       });
     } catch (error) {
@@ -124,12 +133,14 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value, type } = e.target;
-    
-    setFormData(prev => {
+
+    setFormData((prev) => {
       const newData = { ...prev };
-      
+
       if (type === 'checkbox') {
         const checked = (e.target as HTMLInputElement).checked;
         (newData as any)[name] = checked;
@@ -140,12 +151,12 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
       } else {
         (newData as any)[name] = value;
       }
-      
+
       return newData;
     });
 
     if (errors[name as keyof FormErrors]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
     }
   };
 
@@ -179,7 +190,10 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
     }
 
     // Ensure we have a company ID for create mode
-    if (!isEdit && (!companyId || companyId === 'default-company-id' || companyId.length < 10)) {
+    if (
+      !isEdit &&
+      (!companyId || companyId === 'default-company-id' || companyId.length < 10)
+    ) {
       toast.error('Company ID not available. Please select a company first.');
       console.error('❌ Invalid company ID:', companyId);
       return;
@@ -189,50 +203,49 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
 
     try {
       if (isEdit && id) {
-        // Build update payload with only defined values
-        const updatePayload: Record<string, any> = {};
-        if (formData.name) updatePayload.name = formData.name.trim();
-        if (formData.code) updatePayload.code = formData.code.trim().toUpperCase();
-        if (formData.address !== undefined) updatePayload.address = formData.address;
-        if (formData.phone !== undefined) updatePayload.phone = formData.phone;
-        if (formData.email !== undefined) updatePayload.email = formData.email;
-        if (formData.type) updatePayload.type = formData.type;
-        if (formData.isActive !== undefined) updatePayload.isActive = formData.isActive;
+        const updatePayload: UpdateBusinessUnitDto = {
+          name: formData.name.trim(),
+          code: formData.code.trim().toUpperCase(),
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email,
+          type: formData.type,
+          isActive: formData.isActive !== undefined ? formData.isActive : true,
+        };
 
         console.log('📤 Updating business unit:', updatePayload);
         await businessUnitService.updateBusinessUnit(id, updatePayload);
         toast.success('Business unit updated successfully');
       } else {
-        // Create new business unit with valid company ID
-        const createPayload: Record<string, any> = {
+        const createPayload: CreateBusinessUnitDto = {
           name: formData.name.trim(),
           code: formData.code.trim().toUpperCase(),
           companyId: companyId,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email,
           isActive: formData.isActive !== undefined ? formData.isActive : true,
           type: formData.type || ('STORE' as BusinessUnitType),
         };
-        if (formData.address) createPayload.address = formData.address;
-        if (formData.phone) createPayload.phone = formData.phone;
-        if (formData.email) createPayload.email = formData.email;
 
         console.log('📤 Creating business unit with payload:', createPayload);
 
-        const result = await businessUnitService.createBusinessUnit(createPayload);
+        const result = await businessUnitService.createBusinessUnit(
+          createPayload
+        );
         console.log('✅ Business unit created:', result);
-        
-        // Save the new business unit ID using the standalone function
+
         if (result?.id && result.id !== 'default') {
           setBusinessUnitId(result.id);
           console.log('✅ Business unit ID saved to storage:', result.id);
         }
-        
+
         toast.success('Business unit created successfully');
       }
       router.push('/admin/business-units');
     } catch (error: any) {
       console.error('Failed to save business unit:', error);
-      
-      // Better error handling with validation errors
+
       if (error?.response?.data?.errors) {
         const validationErrors = error.response.data.errors;
         validationErrors.forEach((err: any) => {
@@ -243,7 +256,7 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           }
         });
       } else if (error?.message?.includes('code already exists')) {
-        setErrors(prev => ({ ...prev, code: 'This code is already taken' }));
+        setErrors((prev) => ({ ...prev, code: 'This code is already taken' }));
         toast.error('Business unit code already exists');
       } else if (error?.response?.data?.message) {
         toast.error(error.response.data.message);
@@ -279,7 +292,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
               {isEdit ? 'Edit Business Unit' : 'Create Business Unit'}
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
-              {isEdit ? 'Update business unit information' : 'Add a new business location'}
+              {isEdit
+                ? 'Update business unit information'
+                : 'Add a new business location'}
             </p>
           </div>
           <button
@@ -293,18 +308,21 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           </button>
         </div>
 
-        {/* Show company ID for debugging */}
         {!isEdit && (
           <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
             <p className="text-sm text-blue-700 dark:text-blue-300">
-              <span className="font-semibold">Company ID:</span> {companyId || 'Loading...'}
+              <span className="font-semibold">Company ID:</span>{' '}
+              {companyId || 'Loading...'}
             </p>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Business Unit Name <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -316,7 +334,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 value={formData.name}
                 onChange={handleChange}
                 className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
-                  errors.name ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  errors.name
+                    ? 'border-red-500'
+                    : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="Main Store"
                 required
@@ -330,11 +350,16 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           </div>
 
           <div>
-            <label htmlFor="code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="code"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Business Unit Code <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 font-mono">#</span>
+              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 font-mono">
+                #
+              </span>
               <input
                 id="code"
                 type="text"
@@ -342,7 +367,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 value={formData.code}
                 onChange={handleChange}
                 className={`w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
-                  errors.code ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  errors.code
+                    ? 'border-red-500'
+                    : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="STORE001"
                 required
@@ -360,7 +387,10 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           </div>
 
           <div>
-            <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="type"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Business Unit Type
             </label>
             <div className="relative">
@@ -381,7 +411,10 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           </div>
 
           <div>
-            <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="address"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Address
             </label>
             <div className="relative">
@@ -400,7 +433,10 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           </div>
 
           <div>
-            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="phone"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Phone Number
             </label>
             <div className="relative">
@@ -419,7 +455,10 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+            >
               Email Address
             </label>
             <div className="relative">
@@ -431,7 +470,9 @@ export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
                 value={formData.email || ''}
                 onChange={handleChange}
                 className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
-                  errors.email ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                  errors.email
+                    ? 'border-red-500'
+                    : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="store@example.com"
                 disabled={saving}

@@ -1,16 +1,18 @@
 'use client';
 
-import React, { Suspense, useState, useEffect, useCallback } from 'react';
+// packages/web/app/(dashboard)/admin/catalog/edit/[id]/page.tsx
+
+import React, { Suspense, useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  Lock, ArrowLeft, Loader2, AlertCircle, Save, X,
+  Lock, ArrowLeft, Loader2, AlertCircle, X,
   Eye, RefreshCw, Sun, Moon, Trash2, AlertTriangle,
-  CheckCircle, Info, Package, DollarSign, Barcode,
-  Tag, Layers, Star, ShoppingBag, TrendingUp, Calendar,
-  Edit, Copy, Check, Users, Clock, Shield, Truck,
-  ImageIcon, Link2, Wand2
+  Package, Barcode,
+  Tag, Layers, Star, Copy, Check,
+  ImageIcon, Link2,
 } from 'lucide-react';
+
 import { ProductForm } from '../../../../../components/products/ProductForm';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
@@ -19,7 +21,7 @@ import { toast } from '../../../../../utils/toast-manager';
 import { useThemeStore } from '../../../../stores/themeStore';
 
 // ============================================
-// INTERFACES
+// TYPES
 // ============================================
 
 interface ProductVariant {
@@ -40,22 +42,12 @@ interface ProductData {
   id: string;
   name: string;
   sku: string;
-  description?: string;
-  unitPrice: number;
-  costPrice?: number;
   barcode?: string;
   images: string[];
-  categoryId?: string;
-  supplierId?: string;
   isActive: boolean;
-  featured: boolean;
-  isDigital: boolean;
-  taxRate?: number;
-  weight?: number;
-  minStock?: number;
-  maxStock?: number;
-  tags: string[];
-  notes?: string;
+  unitPrice: number;
+  rating?: number;
+  reviewCount?: number;
   variants: ProductVariant[];
   inventoryId?: string;
   inventory?: {
@@ -64,35 +56,37 @@ interface ProductData {
     reserved: number;
     available?: number;
   };
-  rating?: number;
-  reviewCount?: number;
-  createdAt: string;
-  updatedAt: string;
   businessUnitId: string;
-  seo?: {
-    title?: string;
-    description?: string;
-    slug?: string;
-    keywords?: string[];
-  };
 }
 
 // ============================================
 // CONSTANTS
 // ============================================
 
-const PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 // ============================================
-// MAIN COMPONENT
+// PAGE
 // ============================================
 
 export default function EditProductPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params?.id as string;
-  const { canEdit, canManage, canDelete, isLoading: permissionLoading } = usePermission();
+
+  // `params?.id` can be `string | string[] | undefined` in Next.js.
+  // Normalise it up front so nothing downstream has to guess.
+  const rawId = params?.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+  const {
+    canEdit,
+    canManage,
+    canDelete,
+    isLoading: permissionLoading,
+  } = usePermission();
   const { isDark, toggleTheme } = useThemeStore();
+
   const [isClient, setIsClient] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,177 +96,203 @@ export default function EditProductPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
-  
-  // ✅ FIXED: Image error states
+
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
-  const [variantImageErrors, setVariantImageErrors] = useState<Record<string, boolean>>({});
+  const [variantImageErrors, setVariantImageErrors] = useState<
+    Record<string, boolean>
+  >({});
 
-  // Permission check using PermissionResource enum
-  const canEditProducts = canEdit(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
-  const canDeleteProducts = canDelete(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
+  const canEditProducts =
+    canEdit(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
+  const canDeleteProducts =
+    canDelete(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
 
-  // Set isClient to true once component mounts
+  // ============================================
+  // EFFECTS
+  // ============================================
+
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Verify product exists
+  // Redirect if the route has no id at all. Doing this in an effect
+  // avoids calling `router.push` during render, which React warns
+  // about.
+  useEffect(() => {
+    if (isClient && !id) {
+      router.push('/admin/catalog');
+    }
+  }, [isClient, id, router]);
+
+  // ============================================
+  // IMAGE HANDLERS
+  // ============================================
+
+  const handleImageError = useCallback((imageUrl: string) => {
+    setImageErrors((prev) => ({ ...prev, [imageUrl]: true }));
+  }, []);
+
+  const handleVariantImageError = useCallback((imageUrl: string) => {
+    setVariantImageErrors((prev) => ({ ...prev, [imageUrl]: true }));
+  }, []);
+
+  const getValidImage = useCallback(
+    (imageUrl: string): string => {
+      if (!imageUrl) return PLACEHOLDER_IMAGE;
+      if (imageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
+      return imageUrl;
+    },
+    [imageErrors]
+  );
+
+  const getValidVariantImage = useCallback(
+    (imageUrl: string): string => {
+      if (!imageUrl) return PLACEHOLDER_IMAGE;
+      if (variantImageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
+      return imageUrl;
+    },
+    [variantImageErrors]
+  );
+
+  // ============================================
+  // VERIFY PRODUCT
+  // ============================================
+
+  const verifyProduct = useCallback(
+    async (showLoading = true) => {
+      if (!id) {
+        // No id — the effect above handles redirect.
+        setLoading(false);
+        return;
+      }
+
+      try {
+        if (showLoading) setLoading(true);
+        setError(null);
+        setProductExists(true);
+
+        // Reset every transient per-product flag so navigating
+        // between edit routes doesn't carry stale failure markers.
+        setImageErrors({});
+        setVariantImageErrors({});
+
+        const data = await productService.getProductById(id);
+
+        if (!data || !data.id) {
+          setProductExists(false);
+          setError('Product not found');
+          return;
+        }
+
+        const mappedData: ProductData = {
+          id: data.id,
+          name: data.name,
+          sku: data.sku,
+          barcode: data.barcode || undefined,
+          images: Array.isArray(data.images) ? data.images : [],
+          isActive: data.isActive,
+          unitPrice: data.unitPrice,
+          rating: data.rating || undefined,
+          reviewCount: data.reviewCount || undefined,
+          variants: Array.isArray(data.variants)
+            ? data.variants.map((v: any) => ({
+                id: v.id || `variant_${Math.random().toString(36).slice(2)}`,
+                name: v.name || 'Unnamed Variant',
+                sku: v.sku || '',
+                price: v.price || 0,
+                costPrice: v.costPrice || undefined,
+                stock: v.stock || 0,
+                attributes: v.attributes || {},
+                isActive: v.isActive !== undefined ? v.isActive : true,
+                images: Array.isArray(v.images) ? v.images : [],
+                barcode: v.barcode || undefined,
+                inventoryId: v.inventoryId || undefined,
+              }))
+            : [],
+          inventoryId: data.inventoryId || undefined,
+          inventory: data.inventory
+            ? {
+                id: data.inventory.id,
+                quantity: data.inventory.quantity || 0,
+                reserved: data.inventory.reserved || 0,
+                available: data.inventory.available || 0,
+              }
+            : undefined,
+          businessUnitId: data.businessUnitId || 'default',
+        };
+
+        setProductData(mappedData);
+      } catch (err: any) {
+        console.error('Failed to load product:', err);
+        if (err?.response?.status === 404) {
+          setProductExists(false);
+          setError('Product not found');
+        } else {
+          setError('Failed to load product. Please try again.');
+          toast.error('Failed to load product');
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [id]
+  );
+
   useEffect(() => {
     if (isClient && id && canEditProducts) {
       verifyProduct();
     }
-  }, [isClient, id, canEditProducts]);
+  }, [isClient, id, canEditProducts, verifyProduct]);
 
   // ============================================
-  // ✅ FIXED: Image error handlers
-  // ============================================
-
-  const handleImageError = useCallback((imageUrl: string) => {
-    setImageErrors(prev => ({ ...prev, [imageUrl]: true }));
-  }, []);
-
-  const handleVariantImageError = useCallback((imageUrl: string) => {
-    setVariantImageErrors(prev => ({ ...prev, [imageUrl]: true }));
-  }, []);
-
-  const getValidImage = useCallback((imageUrl: string): string => {
-    if (!imageUrl) return PLACEHOLDER_IMAGE;
-    if (imageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
-    return imageUrl;
-  }, [imageErrors]);
-
-  const getValidVariantImage = useCallback((imageUrl: string): string => {
-    if (!imageUrl) return PLACEHOLDER_IMAGE;
-    if (variantImageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
-    return imageUrl;
-  }, [variantImageErrors]);
-
-  // ============================================
-  // VERIFY PRODUCT FUNCTION
-  // ============================================
-
-  const verifyProduct = useCallback(async (showLoading = true) => {
-    try {
-      if (showLoading) setLoading(true);
-      setError(null);
-      // Reset image errors on load
-      setImageErrors({});
-      setVariantImageErrors({});
-      
-      const data = await productService.getProductById(id);
-      
-      if (!data || !data.id) {
-        setProductExists(false);
-        setError('Product not found');
-        toast.error('Product not found');
-        return;
-      }
-      
-      // Map variants with images and handle null values
-      const mappedData: ProductData = {
-        id: data.id,
-        name: data.name,
-        sku: data.sku,
-        description: data.description || undefined,
-        unitPrice: data.unitPrice,
-        costPrice: data.costPrice || undefined,
-        barcode: data.barcode || undefined,
-        images: data.images || [],
-        categoryId: data.categoryId || undefined,
-        supplierId: data.supplierId || undefined,
-        isActive: data.isActive,
-        featured: data.featured || false,
-        isDigital: data.isDigital || false,
-        taxRate: data.taxRate || undefined,
-        weight: data.weight || undefined,
-        minStock: data.minStock || undefined,
-        maxStock: data.maxStock || undefined,
-        tags: data.tags || [],
-        notes: data.notes || undefined,
-        variants: (data.variants || []).map((v: any) => ({
-          id: v.id || `variant_${Math.random()}`,
-          name: v.name || 'Unnamed Variant',
-          sku: v.sku || '',
-          price: v.price || 0,
-          costPrice: v.costPrice || undefined,
-          stock: v.stock || 0,
-          attributes: v.attributes || {},
-          isActive: v.isActive !== undefined ? v.isActive : true,
-          images: v.images || [],
-          barcode: v.barcode || undefined,
-          inventoryId: v.inventoryId || undefined,
-        })),
-        inventoryId: data.inventoryId || undefined,
-        inventory: data.inventory ? {
-          id: data.inventory.id,
-          quantity: data.inventory.quantity || 0,
-          reserved: data.inventory.reserved || 0,
-          available: data.inventory.available || 0,
-        } : undefined,
-        rating: data.rating || undefined,
-        reviewCount: data.reviewCount || undefined,
-        createdAt: data.createdAt || new Date().toISOString(),
-        updatedAt: data.updatedAt || new Date().toISOString(),
-        businessUnitId: data.businessUnitId || 'default',
-        seo: data.seo ? {
-          title: data.seo.title || undefined,
-          description: data.seo.description || undefined,
-          slug: data.seo.slug || undefined,
-          keywords: data.seo.keywords || [],
-        } : undefined,
-      };
-      
-      setProductData(mappedData);
-      setProductExists(true);
-    } catch (error: any) {
-      console.error('Failed to load product:', error);
-      if (error?.response?.status === 404) {
-        setProductExists(false);
-        setError('Product not found');
-      } else {
-        setError('Failed to load product. Please try again.');
-      }
-      toast.error('Failed to load product');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [id]);
-
-  // ============================================
-  // HANDLER FUNCTIONS
+  // HANDLERS
   // ============================================
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await verifyProduct(false);
-    toast.success('Product refreshed');
+    try {
+      await verifyProduct(false);
+      toast.success('Product refreshed');
+    } catch {
+      // verifyProduct handles its own error state.
+    }
   }, [verifyProduct]);
 
   const handleCopyId = useCallback(() => {
-    navigator.clipboard.writeText(id).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast.success('Product ID copied');
-    }).catch(() => {
-      toast.error('Failed to copy ID');
-    });
+    if (!id) return;
+    navigator.clipboard
+      .writeText(id)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast.success('Product ID copied');
+      })
+      .catch(() => toast.error('Failed to copy ID'));
   }, [id]);
 
   const handleDelete = useCallback(async () => {
+    if (!id) return;
+
     if (!canDeleteProducts) {
-      toast.error('You don\'t have permission to delete products');
+      toast.error("You don't have permission to delete products");
       return;
     }
+
     setDeleting(true);
     try {
       await productService.deleteProduct(id);
       toast.success('Product deleted successfully');
       router.push('/admin/catalog');
-    } catch (error: any) {
-      console.error('Failed to delete product:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to delete product';
-      toast.error(errorMessage);
+    } catch (err: any) {
+      console.error('Failed to delete product:', err);
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to delete product';
+      toast.error(message);
     } finally {
       setDeleting(false);
       setShowDeleteModal(false);
@@ -280,53 +300,74 @@ export default function EditProductPage() {
   }, [id, canDeleteProducts, router]);
 
   // ============================================
-  // COMPUTED VALUES
+  // DERIVED
   // ============================================
 
   const product = productData;
   const productName = product?.name || 'Product';
   const productSku = product?.sku || 'N/A';
   const productStatus = product?.isActive ? 'Active' : 'Inactive';
-  const productStatusColor = product?.isActive 
+  const productStatusColor = product?.isActive
     ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
     : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
 
   const mainStock = product?.inventory?.quantity || 0;
-  const variantStock = product?.variants?.reduce((sum: number, v: ProductVariant) => sum + (v.stock || 0), 0) || 0;
+  const variantStock =
+    product?.variants?.reduce(
+      (sum: number, v: ProductVariant) => sum + (v.stock || 0),
+      0
+    ) || 0;
   const totalStock = mainStock + variantStock;
 
+  const hasVariantImages = useMemo(
+    () =>
+      (product?.variants || []).some(
+        (v) => v.images && v.images.length > 0
+      ),
+    [product?.variants]
+  );
+
+  const idPreview = id ? id.slice(0, 8) : '';
+
   // ============================================
-  // RENDER CHECKS
+  // EARLY RETURNS
   // ============================================
 
-  // Handle missing ID
   if (!id) {
-    router.push('/admin/catalog');
-    return null;
+    // The redirect effect has already fired; render the loading shell
+    // rather than null so the transition is smooth.
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400" />
+      </div>
+    );
   }
 
-  // Loading state
   if (permissionLoading || !isClient || (loading && !productData)) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading product...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading product...
+          </p>
         </div>
       </div>
     );
   }
 
-  // Permission denied
   if (!canEditProducts) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to edit products. Please contact your administrator.
+          You don't have permission to edit products. Please contact your
+          administrator.
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
@@ -339,14 +380,15 @@ export default function EditProductPage() {
     );
   }
 
-  // Product not found
   if (!productExists) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
         <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
           <AlertCircle className="w-12 h-12 text-red-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Product Not Found</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Product Not Found
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
           The product you're trying to edit doesn't exist or has been removed.
         </p>
@@ -361,15 +403,18 @@ export default function EditProductPage() {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
         <div className="w-24 h-24 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
           <AlertCircle className="w-12 h-12 text-red-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Error Loading Product</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">{error}</p>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Error Loading Product
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
+          {error}
+        </p>
         <div className="flex items-center gap-3 mt-4">
           <button
             onClick={() => verifyProduct(true)}
@@ -408,8 +453,12 @@ export default function EditProductPage() {
             </button>
             <div>
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Product</h1>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${productStatusColor}`}>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Edit Product
+                </h1>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${productStatusColor}`}
+                >
                   {productStatus}
                 </span>
                 {product?.inventoryId && (
@@ -431,8 +480,9 @@ export default function EditProductPage() {
                 <button
                   onClick={handleCopyId}
                   className="flex items-center gap-1 text-xs hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                  title="Copy full product ID"
                 >
-                  ID: {id.slice(0, 8)}
+                  ID: {idPreview}
                   {copied ? (
                     <Check className="w-3 h-3 text-green-500" />
                   ) : (
@@ -455,7 +505,9 @@ export default function EditProductPage() {
               className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
               aria-label="Refresh product"
             >
-              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`}
+              />
             </button>
 
             <button
@@ -491,7 +543,7 @@ export default function EditProductPage() {
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* Quick stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
             <p className="text-xs text-gray-500 dark:text-gray-400">Price</p>
@@ -500,7 +552,9 @@ export default function EditProductPage() {
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Total Stock</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Total Stock
+            </p>
             <p className="text-sm font-bold text-gray-900 dark:text-white">
               {totalStock}
               {variantStock > 0 && (
@@ -511,10 +565,12 @@ export default function EditProductPage() {
             </p>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Variants</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Variants
+            </p>
             <p className="text-sm font-bold text-gray-900 dark:text-white">
               {product?.variants?.length || 0}
-              {product?.variants?.some((v: ProductVariant) => v.images && v.images.length > 0) && (
+              {hasVariantImages && (
                 <ImageIcon className="w-3 h-3 inline ml-1 text-purple-500" />
               )}
             </p>
@@ -530,7 +586,7 @@ export default function EditProductPage() {
           </div>
         </div>
 
-        {/* ✅ FIXED: Variant Images Summary with error handling */}
+        {/* Variant image summary */}
         {product?.variants && product.variants.length > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
@@ -539,21 +595,28 @@ export default function EditProductPage() {
             </h3>
             <div className="flex flex-wrap gap-3">
               {product.variants.map((variant: ProductVariant) => (
-                <div key={variant.id} className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2">
+                <div
+                  key={variant.id}
+                  className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2"
+                >
                   <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-200 dark:bg-gray-600 flex-shrink-0">
                     {variant.images && variant.images.length > 0 ? (
-                      <img 
-                        src={getValidVariantImage(variant.images[0])} 
-                        alt={variant.name} 
+                      <img
+                        src={getValidVariantImage(variant.images[0])}
+                        alt={variant.name}
                         className="w-full h-full object-cover"
-                        onError={() => handleVariantImageError(variant.images[0])}
+                        onError={() =>
+                          handleVariantImageError(variant.images[0])
+                        }
                       />
                     ) : (
                       <Layers className="w-full h-full p-2 text-gray-400" />
                     )}
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{variant.name}</p>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      {variant.name}
+                    </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {variant.images?.length || 0} image(s)
                     </p>
@@ -565,23 +628,34 @@ export default function EditProductPage() {
         )}
 
         {/* Product Form */}
-        <Suspense fallback={
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
-            <div className="flex items-center justify-center min-h-[40vh]">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
-                <p className="mt-4 text-gray-600 dark:text-gray-400">Loading product form...</p>
+        <Suspense
+          fallback={
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+              <div className="flex items-center justify-center min-h-[40vh]">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
+                  <p className="mt-4 text-gray-600 dark:text-gray-400">
+                    Loading product form...
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        }>
-          <ProductForm mode="edit" productId={id} businessUnitId={product?.businessUnitId} />
+          }
+        >
+          <ProductForm
+            mode="edit"
+            productId={id}
+            businessUnitId={product?.businessUnitId}
+          />
         </Suspense>
 
-        {/* Delete Modal */}
+        {/* Delete modal */}
         {showDeleteModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
+            <div
+              className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
+              onClick={() => setShowDeleteModal(false)}
+            />
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowDeleteModal(false)}
@@ -595,13 +669,21 @@ export default function EditProductPage() {
                   <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Product</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Delete Product
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
                 </div>
               </div>
               <p className="text-gray-600 dark:text-gray-300 mb-6">
-                Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{productName}</strong>?
-                This will permanently remove the product and all associated data, including variants, inventory, and sales history.
+                Are you sure you want to delete{' '}
+                <strong className="text-gray-900 dark:text-white">
+                  {productName}
+                </strong>
+                ? This will permanently remove the product and all associated
+                data, including variants, inventory, and sales history.
               </p>
               <div className="flex justify-end gap-3">
                 <button
@@ -615,7 +697,11 @@ export default function EditProductPage() {
                   disabled={deleting}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {deleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
                   {deleting ? 'Deleting...' : 'Delete Product'}
                 </button>
               </div>

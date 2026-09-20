@@ -1,3 +1,5 @@
+// D:\Projects\Kalwanga\packages\web\components\cart\CartItemList.tsx
+
 'use client';
 
 import React from 'react';
@@ -6,7 +8,7 @@ import CartItemCard from './CartItemCard';
 import EmptyCart from './EmptyCart';
 import CartSkeleton from './CartSkeleton';
 
-interface CartItemType {
+export interface CartItemType {
   id: string;
   productId: string;
   productName: string;
@@ -20,12 +22,18 @@ interface CartItemType {
   isInStock: boolean;
 }
 
-// ✅ FIXED: Added 'export' keyword to make the interface available
 export interface CartItemListProps {
   items: CartItemType[];
-  onUpdateQuantity: (itemId: string, quantity: number) => Promise<void> | void;
+  onUpdateQuantity: (
+    itemId: string,
+    quantity: number,
+  ) => Promise<void> | void;
   onRemove: (itemId: string) => Promise<void> | void;
   isLoading?: boolean;
+  /**
+   * ID of the item currently being updated, if any. The matching card
+   * shows a loading spinner on its quantity stepper.
+   */
   isUpdating?: string | null;
   disabled?: boolean;
   emptyTitle?: string;
@@ -33,6 +41,10 @@ export interface CartItemListProps {
   emptyActionLabel?: string;
   emptyActionHref?: string;
   onEmptyAction?: () => void;
+  /**
+   * How many skeleton rows to render while loading. Defaults to 3.
+   */
+  skeletonCount?: number;
 }
 
 export function CartItemList({
@@ -45,12 +57,21 @@ export function CartItemList({
   emptyTitle = 'Your cart is empty',
   emptyDescription = 'Browse our products and add items to your cart.',
   emptyActionLabel = 'Start Shopping',
-  emptyActionHref = '/',
+  emptyActionHref = '/shop',
   onEmptyAction,
+  skeletonCount = 3,
 }: CartItemListProps) {
+  // ============================================
+  // LOADING
+  // ============================================
+
   if (isLoading) {
-    return <CartSkeleton count={3} />;
+    return <CartSkeleton count={skeletonCount} />;
   }
+
+  // ============================================
+  // EMPTY
+  // ============================================
 
   if (items.length === 0) {
     return (
@@ -64,13 +85,27 @@ export function CartItemList({
     );
   }
 
+  // ============================================
+  // LIST
+  // ============================================
+
   return (
     <div className="space-y-3">
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence mode="popLayout" initial={false}>
         {items.map((item) => (
           <CartItemCard
             key={item.id}
-            {...item}
+            id={item.id}
+            productId={item.productId}
+            productName={item.productName}
+            sku={item.sku}
+            quantity={item.quantity}
+            unitPrice={item.unitPrice}
+            total={item.total}
+            images={item.images}
+            variantName={item.variantName}
+            availableStock={item.availableStock}
+            isInStock={item.isInStock}
             onUpdateQuantity={onUpdateQuantity}
             onRemove={onRemove}
             isUpdating={isUpdating === item.id}

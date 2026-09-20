@@ -1,91 +1,192 @@
-// D:\Projects\Kalwanga\packages\web\components\products\ProductImportExport.tsx
 'use client';
 
-import React, { useState } from 'react';
+// D:\Projects\Kalwanga\packages\web\components\products\ProductImportExport.tsx
+
+import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Upload, Download, FileSpreadsheet, X, Check, AlertCircle,
-  Loader2, FileText, File, Table, RefreshCw,
-  Settings, ChevronDown, Filter, Search
+  Upload,
+  Download,
+  FileSpreadsheet,
+  X,
+  Check,
+  AlertCircle,
+  Loader2,
+  FileText,
+  Info,
 } from 'lucide-react';
 import { productService } from '../../services/productService';
 import { toast } from '../../utils/toast-manager';
 import { usePermission } from '../../hooks/usePermission';
 import { PermissionResource } from '../../types/enums';
 
-interface ImportResult {
-  success: boolean;
-  total: number;
+// ============================================
+// BACKEND CONTRACT
+// ============================================
+//
+// Export  — GET /products/export
+//   Query: ?format=csv | anything-else
+//   - `csv`  → raw text/csv response. Fixed columns:
+//              ID, Name, SKU, Barcode, Unit Price, Cost Price,
+//              Category, Supplier, Stock, Variants, Status, Created At.
+//   - Any other format value → JSON body
+//              { success, data, total, exportedAt }.
+//   No other query params are read. Include-flags, category filters,
+//   etc. are silently ignored by the controller.
+//
+// Import  — POST /products/import
+//   Body: multipart/form-data with a `file` field.
+//   Current response (controller returns this unconditionally):
+//     { success: true, message, data: { businessUnitId, userId,
+//                                       imported: 0, failed: 0, total: 0 } }
+//   Server-side CSV/Excel parsing is not yet implemented — no rows are
+//   read and no products are created.
+//
+// Template — GET /products/import/template
+//   Returns a CSV with these headers only:
+//     Name, SKU, Barcode, Description, Unit Price, Cost Price,
+//     Category, Supplier, Min Stock, Max Stock, Weight (kg),
+//     Tax Rate (%), Status (Active/Inactive), Digital (Yes/No),
+//     Featured (Yes/No), Tags (comma separated)
+
+// ============================================
+// TYPES
+// ============================================
+
+type ExportFormat = 'csv' | 'json';
+
+interface ImportResponseData {
+  businessUnitId?: string;
+  userId?: string;
   imported: number;
   failed: number;
-  errors: Array<{ row: number; message: string }>;
-  warnings?: Array<{ row: number; message: string }>;
+  total: number;
 }
 
-// Type for export format
-type ExportFormat = 'csv' | 'excel' | 'json';
+interface ImportResult {
+  success: boolean;
+  message?: string;
+  data?: ImportResponseData;
+}
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const MAX_FILE_SIZE_MB = 20;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+const ACCEPTED_EXTENSIONS = ['.csv'];
+const ACCEPTED_MIME_TYPES = new Set([
+  'text/csv',
+  'application/csv',
+  'application/vnd.ms-excel', // legacy CSV mime used by some browsers
+  'text/plain', // some browsers report CSV as text/plain
+]);
+
+const EXPORT_FORMATS: ExportFormat[] = ['csv', 'json'];
+
+const EXPORT_COLUMNS_HELP =
+  'CSV includes: ID, Name, SKU, Barcode, Unit Price, Cost Price, ' +
+  'Category, Supplier, Stock, Variants, Status, Created At.';
+
+// ============================================
+// FILE VALIDATION
+// ============================================
+
+/**
+ * Accept `.csv` by extension OR by MIME type. Some OSes (Windows) don't
+ * set the MIME for `.csv` at all, so extension-based acceptance is
+ * required. Reject everything else, including `.xlsx` — the backend
+ * doesn't parse Excel.
+ */
+function isAcceptableFile(file: File): { ok: true } | { ok: false; reason: string } {
+  const name = file.name.toLowerCase();
+
+  const hasValidExtension = ACCEPTED_EXTENSIONS.some((ext) =>
+    name.endsWith(ext),
+  );
+
+  const mime = (file.type || '').toLowerCase();
+  const hasValidMime =
+    mime === '' || // no MIME set — fall through to extension check
+    ACCEPTED_MIME_TYPES.has(mime) ||
+    mime.startsWith('text/');
+
+  // Require the extension. A file named `data.txt` with `text/plain`
+  // MIME would otherwise sneak through.
+  if (!hasValidExtension) {
+    return {
+      ok: false,
+      reason: `"${file.name}" is not a CSV file. Only .csv files are accepted.`,
+    };
+  }
+
+  if (!hasValidMime && mime !== '') {
+    return {
+      ok: false,
+      reason: `"${file.name}" has an unsupported file type (${mime}).`,
+    };
+  }
+
+  if (file.size === 0) {
+    return { ok: false, reason: `"${file.name}" is empty.` };
+  }
+
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return {
+      ok: false,
+      reason: `"${file.name}" exceeds the ${MAX_FILE_SIZE_MB}MB limit (${(
+        file.size /
+        1024 /
+        1024
+      ).toFixed(1)}MB).`,
+    };
+  }
+
+  return { ok: true };
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function ProductImportExport() {
-  const { canManage, canExport } = usePermission();
+  const { canView, canManage } = usePermission();
   const [activeTab, setActiveTab] = useState<'import' | 'export'>('import');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [previewData, setPreviewData] = useState<any[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
-  const [exportOptions, setExportOptions] = useState({
-    includeVariants: true,
-    includeInventory: true,
-    includeCategories: true,
-    includeImages: false,
-  });
-  const [importOptions, setImportOptions] = useState({
-    updateExisting: true,
-    skipDuplicates: false,
-    validateOnly: false,
-  });
   const [exporting, setExporting] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
-  const canImportProducts = canManage(PermissionResource.PRODUCT) || canManage(PermissionResource.INVENTORY);
-  const canExportProducts = canExport() || canManage(PermissionResource.PRODUCT);
+  // Route gates:
+  //   POST /products/import  → requireInventoryPermission('inventory:create')
+  //   GET  /products/export  → requireInventoryPermission('inventory:view')
+  //   GET  /products/import/template → requireInventoryPermission('inventory:view')
+  // We approximate those with PRODUCT resource permissions.
+  const canImportProducts = canManage(PermissionResource.PRODUCT);
+  const canExportProducts =
+    canView(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
 
-  const handleFileChange = (selectedFile: File) => {
+  // ============================================
+  // FILE SELECTION
+  // ============================================
+
+  const handleFileChange = useCallback((selectedFile: File) => {
+    const check = isAcceptableFile(selectedFile);
+    if (!check.ok) {
+      toast.error(check.reason);
+      return;
+    }
     setFile(selectedFile);
     setResult(null);
-    setPreviewData([]);
-    setShowPreview(false);
-    if (selectedFile) {
-      previewFile(selectedFile);
-    }
-  };
+  }, []);
 
-  const previewFile = (selectedFile: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        const lines = text.split('\n');
-        const headers = lines[0]?.split(',').map(h => h.trim()) || [];
-        const data = lines.slice(1, 11).map(line => {
-          const values = line.split(',').map(v => v.trim());
-          const obj: Record<string, string> = {};
-          headers.forEach((h, i) => {
-            obj[h] = values[i] || '';
-          });
-          return obj;
-        });
-        setPreviewData(data);
-        setShowPreview(true);
-      } catch (error) {
-        console.error('Failed to preview file:', error);
-      }
-    };
-    reader.readAsText(selectedFile);
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === 'dragenter' || e.type === 'dragover') {
@@ -93,81 +194,155 @@ export function ProductImportExport() {
     } else if (e.type === 'dragleave') {
       setDragActive(false);
     }
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileChange(e.dataTransfer.files[0]);
-    }
-  };
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
 
-  const handleImport = async () => {
+      const dropped = e.dataTransfer.files?.[0];
+      if (!dropped) return;
+
+      const check = isAcceptableFile(dropped);
+      if (!check.ok) {
+        toast.error(check.reason);
+        return;
+      }
+
+      handleFileChange(dropped);
+    },
+    [handleFileChange],
+  );
+
+  const resetFile = useCallback(() => {
+    setFile(null);
+    setResult(null);
+  }, []);
+
+  // ============================================
+  // IMPORT
+  // ============================================
+
+  const handleImport = useCallback(async () => {
     if (!file) return;
+
     setLoading(true);
     try {
-      const result = await productService.importProducts(file);
-      
-      // Ensure all errors have a row number
-      const errorsWithRow = result.errors.map((err: any) => ({
-        row: err.row ?? 0,
-        message: err.message || 'Unknown error'
-      }));
-      
+      // The frontend service returns whatever the backend responds with.
+      // Today that is a zeroed placeholder — the server does not yet
+      // parse the file. When the backend starts populating these fields,
+      // no change is needed here.
+      const response: any = await productService.importProducts(file);
+
+      // Handle both shapes the backend might return:
+      //   { success, message, data: {...} }   ← current
+      //   { imported, failed, total }         ← hypothetical future
+      const payload = response?.data ?? response ?? {};
+      const normalizedData: ImportResponseData = {
+        businessUnitId: payload.businessUnitId,
+        userId: payload.userId,
+        imported: Number(payload.imported) || 0,
+        failed: Number(payload.failed) || 0,
+        total: Number(payload.total) || 0,
+      };
+
+      const success = response?.success !== false;
+
       setResult({
-        success: result.errors.length === 0,
-        total: (result.results?.length || 0) + result.errors.length,
-        imported: result.results?.length || 0,
-        failed: result.errors.length,
-        errors: errorsWithRow,
+        success,
+        message: response?.message,
+        data: normalizedData,
       });
-      
-      if (result.results?.length > 0) {
-        toast.success(`Imported ${result.results.length} products successfully`);
+
+      if (!success) {
+        toast.error(response?.message || 'Import failed');
+      } else if (normalizedData.imported > 0) {
+        toast.success(
+          `Imported ${normalizedData.imported} product${
+            normalizedData.imported === 1 ? '' : 's'
+          }`,
+        );
+        // Clear the file so the user doesn't accidentally re-import.
+        setFile(null);
+      } else if (normalizedData.failed > 0) {
+        toast.warning(
+          `${normalizedData.failed} product${
+            normalizedData.failed === 1 ? '' : 's'
+          } failed to import`,
+        );
+        // Keep the file so the user can retry.
+      } else {
+        // Backend acknowledged but didn't parse anything. The yellow
+        // banner above the drop zone tells the user why. We clear the
+        // file because re-uploading the same payload is a no-op.
+        toast.info(
+          'Import acknowledged. No products were created (backend parsing pending).',
+        );
+        setFile(null);
       }
-      if (result.errors.length > 0) {
-        toast.warning(`${result.errors.length} products failed to import`);
-      }
-    } catch (error: any) {
-      toast.error(error?.message || 'Failed to import products');
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to import products';
+      toast.error(message);
       setResult({
         success: false,
-        total: 0,
-        imported: 0,
-        failed: 1,
-        errors: [{ row: 0, message: error?.message || 'Import failed' }],
+        message,
+        data: { imported: 0, failed: 1, total: 1 },
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [file]);
 
-  const handleExport = async () => {
+  // ============================================
+  // EXPORT
+  // ============================================
+
+  const handleExport = useCallback(async () => {
     setExporting(true);
     try {
-      // Map json to csv for the service call
-      const exportFormatForService = exportFormat === 'json' ? 'csv' : exportFormat;
-      const blob = await productService.exportProducts(exportFormatForService);
+      // Pass the chosen format through unchanged. `csv` produces a raw
+      // CSV file; anything else is JSON.
+      const blob = await productService.exportProducts(
+        exportFormat as any,
+      );
+
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, '-')
+        .slice(0, 19);
+      const filename = `products_${timestamp}.${exportFormat}`;
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      const fileExtension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
-      link.download = `products_export.${fileExtension}`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      toast.success(`Products exported as ${exportFormat.toUpperCase()}`);
-    } catch (error) {
+
+      toast.success(
+        `Products exported as ${exportFormat.toUpperCase()}`,
+      );
+    } catch (err) {
+      console.error('Export failed:', err);
       toast.error('Failed to export products');
     } finally {
       setExporting(false);
     }
-  };
+  }, [exportFormat]);
 
-  const handleDownloadTemplate = async () => {
+  // ============================================
+  // TEMPLATE
+  // ============================================
+
+  const handleDownloadTemplate = useCallback(async () => {
+    setDownloadingTemplate(true);
     try {
       const blob = await productService.downloadImportTemplate();
       const url = window.URL.createObjectURL(blob);
@@ -179,16 +354,24 @@ export function ProductImportExport() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       toast.success('Template downloaded successfully');
-    } catch (error) {
+    } catch (err) {
+      console.error('Template download failed:', err);
       toast.error('Failed to download template');
+    } finally {
+      setDownloadingTemplate(false);
     }
-  };
+  }, []);
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
       {/* Tabs */}
       <div className="flex border-b border-gray-200 dark:border-gray-700">
         <button
+          type="button"
           onClick={() => setActiveTab('import')}
           className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
             activeTab === 'import'
@@ -200,6 +383,7 @@ export function ProductImportExport() {
           Import
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('export')}
           className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-colors ${
             activeTab === 'export'
@@ -213,33 +397,65 @@ export function ProductImportExport() {
       </div>
 
       <div className="p-6">
-        {/* Import Tab */}
+        {/* ==================== IMPORT TAB ==================== */}
         {activeTab === 'import' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Import Products</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Import Products
+              </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Bulk import products from CSV or Excel file
+                Bulk import products from a CSV file
+              </p>
+            </div>
+
+            {/* Not-yet-implemented banner */}
+            <div className="flex items-start gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <Info className="w-4 h-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                Server-side import is not yet implemented. Uploads are
+                accepted and acknowledged but no products will be
+                created. Use the template to prepare your data for when
+                the endpoint is live.
               </p>
             </div>
 
             {/* Template Download */}
-            <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+            <div className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
               <FileText className="w-5 h-5 text-blue-500" />
-              <span className="text-sm text-gray-600 dark:text-gray-300">Don't have a template?</span>
+              <span className="text-sm text-gray-600 dark:text-gray-300">
+                Need a template?
+              </span>
               <button
+                type="button"
                 onClick={handleDownloadTemplate}
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                disabled={downloadingTemplate || !canExportProducts}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                title={
+                  canExportProducts
+                    ? undefined
+                    : "You don't have permission to download the template"
+                }
               >
-                Download Template
+                {downloadingTemplate ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {downloadingTemplate
+                  ? 'Downloading...'
+                  : 'Download CSV Template'}
               </button>
             </div>
 
             {/* File Drop Area */}
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                dragActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 
-                file ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                dragActive
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : file
+                  ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -247,53 +463,24 @@ export function ProductImportExport() {
               onDrop={handleDrop}
             >
               {file ? (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="flex items-center gap-3">
-                    <FileSpreadsheet className="w-10 h-10 text-green-500" />
-                    <div className="text-left">
-                      <p className="font-medium text-gray-900 dark:text-white">{file.name}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {(file.size / 1024).toFixed(1)} KB
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setFile(null)}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                    >
-                      <X className="w-5 h-5 text-gray-500" />
-                    </button>
+                <div className="flex items-center justify-center gap-3">
+                  <FileSpreadsheet className="w-10 h-10 text-green-500" />
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900 dark:text-white break-all">
+                      {file.name}
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
                   </div>
-                  {showPreview && previewData.length > 0 && (
-                    <div className="w-full mt-3">
-                      <p className="text-sm text-gray-500 dark:text-gray-400 text-left mb-2">
-                        Preview (first {previewData.length} rows):
-                      </p>
-                      <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-                        <table className="min-w-full text-sm">
-                          <thead className="bg-gray-50 dark:bg-gray-700/50">
-                            <tr>
-                              {Object.keys(previewData[0] || {}).map((key) => (
-                                <th key={key} className="px-3 py-1 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                                  {key}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {previewData.map((row, idx) => (
-                              <tr key={idx} className="border-t border-gray-100 dark:border-gray-700">
-                                {Object.values(row).map((val: any, i) => (
-                                  <td key={i} className="px-3 py-1 text-gray-700 dark:text-gray-300 max-w-xs truncate">
-                                    {val || '-'}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={resetFile}
+                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    aria-label="Remove file"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
                 </div>
               ) : (
                 <>
@@ -304,83 +491,55 @@ export function ProductImportExport() {
                       browse
                       <input
                         type="file"
-                        accept=".csv,.xlsx,.xls"
+                        accept=".csv,text/csv"
                         onChange={(e) => {
-                          if (e.target.files?.[0]) {
-                            handleFileChange(e.target.files[0]);
-                          }
+                          const f = e.target.files?.[0];
+                          if (f) handleFileChange(f);
+                          // Reset so selecting the same file twice fires
+                          // change again.
+                          e.target.value = '';
                         }}
                         className="hidden"
                       />
                     </label>
                   </p>
                   <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-                    Supported formats: CSV, Excel (.xlsx, .xls)
+                    Supported format: CSV
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    Max {MAX_FILE_SIZE_MB}MB per file
                   </p>
                 </>
               )}
             </div>
 
-            {/* Import Options */}
-            {file && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Import Options</h4>
-                <div className="flex flex-wrap gap-4">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={importOptions.updateExisting}
-                      onChange={(e) => setImportOptions({ ...importOptions, updateExisting: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded"
-                    />
-                    Update existing items
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={importOptions.skipDuplicates}
-                      onChange={(e) => setImportOptions({ ...importOptions, skipDuplicates: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded"
-                    />
-                    Skip duplicates
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={importOptions.validateOnly}
-                      onChange={(e) => setImportOptions({ ...importOptions, validateOnly: e.target.checked })}
-                      className="w-4 h-4 text-blue-600 rounded"
-                    />
-                    Validate only (dry run)
-                  </label>
-                </div>
-              </div>
-            )}
-
             {/* Actions */}
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => {
-                  setFile(null);
-                  setResult(null);
-                  setPreviewData([]);
-                  setShowPreview(false);
-                }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                type="button"
+                onClick={resetFile}
+                disabled={!file}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleImport}
-                disabled={!file || loading}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                disabled={!file || loading || !canImportProducts}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={
+                  canImportProducts
+                    ? undefined
+                    : "You don't have permission to import products"
+                }
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Upload className="w-4 h-4" />
                 )}
-                {loading ? 'Importing...' : importOptions.validateOnly ? 'Validate' : 'Import'}
+                {loading ? 'Importing...' : 'Import'}
               </button>
             </div>
 
@@ -390,53 +549,59 @@ export function ProductImportExport() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`p-4 rounded-lg ${
-                  result.success ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                  result.success
+                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                    : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-start gap-3">
                   {result.success ? (
-                    <Check className="w-5 h-5 text-green-500" />
+                    <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
                   ) : (
-                    <AlertCircle className="w-5 h-5 text-red-500" />
+                    <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                   )}
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 dark:text-white">
-                      {result.success ? 'Import completed' : 'Import failed'}
+                      {result.success
+                        ? 'Import acknowledged'
+                        : 'Import failed'}
                     </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      {result.imported} imported, {result.failed} failed out of {result.total} total
-                    </p>
+                    {result.message && (
+                      <p className="text-sm text-gray-600 dark:text-gray-300 break-words">
+                        {result.message}
+                      </p>
+                    )}
+                    {result.data && (
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                        {result.data.imported} imported,{' '}
+                        {result.data.failed} failed out of{' '}
+                        {result.data.total} total
+                      </p>
+                    )}
                   </div>
                   <button
+                    type="button"
                     onClick={() => setResult(null)}
                     className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    aria-label="Dismiss result"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                
-                {result.errors.length > 0 && (
-                  <div className="mt-3 max-h-40 overflow-y-auto">
-                    <p className="text-sm font-medium text-red-600 dark:text-red-400">Errors:</p>
-                    {result.errors.map((err, idx) => (
-                      <p key={idx} className="text-sm text-red-600 dark:text-red-400">
-                        Row {err.row}: {err.message}
-                      </p>
-                    ))}
-                  </div>
-                )}
               </motion.div>
             )}
           </div>
         )}
 
-        {/* Export Tab */}
+        {/* ==================== EXPORT TAB ==================== */}
         {activeTab === 'export' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Export Products</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Export Products
+              </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Export your products to CSV, Excel, or JSON format
+                Export your products to CSV or JSON
               </p>
             </div>
 
@@ -445,72 +610,41 @@ export function ProductImportExport() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Export Format
               </label>
-              <div className="flex gap-2">
-                {(['csv', 'excel', 'json'] as const).map((format) => (
+              <div className="flex flex-wrap gap-2">
+                {EXPORT_FORMATS.map((format) => (
                   <button
                     key={format}
+                    type="button"
                     onClick={() => setExportFormat(format)}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                       exportFormat === format
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                     }`}
                   >
                     {format.toUpperCase()}
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Export Options */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Export Options</h4>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={exportOptions.includeVariants}
-                    onChange={(e) => setExportOptions({ ...exportOptions, includeVariants: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Include Variants
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={exportOptions.includeInventory}
-                    onChange={(e) => setExportOptions({ ...exportOptions, includeInventory: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Include Inventory
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={exportOptions.includeCategories}
-                    onChange={(e) => setExportOptions({ ...exportOptions, includeCategories: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Include Categories
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={exportOptions.includeImages}
-                    onChange={(e) => setExportOptions({ ...exportOptions, includeImages: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded"
-                  />
-                  Include Images (URLs)
-                </label>
-              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                {exportFormat === 'csv'
+                  ? EXPORT_COLUMNS_HELP
+                  : 'JSON returns { success, data: [...], total, exportedAt }.'}
+              </p>
             </div>
 
             {/* Actions */}
             <div className="flex justify-end gap-3">
               <button
+                type="button"
                 onClick={handleExport}
-                disabled={exporting}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                disabled={exporting || !canExportProducts}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={
+                  canExportProducts
+                    ? undefined
+                    : "You don't have permission to export products"
+                }
               >
                 {exporting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -520,24 +654,11 @@ export function ProductImportExport() {
                 {exporting ? 'Exporting...' : 'Export Products'}
               </button>
             </div>
-
-            {/* Export Preview */}
-            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Export will include: {[
-                  exportOptions.includeVariants && 'Variants',
-                  exportOptions.includeInventory && 'Inventory',
-                  exportOptions.includeCategories && 'Categories',
-                  exportOptions.includeImages && 'Images',
-                ].filter(Boolean).join(', ') || 'No options selected'}
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Format: <span className="font-medium">{exportFormat.toUpperCase()}</span>
-              </p>
-            </div>
           </div>
         )}
       </div>
     </div>
   );
 }
+
+export default ProductImportExport;

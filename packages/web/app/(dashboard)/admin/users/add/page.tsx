@@ -8,17 +8,22 @@ import { useUser } from '@clerk/nextjs';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { UserForm } from '../../../../../components/users/UserForm';
 import { UserGroupManager } from '../../../../../components/users/UserGroupManager';
-import { 
-  ArrowLeft, Lock, UserPlus, Loader2, Shield, 
-  Info, AlertCircle, CheckCircle, XCircle, 
+import {
+  ArrowLeft, Lock, UserPlus, Loader2, Shield,
+  Info, AlertCircle, CheckCircle, XCircle,
   Building2, Key, Users, Mail,
   Briefcase, UserCheck, UserCog, HelpCircle,
   Eye, EyeOff, Sparkles, Zap, AlertTriangle,
   RefreshCw, UsersRound, Crown, BarChart3
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { PERMISSIONS } from '../../../../../types/permissions';
 import { UserRole } from '../../../../../types/enums';
+
+
+const PERMISSIONS = {
+  USER_CREATE: 'user:create',
+  USER_MANAGE: 'user:manage',
+} as const;
 
 // Stats Card Component
 const StatsCard = ({ title, value, icon, bgColor }: any) => (
@@ -39,13 +44,13 @@ const StatsCard = ({ title, value, icon, bgColor }: any) => (
 const parseRole = (role?: string): UserRole | undefined => {
   if (!role) return undefined;
   const validRoles: UserRole[] = [
-    UserRole.SUPER_ADMIN, 
-    UserRole.ADMIN, 
-    UserRole.MANAGER, 
-    UserRole.EDITOR, 
-    UserRole.VIEWER, 
-    UserRole.EMPLOYEE, 
-    UserRole.CASHIER, 
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.EDITOR,
+    UserRole.VIEWER,
+    UserRole.EMPLOYEE,
+    UserRole.CASHIER,
     UserRole.USER
   ];
   return validRoles.find(r => r === role);
@@ -77,7 +82,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
   const router = useRouter();
   const { user: clerkUser } = useUser();
   const { user: currentUser, can, isSuperAdmin, isAdmin, isLoading } = useAuth();
-  
+
   // State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showTips, setShowTips] = useState(true);
@@ -101,7 +106,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
   // Available roles
   const availableRoles = useCallback(() => {
     const roles: { value: string; label: string; description: string; icon: React.ReactNode }[] = [];
-    
+
     if (canCreateSuperAdmin) {
       roles.push({
         value: UserRole.SUPER_ADMIN,
@@ -110,7 +115,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
         icon: <Crown className="w-4 h-4 text-purple-500" />,
       });
     }
-    
+
     if (canCreateAdmin) {
       roles.push({
         value: UserRole.ADMIN,
@@ -119,7 +124,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
         icon: <Shield className="w-4 h-4 text-red-500" />,
       });
     }
-    
+
     if (canCreateManager) {
       roles.push({
         value: UserRole.MANAGER,
@@ -128,7 +133,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
         icon: <Briefcase className="w-4 h-4 text-blue-500" />,
       });
     }
-    
+
     roles.push(
       {
         value: UserRole.EDITOR,
@@ -161,7 +166,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
         icon: <UserPlus className="w-4 h-4 text-gray-400" />,
       }
     );
-    
+
     return roles;
   }, [canCreateSuperAdmin, canCreateAdmin, canCreateManager]);
 
@@ -497,7 +502,7 @@ export default function AddUserPage({ searchParams }: AddUserPageProps) {
                     // Find and set the role in the form
                     const roleSelect = document.querySelector('select[name="role"]') as HTMLSelectElement;
                     if (roleSelect) {
-                      const matchingRole = template.roles.find(r => 
+                      const matchingRole = template.roles.find(r =>
                         Array.from(roleSelect.options).some(opt => opt.value === r)
                       );
                       if (matchingRole) {

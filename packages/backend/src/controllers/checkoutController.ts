@@ -1,22 +1,80 @@
 // D:\Projects\Kalwanga\packages\backend\src\controllers\checkoutController.ts
-// COMPLETE FIXED CONTROLLER
 
 import { Request, Response, NextFunction } from 'express';
 import { CheckoutService } from '../services/checkoutService.js';
 import { CartService } from '../services/cartService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { z } from 'zod';
-import { UserRole } from '../generated/prisma/index.js';
 
 const checkoutService = new CheckoutService();
 const cartService = new CartService();
 
-// Validation schemas
+// ============================================
+// CANONICAL PAYMENT METHODS
+// ============================================
+//
+// Mirrors `CANONICAL_PAYMENT_METHODS` in `../utils/validators.ts`.
+// Kept local to the controller to avoid a circular import; the two
+// must stay in sync. Any change to the backend-wide set should be
+// applied here too.
+
+const CANONICAL_PAYMENT_METHODS = [
+  'CASH',
+  'CARD',
+  'CREDIT_CARD',
+  'DEBIT_CARD',
+  'MOBILE_MONEY',
+  'MOBILE',
+  'MPESA',
+  'BANK_TRANSFER',
+  'BANK',
+  'GIFT_CARD',
+  'GIFT',
+  'LOYALTY_POINTS',
+  'LOYALTY',
+  'WALLET',
+  'SPLIT',
+  'MIXED',
+  'OTHER',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'PAYSTACK',
+  'SQUARE',
+  'CHECK',
+] as const;
+
+const CANONICAL_PAYMENT_METHODS_SET = new Set<string>(
+  CANONICAL_PAYMENT_METHODS,
+);
+
+const paymentMethodSchema = z
+  .string()
+  .min(1, 'Payment method is required')
+  .transform((v) => v.trim().toUpperCase())
+  .refine((v) => CANONICAL_PAYMENT_METHODS_SET.has(v), {
+    message: `Unsupported payment method. Accepted: ${CANONICAL_PAYMENT_METHODS.join(
+      ', ',
+    )}`,
+  });
+
+// ============================================
+// VALIDATION SCHEMAS
+// ============================================
+//
+// ⚠ Each of these schemas MUST stay in lock-step with its counterpart
+// in `../routes/checkout.ts` and `../utils/validators.ts`. The route
+// validates first, then this controller re-validates, and any drift
+// between the three produces "Required (undefined)" 400s on payloads
+// that are actually valid. Fields that must match across all three
+// copies of `checkoutSchema` are documented on the schema itself.
+
 const checkoutSchema = z.object({
   cartId: z.string().min(1, 'Cart ID is required'),
   customerId: z.string().optional(),
-  paymentMethod: z.enum(['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY', 'BANK_TRANSFER', 'GIFT_CARD', 'LOYALTY_POINTS']),
-  paidAmount: z.number().positive('Paid amount must be positive'),
+  paymentMethod: paymentMethodSchema,
+  paidAmount: z
+    .number()
+    .nonnegative('Paid amount must be zero or greater'),
   discount: z.number().min(0, 'Discount cannot be negative').optional(),
   notes: z.string().optional(),
   cashRegisterId: z.string().optional(),
@@ -27,6 +85,8 @@ const checkoutSchema = z.object({
   customerPhone: z.string().optional(),
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
+  // Idempotency guard for double-submit. Same key = same sale returned.
+  idempotencyKey: z.string().uuid().optional(),
 });
 
 const voidCheckoutSchema = z.object({
@@ -46,11 +106,13 @@ const getCheckoutsSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 
+// ⚠ `unitPrice` intentionally removed. The server looks up the
+// authoritative price from `Product.unitPrice` / `ProductVariant.price`.
+// Accepting it from the client was a fraud vector.
 const addItemSchema = z.object({
-  productId: z.string(),
+  productId: z.string().min(1, 'Product ID is required'),
   variantId: z.string().optional(),
-  quantity: z.number().int().positive(),
-  unitPrice: z.number().positive(),
+  quantity: z.number().int().positive('Quantity must be positive'),
 });
 
 const updateItemSchema = z.object({
@@ -58,36 +120,107 @@ const updateItemSchema = z.object({
 });
 
 const discountSchema = z.object({
-  code: z.string(),
+  code: z.string().min(1, 'Discount code is required'),
 });
 
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Convert a ZodError to the standard 400 response shape. Used by
+ * every handler that parses a body — the shape was duplicated ~10
+ * times before.
+ */
+function zodErrorResponse(error: z.ZodError) {
+  return {
+    success: false,
+    message: 'Validation error',
+    errors: error.errors.map((e) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    })),
+  };
+}
+
+/**
+ * Extract the authenticated user's ID from the request. Supports
+ * both `req.user.id` and `req.user.userId` shapes since different
+ * auth middlewares populate one or the other.
+ */
+function getUserId(req: Request): string | undefined {
+  return (req as any).user?.id ?? (req as any).user?.userId;
+}
+
+/**
+ * Resolve a cart-or-sale identifier from the request params.
+ *
+ * The `getCheckoutSummary` handler serves two routes:
+ *
+ *   GET /checkout/summary/:cartId   → params.cartId is populated
+ *   GET /checkout/:id/summary       → params.id is populated
+ *
+ * Both resolve to the same underlying query — the service's
+ * `getCheckoutSummary` looks up the cart row directly. This helper
+ * hides the shape difference so the handler body stays single-path.
+ */
+function resolveCartId(req: Request): string | undefined {
+  const { cartId, id } = req.params as {
+    cartId?: string;
+    id?: string;
+  };
+  return cartId ?? id ?? undefined;
+}
+
+// ============================================
+// CHECKOUT CONTROLLER
+// ============================================
+
 export const checkoutController = {
+  // ============================================
+  // CREATE
+  // ============================================
+
   /**
-   * Create a new checkout
+   * Create a new checkout.
    * POST /checkout
+   *
+   * Idempotent: if `idempotencyKey` matches an existing sale, that
+   * sale is returned instead of a new one being created. Prevents
+   * double-clicks and network retries from producing duplicate sales.
    */
   async createCheckout(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
+      if (!userId) throw new AppError('User ID is required', 400);
 
       const validatedData = checkoutSchema.parse(req.body);
 
       const cart = await cartService.getCartById(validatedData.cartId);
-      if (!cart) {
-        throw new AppError('Cart not found', 404);
-      }
-
+      if (!cart) throw new AppError('Cart not found', 404);
       if (cart.userId !== userId) {
         throw new AppError('Cart does not belong to this user', 403);
       }
 
       const result = await checkoutService.processCheckout(
-        validatedData,
-        userId
+        {
+          cartId: validatedData.cartId,
+          customerId: validatedData.customerId,
+          paymentMethod: validatedData.paymentMethod,
+          paidAmount: validatedData.paidAmount,
+          discount: validatedData.discount,
+          notes: validatedData.notes,
+          cashRegisterId: validatedData.cashRegisterId,
+          cashRegisterSessionId: validatedData.cashRegisterSessionId,
+          applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
+          businessUnitId: validatedData.businessUnitId,
+          customerEmail: validatedData.customerEmail,
+          customerPhone: validatedData.customerPhone,
+          customerName: validatedData.customerName,
+          customerAddress: validatedData.customerAddress,
+          idempotencyKey: validatedData.idempotencyKey,
+        },
+        userId,
       );
 
       res.status(201).json({
@@ -97,28 +230,25 @@ export const checkoutController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return res.status(400).json(zodErrorResponse(error));
       }
       next(error);
     }
   },
 
+  // ============================================
+  // LIST / READ
+  // ============================================
+
   /**
-   * Get all checkouts with pagination
+   * Get all checkouts with pagination.
    * GET /checkout
    */
   async getCheckouts(req: Request, res: Response, next: NextFunction) {
     try {
       const params = getCheckoutsSchema.parse(req.query);
-      const page = parseInt(params.page);
-      const limit = parseInt(params.limit);
+      const page = parseInt(params.page, 10);
+      const limit = parseInt(params.limit, 10);
       const skip = (page - 1) * limit;
 
       const filters: any = {};
@@ -128,23 +258,60 @@ export const checkoutController = {
       if (params.customerId) filters.customerId = params.customerId;
       if (params.search) {
         filters.OR = [
-          { receiptNumber: { contains: params.search, mode: 'insensitive' } },
-          { customer: { firstName: { contains: params.search, mode: 'insensitive' } } },
-          { customer: { lastName: { contains: params.search, mode: 'insensitive' } } },
-          { user: { email: { contains: params.search, mode: 'insensitive' } } },
+          {
+            receiptNumber: {
+              contains: params.search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            customer: {
+              firstName: {
+                contains: params.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            customer: {
+              lastName: {
+                contains: params.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            user: {
+              email: {
+                contains: params.search,
+                mode: 'insensitive',
+              },
+            },
+          },
         ];
       }
       if (params.dateFrom || params.dateTo) {
         filters.saleDate = {};
-        if (params.dateFrom) filters.saleDate.gte = new Date(params.dateFrom);
-        if (params.dateTo) filters.saleDate.lte = new Date(params.dateTo);
+        if (params.dateFrom) {
+          filters.saleDate.gte = new Date(params.dateFrom);
+        }
+        if (params.dateTo) {
+          filters.saleDate.lte = new Date(params.dateTo);
+        }
       }
 
+      // Map `createdAt` → `saleDate` since Sale has no `createdAt`.
       const orderBy: any = {};
-      // ✅ FIX: Use 'saleDate' instead of 'createdAt'
-      orderBy[params.sortBy === 'createdAt' ? 'saleDate' : params.sortBy] = params.sortOrder;
+      orderBy[
+        params.sortBy === 'createdAt' ? 'saleDate' : params.sortBy
+      ] = params.sortOrder;
 
-      const result = await checkoutService.getAllCheckouts(limit, skip, filters, orderBy);
+      const result = await checkoutService.getAllCheckouts(
+        limit,
+        skip,
+        filters,
+        orderBy,
+      );
 
       res.status(200).json({
         success: true,
@@ -158,478 +325,187 @@ export const checkoutController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return res.status(400).json(zodErrorResponse(error));
       }
       next(error);
     }
   },
 
   /**
-   * Get checkout by ID
+   * Get checkout by ID.
    * GET /checkout/:id
    */
   async getCheckoutById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
+      if (!id) throw new AppError('Checkout ID is required', 400);
 
       const checkout = await checkoutService.getCheckoutById(id);
 
-      res.status(200).json({
-        success: true,
-        data: checkout,
-      });
+      res.status(200).json({ success: true, data: checkout });
     } catch (error) {
       next(error);
     }
   },
 
   /**
-   * Update checkout
-   * PUT /checkout/:id
+   * Get checkout by receipt number.
+   * GET /checkout/receipt/:receiptNumber
    */
-  async updateCheckout(req: Request, res: Response, next: NextFunction) {
+  async getCheckoutByReceiptNumber(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-      const data = req.body;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
+      const { receiptNumber } = req.params;
+      if (!receiptNumber) {
+        throw new AppError('Receipt number is required', 400);
       }
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const checkout =
+        await checkoutService.getCheckoutByReceiptNumber(receiptNumber);
 
-      const updated = await checkoutService.updateCheckout(id, data, userId);
-
-      res.status(200).json({
-        success: true,
-        data: updated,
-        message: 'Checkout updated successfully',
-      });
+      res.status(200).json({ success: true, data: checkout });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
       next(error);
     }
   },
 
   /**
-   * Process payment for checkout
-   * POST /checkout/:id/pay
+   * Get checkout summary.
+   *
+   * Serves two routes:
+   *   GET /checkout/summary/:cartId   — cart-first (frontend)
+   *   GET /checkout/:id/summary       — id-first (backward compat)
+   *
+   * Both resolve to the same underlying cart lookup. The route
+   * ordering in `routes/checkout.ts` ensures `/summary/:cartId` is
+   * matched before `/:id` so Express doesn't swallow `summary` as
+   * an ID.
    */
-  async processPayment(req: Request, res: Response, next: NextFunction) {
+  async getCheckoutSummary(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-      const { paymentMethod, amount, paymentDetails } = req.body;
+      const cartId = resolveCartId(req);
+      if (!cartId) throw new AppError('Cart ID is required', 400);
 
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
+      const summary = await checkoutService.getCheckoutSummary(cartId);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      // ✅ FIX: Use the public method with correct parameters
-      const result = await checkoutService.processPaymentForCheckout(id, {
-        paymentMethod,
-        amount,
-        paymentDetails,
-        userId,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Payment processed successfully',
-      });
+      res.status(200).json({ success: true, data: summary });
     } catch (error) {
       next(error);
     }
   },
 
   /**
-   * Complete checkout
-   * POST /checkout/:id/complete
-   */
-  async completeCheckout(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.completeCheckout(id, userId);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Checkout completed successfully',
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Cancel checkout
-   * POST /checkout/:id/cancel
-   */
-  async cancelCheckout(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-      const { reason } = req.body;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.cancelCheckout(id, userId, reason);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Checkout cancelled successfully',
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Get checkout summary
-   * GET /checkout/:id/summary
-   */
-  async getCheckoutSummary(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      const summary = await checkoutService.getCheckoutSummary(id);
-
-      res.status(200).json({
-        success: true,
-        data: summary,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Get checkout receipt
-   * GET /checkout/:id/receipt
-   */
-  async getCheckoutReceipt(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      const receipt = await checkoutService.getCheckoutReceipt(id);
-
-      res.status(200).json({
-        success: true,
-        data: receipt,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Send receipt via email
-   * POST /checkout/:id/email-receipt
-   */
-  async sendReceiptEmail(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-      const { email } = req.body;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.sendReceiptEmail(id, email || null, userId);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Receipt sent successfully',
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Get checkout statistics
-   * GET /checkout/stats/summary
-   */
-  async getCheckoutStats(req: Request, res: Response, next: NextFunction) {
-    try {
-      const userId = (req as any).user?.id;
-      const { dateFrom, dateTo, businessUnitId } = req.query;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const stats = await checkoutService.getCheckoutStats({
-        userId,
-        dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
-        dateTo: dateTo ? new Date(dateTo as string) : undefined,
-        businessUnitId: businessUnitId as string,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Get checkout items
+   * Get checkout items.
    * GET /checkout/:id/items
    */
-  async getCheckoutItems(req: Request, res: Response, next: NextFunction) {
+  async getCheckoutItems(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { id } = req.params;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
+      if (!id) throw new AppError('Checkout ID is required', 400);
 
       const items = await checkoutService.getCheckoutItems(id);
 
-      res.status(200).json({
-        success: true,
-        data: items,
-      });
+      res.status(200).json({ success: true, data: items });
     } catch (error) {
       next(error);
     }
   },
 
   /**
-   * Add item to checkout
-   * POST /checkout/:id/items
+   * Get checkout history with filters.
+   * GET /checkout/history
    */
-  async addCheckoutItem(req: Request, res: Response, next: NextFunction) {
+  async getCheckoutHistory(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-      const data = addItemSchema.parse(req.body);
+      const userId = getUserId(req);
+      if (!userId) throw new AppError('User ID is required', 400);
 
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
+      const {
+        page = '1',
+        limit = '20',
+        startDate,
+        endDate,
+        status,
+        customerId,
+        search,
+      } = req.query;
+
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
+
+      const filters: any = {};
+      if (status) filters.status = status;
+      if (customerId) filters.customerId = customerId;
+      if (startDate || endDate) {
+        filters.saleDate = {};
+        if (startDate) filters.saleDate.gte = new Date(startDate as string);
+        if (endDate) filters.saleDate.lte = new Date(endDate as string);
+      }
+      if (search) {
+        filters.OR = [
+          {
+            receiptNumber: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+          {
+            customer: {
+              firstName: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            customer: {
+              lastName: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+          {
+            user: {
+              email: {
+                contains: search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        ];
       }
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.addCheckoutItem(id, data, userId);
-
-      res.status(201).json({
-        success: true,
-        data: result,
-        message: 'Item added successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  },
-
-  /**
-   * Remove item from checkout
-   * DELETE /checkout/:id/items/:itemId
-   */
-  async removeCheckoutItem(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id, itemId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!id || !itemId) {
-        throw new AppError('Checkout ID and Item ID are required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.removeCheckoutItem(id, itemId, userId);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Item removed successfully',
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
-
-  /**
-   * Update checkout item quantity
-   * PUT /checkout/:id/items/:itemId
-   */
-  async updateCheckoutItem(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id, itemId } = req.params;
-      const userId = (req as any).user?.id;
-      const data = updateItemSchema.parse(req.body);
-
-      if (!id || !itemId) {
-        throw new AppError('Checkout ID and Item ID are required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.updateCheckoutItem(id, itemId, data.quantity, userId);
+      const result = await checkoutService.getAllCheckouts(
+        limitNum,
+        (pageNum - 1) * limitNum,
+        filters,
+      );
 
       res.status(200).json({
         success: true,
-        data: result,
-        message: 'Item updated successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  },
-
-  /**
-   * Apply discount to checkout
-   * POST /checkout/:id/discount
-   */
-  async applyDiscount(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-      const data = discountSchema.parse(req.body);
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const result = await checkoutService.applyDiscount(id, data.code, userId);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Discount applied successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  },
-
-  /**
-   * Remove discount from checkout
-   * DELETE /checkout/:id/discount
-   */
-  async removeDiscount(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      // ✅ FIX: Use the correct method name
-      const result = await checkoutService.removeDiscountFromCheckout(id, userId);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-        message: 'Discount removed successfully',
+        data: result.checkouts,
+        pagination: {
+          total: result.total,
+          page: pageNum,
+          totalPages: Math.ceil(result.total / limitNum),
+          limit: limitNum,
+        },
       });
     } catch (error) {
       next(error);
@@ -637,10 +513,14 @@ export const checkoutController = {
   },
 
   /**
-   * Get customer checkout history
+   * Get customer checkout history.
    * GET /checkout/customer/:customerId/history
    */
-  async getCustomerCheckoutHistory(req: Request, res: Response, next: NextFunction) {
+  async getCustomerCheckoutHistory(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const { customerId } = req.params;
       const { page = '1', limit = '20' } = req.query;
@@ -649,13 +529,13 @@ export const checkoutController = {
         throw new AppError('Customer ID is required', 400);
       }
 
-      const pageNum = parseInt(page as string);
-      const limitNum = parseInt(limit as string);
+      const pageNum = parseInt(page as string, 10);
+      const limitNum = parseInt(limit as string, 10);
 
       const result = await checkoutService.getCustomerCheckoutHistory(
         customerId,
         pageNum,
-        limitNum
+        limitNum,
       );
 
       res.status(200).json({
@@ -673,59 +553,64 @@ export const checkoutController = {
     }
   },
 
+  // ============================================
+  // UPDATE / STATUS
+  // ============================================
+
   /**
-   * Get checkout by receipt number
-   * GET /checkout/receipt/:receiptNumber
+   * Update checkout.
+   * PUT /checkout/:id
    */
-  async getCheckoutByReceiptNumber(req: Request, res: Response, next: NextFunction) {
+  async updateCheckout(req: Request, res: Response, next: NextFunction) {
     try {
-      const { receiptNumber } = req.params;
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const data = req.body;
 
-      if (!receiptNumber) {
-        throw new AppError('Receipt number is required', 400);
-      }
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
 
-      const checkout = await checkoutService.getCheckoutByReceiptNumber(receiptNumber);
+      const updated = await checkoutService.updateCheckout(
+        id,
+        data,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
-        data: checkout,
+        data: updated,
+        message: 'Checkout updated successfully',
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
       next(error);
     }
   },
 
   /**
-   * Export checkouts
-   * GET /checkout/export/all
+   * Complete checkout.
+   * POST /checkout/:id/complete
    */
-  async exportCheckouts(req: Request, res: Response, next: NextFunction) {
+  async completeCheckout(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
-      const { format = 'csv', dateFrom, dateTo, businessUnitId } = req.query;
+      const { id } = req.params;
+      const userId = getUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
 
-      const result = await checkoutService.exportCheckouts({
-        userId,
-        format: format as string,
-        dateFrom: dateFrom ? new Date(dateFrom as string) : undefined,
-        dateTo: dateTo ? new Date(dateTo as string) : undefined,
-        businessUnitId: businessUnitId as string,
-      });
-
-      if (format === 'csv') {
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=checkouts_${Date.now()}.csv`);
-        return res.send(result);
-      }
+      const result = await checkoutService.completeCheckout(id, userId);
 
       res.status(200).json({
         success: true,
         data: result,
+        message: 'Checkout completed successfully',
       });
     } catch (error) {
       next(error);
@@ -733,21 +618,77 @@ export const checkoutController = {
   },
 
   /**
-   * Delete checkout
+   * Cancel checkout.
+   * POST /checkout/:id/cancel
+   */
+  async cancelCheckout(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const { reason } = req.body;
+
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.cancelCheckout(
+        id,
+        userId,
+        reason,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Checkout cancelled successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Void checkout.
+   * POST /checkout/:saleId/void
+   */
+  async voidCheckout(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = getUserId(req);
+      const { saleId } = req.params;
+      const { reason } = voidCheckoutSchema.parse(req.body || {});
+
+      if (!userId) throw new AppError('User ID is required', 400);
+      if (!saleId) throw new AppError('Sale ID is required', 400);
+
+      const result = await checkoutService.voidCheckout(
+        saleId,
+        userId,
+        reason,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Checkout voided successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  },
+
+  /**
+   * Delete checkout.
    * DELETE /checkout/:id
    */
   async deleteCheckout(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
+      const userId = getUserId(req);
 
-      if (!id) {
-        throw new AppError('Checkout ID is required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
 
       const result = await checkoutService.deleteCheckout(id, userId);
 
@@ -761,102 +702,216 @@ export const checkoutController = {
     }
   },
 
+  // ============================================
+  // ITEMS
+  // ============================================
+
   /**
-   * Void checkout
-   * POST /checkout/:saleId/void
+   * Add item to checkout.
+   * POST /checkout/:id/items
+   *
+   * ⚠ `unitPrice` is NOT accepted from the client. The service looks
+   * up the authoritative price from the database.
    */
-  async voidCheckout(req: Request, res: Response, next: NextFunction) {
+  async addCheckoutItem(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
-      const { saleId } = req.params;
-      const { reason } = voidCheckoutSchema.parse(req.body || {});
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const data = addItemSchema.parse(req.body);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.addCheckoutItem(
+        id,
+        data,
+        userId,
+      );
+
+      res.status(201).json({
+        success: true,
+        data: result,
+        message: 'Item added successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
       }
+      next(error);
+    }
+  },
 
-      if (!saleId) {
-        throw new AppError('Sale ID is required', 400);
+  /**
+   * Update checkout item quantity.
+   * PUT /checkout/:id/items/:itemId
+   */
+  async updateCheckoutItem(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const { id, itemId } = req.params;
+      const userId = getUserId(req);
+      const data = updateItemSchema.parse(req.body);
+
+      if (!id || !itemId) {
+        throw new AppError('Checkout ID and Item ID are required', 400);
       }
+      if (!userId) throw new AppError('User ID is required', 400);
 
-      const result = await checkoutService.voidCheckout(saleId, userId, reason);
+      const result = await checkoutService.updateCheckoutItem(
+        id,
+        itemId,
+        data.quantity,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
         data: result,
-        message: 'Checkout voided successfully',
+        message: 'Item updated successfully',
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return res.status(400).json(zodErrorResponse(error));
       }
       next(error);
     }
   },
 
-  // ============================================
-  // NEW METHODS FOR CHECKOUT MODULE
-  // ============================================
-
   /**
-   * Get checkout history with filters
-   * GET /checkout/history
+   * Remove item from checkout.
+   * DELETE /checkout/:id/items/:itemId
    */
-  async getCheckoutHistory(req: Request, res: Response, next: NextFunction) {
+  async removeCheckoutItem(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
-      const { 
-        page = '1', 
-        limit = '20', 
-        startDate, 
-        endDate, 
-        status,
-        customerId,
-        search 
-      } = req.query;
+      const { id, itemId } = req.params;
+      const userId = getUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
+      if (!id || !itemId) {
+        throw new AppError('Checkout ID and Item ID are required', 400);
       }
+      if (!userId) throw new AppError('User ID is required', 400);
 
-      const pageNum = parseInt(page as string);
-      const limitNum = parseInt(limit as string);
-
-      const filters: any = {};
-      if (status) filters.status = status;
-      if (customerId) filters.customerId = customerId;
-      if (startDate || endDate) {
-        filters.saleDate = {};
-        if (startDate) filters.saleDate.gte = new Date(startDate as string);
-        if (endDate) filters.saleDate.lte = new Date(endDate as string);
-      }
-      if (search) {
-        filters.OR = [
-          { receiptNumber: { contains: search, mode: 'insensitive' } },
-          { customer: { firstName: { contains: search, mode: 'insensitive' } } },
-          { customer: { lastName: { contains: search, mode: 'insensitive' } } },
-          { user: { email: { contains: search, mode: 'insensitive' } } },
-        ];
-      }
-
-      const result = await checkoutService.getAllCheckouts(limitNum, (pageNum - 1) * limitNum, filters);
+      const result = await checkoutService.removeCheckoutItem(
+        id,
+        itemId,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
-        data: result.checkouts,
-        pagination: {
-          total: result.total,
-          page: pageNum,
-          totalPages: Math.ceil(result.total / limitNum),
-          limit: limitNum,
+        data: result,
+        message: 'Item removed successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // ============================================
+  // DISCOUNTS
+  // ============================================
+
+  /**
+   * Apply discount to checkout.
+   * POST /checkout/:id/discount
+   */
+  async applyDiscount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const data = discountSchema.parse(req.body);
+
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.applyDiscount(
+        id,
+        data.code,
+        userId,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Discount applied successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  },
+
+  /**
+   * Remove discount from checkout.
+   * DELETE /checkout/:id/discount
+   */
+  async removeDiscount(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.removeDiscountFromCheckout(
+        id,
+        userId,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Discount removed successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // ============================================
+  // PAYMENTS
+  // ============================================
+
+  /**
+   * Process payment for checkout.
+   * POST /checkout/:id/pay
+   */
+  async processPayment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const { paymentMethod, amount, paymentDetails } = req.body;
+
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.processPaymentForCheckout(
+        id,
+        {
+          paymentMethod,
+          amount,
+          paymentDetails,
+          userId,
         },
+      );
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        message: 'Payment processed successfully',
       });
     } catch (error) {
       next(error);
@@ -864,26 +919,22 @@ export const checkoutController = {
   },
 
   /**
-   * Get payment methods
+   * Get payment methods.
    * GET /checkout/payment-methods
+   *
+   * Canonical identifiers are `enabled: true`; alias forms are
+   * exposed as `enabled: false` so the UI renders each method once.
    */
-  async getPaymentMethods(req: Request, res: Response, next: NextFunction) {
+  async getPaymentMethods(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUserId(req);
+      if (!userId) throw new AppError('User ID is required', 400);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const paymentMethods = [
-        { id: 'CASH', name: 'Cash', code: 'CASH', enabled: true, description: 'Pay with cash' },
-        { id: 'CREDIT_CARD', name: 'Credit Card', code: 'CREDIT_CARD', enabled: true, description: 'Pay with credit card' },
-        { id: 'DEBIT_CARD', name: 'Debit Card', code: 'DEBIT_CARD', enabled: true, description: 'Pay with debit card' },
-        { id: 'MOBILE_MONEY', name: 'Mobile Money', code: 'MOBILE_MONEY', enabled: true, description: 'Pay with mobile money' },
-        { id: 'BANK_TRANSFER', name: 'Bank Transfer', code: 'BANK_TRANSFER', enabled: true, description: 'Pay via bank transfer' },
-        { id: 'GIFT_CARD', name: 'Gift Card', code: 'GIFT_CARD', enabled: true, description: 'Pay with gift card' },
-        { id: 'LOYALTY_POINTS', name: 'Loyalty Points', code: 'LOYALTY_POINTS', enabled: true, description: 'Pay with loyalty points' },
-      ];
+      const paymentMethods = await checkoutService.getPaymentMethods();
 
       res.status(200).json({
         success: true,
@@ -894,73 +945,145 @@ export const checkoutController = {
     }
   },
 
+  // ============================================
+  // RECEIPTS
+  // ============================================
+
   /**
-   * Get checkout settings
-   * GET /checkout/settings
+   * Get checkout receipt.
+   * GET /checkout/:id/receipt
    */
-  async getCheckoutSettings(req: Request, res: Response, next: NextFunction) {
+  async getCheckoutReceipt(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
+      const { id } = req.params;
+      if (!id) throw new AppError('Checkout ID is required', 400);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const receipt = await checkoutService.getCheckoutReceipt(id);
 
-      const settings = {
-        allowPartialPayment: true,
-        requireCustomer: false,
-        requireSignature: false,
-        maxDiscount: 50,
-        taxInclusive: false,
-        defaultPaymentMethod: 'CASH',
-        receiptFooter: 'Thank you for your business!',
-        loyaltyPointsEnabled: true,
-        pointsPerDollar: 10,
-        allowGuestCheckout: true,
-        maxCartItems: 100,
-        cartExpiryHours: 24,
-        discountEnabled: true,
-        maxDiscountPercentage: 20,
-        autoApplyPromotions: false,
-        reserveStockOnAdd: true,
-        reserveStockMinutes: 15,
-        lowStockThreshold: 5,
-        freeShippingThreshold: 100,
-        shippingCost: 0,
-        taxRate: 8,
-        notifyOnAbandonedCart: true,
-        abandonedCartHours: 2,
-        currencyCode: 'USD',
-        currencySymbol: '$',
-        showStockBadge: true,
-        showVariantImages: true,
-      };
-
-      res.status(200).json({
-        success: true,
-        data: settings,
-      });
+      res.status(200).json({ success: true, data: receipt });
     } catch (error) {
       next(error);
     }
   },
 
   /**
-   * Update checkout settings
-   * PUT /checkout/settings
+   * Send receipt via email.
+   * POST /checkout/:id/email-receipt
    */
-  async updateCheckoutSettings(req: Request, res: Response, next: NextFunction) {
+  async sendReceiptEmail(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
-      const settings = req.body;
+      const { id } = req.params;
+      const userId = getUserId(req);
+      const { email } = req.body;
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      if (!id) throw new AppError('Checkout ID is required', 400);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.sendReceiptEmail(
+        id,
+        email || null,
+        userId,
+      );
 
       res.status(200).json({
         success: true,
-        data: settings,
+        data: result,
+        message: 'Receipt sent successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // ============================================
+  // STATS / SETTINGS
+  // ============================================
+
+  /**
+   * Get checkout statistics.
+   * GET /checkout/stats/summary
+   */
+  async getCheckoutStats(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = getUserId(req);
+      const { dateFrom, dateTo, businessUnitId } = req.query;
+
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const stats = await checkoutService.getCheckoutStats({
+        userId,
+        dateFrom: dateFrom
+          ? new Date(dateFrom as string)
+          : undefined,
+        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+        businessUnitId: businessUnitId as string,
+      });
+
+      res.status(200).json({ success: true, data: stats });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Get checkout settings.
+   * GET /checkout/settings
+   *
+   * Delegates to the service so the shape stays in sync with
+   * `updateCheckoutSettings`.
+   */
+  async getCheckoutSettings(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = getUserId(req);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const settings = await checkoutService.getCheckoutSettings(userId);
+
+      res.status(200).json({ success: true, data: settings });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Update checkout settings.
+   * PUT /checkout/settings
+   */
+  async updateCheckoutSettings(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = getUserId(req);
+      const settings = req.body;
+
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const updated = await checkoutService.updateCheckoutSettings(
+        userId,
+        settings,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: updated,
         message: 'Settings updated successfully',
       });
     } catch (error) {
@@ -968,39 +1091,103 @@ export const checkoutController = {
     }
   },
 
+  // ============================================
+  // EXPORTS
+  // ============================================
+
   /**
-   * Export checkout data
+   * Export checkouts.
+   * GET /checkout/export/all
+   */
+  async exportCheckouts(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = getUserId(req);
+      const { format = 'csv', dateFrom, dateTo, businessUnitId } =
+        req.query;
+
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      const result = await checkoutService.exportCheckouts({
+        userId,
+        format: format as string,
+        dateFrom: dateFrom
+          ? new Date(dateFrom as string)
+          : undefined,
+        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+        businessUnitId: businessUnitId as string,
+      });
+
+      if (format === 'csv') {
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename=checkouts_${Date.now()}.csv`,
+        );
+        return res.send(result);
+      }
+
+      res.status(200).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Export checkout data.
    * GET /checkout/export
    */
-  async exportCheckoutData(req: Request, res: Response, next: NextFunction) {
+  async exportCheckoutData(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getUserId(req);
       const { format = 'csv', startDate, endDate, status } = req.query;
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      if (!userId) throw new AppError('User ID is required', 400);
 
       const filters: any = {};
       if (status) filters.status = status;
       if (startDate || endDate) {
         filters.saleDate = {};
-        if (startDate) filters.saleDate.gte = new Date(startDate as string);
+        if (startDate) {
+          filters.saleDate.gte = new Date(startDate as string);
+        }
         if (endDate) filters.saleDate.lte = new Date(endDate as string);
       }
 
-      const result = await checkoutService.getAllCheckouts(1000, 0, filters);
+      const result = await checkoutService.getAllCheckouts(
+        1000,
+        0,
+        filters,
+      );
 
       if (format === 'csv') {
-        let csv = 'Receipt Number,Date,Customer,Total,Status,Payment Method\n';
+        let csv =
+          'Receipt Number,Date,Customer,Total,Status,Payment Method\n';
         for (const checkout of result.checkouts) {
-          const customerName = checkout.customer ? `${checkout.customer.firstName} ${checkout.customer.lastName}` : 'Guest';
-          const paymentMethod = checkout.payments[0]?.paymentMethod || 'N/A';
-          csv += `${checkout.receiptNumber},${checkout.saleDate?.toISOString() || ''},${customerName},${checkout.total},${checkout.status},${paymentMethod}\n`;
+          const customerName = checkout.customer
+            ? `${checkout.customer.firstName} ${checkout.customer.lastName}`
+            : 'Guest';
+          const paymentMethod =
+            checkout.payments[0]?.paymentMethod || 'N/A';
+          csv += `${checkout.receiptNumber},${
+            checkout.saleDate?.toISOString() || ''
+          },${customerName},${checkout.total},${
+            checkout.status
+          },${paymentMethod}\n`;
         }
 
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=checkout_export_${Date.now()}.csv`);
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename=checkout_export_${Date.now()}.csv`,
+        );
         return res.send(csv);
       }
 

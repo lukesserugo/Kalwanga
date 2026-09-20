@@ -4,7 +4,7 @@ import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import Stripe from 'stripe';
 import { Prisma } from '../generated/prisma/index.js';
-import { PaymentStatus, PaymentProviderEnum, PaymentProviderType } from '../generated/prisma/index.js';
+//import { PaymentStatus, PaymentProviderEnum, PaymentProviderType } from '../generated/prisma/index.js';
 import { logger } from '../lib/logger.js';
 import * as crypto from 'crypto';
 import { mobileMoneyService } from './mobileMoneyService.js';
@@ -12,7 +12,12 @@ import { PayPalService } from './paypalService.js';
 import { FlutterwaveService } from './flutterwaveService.js';
 import { PaystackService } from './paystackService.js';
 import { SquareService } from './squareService.js';
-
+import {
+  PaymentStatus,
+  PaymentProviderEnum,
+  PaymentProviderType,
+  PaymentMethod,
+} from '../generated/prisma/index.js';
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2023-10-16',
 });
@@ -464,19 +469,19 @@ class FlutterwaveProviderHandler implements ProviderHandler {
   /**
  * Map payment status from provider to PaymentStatus enum
  */
-private mapPaymentStatusToEnum(status: string): PaymentStatus {
-  const statusMap: Record<string, PaymentStatus> = {
-    'succeeded': PaymentStatus.PAID,
-    'success': PaymentStatus.PAID,
-    'completed': PaymentStatus.PAID,
-    'pending': PaymentStatus.PENDING,
-    'processing': PaymentStatus.PROCESSING,
-    'failed': PaymentStatus.FAILED,
-    'cancelled': PaymentStatus.FAILED,
-    'refunded': PaymentStatus.REFUNDED,
-  };
-  return statusMap[status?.toLowerCase()] || PaymentStatus.PENDING;
-}
+  private mapPaymentStatusToEnum(status: string): PaymentStatus {
+    const statusMap: Record<string, PaymentStatus> = {
+      'succeeded': PaymentStatus.PAID,
+      'success': PaymentStatus.PAID,
+      'completed': PaymentStatus.PAID,
+      'pending': PaymentStatus.PENDING,
+      'processing': PaymentStatus.PROCESSING,
+      'failed': PaymentStatus.FAILED,
+      'cancelled': PaymentStatus.FAILED,
+      'refunded': PaymentStatus.REFUNDED,
+    };
+    return statusMap[status?.toLowerCase()] || PaymentStatus.PENDING;
+  }
 
   async processPayment(data: any): Promise<any> {
     const result = await this.flutterwaveService.processPayment({
@@ -772,38 +777,24 @@ export class PaymentService extends BaseService {
    */
   async createStripeCustomer(userId: string): Promise<any> {
     try {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new AppError('User not found', 404);
 
-      if (!user) {
-        throw new AppError('User not found', 404);
-      }
-
-      const result = await this.prisma.$queryRaw<Array<{ stripeCustomerId: string | null }>>`
-        SELECT "stripeCustomerId" FROM "users" WHERE "id" = ${userId}
-      `;
-      
-      const existingCustomerId = result[0]?.stripeCustomerId;
-      if (existingCustomerId) {
-        return { customerId: existingCustomerId, alreadyExists: true };
+      if (user.stripeCustomerId) {
+        return { customerId: user.stripeCustomerId, alreadyExists: true };
       }
 
       const customer = await stripe.customers.create({
         email: user.email,
         name: `${user.firstName} ${user.lastName}`,
         phone: user.phoneNumber || undefined,
-        metadata: {
-          userId: user.id,
-          clerkId: user.clerkId,
-        },
+        metadata: { userId: user.id, clerkId: user.clerkId },
       });
 
-      await this.prisma.$executeRaw`
-        UPDATE "users" 
-        SET "stripeCustomerId" = ${customer.id} 
-        WHERE "id" = ${user.id}
-      `;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { stripeCustomerId: customer.id },
+      });
 
       logger.info(`Stripe customer created for user: ${user.id}`);
       return { customerId: customer.id, alreadyExists: false };
@@ -818,29 +809,15 @@ export class PaymentService extends BaseService {
    */
   async getCustomerPaymentMethods(userId: string): Promise<any> {
     try {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new AppError('User not found', 404);
 
-      if (!user) {
-        throw new AppError('User not found', 404);
-      }
+      if (!user.stripeCustomerId) return { paymentMethods: [] };
 
-      const result = await this.prisma.$queryRaw<Array<{ stripeCustomerId: string | null }>>`
-        SELECT "stripeCustomerId" FROM "users" WHERE "id" = ${userId}
-      `;
-      
-      const stripeCustomerId = result[0]?.stripeCustomerId;
-      if (!stripeCustomerId) {
-        return { paymentMethods: [] };
-      }
-
-      const paymentMethods = await stripe.paymentMethods.list({
-        customer: stripeCustomerId,
+      return await stripe.paymentMethods.list({
+        customer: user.stripeCustomerId,
         type: 'card',
       });
-
-      return paymentMethods;
     } catch (error) {
       this.handleError(error, 'PaymentService.getCustomerPaymentMethods');
       throw error;
@@ -852,31 +829,23 @@ export class PaymentService extends BaseService {
    */
   async attachPaymentMethod(userId: string, paymentMethodId: string): Promise<any> {
     try {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-      });
-
-      if (!user) {
-        throw new AppError('User not found', 404);
-      }
-
-      const result = await this.prisma.$queryRaw<Array<{ stripeCustomerId: string | null }>>`
-        SELECT "stripeCustomerId" FROM "users" WHERE "id" = ${userId}
-      `;
-      
-      const stripeCustomerId = result[0]?.stripeCustomerId;
-      if (!stripeCustomerId) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new AppError('User not found', 404);
+      if (!user.stripeCustomerId) {
         throw new AppError('User has no Stripe customer account', 400);
       }
 
       const paymentMethod = await stripe.paymentMethods.attach(paymentMethodId, {
-        customer: stripeCustomerId,
+        customer: user.stripeCustomerId,
       });
 
-      await stripe.customers.update(stripeCustomerId, {
-        invoice_settings: {
-          default_payment_method: paymentMethodId,
-        },
+      await stripe.customers.update(user.stripeCustomerId, {
+        invoice_settings: { default_payment_method: paymentMethodId },
+      });
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { stripePaymentMethodId: paymentMethodId },
       });
 
       return paymentMethod;
@@ -2009,428 +1978,461 @@ async getPaymentProviders(userId?: string, businessUnitId?: string): Promise<any
 /**
  * Auto-create default providers in the database
  */
-async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
-  const defaultProviders = [
-    {
-      provider: PaymentProviderEnum.CASH,
-      name: 'Cash',
-      code: 'CASH',
-      type: PaymentProviderType.OFFLINE,
-      isActive: true,
-      isHealthy: true,
-      configured: true,
-      order: 0,
-      config: {
-        name: 'Cash',
-        type: 'OFFLINE',
-        supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
-        supportedMethods: ['CASH'],
-        description: 'Pay with cash at the counter',
-        icon: '💰',
-        feePercentage: 0,
-        feeFixed: 0,
-      },
-      currencies: ['USD', 'TZS', 'KES', 'UGX'],
-      paymentMethods: [{
+  async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
+    const defaultProviders = [
+      {
+        provider: PaymentProviderEnum.CASH,
         name: 'Cash',
         code: 'CASH',
-        description: 'Pay with cash at the counter',
-        icon: '💰',
+        type: PaymentProviderType.OFFLINE,
         isActive: true,
-        requiresRedirect: false,
-        isInstant: true,
-        minAmount: 0,
-        maxAmount: 100000,
-        feePercentage: 0,
-        feeFixed: 0,
+        isHealthy: true,
+        configured: true,
         order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.STRIPE,
-      name: 'Stripe',
-      code: 'STRIPE',
-      type: PaymentProviderType.ONLINE,
-      isActive: true,
-      isHealthy: true,
-      configured: false,
-      order: 1,
-      config: {
+        config: {
+          name: 'Cash',
+          type: 'OFFLINE',
+          supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+          supportedMethods: ['CASH'],
+          description: 'Pay with cash at the counter',
+          icon: '💰',
+          feePercentage: 0,
+          feeFixed: 0,
+        },
+        currencies: ['USD', 'TZS', 'KES', 'UGX'],
+        paymentMethods: [
+          {
+            name: 'Cash',
+            code: 'CASH',
+            description: 'Pay with cash at the counter',
+            icon: '💰',
+            isActive: true,
+            requiresRedirect: false,
+            isInstant: true,
+            minAmount: 0,
+            maxAmount: 100000,
+            feePercentage: 0,
+            feeFixed: 0,
+            order: 0,
+          },
+        ],
+      },
+      {
+        provider: PaymentProviderEnum.STRIPE,
         name: 'Stripe',
-        type: 'ONLINE',
-        supportedCurrencies: ['USD', 'EUR', 'GBP'],
-        supportedMethods: ['CREDIT_CARD', 'DEBIT_CARD'],
-        description: 'Pay with credit card (Visa, Mastercard, Amex)',
-        icon: '💳',
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 2.9,
-        feeFixed: 0.30,
-      },
-      currencies: ['USD', 'EUR', 'GBP'],
-      paymentMethods: [
-        {
-          name: 'Credit Card',
-          code: 'CREDIT_CARD',
-          description: 'Pay with credit card',
+        code: 'STRIPE',
+        type: PaymentProviderType.ONLINE,
+        isActive: true,
+        isHealthy: true,
+        configured: false,
+        order: 1,
+        config: {
+          name: 'Stripe',
+          type: 'ONLINE',
+          supportedCurrencies: ['USD', 'EUR', 'GBP'],
+          supportedMethods: ['CREDIT_CARD', 'DEBIT_CARD'],
+          description: 'Pay with credit card (Visa, Mastercard, Amex)',
           icon: '💳',
-          isActive: true,
-          requiresRedirect: true,
-          isInstant: true,
           minAmount: 1,
           maxAmount: 100000,
           feePercentage: 2.9,
-          feeFixed: 0.30,
-          order: 0,
+          feeFixed: 0.3,
         },
-        {
-          name: 'Debit Card',
-          code: 'DEBIT_CARD',
-          description: 'Pay with debit card',
-          icon: '💳',
-          isActive: true,
-          requiresRedirect: true,
-          isInstant: true,
-          minAmount: 1,
-          maxAmount: 100000,
-          feePercentage: 2.9,
-          feeFixed: 0.30,
-          order: 1,
-        },
-      ],
-    },
-    {
-      provider: PaymentProviderEnum.MOBILE_MONEY,
-      name: 'Mobile Money',
-      code: 'MOBILE_MONEY',
-      type: PaymentProviderType.ONLINE,
-      isActive: true,
-      isHealthy: true,
-      configured: false,
-      order: 2,
-      config: {
-        name: 'Mobile Money',
-        type: 'ONLINE',
-        supportedCurrencies: ['TZS', 'KES', 'UGX', 'USD'],
-        supportedMethods: ['MOBILE_MONEY'],
-        description: 'M-Pesa, Tigo Pesa, Airtel Money',
-        icon: '📱',
-        minAmount: 1,
-        maxAmount: 10000,
-        feePercentage: 1.5,
-        feeFixed: 0.10,
+        currencies: ['USD', 'EUR', 'GBP'],
+        paymentMethods: [
+          {
+            name: 'Credit Card',
+            code: 'CREDIT_CARD',
+            description: 'Pay with credit card',
+            icon: '💳',
+            isActive: true,
+            requiresRedirect: true,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 100000,
+            feePercentage: 2.9,
+            feeFixed: 0.3,
+            order: 0,
+          },
+          {
+            name: 'Debit Card',
+            code: 'DEBIT_CARD',
+            description: 'Pay with debit card',
+            icon: '💳',
+            isActive: true,
+            requiresRedirect: true,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 100000,
+            feePercentage: 2.9,
+            feeFixed: 0.3,
+            order: 1,
+          },
+        ],
       },
-      currencies: ['TZS', 'KES', 'UGX', 'USD'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.MOBILE_MONEY,
         name: 'Mobile Money',
         code: 'MOBILE_MONEY',
-        description: 'M-Pesa, Tigo Pesa, Airtel Money',
-        icon: '📱',
+        type: PaymentProviderType.ONLINE,
         isActive: true,
-        requiresRedirect: false,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 10000,
-        feePercentage: 1.5,
-        feeFixed: 0.10,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.BANK_TRANSFER,
-      name: 'Bank Transfer',
-      code: 'BANK_TRANSFER',
-      type: PaymentProviderType.ONLINE,
-      isActive: true,
-      isHealthy: true,
-      configured: false,
-      order: 3,
-      config: {
-        name: 'Bank Transfer',
-        type: 'ONLINE',
-        supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
-        supportedMethods: ['BANK_TRANSFER'],
-        description: 'Direct bank transfer',
-        icon: '🏦',
-        minAmount: 10,
-        maxAmount: 1000000,
-        feePercentage: 0,
-        feeFixed: 0,
+        isHealthy: true,
+        configured: false,
+        order: 2,
+        config: {
+          name: 'Mobile Money',
+          type: 'ONLINE',
+          supportedCurrencies: ['TZS', 'KES', 'UGX', 'USD'],
+          supportedMethods: ['MOBILE_MONEY'],
+          description: 'M-Pesa, Tigo Pesa, Airtel Money',
+          icon: '📱',
+          minAmount: 1,
+          maxAmount: 10000,
+          feePercentage: 1.5,
+          feeFixed: 0.1,
+        },
+        currencies: ['TZS', 'KES', 'UGX', 'USD'],
+        paymentMethods: [
+          {
+            name: 'Mobile Money',
+            code: 'MOBILE_MONEY',
+            description: 'M-Pesa, Tigo Pesa, Airtel Money',
+            icon: '📱',
+            isActive: true,
+            requiresRedirect: false,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 10000,
+            feePercentage: 1.5,
+            feeFixed: 0.1,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['USD', 'TZS', 'KES', 'UGX'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.BANK_TRANSFER,
         name: 'Bank Transfer',
         code: 'BANK_TRANSFER',
-        description: 'Direct bank transfer',
-        icon: '🏦',
+        type: PaymentProviderType.ONLINE,
         isActive: true,
-        requiresRedirect: true,
-        isInstant: false,
-        minAmount: 10,
-        maxAmount: 1000000,
-        feePercentage: 0,
-        feeFixed: 0,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.GIFT_CARD,
-      name: 'Gift Card',
-      code: 'GIFT_CARD',
-      type: PaymentProviderType.ONLINE,
-      isActive: true,
-      isHealthy: true,
-      configured: false,
-      order: 4,
-      config: {
-        name: 'Gift Card',
-        type: 'ONLINE',
-        supportedCurrencies: ['USD'],
-        supportedMethods: ['GIFT_CARD'],
-        description: 'Redeem your gift card',
-        icon: '🎁',
-        minAmount: 1,
-        maxAmount: 1000,
-        feePercentage: 0,
-        feeFixed: 0,
+        isHealthy: true,
+        configured: false,
+        order: 3,
+        config: {
+          name: 'Bank Transfer',
+          type: 'ONLINE',
+          supportedCurrencies: ['USD', 'TZS', 'KES', 'UGX'],
+          supportedMethods: ['BANK_TRANSFER'],
+          description: 'Direct bank transfer',
+          icon: '🏦',
+          minAmount: 10,
+          maxAmount: 1000000,
+          feePercentage: 0,
+          feeFixed: 0,
+        },
+        currencies: ['USD', 'TZS', 'KES', 'UGX'],
+        paymentMethods: [
+          {
+            name: 'Bank Transfer',
+            code: 'BANK_TRANSFER',
+            description: 'Direct bank transfer',
+            icon: '🏦',
+            isActive: true,
+            requiresRedirect: true,
+            isInstant: false,
+            minAmount: 10,
+            maxAmount: 1000000,
+            feePercentage: 0,
+            feeFixed: 0,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['USD'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.GIFT_CARD,
         name: 'Gift Card',
         code: 'GIFT_CARD',
-        description: 'Redeem your gift card',
-        icon: '🎁',
+        type: PaymentProviderType.ONLINE,
         isActive: true,
-        requiresRedirect: false,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 1000,
-        feePercentage: 0,
-        feeFixed: 0,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.LOYALTY_POINTS,
-      name: 'Loyalty Points',
-      code: 'LOYALTY_POINTS',
-      type: PaymentProviderType.OFFLINE,
-      isActive: true,
-      isHealthy: true,
-      configured: false,
-      order: 5,
-      config: {
-        name: 'Loyalty Points',
-        type: 'OFFLINE',
-        supportedCurrencies: ['USD'],
-        supportedMethods: ['LOYALTY_POINTS'],
-        description: 'Pay with your loyalty points',
-        icon: '⭐',
-        minAmount: 1,
-        maxAmount: 1000,
-        feePercentage: 0,
-        feeFixed: 0,
+        isHealthy: true,
+        configured: false,
+        order: 4,
+        config: {
+          name: 'Gift Card',
+          type: 'ONLINE',
+          supportedCurrencies: ['USD'],
+          supportedMethods: ['GIFT_CARD'],
+          description: 'Redeem your gift card',
+          icon: '🎁',
+          minAmount: 1,
+          maxAmount: 1000,
+          feePercentage: 0,
+          feeFixed: 0,
+        },
+        currencies: ['USD'],
+        paymentMethods: [
+          {
+            name: 'Gift Card',
+            code: 'GIFT_CARD',
+            description: 'Redeem your gift card',
+            icon: '🎁',
+            isActive: true,
+            requiresRedirect: false,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 1000,
+            feePercentage: 0,
+            feeFixed: 0,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['USD'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.LOYALTY_POINTS,
         name: 'Loyalty Points',
         code: 'LOYALTY_POINTS',
-        description: 'Pay with your loyalty points',
-        icon: '⭐',
+        type: PaymentProviderType.OFFLINE,
         isActive: true,
-        requiresRedirect: false,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 1000,
-        feePercentage: 0,
-        feeFixed: 0,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.PAYPAL,
-      name: 'PayPal',
-      code: 'PAYPAL',
-      type: PaymentProviderType.ONLINE,
-      isActive: false,
-      isHealthy: true,
-      configured: false,
-      order: 6,
-      config: {
-        name: 'PayPal',
-        type: 'ONLINE',
-        supportedCurrencies: ['USD', 'EUR', 'GBP'],
-        supportedMethods: ['PAYPAL'],
-        description: 'Pay with PayPal',
-        icon: '💸',
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 3.5,
-        feeFixed: 0.30,
+        isHealthy: true,
+        configured: false,
+        order: 5,
+        config: {
+          name: 'Loyalty Points',
+          type: 'OFFLINE',
+          supportedCurrencies: ['USD'],
+          supportedMethods: ['LOYALTY_POINTS'],
+          description: 'Pay with your loyalty points',
+          icon: '⭐',
+          minAmount: 1,
+          maxAmount: 1000,
+          feePercentage: 0,
+          feeFixed: 0,
+        },
+        currencies: ['USD'],
+        paymentMethods: [
+          {
+            name: 'Loyalty Points',
+            code: 'LOYALTY_POINTS',
+            description: 'Pay with your loyalty points',
+            icon: '⭐',
+            isActive: true,
+            requiresRedirect: false,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 1000,
+            feePercentage: 0,
+            feeFixed: 0,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['USD', 'EUR', 'GBP'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.PAYPAL,
         name: 'PayPal',
         code: 'PAYPAL',
-        description: 'Pay with PayPal',
-        icon: '💸',
+        type: PaymentProviderType.ONLINE,
         isActive: false,
-        requiresRedirect: true,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 3.5,
-        feeFixed: 0.30,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.FLUTTERWAVE,
-      name: 'Flutterwave',
-      code: 'FLUTTERWAVE',
-      type: PaymentProviderType.ONLINE,
-      isActive: false,
-      isHealthy: true,
-      configured: false,
-      order: 7,
-      config: {
-        name: 'Flutterwave',
-        type: 'ONLINE',
-        supportedCurrencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
-        supportedMethods: ['FLUTTERWAVE'],
-        description: 'Pay with Flutterwave',
-        icon: '🌊',
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 1.9,
-        feeFixed: 0.20,
+        isHealthy: true,
+        configured: false,
+        order: 6,
+        config: {
+          name: 'PayPal',
+          type: 'ONLINE',
+          supportedCurrencies: ['USD', 'EUR', 'GBP'],
+          supportedMethods: ['PAYPAL'],
+          description: 'Pay with PayPal',
+          icon: '💸',
+          minAmount: 1,
+          maxAmount: 100000,
+          feePercentage: 3.5,
+          feeFixed: 0.3,
+        },
+        currencies: ['USD', 'EUR', 'GBP'],
+        paymentMethods: [
+          {
+            name: 'PayPal',
+            code: 'PAYPAL',
+            description: 'Pay with PayPal',
+            icon: '💸',
+            isActive: false,
+            requiresRedirect: true,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 100000,
+            feePercentage: 3.5,
+            feeFixed: 0.3,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.FLUTTERWAVE,
         name: 'Flutterwave',
         code: 'FLUTTERWAVE',
-        description: 'Pay with Flutterwave',
-        icon: '🌊',
+        type: PaymentProviderType.ONLINE,
         isActive: false,
-        requiresRedirect: true,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 1.9,
-        feeFixed: 0.20,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.PAYSTACK,
-      name: 'Paystack',
-      code: 'PAYSTACK',
-      type: PaymentProviderType.ONLINE,
-      isActive: false,
-      isHealthy: true,
-      configured: false,
-      order: 8,
-      config: {
-        name: 'Paystack',
-        type: 'ONLINE',
-        supportedCurrencies: ['NGN', 'GHS', 'USD'],
-        supportedMethods: ['PAYSTACK'],
-        description: 'Pay with Paystack',
-        icon: '🔷',
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 1.5,
-        feeFixed: 0.20,
+        isHealthy: true,
+        configured: false,
+        order: 7,
+        config: {
+          name: 'Flutterwave',
+          type: 'ONLINE',
+          supportedCurrencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
+          supportedMethods: ['FLUTTERWAVE'],
+          description: 'Pay with Flutterwave',
+          icon: '🌊',
+          minAmount: 1,
+          maxAmount: 100000,
+          feePercentage: 1.9,
+          feeFixed: 0.2,
+        },
+        currencies: ['NGN', 'GHS', 'KES', 'UGX', 'TZS', 'USD'],
+        paymentMethods: [
+          {
+            name: 'Flutterwave',
+            code: 'FLUTTERWAVE',
+            description: 'Pay with Flutterwave',
+            icon: '🌊',
+            isActive: false,
+            requiresRedirect: true,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 100000,
+            feePercentage: 1.9,
+            feeFixed: 0.2,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['NGN', 'GHS', 'USD'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.PAYSTACK,
         name: 'Paystack',
         code: 'PAYSTACK',
-        description: 'Pay with Paystack',
-        icon: '🔷',
+        type: PaymentProviderType.ONLINE,
         isActive: false,
-        requiresRedirect: true,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 1.5,
-        feeFixed: 0.20,
-        order: 0,
-      }],
-    },
-    {
-      provider: PaymentProviderEnum.SQUARE,
-      name: 'Square',
-      code: 'SQUARE',
-      type: PaymentProviderType.ONLINE,
-      isActive: false,
-      isHealthy: true,
-      configured: false,
-      order: 9,
-      config: {
-        name: 'Square',
-        type: 'ONLINE',
-        supportedCurrencies: ['USD', 'EUR', 'GBP'],
-        supportedMethods: ['SQUARE'],
-        description: 'Pay with Square',
-        icon: '⬜',
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 2.6,
-        feeFixed: 0.30,
+        isHealthy: true,
+        configured: false,
+        order: 8,
+        config: {
+          name: 'Paystack',
+          type: 'ONLINE',
+          supportedCurrencies: ['NGN', 'GHS', 'USD'],
+          supportedMethods: ['PAYSTACK'],
+          description: 'Pay with Paystack',
+          icon: '🔷',
+          minAmount: 1,
+          maxAmount: 100000,
+          feePercentage: 1.5,
+          feeFixed: 0.2,
+        },
+        currencies: ['NGN', 'GHS', 'USD'],
+        paymentMethods: [
+          {
+            name: 'Paystack',
+            code: 'PAYSTACK',
+            description: 'Pay with Paystack',
+            icon: '🔷',
+            isActive: false,
+            requiresRedirect: true,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 100000,
+            feePercentage: 1.5,
+            feeFixed: 0.2,
+            order: 0,
+          },
+        ],
       },
-      currencies: ['USD', 'EUR', 'GBP'],
-      paymentMethods: [{
+      {
+        provider: PaymentProviderEnum.SQUARE,
         name: 'Square',
         code: 'SQUARE',
-        description: 'Pay with Square',
-        icon: '⬜',
+        type: PaymentProviderType.ONLINE,
         isActive: false,
-        requiresRedirect: false,
-        isInstant: true,
-        minAmount: 1,
-        maxAmount: 100000,
-        feePercentage: 2.6,
-        feeFixed: 0.30,
-        order: 0,
-      }],
-    },
-  ];
-
-  const createdProviders = [];
-
-  for (const providerData of defaultProviders) {
-    const { currencies, paymentMethods, ...providerCreateData } = providerData;
-
-    const provider = await this.prisma.paymentProvider.create({
-      data: {
-        ...providerCreateData,
-        businessUnitId: businessUnitId || undefined,
-        currencies: {
-          create: currencies.map((currency: string) => ({
-            currency,
-            isActive: true,
-          })),
+        isHealthy: true,
+        configured: false,
+        order: 9,
+        config: {
+          name: 'Square',
+          type: 'ONLINE',
+          supportedCurrencies: ['USD', 'EUR', 'GBP'],
+          supportedMethods: ['SQUARE'],
+          description: 'Pay with Square',
+          icon: '⬜',
+          minAmount: 1,
+          maxAmount: 100000,
+          feePercentage: 2.6,
+          feeFixed: 0.3,
         },
-        paymentMethods: {
-          create: paymentMethods.map((method: any) => ({
-            ...method,
-            businessUnitId: businessUnitId || undefined,
-          })),
-        },
+        currencies: ['USD', 'EUR', 'GBP'],
+        paymentMethods: [
+          {
+            name: 'Square',
+            code: 'SQUARE',
+            description: 'Pay with Square',
+            icon: '⬜',
+            isActive: false,
+            requiresRedirect: false,
+            isInstant: true,
+            minAmount: 1,
+            maxAmount: 100000,
+            feePercentage: 2.6,
+            feeFixed: 0.3,
+            order: 0,
+          },
+        ],
       },
-      include: {
-        currencies: true,
-        paymentMethods: true,
-      },
-    });
+    ];
 
-    createdProviders.push(provider);
-    logger.info(`Auto-created provider: ${provider.name} (${provider.code})`);
+    const buKey = businessUnitId ?? null;
+    const createdProviders: any[] = [];
+
+    for (const providerData of defaultProviders) {
+      const { currencies, paymentMethods, ...providerCreateData } = providerData;
+
+      // ⭐ Upsert on the compound unique [provider, businessUnitId].
+      // On existing rows, do NOT touch the currency/method children
+      // or the config — the user may have customized them.
+      const provider = await this.prisma.paymentProvider.upsert({
+        where: {
+          provider_businessUnitId: {
+            provider: providerCreateData.provider,
+            businessUnitId: buKey as any,
+          },
+        },
+        create: {
+          ...providerCreateData,
+          businessUnitId: buKey || undefined,
+          currencies: {
+            create: currencies.map((currency: string) => ({
+              currency,
+              isActive: true,
+            })),
+          },
+          paymentMethods: {
+            create: paymentMethods.map((method: any) => ({
+              ...method,
+              businessUnitId: buKey || undefined,
+            })),
+          },
+        },
+        update: {
+          // Intentionally empty: do not overwrite an existing
+          // provider's name, config, credentials, or children
+          // on subsequent seed calls.
+        },
+        include: {
+          currencies: true,
+          paymentMethods: true,
+        },
+      });
+
+      createdProviders.push(provider);
+      logger.info(`Ensured provider: ${provider.name} (${provider.code})`);
+    }
+
+    return createdProviders;
   }
-
-  return createdProviders;
-}
 
   /**
    * Get provider transaction statistics
@@ -2443,77 +2445,76 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
     transactions30d: number;
     volume30d: number;
   }> {
-    const now = new Date();
-    const start24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const start7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const start30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const emptyStats = {
+      transactions24h: 0,
+      volume24h: 0,
+      transactions7d: 0,
+      volume7d: 0,
+      transactions30d: 0,
+      volume30d: 0,
+    };
 
+    // Load the provider and the enum values of its payment methods.
     const provider = await this.prisma.paymentProvider.findUnique({
       where: { id: providerId },
       include: {
         paymentMethods: {
-          select: { id: true },
+          select: { code: true },
         },
       },
     });
 
     if (!provider || provider.paymentMethods.length === 0) {
-      return {
-        transactions24h: 0,
-        volume24h: 0,
-        transactions7d: 0,
-        volume7d: 0,
-        transactions30d: 0,
-        volume30d: 0,
-      };
+      return emptyStats;
     }
 
-    const paymentMethodIds = provider.paymentMethods.map(m => m.id);
+    // The `paymentMethod` column on Payment is an enum. Match on the enum
+    // value. If the provider's payment method code is not a valid enum
+    // member, filter it out.
+    const validEnumValues = Object.values(PaymentMethod);
+    const methodCodes = provider.paymentMethods
+      .map((m) => m.code)
+      .filter((code) => validEnumValues.includes(code as any)) as any[];
 
-    const [stats24h, stats7d, stats30d] = await Promise.all([
-      this.prisma.$queryRaw`
-        SELECT 
-          COUNT(*) as count,
-          COALESCE(SUM(amount), 0) as total
-        FROM payments
-        WHERE payment_method_id IN (${paymentMethodIds.join(',')})
-          AND status = 'PAID'
-          AND processed_at >= ${start24h}
-          AND deleted_at IS NULL
-      `,
-      this.prisma.$queryRaw`
-        SELECT 
-          COUNT(*) as count,
-          COALESCE(SUM(amount), 0) as total
-        FROM payments
-        WHERE payment_method_id IN (${paymentMethodIds.join(',')})
-          AND status = 'PAID'
-          AND processed_at >= ${start7d}
-          AND deleted_at IS NULL
-      `,
-      this.prisma.$queryRaw`
-        SELECT 
-          COUNT(*) as count,
-          COALESCE(SUM(amount), 0) as total
-        FROM payments
-        WHERE payment_method_id IN (${paymentMethodIds.join(',')})
-          AND status = 'PAID'
-          AND processed_at >= ${start30d}
-          AND deleted_at IS NULL
-      `,
+    if (methodCodes.length === 0) {
+      return emptyStats;
+    }
+
+    const now = new Date();
+    const start24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const start7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const start30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const baseWhere = {
+      paymentMethod: { in: methodCodes },
+      status: 'PAID' as const,
+    };
+
+    const [agg24h, agg7d, agg30d] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: { ...baseWhere, processedAt: { gte: start24h } },
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { ...baseWhere, processedAt: { gte: start7d } },
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { ...baseWhere, processedAt: { gte: start30d } },
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
     ]);
 
-    const stats24hResult = (stats24h as any)[0] || { count: 0, total: 0 };
-    const stats7dResult = (stats7d as any)[0] || { count: 0, total: 0 };
-    const stats30dResult = (stats30d as any)[0] || { count: 0, total: 0 };
-
     return {
-      transactions24h: Number(stats24hResult.count),
-      volume24h: Number(stats24hResult.total),
-      transactions7d: Number(stats7dResult.count),
-      volume7d: Number(stats7dResult.total),
-      transactions30d: Number(stats30dResult.count),
-      volume30d: Number(stats30dResult.total),
+      transactions24h: agg24h._count._all,
+      volume24h: agg24h._sum.amount ?? 0,
+      transactions7d: agg7d._count._all,
+      volume7d: agg7d._sum.amount ?? 0,
+      transactions30d: agg30d._count._all,
+      volume30d: agg30d._sum.amount ?? 0,
     };
   }
 
@@ -3657,7 +3658,7 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
   private async handlePaymentSuccess(paymentIntent: any): Promise<any> {
     try {
       const { id, amount, currency, metadata, customer, payment_method } = paymentIntent;
-      
+
       logger.info(`Processing payment success: ${id} (${amount} ${currency})`);
 
       await this.prisma.payment.updateMany({
@@ -3668,35 +3669,41 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
         data: {
           status: 'PAID',
           processedAt: new Date(),
-          customerId: customer || undefined,
-          gatewayId: payment_method || undefined,
+          // ✅ FIXED: no customerId column, no gatewayId write — those are non-existent FKs.
+          // If you need to record the Stripe customer/method, put it in metadata.
+          // (Prisma won't merge objects — you must pass the full metadata object.)
         },
       });
 
       const payment = await this.prisma.payment.findFirst({
         where: { transactionId: id },
         include: {
-          sale: {
-            include: {
-              customer: true,
-              items: true,
-            },
-          },
+          sale: { include: { customer: true, items: true } },
           order: true,
           user: true,
         },
       });
 
       if (payment) {
+        // Merge metadata safely
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            metadata: {
+              ...(payment.metadata as any || {}),
+              stripeCustomerId: customer || null,
+              stripePaymentMethodId: payment_method || null,
+            },
+          },
+        });
+
         if (payment.sale) {
           await this.updateSaleAfterPayment(payment.sale.id, payment.amount, payment);
           await this.createReceipt(payment.sale);
         }
-
         if (payment.order) {
           await this.updateOrderAfterPayment(payment.order.id, payment.amount, payment);
         }
-
         await this.createPaymentNotification(payment, 'succeeded');
 
         if (payment.sale?.customerId) {
@@ -3712,11 +3719,7 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
         await this.clearCart(metadata.cartId);
       }
 
-      return { 
-        success: true, 
-        paymentId: payment?.id || id,
-        status: 'PAID'
-      };
+      return { success: true, paymentId: payment?.id || id, status: 'PAID' };
     } catch (error) {
       logger.error('Error handling payment success:', error);
       throw error;
@@ -3922,32 +3925,50 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
   private async handleCheckoutSessionCompleted(session: any): Promise<any> {
     try {
       const { id, payment_intent, customer, metadata } = session;
-      
+
       logger.info(`Checkout session completed: ${id} (${payment_intent})`);
 
       if (payment_intent) {
         const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent);
-        
+
         const existingPayment = await this.prisma.payment.findFirst({
           where: { transactionId: payment_intent },
         });
 
         if (!existingPayment) {
-          await this.prisma.payment.create({
+          const userId = metadata?.userId;
+          if (!userId) {
+            logger.warn(`Checkout session ${id} has no userId — skipping Payment creation`);
+            return { success: true, status: 'COMPLETED', skipped: true };
+          }
+
+          const newPayment = await this.prisma.payment.create({
             data: {
               amount: paymentIntent.amount / 100,
+              currency: paymentIntent.currency.toUpperCase(),
               paymentMethod: 'CREDIT_CARD',
               status: 'PAID',
               transactionId: payment_intent,
               reference: payment_intent,
-              gatewayId: id,
-              currency: paymentIntent.currency,
-              userId: metadata?.userId || 'system',
-              customerId: customer || metadata?.customerId,
+              userId,
+              saleId: metadata?.saleId || null,
+              orderId: metadata?.orderId || null,
               processedAt: new Date(),
               notes: `Checkout session: ${id}`,
+              metadata: {
+                sessionId: id,
+                stripeCustomerId: customer || null,
+              },
             },
           });
+
+          // ✅ Update the linked sale/order, which the old code never did
+          if (newPayment.saleId) {
+            await this.updateSaleAfterPayment(newPayment.saleId, newPayment.amount, newPayment);
+          }
+          if (newPayment.orderId) {
+            await this.updateOrderAfterPayment(newPayment.orderId, newPayment.amount, newPayment);
+          }
         }
       }
 
@@ -3971,8 +3992,30 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
 
   private async handleInvoicePaid(invoice: any): Promise<any> {
     try {
-      const { id, customer, amount_paid } = invoice;
+      const { id, customer, amount_paid, metadata } = invoice;
       logger.info(`Invoice paid: ${id} - ${amount_paid}`);
+
+      const companyId = metadata?.companyId;
+      const userId = metadata?.userId;
+
+      if (!companyId || !userId) {
+        logger.warn(`Invoice ${id} ignored — missing metadata.companyId or metadata.userId`);
+        return { success: true, ignored: true };
+      }
+
+      let customerId: string | null = null;
+      if (customer) {
+        const existing = await this.prisma.customer.findFirst({
+          where: { id: customer },
+          select: { id: true },
+        });
+        customerId = existing?.id ?? null;
+      }
+
+      if (!customerId) {
+        logger.warn(`Invoice ${id} ignored — no matching Customer for Stripe customer ${customer}`);
+        return { success: true, ignored: true };
+      }
 
       await this.prisma.invoice.create({
         data: {
@@ -3982,10 +4025,10 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
           status: 'PAID',
           paidAmount: amount_paid / 100,
           paidAt: new Date(),
-          customerId: customer,
+          customerId,
           notes: `Stripe invoice: ${id}`,
-          userId: 'system',
-          companyId: 'default',
+          userId,
+          companyId,
         },
       });
 
@@ -4050,109 +4093,76 @@ async createDefaultProviders(businessUnitId?: string): Promise<any[]> {
   }
 
   private async handlePaymentMethodAttached(paymentMethod: any): Promise<any> {
-    try {
-      const { id, customer, type } = paymentMethod;
-      logger.info(`Payment method attached: ${id} - ${type}`);
-
-      if (customer) {
-        await this.prisma.$executeRaw`
-          UPDATE "users" 
-          SET "stripePaymentMethodId" = ${id} 
-          WHERE "stripeCustomerId" = ${customer}
-        `;
-      }
-
-      return { success: true };
-    } catch (error) {
-      logger.error('Error handling payment method attached:', error);
-      throw error;
-    }
+    // Stripe payment method linkage is tracked via metadata on Payment rows.
+    // No user-table update needed here.
+    logger.info(`Payment method attached: ${paymentMethod.id}`);
+    return { success: true };
   }
 
   private async handlePaymentMethodDetached(paymentMethod: any): Promise<any> {
-    try {
-      const { id, customer } = paymentMethod;
-      logger.info(`Payment method detached: ${id}`);
-
-      if (customer) {
-        await this.prisma.$executeRaw`
-          UPDATE "users" 
-          SET "stripePaymentMethodId" = NULL 
-          WHERE "stripeCustomerId" = ${customer}
-        `;
-      }
-
-      return { success: true };
-    } catch (error) {
-      logger.error('Error handling payment method detached:', error);
-      throw error;
-    }
+    logger.info(`Payment method detached: ${paymentMethod.id}`);
+    return { success: true };
   }
 
   private async handleCustomerCreated(customer: any): Promise<any> {
-    try {
-      const { id, email } = customer;
-      logger.info(`Customer created: ${id} - ${email}`);
-
-      if (email) {
-        await this.prisma.$executeRaw`
-          UPDATE "users" 
-          SET "stripeCustomerId" = ${id} 
-          WHERE "email" = ${email}
-        `;
+    logger.info(`Stripe customer created: ${customer.id} (${customer.email})`);
+    // Link to user if the email is present and the column exists after migration.
+    if (customer.email) {
+      try {
+        await this.prisma.user.updateMany({
+          where: { email: customer.email },
+          data: { stripeCustomerId: customer.id },
+        });
+      } catch (err) {
+        logger.warn('Could not link stripeCustomerId (user or column missing):', err);
       }
-
-      return { success: true };
-    } catch (error) {
-      logger.error('Error handling customer created:', error);
-      throw error;
     }
+    return { success: true };
   }
 
+
   private async handleCustomerUpdated(customer: any): Promise<any> {
-    try {
-      const { id, email } = customer;
-      logger.info(`Customer updated: ${id} - ${email}`);
-      return { success: true };
-    } catch (error) {
-      logger.error('Error handling customer updated:', error);
-      throw error;
-    }
+    logger.info(`Stripe customer updated: ${customer.id}`);
+    return { success: true };
   }
 
   private async handleCustomerDeleted(customer: any): Promise<any> {
+    logger.info(`Stripe customer deleted: ${customer.id}`);
     try {
-      const { id } = customer;
-      logger.info(`Customer deleted: ${id}`);
-
-      await this.prisma.$executeRaw`
-        UPDATE "users" 
-        SET "stripeCustomerId" = NULL 
-        WHERE "stripeCustomerId" = ${id}
-      `;
-
-      return { success: true };
-    } catch (error) {
-      logger.error('Error handling customer deleted:', error);
-      throw error;
+      await this.prisma.user.updateMany({
+        where: { stripeCustomerId: customer.id },
+        data: { stripeCustomerId: null, stripePaymentMethodId: null },
+      });
+    } catch (err) {
+      logger.warn('Could not clear stripeCustomerId:', err);
     }
+    return { success: true };
   }
 
   private async handleUnhandledEvent(event: any): Promise<any> {
     try {
       logger.info(`Unhandled Stripe event: ${event.type}`);
-      
-      await this.prisma.notification.create({
-        data: {
-          title: `Unhandled Webhook: ${event.type}`,
-          message: `A Stripe webhook of type ${event.type} was received but not handled. Please review.`,
-          type: 'SYSTEM',
-          priority: 'MEDIUM',
-          userId: 'system',
-          link: '/admin/webhooks',
-          createdAt: new Date(),
-        },
+
+      const admin = await this.prisma.user.findFirst({
+        where: { role: 'SUPER_ADMIN', isActive: true },
+        select: { id: true },
       });
+
+      if (admin) {
+        await this.prisma.notification.create({
+          data: {
+            title: `Unhandled Webhook: ${event.type}`,
+            message: `A Stripe webhook of type ${event.type} was received but not handled. Please review.`,
+            type: 'SYSTEM',
+            priority: 'MEDIUM',
+            userId: admin.id,
+            link: '/admin/webhooks',
+            createdAt: new Date(),
+          },
+        });
+      } else {
+        logger.warn('No active SUPER_ADMIN found — unhandled webhook notification skipped');
+      }
 
       return { success: true, unhandled: true, eventType: event.type };
     } catch (error) {

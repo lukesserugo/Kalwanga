@@ -6,9 +6,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ArrowLeft, Truck, Save, Loader2, Lock, 
-  Mail, Phone, MapPin, User, Building, 
+import {
+  ArrowLeft, Truck, Save, Loader2, Lock,
+  Mail, Phone, MapPin, User, Building,
   AlertCircle, CheckCircle, XCircle, HelpCircle,
   Globe, CreditCard, FileText, Users, Package,
   ShoppingBag, Clock, DollarSign, Shield,
@@ -17,7 +17,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
-import { supplierService } from '../../../../../services/supplierService';
+import {
+  supplierService,
+  SupplierValidationError,
+} from '../../../../../services/supplierService';
 import { companyService } from '../../../../../services/companyService';
 import { toast } from '../../../../../utils/toast-manager';
 import { PermissionResource } from '../../../../../types/enums';
@@ -56,6 +59,8 @@ interface FormErrors {
   website?: string;
   creditLimit?: string;
   rating?: string;
+  companyId?: string;
+  userId?: string;
   general?: string;
 }
 
@@ -70,6 +75,24 @@ interface Company {
 // ============================================
 // CONSTANTS
 // ============================================
+
+const PLACEHOLDER_COMPANY_IDS = new Set([
+  'default',
+  'default-company',
+  'default-company-id',
+  'null',
+  'undefined',
+  '',
+]);
+
+const PLACEHOLDER_USER_IDS = new Set([
+  'default',
+  'default-user',
+  'default-user-id',
+  'null',
+  'undefined',
+  '',
+]);
 
 const PAYMENT_TERMS_OPTIONS = [
   { value: '', label: 'Select payment terms' },
@@ -95,6 +118,83 @@ const DELIVERY_TERMS_OPTIONS = [
   { value: 'Pickup', label: 'Pickup' },
 ];
 
+const EMPTY_FORM: FormData = {
+  name: '',
+  contactPerson: '',
+  email: '',
+  phone: '',
+  address: '',
+  taxId: '',
+  paymentTerms: '',
+  deliveryTerms: '',
+  notes: '',
+  isActive: true,
+  website: '',
+  creditLimit: 0,
+  rating: 0,
+};
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Returns true if the given value is a real, usable database ID —
+ * i.e. not a placeholder string.
+ */
+function isRealId(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed === '') return false;
+  const lower = trimmed.toLowerCase();
+  return !PLACEHOLDER_COMPANY_IDS.has(lower) && !PLACEHOLDER_USER_IDS.has(lower);
+}
+
+/**
+ * Extract the first usable company object from any of the response
+ * shapes the backend might return.
+ */
+function extractCompanyList(response: any): Company[] {
+  if (!response) return [];
+
+  // Case 1: direct array
+  if (Array.isArray(response)) return response as Company[];
+
+  if (typeof response === 'object') {
+    // Case 2: { data: [...] }
+    if ('data' in response) {
+      const data = (response as any).data;
+      if (Array.isArray(data)) return data as Company[];
+
+      // Case 3: { data: { data: [...] } }
+      if (data && typeof data === 'object') {
+        if ('data' in data && Array.isArray((data as any).data)) {
+          return (data as any).data as Company[];
+        }
+        if ('companies' in data && Array.isArray((data as any).companies)) {
+          return (data as any).companies as Company[];
+        }
+        // Case 4: { data: { ...singleCompany } }
+        if ('id' in data && typeof (data as any).id === 'string') {
+          return [data as Company];
+        }
+      }
+    }
+
+    // Case 5: { companies: [...] }
+    if ('companies' in response && Array.isArray((response as any).companies)) {
+      return (response as any).companies as Company[];
+    }
+
+    // Case 6: single company object
+    if ('id' in response && typeof (response as any).id === 'string') {
+      return [response as Company];
+    }
+  }
+
+  return [];
+}
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -103,19 +203,19 @@ export default function CreateSupplierPage() {
   const router = useRouter();
   const auth = useAuth();
   const { canCreate, canManage, isLoading: permissionLoading } = usePermission();
-  
+
   // Extract values from auth with safe fallbacks
   const user = auth.user;
   const isAuthenticated = auth.isAuthenticated;
   const authLoading = auth.isLoading;
-  
-  // State for companies - fetch from database
+
+  // ---- Company state ------------------------------------------------
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [loadingCompanies, setLoadingCompanies] = useState(true);
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
-  
-  // State
+
+  // ---- Form state ---------------------------------------------------
   const [loading, setLoading] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -123,122 +223,120 @@ export default function CreateSupplierPage() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [success, setSuccess] = useState(false);
   const [createdSupplierId, setCreatedSupplierId] = useState<string | null>(null);
+
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     basic: true,
     contact: true,
     business: true,
     additional: false,
   });
-  
-  const [formData, setFormData] = useState<FormData>({
-    name: '',
-    contactPerson: '',
-    email: '',
-    phone: '',
-    address: '',
-    taxId: '',
-    paymentTerms: '',
-    deliveryTerms: '',
-    notes: '',
-    isActive: true,
-    website: '',
-    creditLimit: 0,
-    rating: 0,
-  });
+
+  const [formData, setFormData] = useState<FormData>({ ...EMPTY_FORM });
 
   // ============================================
-  // FETCH COMPANIES FROM DATABASE
+  // DERIVED VALUES
+  // ============================================
+
+  /**
+   * The real, validated company ID (or undefined).
+   * Never returns a placeholder like "default".
+   */
+  const companyId = useMemo<string | undefined>(() => {
+    if (isRealId(selectedCompany?.id)) {
+      return selectedCompany!.id;
+    }
+    // Fallback: read from localStorage but validate it.
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem('companyId');
+      if (isRealId(stored)) return stored;
+    }
+    return undefined;
+  }, [selectedCompany]);
+
+  /**
+   * The real, validated user ID (or undefined).
+   * Never returns a placeholder like "default".
+   */
+  const userId = useMemo<string | undefined>(() => {
+    const candidate =
+      (user as any)?.id ??
+      (user as any)?.userId ??
+      (user as any)?.uid ??
+      (user as any)?.databaseId;
+
+    if (isRealId(candidate)) return candidate;
+    return undefined;
+  }, [user]);
+
+  const hasValidCompany = useMemo(
+    () => isRealId(companyId),
+    [companyId]
+  );
+
+  const hasValidUser = useMemo(() => isRealId(userId), [userId]);
+
+  const canCreateSupplier = useMemo(
+    () =>
+      canCreate(PermissionResource.SUPPLIER) ||
+      canManage(PermissionResource.SUPPLIER),
+    [canCreate, canManage]
+  );
+
+  // ============================================
+  // FETCH COMPANIES
   // ============================================
 
   const fetchCompanies = useCallback(async () => {
     setLoadingCompanies(true);
     try {
       console.log('📤 Fetching companies from database...');
-      
-      // ✅ FIX: Type the response properly
-      const response = await api.get('/companies') as any;
+      const response = await api.get('/companies');
       console.log('📥 Companies response:', response);
-      
-      let companiesData: Company[] = [];
-      
-      // Extract companies from response with proper type checking
-      if (response && typeof response === 'object') {
-        // Case 1: Direct array response
-        if (Array.isArray(response)) {
-          companiesData = response;
+
+      const list = extractCompanyList(response);
+
+      // Keep only usable entries (id must be real).
+      const usable = list.filter(
+        (c) => isRealId(c?.id) && c.isActive !== false
+      );
+
+      console.log(`✅ Found ${usable.length} usable companies`, usable);
+      setCompanies(usable);
+
+      // Auto-select the first one.
+      if (usable.length > 0) {
+        const first = usable[0];
+        setSelectedCompany(first);
+        companyService.setCompanyId(first.id);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('companyId', first.id);
         }
-        // Case 2: Response with data property
-        else if ('data' in response) {
-          const data = (response as any).data;
-          if (Array.isArray(data)) {
-            companiesData = data;
-          } else if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as any).data)) {
-            companiesData = (data as any).data;
-          } else if (data && typeof data === 'object' && 'companies' in data && Array.isArray((data as any).companies)) {
-            companiesData = (data as any).companies;
-          }
-        }
-        // Case 3: Response with companies property
-        else if ('companies' in response && Array.isArray((response as any).companies)) {
-          companiesData = (response as any).companies;
-        }
-      }
-      
-      // Filter only active companies
-      const activeCompanies = companiesData.filter((c: Company) => c.isActive !== false);
-      
-      console.log(`✅ Found ${activeCompanies.length} active companies:`, activeCompanies);
-      setCompanies(activeCompanies);
-      
-      // Auto-select the first active company
-      if (activeCompanies.length > 0) {
-        const firstCompany = activeCompanies[0];
-        setSelectedCompany(firstCompany);
-        // Store the company ID for future use
-        companyService.setCompanyId(firstCompany.id);
-        localStorage.setItem('companyId', firstCompany.id);
-        console.log(`✅ Auto-selected company: ${firstCompany.name} (${firstCompany.id})`);
+        console.log(`✅ Auto-selected company: ${first.name} (${first.id})`);
       } else {
-        console.warn('⚠️ No active companies found in database');
+        console.warn('⚠️ No usable companies found');
         toast.warning('No companies found. Please create a company first.');
       }
-      
     } catch (error) {
       console.error('❌ Error fetching companies:', error);
-      
-      // Try to get company from user's context as fallback
+
+      // -------- Fallback 1: company attached to the user ------------
       try {
-        const userAny = user as any;
-        if (userAny?.companyId) {
-          const companyId = userAny.companyId;
-          console.log(`🔍 Using company from user context: ${companyId}`);
-          
-          // Try to fetch the specific company
+        const candidate =
+          (user as any)?.companyId ?? (user as any)?.company?.id;
+        if (isRealId(candidate)) {
+          console.log(`🔍 Trying company from user context: ${candidate}`);
           try {
-            const companyResponse = await api.get(`/companies/${companyId}`) as any;
-            let companyData: Company | null = null;
-            
-            if (companyResponse && typeof companyResponse === 'object') {
-              if ('data' in companyResponse) {
-                const data = (companyResponse as any).data;
-                if (data && typeof data === 'object') {
-                  if ('data' in data && (data as any).data) {
-                    companyData = (data as any).data;
-                  } else {
-                    companyData = data;
-                  }
-                }
-              } else {
-                companyData = companyResponse as Company;
+            const companyResponse = await api.get(`/companies/${candidate}`);
+            const list = extractCompanyList(companyResponse);
+            const company = list[0];
+            if (company && isRealId(company.id)) {
+              setCompanies([company]);
+              setSelectedCompany(company);
+              companyService.setCompanyId(company.id);
+              if (typeof window !== 'undefined') {
+                window.localStorage.setItem('companyId', company.id);
               }
-            }
-            
-            if (companyData && companyData.id) {
-              setCompanies([companyData]);
-              setSelectedCompany(companyData);
-              companyService.setCompanyId(companyData.id);
-              localStorage.setItem('companyId', companyData.id);
-              console.log(`✅ Loaded company from user context: ${companyData.name}`);
+              console.log(`✅ Loaded company from user context: ${company.name}`);
               return;
             }
           } catch (e) {
@@ -248,73 +346,42 @@ export default function CreateSupplierPage() {
       } catch (e) {
         console.warn('Error accessing user context:', e);
       }
-      
-      // If still no companies, try to get or create default
+
+      // -------- Fallback 2: default company -------------------------
       try {
         console.log('🔄 Attempting to get or create default company...');
         const defaultCompany = await companyService.getOrCreateDefault();
-        if (defaultCompany && defaultCompany.id) {
-          setCompanies([defaultCompany]);
-          setSelectedCompany(defaultCompany);
+        if (defaultCompany && isRealId(defaultCompany.id)) {
+          setCompanies([defaultCompany as Company]);
+          setSelectedCompany(defaultCompany as Company);
           companyService.setCompanyId(defaultCompany.id);
-          localStorage.setItem('companyId', defaultCompany.id);
-          console.log(`✅ Created/loaded default company: ${defaultCompany.name}`);
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('companyId', defaultCompany.id);
+          }
+          console.log(
+            `✅ Created/loaded default company: ${defaultCompany.name}`
+          );
+        } else {
+          console.warn('⚠️ Default company is not a real ID, ignoring');
+          toast.error('Could not load company data. Please contact support.');
         }
       } catch (e) {
         console.error('❌ Failed to get/create default company:', e);
         toast.error('Could not load company data. Please contact support.');
       }
-      
     } finally {
       setLoadingCompanies(false);
     }
   }, [user]);
 
   // ============================================
-  // DERIVED VALUES
-  // ============================================
-
-  // Get the actual Company ID from the selected company
-  const companyId = useMemo(() => {
-    if (selectedCompany?.id) {
-      return selectedCompany.id;
-    }
-    
-    // Try from localStorage as fallback
-    const stored = localStorage.getItem('companyId');
-    if (stored && stored !== 'undefined' && stored !== 'null' && stored.length > 10) {
-      return stored;
-    }
-    
-    return undefined;
-  }, [selectedCompany]);
-
-  // Get user ID from auth context
-  const userId = useMemo(() => {
-    return user?.id || (user as any)?.userId || (user as any)?.uid;
-  }, [user]);
-
-  // Check if user has a valid company
-  const hasValidCompany = useMemo(() => {
-    return !!companyId && companyId !== 'default' && companyId !== 'default-company-id';
-  }, [companyId]);
-
-  // Check permissions
-  const canCreateSupplier = useMemo(() => 
-    canCreate(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
-    [canCreate, canManage]
-  );
-
-  // ============================================
   // EFFECTS
   // ============================================
 
-  // Client-side only
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Fetch companies on mount
   useEffect(() => {
     if (isClient && isAuthenticated) {
       fetchCompanies();
@@ -322,31 +389,43 @@ export default function CreateSupplierPage() {
   }, [isClient, isAuthenticated, fetchCompanies]);
 
   // ============================================
-  // COMPANY SELECTOR
+  // COMPANY SELECTOR HANDLER
   // ============================================
 
   const handleCompanySelect = (companyId: string) => {
-    const selected = companies.find((c: Company) => c.id === companyId);
+    if (!isRealId(companyId)) {
+      toast.error('Invalid company selected');
+      return;
+    }
+
+    const selected = companies.find((c) => c.id === companyId);
     if (selected) {
       setSelectedCompany(selected);
       setShowCompanyDropdown(false);
-      localStorage.setItem('companyId', selected.id);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('companyId', selected.id);
+      }
       companyService.setCompanyId(selected.id);
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.general;
-        return newErrors;
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.general;
+        delete next.companyId;
+        return next;
       });
       toast.success(`Selected: ${selected.name}`);
     }
   };
 
+  // ============================================
+  // COMPANY SELECTOR COMPONENT
+  // ============================================
+
   const CompanySelector = () => {
     if (loadingCompanies) {
       return (
         <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg animate-pulse">
-          <div className="w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded"></div>
-          <div className="w-24 h-4 bg-gray-300 dark:bg-gray-600 rounded"></div>
+          <div className="w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+          <div className="w-24 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
         </div>
       );
     }
@@ -376,7 +455,7 @@ export default function CreateSupplierPage() {
       );
     }
 
-    const selected = companies.find((c: Company) => c.id === companyId);
+    const selected = companies.find((c) => c.id === companyId);
 
     return (
       <div className="relative">
@@ -411,7 +490,7 @@ export default function CreateSupplierPage() {
               {companies.map((company) => {
                 const isSelected = companyId === company.id;
                 const isActive = company.isActive !== false;
-                
+
                 return (
                   <button
                     key={company.id}
@@ -424,28 +503,41 @@ export default function CreateSupplierPage() {
                     disabled={!isActive}
                     className={`
                       w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between
-                      ${isSelected 
-                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' 
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }
-                      ${!isActive ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                      ${
+                        !isActive
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
+                      }
                     `}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="truncate font-medium">{company.name}</span>
+                        <span className="truncate font-medium">
+                          {company.name}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <code className="text-xs text-gray-400 font-mono">{company.id}</code>
+                        <code className="text-xs text-gray-400 font-mono">
+                          {company.id}
+                        </code>
                         <span className="text-xs text-gray-400">•</span>
-                        <span className="text-xs text-gray-400">{company.email}</span>
+                        <span className="text-xs text-gray-400">
+                          {company.email}
+                        </span>
                       </div>
                     </div>
                     {isSelected && (
                       <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 ml-2" />
                     )}
                     {!isActive && (
-                      <span className="text-xs text-red-500 flex-shrink-0 ml-2">(Inactive)</span>
+                      <span className="text-xs text-red-500 flex-shrink-0 ml-2">
+                        (Inactive)
+                      </span>
                     )}
                   </button>
                 );
@@ -461,57 +553,71 @@ export default function CreateSupplierPage() {
   // VALIDATION
   // ============================================
 
-  const validateField = useCallback((name: keyof FormData, value: any): string => {
-    switch (name) {
-      case 'name':
-        if (!value || !value.trim()) return 'Supplier name is required';
-        if (value.trim().length < 2) return 'Supplier name must be at least 2 characters';
-        if (value.trim().length > 100) return 'Supplier name must be less than 100 characters';
-        return '';
-      case 'email':
-        if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          return 'Please enter a valid email address';
-        }
-        return '';
-      case 'phone':
-        if (value && !/^[\+\d\s\-\(\)]{7,20}$/.test(value)) {
-          return 'Please enter a valid phone number';
-        }
-        return '';
-      case 'taxId':
-        if (value && value.length > 50) return 'Tax ID must be less than 50 characters';
-        return '';
-      case 'website':
-        if (value && !/^https?:\/\/[^\s]+$/.test(value) && !/^[^\s]+\.[^\s]+$/.test(value)) {
-          return 'Please enter a valid website URL';
-        }
-        return '';
-      case 'creditLimit':
-        if (value && value < 0) return 'Credit limit cannot be negative';
-        if (value && value > 999999999) return 'Credit limit is too large';
-        return '';
-      case 'rating':
-        if (value && (value < 0 || value > 5)) return 'Rating must be between 0 and 5';
-        return '';
-      case 'contactPerson':
-        if (value && value.length > 100) return 'Contact person name must be less than 100 characters';
-        return '';
-      case 'address':
-        if (value && value.length > 200) return 'Address must be less than 200 characters';
-        return '';
-      case 'notes':
-        if (value && value.length > 1000) return 'Notes must be less than 1000 characters';
-        return '';
-      default:
-        return '';
-    }
-  }, []);
+  const validateField = useCallback(
+    (name: keyof FormData, value: any): string => {
+      switch (name) {
+        case 'name':
+          if (!value || !value.trim()) return 'Supplier name is required';
+          if (value.trim().length < 2)
+            return 'Supplier name must be at least 2 characters';
+          if (value.trim().length > 100)
+            return 'Supplier name must be less than 100 characters';
+          return '';
+        case 'email':
+          if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+            return 'Please enter a valid email address';
+          }
+          return '';
+        case 'phone':
+          if (value && !/^[\+\d\s\-\(\)]{7,20}$/.test(value)) {
+            return 'Please enter a valid phone number';
+          }
+          return '';
+        case 'taxId':
+          if (value && value.length > 50)
+            return 'Tax ID must be less than 50 characters';
+          return '';
+        case 'website':
+          if (
+            value &&
+            !/^https?:\/\/[^\s]+$/.test(value) &&
+            !/^[^\s]+\.[^\s]+$/.test(value)
+          ) {
+            return 'Please enter a valid website URL';
+          }
+          return '';
+        case 'creditLimit':
+          if (value && value < 0) return 'Credit limit cannot be negative';
+          if (value && value > 999999999) return 'Credit limit is too large';
+          return '';
+        case 'rating':
+          if (value && (value < 0 || value > 5))
+            return 'Rating must be between 0 and 5';
+          return '';
+        case 'contactPerson':
+          if (value && value.length > 100)
+            return 'Contact person name must be less than 100 characters';
+          return '';
+        case 'address':
+          if (value && value.length > 200)
+            return 'Address must be less than 200 characters';
+          return '';
+        case 'notes':
+          if (value && value.length > 1000)
+            return 'Notes must be less than 1000 characters';
+          return '';
+        default:
+          return '';
+      }
+    },
+    []
+  );
 
   const validateForm = useCallback((): boolean => {
     const newErrors: FormErrors = {};
     let isValid = true;
 
-    // Required fields
+    // -------- Name (required) ----------------------------------------
     if (!formData.name.trim()) {
       newErrors.name = 'Supplier name is required';
       isValid = false;
@@ -520,63 +626,68 @@ export default function CreateSupplierPage() {
       isValid = false;
     }
 
-    // Optional fields with validation
+    // -------- Optional fields ----------------------------------------
     if (formData.email) {
-      const emailError = validateField('email', formData.email);
-      if (emailError) {
-        newErrors.email = emailError;
+      const e = validateField('email', formData.email);
+      if (e) {
+        newErrors.email = e;
         isValid = false;
       }
     }
-
     if (formData.phone) {
-      const phoneError = validateField('phone', formData.phone);
-      if (phoneError) {
-        newErrors.phone = phoneError;
+      const e = validateField('phone', formData.phone);
+      if (e) {
+        newErrors.phone = e;
         isValid = false;
       }
     }
-
     if (formData.website) {
-      const websiteError = validateField('website', formData.website);
-      if (websiteError) {
-        newErrors.website = websiteError;
+      const e = validateField('website', formData.website);
+      if (e) {
+        newErrors.website = e;
         isValid = false;
       }
     }
-
     if (formData.creditLimit < 0) {
       newErrors.creditLimit = 'Credit limit cannot be negative';
       isValid = false;
     }
-
     if (formData.rating && (formData.rating < 0 || formData.rating > 5)) {
       newErrors.rating = 'Rating must be between 0 and 5';
       isValid = false;
     }
 
-    // Company validation
-    if (!companyId) {
-      newErrors.general = 'No company found. Please ensure a company exists.';
+    // -------- Company + user (required for FK integrity) -------------
+    if (!hasValidCompany) {
+      newErrors.companyId =
+        'No valid company found. Please select or create a company first.';
+      newErrors.general =
+        'No valid company found. Please select or create a company first.';
       isValid = false;
     }
 
-    if (!userId) {
-      newErrors.general = 'No user ID found. Please log in again.';
+    if (!hasValidUser) {
+      newErrors.userId = 'No valid user ID found. Please log in again.';
+      newErrors.general =
+        'No valid user ID found. Please log in again.';
       isValid = false;
     }
 
     setErrors(newErrors);
     return isValid;
-  }, [formData, companyId, userId, validateField]);
+  }, [formData, hasValidCompany, hasValidUser, validateField]);
 
   // ============================================
   // HANDLERS
   // ============================================
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value, type } = e.target;
-    
+
     let parsedValue: any = value;
     if (type === 'number') {
       parsedValue = value === '' ? 0 : parseFloat(value);
@@ -584,38 +695,42 @@ export default function CreateSupplierPage() {
     if (type === 'checkbox') {
       parsedValue = (e.target as HTMLInputElement).checked;
     }
-    
-    setFormData(prev => ({ ...prev, [name]: parsedValue }));
-    
+
+    setFormData((prev) => ({ ...prev, [name]: parsedValue }));
+
     if (errors[name as keyof FormErrors]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name as keyof FormErrors];
-        return newErrors;
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[name as keyof FormErrors];
+        return next;
       });
     }
-    
-    setTouched(prev => ({ ...prev, [name]: true }));
+
+    setTouched((prev) => ({ ...prev, [name]: true }));
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleBlur = (
+    e: React.FocusEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value } = e.target;
-    setTouched(prev => ({ ...prev, [name]: true }));
-    
+    setTouched((prev) => ({ ...prev, [name]: true }));
+
     const error = validateField(name as keyof FormData, value);
     if (error) {
-      setErrors(prev => ({ ...prev, [name]: error }));
+      setErrors((prev) => ({ ...prev, [name]: error }));
     } else {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name as keyof FormErrors];
-        return newErrors;
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[name as keyof FormErrors];
+        return next;
       });
     }
   };
 
   const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }));
@@ -625,47 +740,52 @@ export default function CreateSupplierPage() {
     e.preventDefault();
     setSubmitAttempted(true);
     setSuccess(false);
-    setErrors({});
 
+    // ---- 1. Form validation -----------------------------------------
     if (!validateForm()) {
-      const firstError = Object.values(errors).find(err => err);
-      if (firstError) {
-        toast.error(firstError);
-      } else {
-        toast.error('Please fix all validation errors');
-      }
-      const firstErrorField = Object.keys(errors)[0];
-      if (firstErrorField) {
-        const element = document.querySelector(`[name="${firstErrorField}"]`);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }
+      // errors state hasn't been committed yet, so read from the new
+      // validation result via a fresh pass.
+      const snapshot: FormErrors = {};
+      if (!formData.name.trim()) snapshot.name = 'Supplier name is required';
+      if (!hasValidCompany)
+        snapshot.general =
+          'No valid company found. Please select or create a company first.';
+      if (!hasValidUser)
+        snapshot.general = 'No valid user ID found. Please log in again.';
+
+      const firstError =
+        snapshot.general ||
+        snapshot.name ||
+        Object.values(errors).find((v) => v) ||
+        'Please fix all validation errors';
+      toast.error(firstError);
       return;
     }
 
-    // Use the actual Company ID from the database
-    if (!companyId) {
-      const errorMsg = 'No company found. Please ensure a company exists.';
-      setErrors(prev => ({ ...prev, general: errorMsg }));
-      toast.error(errorMsg);
+    // ---- 2. Placeholder guard (belt & suspenders) -------------------
+    if (!isRealId(companyId)) {
+      const msg =
+        'No valid company found. Please select or create a company first.';
+      setErrors((prev) => ({ ...prev, companyId: msg, general: msg }));
+      toast.error(msg);
       return;
     }
 
-    if (!userId) {
-      const errorMsg = 'No user ID found. Please log in again.';
-      setErrors(prev => ({ ...prev, general: errorMsg }));
-      toast.error(errorMsg);
+    if (!isRealId(userId)) {
+      const msg = 'No valid user ID found. Please log in again.';
+      setErrors((prev) => ({ ...prev, userId: msg, general: msg }));
+      toast.error(msg);
       return;
     }
 
     console.log(`✅ Using Company ID: ${companyId} (from database)`);
     console.log(`✅ Selected Company: ${selectedCompany?.name}`);
+    console.log(`✅ Using User ID: ${userId}`);
 
     setLoading(true);
     try {
-      // Prepare data - use the actual Company ID from the database
-      const data = {
+      // ---- 3. Build the payload ------------------------------------
+      const payload = {
         name: formData.name.trim(),
         contactPerson: formData.contactPerson.trim() || undefined,
         email: formData.email.trim() || undefined,
@@ -679,34 +799,20 @@ export default function CreateSupplierPage() {
         creditLimit: formData.creditLimit || undefined,
         rating: formData.rating || undefined,
         isActive: formData.isActive,
-        companyId: companyId, // ✅ Using actual Company ID from database
-        userId: userId,
+        companyId,
+        userId,
       };
 
-      console.log('📤 Creating supplier with data:', data);
-      
-      const result = await supplierService.createSupplier(data);
+      console.log('📤 Creating supplier with data:', payload);
+
+      const result = await supplierService.createSupplier(payload);
       console.log('✅ Supplier created:', result);
 
       setCreatedSupplierId(result.id);
       setSuccess(true);
       toast.success('Supplier created successfully');
 
-      setFormData({
-        name: '',
-        contactPerson: '',
-        email: '',
-        phone: '',
-        address: '',
-        taxId: '',
-        paymentTerms: '',
-        deliveryTerms: '',
-        notes: '',
-        isActive: true,
-        website: '',
-        creditLimit: 0,
-        rating: 0,
-      });
+      setFormData({ ...EMPTY_FORM });
       setTouched({});
       setErrors({});
       setSubmitAttempted(false);
@@ -715,32 +821,50 @@ export default function CreateSupplierPage() {
         router.push('/admin/catalog/suppliers');
         router.refresh();
       }, 2000);
-
     } catch (error: any) {
       console.error('❌ Failed to create supplier:', error);
-      
+
+      // ---- 4. Handle local SupplierValidationError first ----------
+      if (error instanceof SupplierValidationError) {
+        const field = (error.field as keyof FormErrors) || 'general';
+        setErrors((prev) => ({ ...prev, [field]: error.message }));
+
+        // If it's a company/user issue, also surface as general error so
+        // the banner at the top of the page displays it.
+        if (field === 'companyId' || field === 'userId') {
+          setErrors((prev) => ({ ...prev, general: error.message }));
+        }
+        toast.error(error.message);
+        return;
+      }
+
+      // ---- 5. Handle server errors --------------------------------
       let errorMessage = 'Failed to create supplier';
-      let fieldErrors: Record<string, string> = {};
-      
-      if (error?.response?.data?.errors) {
-        const validationErrors = error.response.data.errors;
+      const fieldErrors: Record<string, string> = {};
+
+      const resp = error?.response?.data;
+
+      if (resp?.errors) {
+        const validationErrors = resp.errors;
         if (Array.isArray(validationErrors)) {
           validationErrors.forEach((err: any) => {
             const field = err.field || err.path || 'general';
-            fieldErrors[field] = err.message;
+            fieldErrors[field] = err.message || 'Invalid value';
           });
+          errorMessage =
+            Object.values(fieldErrors)[0] || errorMessage;
         }
-      } else if (error?.response?.data?.message) {
-        errorMessage = error.response.data.message;
+      } else if (resp?.message) {
+        errorMessage = resp.message;
         fieldErrors.general = errorMessage;
-      } else if (error?.response?.data?.error) {
-        errorMessage = error.response.data.error;
+      } else if (resp?.error) {
+        errorMessage = resp.error;
         fieldErrors.general = errorMessage;
       } else if (error?.message) {
         errorMessage = error.message;
         fieldErrors.general = errorMessage;
       }
-      
+
       setErrors(fieldErrors);
       toast.error(errorMessage);
     } finally {
@@ -759,21 +883,7 @@ export default function CreateSupplierPage() {
   const handleCreateAnother = () => {
     setSuccess(false);
     setCreatedSupplierId(null);
-    setFormData({
-      name: '',
-      contactPerson: '',
-      email: '',
-      phone: '',
-      address: '',
-      taxId: '',
-      paymentTerms: '',
-      deliveryTerms: '',
-      notes: '',
-      isActive: true,
-      website: '',
-      creditLimit: 0,
-      rating: 0,
-    });
+    setFormData({ ...EMPTY_FORM });
     setTouched({});
     setErrors({});
     setSubmitAttempted(false);
@@ -792,7 +902,8 @@ export default function CreateSupplierPage() {
   };
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
-    const baseClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+    const baseClass =
+      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed';
     const error = getFieldError(fieldName);
     if (error) return `${baseClass} border-red-500 dark:border-red-500`;
     return `${baseClass} border-gray-300 dark:border-gray-600`;
@@ -801,14 +912,18 @@ export default function CreateSupplierPage() {
   const renderStars = (rating: number) => {
     const fullStars = Math.floor(rating);
     const emptyStars = 5 - fullStars;
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <span key={`full-${i}`} className="text-yellow-400">★</span>
+          <span key={`full-${i}`} className="text-yellow-400">
+            ★
+          </span>
         ))}
         {[...Array(emptyStars)].map((_, i) => (
-          <span key={`empty-${i}`} className="text-gray-300 dark:text-gray-600">★</span>
+          <span key={`empty-${i}`} className="text-gray-300 dark:text-gray-600">
+            ★
+          </span>
         ))}
       </div>
     );
@@ -822,7 +937,7 @@ export default function CreateSupplierPage() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
       </div>
@@ -835,7 +950,9 @@ export default function CreateSupplierPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Please Login</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Please Login
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
           You need to be logged in to create suppliers.
         </p>
@@ -855,9 +972,12 @@ export default function CreateSupplierPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to create suppliers. Please contact your administrator.
+          You don't have permission to create suppliers. Please contact your
+          administrator.
         </p>
         <button
           onClick={() => router.push('/admin/catalog/suppliers')}
@@ -873,6 +993,9 @@ export default function CreateSupplierPage() {
   // ============================================
   // RENDER
   // ============================================
+
+  const submitDisabled =
+    loading || success || !hasValidCompany || !hasValidUser;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 transition-colors duration-200">
@@ -927,8 +1050,12 @@ export default function CreateSupplierPage() {
               <div className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-green-800 dark:text-green-200">Success!</p>
-                  <p className="text-sm text-green-700 dark:text-green-300">Supplier created successfully.</p>
+                  <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                    Success!
+                  </p>
+                  <p className="text-sm text-green-700 dark:text-green-300">
+                    Supplier created successfully.
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -946,7 +1073,9 @@ export default function CreateSupplierPage() {
                 </button>
                 {createdSupplierId && (
                   <button
-                    onClick={() => router.push(`/admin/suppliers/${createdSupplierId}`)}
+                    onClick={() =>
+                      router.push(`/admin/suppliers/${createdSupplierId}`)
+                    }
                     className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
                   >
                     <Eye className="w-4 h-4" /> View Supplier
@@ -962,15 +1091,21 @@ export default function CreateSupplierPage() {
           <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">Error</p>
-              <p className="text-sm text-red-700 dark:text-red-300">{errors.general}</p>
+              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                Error
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {errors.general}
+              </p>
             </div>
             <button
-              onClick={() => setErrors(prev => {
-                const newErrors = { ...prev };
-                delete newErrors.general;
-                return newErrors;
-              })}
+              onClick={() =>
+                setErrors((prev) => {
+                  const next = { ...prev };
+                  delete next.general;
+                  return next;
+                })
+              }
               className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
             >
               <X className="w-4 h-4" />
@@ -993,16 +1128,21 @@ export default function CreateSupplierPage() {
                 </p>
               )}
               <p className="mt-1 text-xs text-gray-400">
-                {companies.length} company{companies.length !== 1 ? 'ies' : ''} available
+                {companies.length} company
+                {companies.length !== 1 ? 'ies' : ''} available
               </p>
             </div>
             {hasValidCompany && companyId && selectedCompany && (
               <div className="flex-shrink-0 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2 border border-green-200 dark:border-green-800">
-                <p className="text-xs text-green-600 dark:text-green-400">Selected Company</p>
+                <p className="text-xs text-green-600 dark:text-green-400">
+                  Selected Company
+                </p>
                 <p className="text-sm font-medium text-green-700 dark:text-green-300 truncate max-w-[150px]">
                   {selectedCompany.name}
                 </p>
-                <code className="text-xs text-green-500 font-mono">{companyId.slice(0, 12)}...</code>
+                <code className="text-xs text-green-500 font-mono">
+                  {companyId.slice(0, 12)}...
+                </code>
               </div>
             )}
           </div>
@@ -1013,7 +1153,10 @@ export default function CreateSupplierPage() {
           <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-700 dark:text-blue-300">
             <p className="font-medium">Required Fields</p>
-            <p className="mt-1">Fields marked with <span className="text-red-500">*</span> are required. All other fields are optional.</p>
+            <p className="mt-1">
+              Fields marked with <span className="text-red-500">*</span> are
+              required. All other fields are optional.
+            </p>
             {!hasValidCompany && (
               <p className="mt-1 text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
@@ -1024,7 +1167,10 @@ export default function CreateSupplierPage() {
         </div>
 
         {/* FORM */}
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 space-y-6 transition-colors duration-200">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 space-y-6 transition-colors duration-200"
+        >
           {/* BASIC INFORMATION SECTION */}
           <div>
             <button
@@ -1127,7 +1273,9 @@ export default function CreateSupplierPage() {
                           {getFieldError('rating')}
                         </p>
                       )}
-                      <p className="mt-1 text-xs text-gray-400">Rate supplier from 0 to 5 stars</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Rate supplier from 0 to 5 stars
+                      </p>
                     </div>
                   </div>
                 </motion.div>
@@ -1261,7 +1409,9 @@ export default function CreateSupplierPage() {
                           {getFieldError('website')}
                         </p>
                       )}
-                      <p className="mt-1 text-xs text-gray-400">Include https:// for external links</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Include https:// for external links
+                      </p>
                     </div>
                   </div>
                 </motion.div>
@@ -1358,8 +1508,10 @@ export default function CreateSupplierPage() {
                         className={getInputClassName('paymentTerms')}
                         disabled={loading || success}
                       >
-                        {PAYMENT_TERMS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        {PAYMENT_TERMS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
                         ))}
                       </select>
                       {getFieldError('paymentTerms') && (
@@ -1382,8 +1534,10 @@ export default function CreateSupplierPage() {
                         className={getInputClassName('deliveryTerms')}
                         disabled={loading || success}
                       >
-                        {DELIVERY_TERMS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        {DELIVERY_TERMS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
                         ))}
                       </select>
                       {getFieldError('deliveryTerms') && (
@@ -1474,20 +1628,28 @@ export default function CreateSupplierPage() {
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${hasValidCompany ? 'bg-green-500' : 'bg-red-500'}`} />
-                          {hasValidCompany 
-                            ? `Company: ${selectedCompany?.name || companyId?.slice(0, 8)}`
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              hasValidCompany ? 'bg-green-500' : 'bg-red-500'
+                            }`}
+                          />
+                          {hasValidCompany
+                            ? `Company: ${
+                                selectedCompany?.name ||
+                                companyId?.slice(0, 8)
+                              }`
                             : '⚠️ No company selected'}
                         </span>
                         <span className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          {userId 
-                            ? `User: ${userId.slice(0, 8)}...`
+                          {hasValidUser
+                            ? `User: ${userId!.slice(0, 8)}...`
                             : '⚠️ No user ID'}
                         </span>
                         <span className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                          {companies.length} Company{companies.length !== 1 ? 'ies' : ''} available
+                          {companies.length} Company
+                          {companies.length !== 1 ? 'ies' : ''} available
                         </span>
                       </div>
                     </div>
@@ -1509,7 +1671,7 @@ export default function CreateSupplierPage() {
             </button>
             <button
               type="submit"
-              disabled={loading || success || !hasValidCompany || !userId}
+              disabled={submitDisabled}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 w-full sm:w-auto justify-center"
             >
               {loading ? (
@@ -1538,7 +1700,11 @@ export default function CreateSupplierPage() {
             </span>
             <div className="flex items-center gap-4 flex-wrap">
               <span className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${hasValidCompany ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    hasValidCompany ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                />
                 {hasValidCompany ? 'Company selected' : '⚠️ Company required'}
               </span>
               <span className="flex items-center gap-2">

@@ -1,4 +1,5 @@
-// D:\Projects\Kalwanga\packages\backend\src\controllers\userController.ts
+// packages/backend/src/controllers/userController.ts
+// PART 1 of 3
 
 import type { Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma.js';
@@ -12,8 +13,8 @@ import * as path from 'path';
 // Import ALL_PERMISSIONS from auth
 import { ALL_PERMISSIONS } from '../middleware/auth.js';
 
-// Import UserRole from prisma client directly
-import { UserRole } from '../generated/prisma/index.js';
+// Import UserRole + Prisma namespace from prisma client directly
+import { UserRole, Prisma } from '../generated/prisma/index.js';
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -279,14 +280,13 @@ function handleValidationError(error: z.ZodError, res: Response) {
   });
 }
 
-function handleError(error: any, res: Response, next: NextFunction) {
+function handleError(error: unknown, res: Response, next: NextFunction) {
   if (error instanceof AppError) {
     return res.status(error.status || 500).json({
       success: false,
       message: error.message,
     });
   }
-  
   if (error instanceof Error) {
     console.error('UserController error:', error);
     return res.status(500).json({
@@ -294,67 +294,265 @@ function handleError(error: any, res: Response, next: NextFunction) {
       message: error.message || 'Internal server error',
     });
   }
-  
   next(error);
 }
 
 function sanitizeUser(user: any) {
   if (!user) return null;
   const { password, ...userWithoutPassword } = user;
-  return userWithoutPassword;
+  const out: any = { ...userWithoutPassword };
+  if (out.createdAt instanceof Date) out.createdAt = out.createdAt.toISOString();
+  if (out.updatedAt instanceof Date) out.updatedAt = out.updatedAt.toISOString();
+  if (out.lastLoginAt instanceof Date) out.lastLoginAt = out.lastLoginAt.toISOString();
+  return out;
 }
 
 function sanitizeUsers(users: any[]) {
   return users.map((user: any) => sanitizeUser(user));
 }
 
+/**
+ * Serialize an Invitation row so every Date becomes an ISO string.
+ * Canonical `Invitation` type declares all timestamps as `string`.
+ */
+function serializeInvitation(inv: any) {
+  if (!inv) return null;
+  return {
+    ...inv,
+    sentAt: inv.sentAt instanceof Date ? inv.sentAt.toISOString() : inv.sentAt,
+    expiresAt: inv.expiresAt instanceof Date ? inv.expiresAt.toISOString() : inv.expiresAt,
+    acceptedAt: inv.acceptedAt instanceof Date ? inv.acceptedAt.toISOString() : inv.acceptedAt,
+    cancelledAt: inv.cancelledAt instanceof Date ? inv.cancelledAt.toISOString() : inv.cancelledAt,
+    reminderSentAt:
+      inv.reminderSentAt instanceof Date ? inv.reminderSentAt.toISOString() : inv.reminderSentAt,
+    createdAt: inv.createdAt instanceof Date ? inv.createdAt.toISOString() : inv.createdAt,
+    updatedAt: inv.updatedAt instanceof Date ? inv.updatedAt.toISOString() : inv.updatedAt,
+  };
+}
+
+/**
+ * Serialize a UserGroup row so every Date becomes an ISO string.
+ */
+function serializeGroup(g: any) {
+  if (!g) return null;
+  return {
+    ...g,
+    createdAt: g.createdAt instanceof Date ? g.createdAt.toISOString() : g.createdAt,
+    updatedAt: g.updatedAt instanceof Date ? g.updatedAt.toISOString() : g.updatedAt,
+  };
+}
+
+// ============================================
+// DEFAULT PERMISSIONS BY ROLE
+// ============================================
+
 function getDefaultPermissionsForRole(role: UserRole): string[] {
   const permissionsMap: Record<UserRole, string[]> = {
-    [UserRole.SUPER_ADMIN]: ALL_PERMISSIONS || [],
+    // ------------------------------------------------------------
+    // SUPER_ADMIN — wildcard, every permission
+    // ------------------------------------------------------------
+    [UserRole.SUPER_ADMIN]: ALL_PERMISSIONS || ['*'],
+
+    // ------------------------------------------------------------
+    // ADMIN — full access to every operational area except the
+    // super-admin-only user/role management.
+    // ------------------------------------------------------------
     [UserRole.ADMIN]: [
+      // Dashboard
+      'dashboard:view',
+
+      // Users
       'user:view', 'user:create', 'user:edit', 'user:delete',
-      'inventory:view', 'inventory:create', 'inventory:edit', 'inventory:delete',
+      'user:manage', 'user:export', 'user:import', 'user:invite',
+      'user:role:update', 'user:permission:update',
+      'group:manage', 'activity:view',
+
+      // Products
+      'product:view', 'product:create', 'product:edit',
+      'product:delete', 'product:manage', 'product:export',
+      'product:import',
+
+      // Categories
+      'category:view', 'category:create', 'category:edit',
+      'category:delete', 'category:manage',
+
+      // Inventory
+      'inventory:view', 'inventory:create', 'inventory:edit',
+      'inventory:delete', 'inventory:manage', 'inventory:export',
+      'inventory:import', 'inventory:adjust', 'inventory:transfer',
+      'inventory:issue', 'inventory:restock',
       'inventory:view_low_stock', 'inventory:view_reports',
-      'product:view', 'product:create', 'product:edit', 'product:delete',
-      'category:view', 'category:create', 'category:edit', 'category:delete',
-      'report:view', 'report:create', 'report:export',
-      'settings:view', 'settings:edit',
+      'inventory:view_audit',
+
+      // Orders
+      'order:view', 'order:create', 'order:edit', 'order:manage',
+
+      // Sales / POS
+      'sale:view', 'sale:create', 'sale:edit', 'sale:manage',
+      'analytics:view', 'pos:manage',
+
+      // Customers
+      'customer:view', 'customer:create', 'customer:edit',
+      'customer:manage',
+
+      // Suppliers
+      'supplier:view', 'supplier:create', 'supplier:edit',
+      'supplier:manage',
+
+      // Returns / Invoices / Receipts
+      'return:view', 'return:manage',
+      'invoice:view', 'invoice:manage',
+      'receipt:view', 'receipt:print',
+
+      // Reports
+      'report:view', 'report:manage',
+
+      // Settings
+      'settings:view', 'settings:manage',
+
+      // Payments
+      'payment:view', 'payment:manage', 'payment:refund',
+
+      // Business units
+      'business_unit:view', 'business_unit:manage',
     ],
+
+    // ------------------------------------------------------------
+    // MANAGER — full operational access, no user administration.
+    // ------------------------------------------------------------
     [UserRole.MANAGER]: [
+      // Dashboard
+      'dashboard:view',
+
+      // Users (read-only)
       'user:view',
+
+      // Products
+      'product:view', 'product:create', 'product:edit',
+      'product:manage', 'product:export',
+
+      // Categories
+      'category:view', 'category:create', 'category:edit',
+      'category:manage',
+
+      // Inventory
       'inventory:view', 'inventory:create', 'inventory:edit',
+      'inventory:manage', 'inventory:adjust', 'inventory:transfer',
+      'inventory:issue', 'inventory:restock',
       'inventory:view_low_stock', 'inventory:view_reports',
-      'product:view', 'product:create', 'product:edit',
-      'category:view', 'category:create', 'category:edit',
-      'report:view', 'report:create',
-    ],
-    [UserRole.EDITOR]: [
-      'inventory:view', 'inventory:create', 'inventory:edit',
-      'inventory:view_low_stock',
-      'product:view', 'product:create', 'product:edit',
-      'category:view', 'category:create', 'category:edit',
+      'inventory:view_audit',
+
+      // Orders
+      'order:view', 'order:create', 'order:edit', 'order:manage',
+
+      // Sales / POS
+      'sale:view', 'sale:create', 'sale:manage',
+      'analytics:view', 'pos:manage',
+
+      // Customers
+      'customer:view', 'customer:create', 'customer:edit',
+      'customer:manage',
+
+      // Suppliers
+      'supplier:view', 'supplier:manage',
+
+      // Returns / Invoices / Receipts
+      'return:view', 'return:manage',
+      'invoice:view', 'invoice:manage',
+      'receipt:view', 'receipt:print',
+
+      // Reports
       'report:view',
     ],
+
+    // ------------------------------------------------------------
+    // EDITOR — day-to-day data entry. Can create and edit
+    // products/categories/inventory but not delete, not manage
+    // users, not touch settings.
+    // ------------------------------------------------------------
+    [UserRole.EDITOR]: [
+      // Dashboard
+      'dashboard:view',
+
+      // Products
+      'product:view', 'product:create', 'product:edit',
+      'product:manage',
+
+      // Categories
+      'category:view', 'category:create', 'category:edit',
+      'category:manage',
+
+      // Inventory
+      'inventory:view', 'inventory:create', 'inventory:edit',
+      'inventory:manage', 'inventory:issue', 'inventory:restock',
+      'inventory:view_low_stock', 'inventory:view_audit',
+
+      // Orders (read-only)
+      'order:view',
+
+      // Sales / Analytics (read-only)
+      'sale:view', 'analytics:view',
+
+      // Customers / Suppliers (read-only)
+      'customer:view', 'supplier:view',
+
+      // Reports
+      'report:view',
+    ],
+
+    // ------------------------------------------------------------
+    // VIEWER — read-only across the board.
+    // ------------------------------------------------------------
     [UserRole.VIEWER]: [
-      'inventory:view',
-      'inventory:view_low_stock',
+      'dashboard:view',
       'product:view',
       'category:view',
+      'inventory:view', 'inventory:view_low_stock',
+      'order:view',
+      'sale:view',
+      'customer:view',
+      'supplier:view',
+      'return:view',
+      'invoice:view',
+      'receipt:view',
       'report:view',
     ],
+
+    // ------------------------------------------------------------
+    // EMPLOYEE — floor staff. Can view inventory, hand out stock
+    // (issue), and restock shelves. No financial data.
+    // ------------------------------------------------------------
     [UserRole.EMPLOYEE]: [
+      'dashboard:view',
+      'product:view',
       'inventory:view',
       'inventory:view_low_stock',
-      'product:view',
+      'inventory:issue',
+      'inventory:restock',
     ],
+
+    // ------------------------------------------------------------
+    // CASHIER — POS-only. Can create sales, print receipts.
+    // ------------------------------------------------------------
     [UserRole.CASHIER]: [
-      'inventory:view',
+      'dashboard:view',
       'product:view',
+      'inventory:view',
+      'order:view', 'order:create', 'order:manage',
+      'sale:view', 'sale:create', 'sale:manage',
+      'pos:manage',
+      'receipt:view', 'receipt:print',
     ],
+
+    // ------------------------------------------------------------
+    // USER — minimal default. View-only for their own dashboard.
+    // ------------------------------------------------------------
     [UserRole.USER]: [
+      'dashboard:view',
       'inventory:view',
     ],
   };
+
   return permissionsMap[role] || [];
 }
 
@@ -451,19 +649,19 @@ function validateImportData(rows: string[][], headers: string[]) {
   const errors: any[] = [];
   const warnings: any[] = [];
   const emailSet = new Set<string>();
-  
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const userData: Record<string, any> = {};
     const rowErrors: string[] = [];
     const rowWarnings: string[] = [];
-    
+
     headers.forEach((header, index) => {
       if (row[index] !== undefined) {
         userData[header] = row[index];
       }
     });
-    
+
     const email = userData.email || '';
     if (!email) {
       rowErrors.push('Email is required');
@@ -472,14 +670,14 @@ function validateImportData(rows: string[][], headers: string[]) {
     } else if (emailSet.has(email.toLowerCase())) {
       rowErrors.push(`Duplicate email in file: ${email}`);
     }
-    
+
     if (email && !emailSet.has(email.toLowerCase())) {
       emailSet.add(email.toLowerCase());
     }
-    
+
     if (!userData.firstName) rowErrors.push('First name is required');
     if (!userData.lastName) rowErrors.push('Last name is required');
-    
+
     const role = ROLE_MAPPING[userData.role] || null;
     if (!userData.role) {
       rowErrors.push('Role is required');
@@ -487,14 +685,14 @@ function validateImportData(rows: string[][], headers: string[]) {
       rowErrors.push(`Invalid role: ${userData.role}`);
       rowWarnings.push(`Role "${userData.role}" not recognized, defaulting to USER`);
     }
-    
+
     let status = 'valid';
     if (rowErrors.length > 0) {
       status = 'invalid';
     } else if (rowWarnings.length > 0) {
       status = 'warning';
     }
-    
+
     const user = {
       id: `import_${i}_${Date.now()}`,
       email,
@@ -514,9 +712,9 @@ function validateImportData(rows: string[][], headers: string[]) {
       originalData: userData,
       rowNumber: i + 2,
     };
-    
+
     users.push(user);
-    
+
     if (rowErrors.length > 0) {
       errors.push({ rowNumber: i + 2, email, errors: rowErrors });
     }
@@ -524,7 +722,7 @@ function validateImportData(rows: string[][], headers: string[]) {
       warnings.push({ rowNumber: i + 2, email, warnings: rowWarnings });
     }
   }
-  
+
   return { users, errors, warnings };
 }
 
@@ -547,10 +745,6 @@ function getAuditLogFailedCount(log: any): number {
   const changes = getAuditLogChanges(log);
   return changes.failedCount || 0;
 }
-
-// ============================================
-// USER CONTROLLER
-// ============================================
 
 export const userController = {
   // ============================================
@@ -865,7 +1059,7 @@ export const userController = {
         throw new AppError('User not found', 404);
       }
 
-      const hasPermission = user.role === UserRole.SUPER_ADMIN || 
+      const hasPermission = user.role === UserRole.SUPER_ADMIN ||
                            (user.permissions || []).includes(permission);
 
       return res.json({
@@ -887,7 +1081,7 @@ export const userController = {
 
       let user = null;
       const isClerkId = identifier.startsWith('user_') || identifier.startsWith('clerk_');
-      
+
       if (isClerkId) {
         user = await prisma.user.findUnique({
           where: { clerkId: identifier },
@@ -1012,7 +1206,7 @@ export const userController = {
       console.log('📥 Received body in createUser:', req.body);
       console.log('📥 Body type:', typeof req.body);
       console.log('📥 Body keys:', Object.keys(req.body || {}));
-      
+
       // Parse and validate the body
       const data = createUserSchema.parse(req.body);
       console.log('✅ Validation passed. Data:', {
@@ -1030,22 +1224,22 @@ export const userController = {
 
       const currentUserId = (req as any).user?.id || (req as any).userId;
       let currentUserRole = (req as any).user?.role || 'USER';
-      
+
       if (!currentUserId) {
         currentUserRole = 'SUPER_ADMIN';
       }
 
       const isSuperAdmin = currentUserRole === 'SUPER_ADMIN';
       const isAdmin = currentUserRole === 'ADMIN';
-      
+
       if (data.role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can create SUPER_ADMIN users', 403);
       }
-      
+
       if (data.role === 'ADMIN' && !isSuperAdmin && !isAdmin) {
         throw new AppError('Only SUPER_ADMIN or ADMIN can create ADMIN users', 403);
       }
-      
+
       if (data.role === 'MANAGER' && !isSuperAdmin && !isAdmin) {
         const isManager = currentUserRole === 'MANAGER';
         if (!isManager) {
@@ -1056,7 +1250,7 @@ export const userController = {
       const hashedPassword = await bcrypt.hash(data.password, 10);
 
       let userPermissions: string[] = [];
-      
+
       if (data.permissions && data.permissions.length > 0) {
         userPermissions = data.permissions;
       } else {
@@ -1064,12 +1258,12 @@ export const userController = {
       }
 
       let finalBusinessUnitId: string | null = null;
-      
+
       if (data.businessUnitId) {
         const businessUnit = await prisma.businessUnit.findUnique({
           where: { id: data.businessUnitId },
         });
-        
+
         if (businessUnit) {
           finalBusinessUnitId = data.businessUnitId;
         }
@@ -1079,7 +1273,7 @@ export const userController = {
         const existingBusinessUnit = await prisma.businessUnit.findFirst({
           where: data.companyId ? { companyId: data.companyId } : {},
         });
-        
+
         if (existingBusinessUnit) {
           finalBusinessUnitId = existingBusinessUnit.id;
         } else {
@@ -1124,8 +1318,8 @@ export const userController = {
             entityId: user.id,
             userId: currentUserId || user.id,
             entityName: `${user.firstName} ${user.lastName}`,
-            changes: { 
-              email: user.email, 
+            changes: {
+              email: user.email,
               role: user.role,
               permissions: userPermissions,
               businessUnitId: finalBusinessUnitId,
@@ -1177,7 +1371,7 @@ export const userController = {
 
       const currentUserId = (req as any).user?.id || (req as any).userId;
       let isSuperAdmin = false;
-      
+
       if (currentUserId) {
         try {
           const currentUser = await prisma.user.findUnique({
@@ -1192,7 +1386,7 @@ export const userController = {
       if (existingUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can modify SUPER_ADMIN users', 403);
       }
-      
+
       if (data.role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can assign SUPER_ADMIN role', 403);
       }
@@ -1208,7 +1402,7 @@ export const userController = {
       }
 
       let finalBusinessUnitId: string | null = null;
-      
+
       if (data.businessUnitId !== undefined) {
         if (data.businessUnitId) {
           const businessUnit = await prisma.businessUnit.findUnique({
@@ -1487,7 +1681,7 @@ export const userController = {
 
       const currentUserId = (req as any).user?.id || (req as any).userId;
       let isSuperAdmin = false;
-      
+
       if (currentUserId) {
         try {
           const currentUser = await prisma.user.findUnique({
@@ -1510,7 +1704,7 @@ export const userController = {
       if (targetUser.role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can modify SUPER_ADMIN users', 403);
       }
-      
+
       if (role === 'SUPER_ADMIN' && !isSuperAdmin) {
         throw new AppError('Only SUPER_ADMIN can assign SUPER_ADMIN role', 403);
       }
@@ -1550,7 +1744,7 @@ export const userController = {
 
       const currentUserId = (req as any).user?.id || (req as any).userId;
       let isSuperAdmin = false;
-      
+
       if (currentUserId) {
         try {
           const currentUser = await prisma.user.findUnique({
@@ -1624,7 +1818,7 @@ export const userController = {
         ]);
 
         const csvContent = [headers, ...rows].map((row: any[]) => row.join(',')).join('\n');
-        
+
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=users_${Date.now()}.csv`);
         return res.send(csvContent);
@@ -1714,40 +1908,40 @@ export const userController = {
     try {
       const { id } = req.params;
       const params = getActivitySchema.parse(req.query);
-      
+
       const user = await prisma.user.findUnique({ where: { id } });
-      
+
       if (!user) {
         throw new AppError('User not found', 404);
       }
-      
+
       const page = parseInt(params.page);
       const limit = parseInt(params.limit);
       const skip = (page - 1) * limit;
-      
+
       const where: any = { userId: id };
-      
+
       if (params.action) {
         where.action = params.action;
       }
-      
+
       if (params.entityType) {
         where.entityType = params.entityType;
       }
-      
+
       if (params.search) {
         where.OR = [
           { entityName: { contains: params.search, mode: 'insensitive' } },
           { entityType: { contains: params.search, mode: 'insensitive' } },
         ];
       }
-      
+
       if (params.dateFrom || params.dateTo) {
         where.createdAt = {};
         if (params.dateFrom) where.createdAt.gte = new Date(params.dateFrom);
         if (params.dateTo) where.createdAt.lte = new Date(params.dateTo);
       }
-      
+
       const [activities, total] = await Promise.all([
         prisma.auditLog.findMany({
           where,
@@ -1767,7 +1961,7 @@ export const userController = {
         }),
         prisma.auditLog.count({ where }),
       ]);
-      
+
       return res.json({
         success: true,
         data: activities,
@@ -1790,11 +1984,11 @@ export const userController = {
     try {
       const { id } = req.params;
       const { page = '1', limit = '20' } = req.query;
-      
+
       const pageNum = parseInt(page as string);
       const limitNum = parseInt(limit as string);
       const skip = (pageNum - 1) * limitNum;
-      
+
       const [auditLogs, total] = await Promise.all([
         prisma.auditLog.findMany({
           where: { userId: id },
@@ -1814,7 +2008,7 @@ export const userController = {
         }),
         prisma.auditLog.count({ where: { userId: id } }),
       ]);
-      
+
       return res.json({
         success: true,
         data: auditLogs,
@@ -1834,16 +2028,16 @@ export const userController = {
     try {
       const { id } = req.params;
       const { beforeDate, action, entityType } = clearActivitySchema.parse(req.query);
-      
+
       const where: any = { userId: id };
       if (beforeDate) {
         where.createdAt = { lt: new Date(beforeDate) };
       }
       if (action) where.action = action;
       if (entityType) where.entityType = entityType;
-      
+
       const result = await prisma.auditLog.deleteMany({ where });
-      
+
       return res.json({
         success: true,
         message: `Cleared ${result.count} activities`,
@@ -1857,22 +2051,19 @@ export const userController = {
     }
   },
 
-  // ============================================
-  // USER IMPORT OPERATIONS
-  // ============================================
 
   async importUsers(req: Request & { file?: Express.Multer.File }, res: Response, next: NextFunction) {
     const startTime = Date.now();
-    
+
     try {
       if (!req.file) {
         throw new AppError('No file uploaded', 400);
       }
-      
+
       const params = importUsersSchema.parse(req.body);
       const file = req.file;
       const fileExtension = path.extname(file.originalname).toLowerCase();
-      
+
       let rows: string[][] = [];
       if (fileExtension === '.csv') {
         const content = fs.readFileSync(file.path, 'utf-8');
@@ -1881,47 +2072,47 @@ export const userController = {
         fs.unlinkSync(file.path);
         throw new AppError('Invalid file format. Only CSV files are supported.', 400);
       }
-      
+
       fs.unlinkSync(file.path);
-      
+
       if (rows.length < 2) {
         throw new AppError('File must contain at least a header row and one data row', 400);
       }
-      
+
       const headers = rows[0];
       const dataRows = rows.slice(1);
-      
+
       const missingHeaders = REQUIRED_HEADERS.filter((h: string) => !headers.includes(h));
       if (missingHeaders.length > 0) {
         throw new AppError(`Missing required headers: ${missingHeaders.join(', ')}`, 400);
       }
-      
+
       const { users, errors, warnings } = validateImportData(dataRows, headers);
       const validUsers = users.filter((u: any) => u.status === 'valid' || u.status === 'warning');
-      
+
       const importedUsers: string[] = [];
       const failedUsers: string[] = [];
       const importErrors: any[] = [];
-      
+
       for (const user of validUsers) {
         try {
           if (params.skipDuplicates === 'true') {
             const existingUser = await prisma.user.findUnique({
               where: { email: user.email },
             });
-            
+
             if (existingUser) {
               failedUsers.push(user.email);
               importErrors.push({ rowNumber: user.rowNumber, email: user.email, error: 'User already exists' });
               continue;
             }
           }
-          
+
           const hashedPassword = await bcrypt.hash(
             user.password || params.defaultPassword || 'DefaultPass123!',
             10
           );
-          
+
           const newUser = await prisma.user.create({
             data: {
               email: user.email.toLowerCase(),
@@ -1936,9 +2127,9 @@ export const userController = {
               clerkId: `imported_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
             },
           });
-          
+
           importedUsers.push(user.email);
-          
+
           await prisma.auditLog.create({
             data: {
               action: 'IMPORT',
@@ -1955,10 +2146,10 @@ export const userController = {
           importErrors.push({ rowNumber: user.rowNumber, email: user.email, error: error?.message || 'Failed to import user' });
         }
       }
-      
+
       const importDuration = Date.now() - startTime;
       const status = failedUsers.length === 0 ? 'completed' : failedUsers.length < validUsers.length ? 'partial' : 'failed';
-      
+
       await prisma.auditLog.create({
         data: {
           action: 'IMPORT',
@@ -1982,7 +2173,7 @@ export const userController = {
           severity: status === 'completed' ? 'INFO' : status === 'partial' ? 'LOW' : 'MEDIUM',
         },
       });
-      
+
       return res.json({
         success: true,
         data: {
@@ -2016,21 +2207,21 @@ export const userController = {
       const page = parseInt(params.page);
       const limit = parseInt(params.limit);
       const skip = (page - 1) * limit;
-      
+
       const where: any = {
         entityType: 'USER_IMPORT',
       };
-      
+
       if (params.fileName) {
         where.entityName = { contains: params.fileName, mode: 'insensitive' };
       }
-      
+
       if (params.dateFrom || params.dateTo) {
         where.createdAt = {};
         if (params.dateFrom) where.createdAt.gte = new Date(params.dateFrom);
         if (params.dateTo) where.createdAt.lte = new Date(params.dateTo);
       }
-      
+
       const [logs, total] = await Promise.all([
         prisma.auditLog.findMany({
           where,
@@ -2040,7 +2231,7 @@ export const userController = {
         }),
         prisma.auditLog.count({ where }),
       ]);
-      
+
       const formattedHistory = logs.map((log: any) => ({
         id: log.id,
         fileName: log.entityName,
@@ -2056,7 +2247,7 @@ export const userController = {
         errorSummary: getAuditLogChanges(log).errorSummary,
         importedAt: log.createdAt.toISOString(),
       }));
-      
+
       return res.json({
         success: true,
         data: formattedHistory,
@@ -2082,22 +2273,22 @@ export const userController = {
   async inviteUser(req: Request, res: Response, next: NextFunction) {
     try {
       const data = inviteUserSchema.parse(req.body);
-      
+
       const existingUser = await prisma.user.findUnique({
         where: { email: data.email },
       });
-      
+
       if (existingUser) {
         throw new AppError('User with this email already exists', 409);
       }
-      
-      const existingInvitation = await (prisma as any).invitation.findFirst({
+
+      const existingInvitation = await prisma.invitation.findFirst({
         where: {
           email: data.email.toLowerCase(),
           status: { in: ['pending', 'sent'] },
         },
       });
-      
+
       if (existingInvitation) {
         return res.status(200).json({
           success: true,
@@ -2106,17 +2297,17 @@ export const userController = {
             email: data.email,
             status: 'duplicate',
             message: 'Invitation already exists for this email',
-            invitation: existingInvitation,
+            invitation: serializeInvitation(existingInvitation),
           },
         });
       }
-      
+
       const token = generateInvitationToken();
-      const expiresAt = data.expiresIn > 0 
+      const expiresAt = data.expiresIn > 0
         ? new Date(Date.now() + data.expiresIn * 24 * 60 * 60 * 1000)
         : null;
-      
-      const invitation = await (prisma as any).invitation.create({
+
+      const invitation = await prisma.invitation.create({
         data: {
           email: data.email.toLowerCase(),
           role: data.role,
@@ -2132,7 +2323,7 @@ export const userController = {
           metadata: data.metadata,
         },
       });
-      
+
       await prisma.auditLog.create({
         data: {
           action: 'CREATE',
@@ -2144,10 +2335,10 @@ export const userController = {
           severity: 'INFO',
         },
       });
-      
+
       return res.status(201).json({
         success: true,
-        data: { id: invitation.id, email: invitation.email, status: 'sent', invitation },
+        data: { id: invitation.id, email: invitation.email, status: 'sent', invitation: serializeInvitation(invitation) },
         message: 'Invitation sent successfully',
       });
     } catch (error) {
@@ -2161,22 +2352,22 @@ export const userController = {
   async resendInvitation(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      
-      const invitation = await (prisma as any).invitation.findUnique({ where: { id } });
-      
+
+      const invitation = await prisma.invitation.findUnique({ where: { id } });
+
       if (!invitation) {
         throw new AppError('Invitation not found', 404);
       }
-      
+
       if (invitation.status === 'accepted') {
         throw new AppError('Invitation has already been accepted', 400);
       }
-      
+
       if (invitation.status === 'cancelled') {
         throw new AppError('Invitation has been cancelled', 400);
       }
-      
-      const updatedInvitation = await (prisma as any).invitation.update({
+
+      const updatedInvitation = await prisma.invitation.update({
         where: { id },
         data: {
           status: 'sent',
@@ -2186,7 +2377,7 @@ export const userController = {
           reminderSentAt: new Date(),
         },
       });
-      
+
       await prisma.auditLog.create({
         data: {
           action: 'UPDATE',
@@ -2198,10 +2389,10 @@ export const userController = {
           severity: 'INFO',
         },
       });
-      
+
       return res.json({
         success: true,
-        data: updatedInvitation,
+        data: serializeInvitation(updatedInvitation),
         message: 'Invitation resent successfully',
       });
     } catch (error) {
@@ -2212,15 +2403,15 @@ export const userController = {
   async deleteInvitation(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      
-      const invitation = await (prisma as any).invitation.findUnique({ where: { id } });
-      
+
+      const invitation = await prisma.invitation.findUnique({ where: { id } });
+
       if (!invitation) {
         throw new AppError('Invitation not found', 404);
       }
-      
-      await (prisma as any).invitation.delete({ where: { id } });
-      
+
+      await prisma.invitation.delete({ where: { id } });
+
       return res.json({
         success: true,
         message: 'Invitation deleted successfully',
@@ -2236,32 +2427,32 @@ export const userController = {
       const page = parseInt(params.page);
       const limit = parseInt(params.limit);
       const skip = (page - 1) * limit;
-      
+
       const where: any = {};
-      
+
       if (params.search) {
         where.OR = [
           { email: { contains: params.search, mode: 'insensitive' } },
           { invitedBy: { contains: params.search, mode: 'insensitive' } },
         ];
       }
-      
+
       if (params.role) where.role = params.role;
       if (params.status) where.status = params.status;
-      
+
       if (params.dateFrom || params.dateTo) {
         where.sentAt = {};
         if (params.dateFrom) where.sentAt.gte = new Date(params.dateFrom);
         if (params.dateTo) where.sentAt.lte = new Date(params.dateTo);
       }
-      
+
       const validSortFields = ['sentAt', 'expiresAt', 'email', 'status'];
       const orderBy: any = validSortFields.includes(params.sortBy)
         ? { [params.sortBy]: params.sortOrder }
         : { sentAt: 'desc' };
-      
+
       const [invitations, total] = await Promise.all([
-        (prisma as any).invitation.findMany({
+        prisma.invitation.findMany({
           where,
           skip,
           take: limit,
@@ -2272,12 +2463,15 @@ export const userController = {
             },
           },
         }),
-        (prisma as any).invitation.count({ where }),
+        prisma.invitation.count({ where }),
       ]);
-      
+
       return res.json({
         success: true,
-        data: invitations,
+        data: invitations.map((i: any) => ({
+          ...serializeInvitation(i),
+          invitedByUser: i.invitedByUser,
+        })),
         pagination: {
           total,
           page,
@@ -2293,6 +2487,207 @@ export const userController = {
     }
   },
 
+  async getInvitationById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const invitation = await prisma.invitation.findUnique({ where: { id } });
+      if (!invitation) throw new AppError('Invitation not found', 404);
+      return res.json({ success: true, data: serializeInvitation(invitation) });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async getInvitationByToken(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.params;
+      const invitation = await prisma.invitation.findUnique({
+        where: { invitationToken: token },
+      });
+      if (!invitation) throw new AppError('Invitation not found', 404);
+      return res.json({ success: true, data: serializeInvitation(invitation) });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async acceptInvitation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.params;
+      const { firstName, lastName, password, phoneNumber } = req.body;
+
+      const invitation = await prisma.invitation.findUnique({
+        where: { invitationToken: token },
+      });
+
+      if (!invitation) throw new AppError('Invalid invitation token', 404);
+      if (invitation.status === 'accepted') {
+        throw new AppError('Invitation already accepted', 400);
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const user = await prisma.$transaction(async (tx: any) => {
+        const created = await tx.user.create({
+          data: {
+            clerkId: `user_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+            email: invitation.email,
+            firstName,
+            lastName,
+            phoneNumber: phoneNumber || null,
+            role: invitation.role as UserRole,
+            password: hashedPassword,
+            isActive: true,
+            permissions: getDefaultPermissionsForRole(invitation.role as UserRole),
+          },
+        });
+
+        await tx.invitation.update({
+          where: { id: invitation.id },
+          data: { status: 'accepted', acceptedAt: new Date() },
+        });
+
+        return created;
+      });
+
+      return res.json({
+        success: true,
+        data: sanitizeUser(user),
+        message: 'Invitation accepted successfully',
+      });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async declineInvitation(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.params;
+      const invitation = await prisma.invitation.findUnique({
+        where: { invitationToken: token },
+      });
+      if (!invitation) throw new AppError('Invalid invitation token', 404);
+
+      await prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { status: 'cancelled', cancelledAt: new Date() },
+      });
+
+      return res.json({ success: true, message: 'Invitation declined' });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async getInvitationStats(req: Request, res: Response, next: NextFunction) {
+    try {
+      const [total, pending, sent, accepted, expired, cancelled, byRole] = await Promise.all([
+        prisma.invitation.count(),
+        prisma.invitation.count({ where: { status: 'pending' } }),
+        prisma.invitation.count({ where: { status: 'sent' } }),
+        prisma.invitation.count({ where: { status: 'accepted' } }),
+        prisma.invitation.count({ where: { status: 'expired' } }),
+        prisma.invitation.count({ where: { status: 'cancelled' } }),
+        prisma.invitation.groupBy({ by: ['role'], _count: { _all: true } }),
+      ]);
+
+      return res.json({
+        success: true,
+        data: {
+          total,
+          pending,
+          sent,
+          accepted,
+          expired,
+          cancelled,
+          acceptanceRate: total > 0 ? (accepted / total) * 100 : 0,
+          byRole: byRole.reduce((acc: Record<string, number>, item: any) => {
+            acc[item.role] = item._count._all;
+            return acc;
+          }, {}),
+        },
+      });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async getInvitationTemplates(req: Request, res: Response, next: NextFunction) {
+    try {
+      return res.json({
+        success: true,
+        data: Object.values(INVITATION_TEMPLATES),
+      });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async sendInvitationReminder(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const invitation = await prisma.invitation.findUnique({ where: { id } });
+      if (!invitation) throw new AppError('Invitation not found', 404);
+      if (invitation.status === 'accepted') {
+        throw new AppError('Invitation has already been accepted', 400);
+      }
+      if (invitation.status === 'cancelled') {
+        throw new AppError('Invitation has been cancelled', 400);
+      }
+
+      const updated = await prisma.invitation.update({
+        where: { id },
+        data: {
+          reminderSent: true,
+          reminderSentAt: new Date(),
+          reminderCount: { increment: 1 },
+        },
+      });
+
+      return res.json({
+        success: true,
+        data: serializeInvitation(updated),
+        message: 'Reminder sent successfully',
+      });
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
+  async exportInvitations(req: Request, res: Response, next: NextFunction) {
+    try {
+      const format = (req.query.format as string) || 'json';
+      const invitations = await prisma.invitation.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (format === 'json') {
+        return res.json({
+          success: true,
+          data: invitations.map(serializeInvitation),
+          total: invitations.length,
+        });
+      }
+
+      const headers = ['ID', 'Email', 'Role', 'Status', 'Invited By', 'Sent At', 'Expires At'];
+      const rows = invitations.map((i: any) => [
+        i.id,
+        i.email,
+        i.role,
+        i.status,
+        i.invitedBy,
+        i.sentAt?.toISOString() || '',
+        i.expiresAt?.toISOString() || '',
+      ]);
+      const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=invitations_${Date.now()}.csv`);
+      return res.send(csv);
+    } catch (error) {
+      return handleError(error, res, next);
+    }
+  },
+
   // ============================================
   // USER GROUP OPERATIONS
   // ============================================
@@ -2303,52 +2698,47 @@ export const userController = {
       const page = parseInt(params.page);
       const limit = parseInt(params.limit);
       const skip = (page - 1) * limit;
-      
-      const where: any = {
-        email: { endsWith: '@group.local' },
-      };
-      
+
+      const where: any = {};
       if (params.search) {
         where.OR = [
-          { firstName: { contains: params.search, mode: 'insensitive' } },
-          { email: { contains: params.search, mode: 'insensitive' } },
+          { name: { contains: params.search, mode: 'insensitive' } },
+          { description: { contains: params.search, mode: 'insensitive' } },
         ];
       }
-      
       if (params.isActive !== undefined) where.isActive = params.isActive === 'true';
-      if (params.role) where.role = params.role;
-      
+
       const [groups, total] = await Promise.all([
-        prisma.user.findMany({
+        prisma.userGroup.findMany({
           where,
           skip,
           take: limit,
           orderBy: { createdAt: 'desc' },
           include: {
-            businessUnits: true,
-            company: true,
+            members: {
+              include: {
+                user: {
+                  select: { id: true, email: true, firstName: true, lastName: true },
+                },
+              },
+            },
           },
         }),
-        prisma.user.count({ where }),
+        prisma.userGroup.count({ where }),
       ]);
-      
-      // Transform groups to match frontend expectations
+
       const transformedGroups = groups.map((group: any) => ({
-        id: group.id,
-        name: group.firstName,
-        description: group.description || '',
-        icon: group.icon || 'Users',
-        color: group.color || 'bg-blue-500',
-        permissions: group.permissions || [],
-        isActive: group.isActive,
-        createdBy: group.createdBy || 'System',
-        createdAt: group.createdAt,
-        updatedAt: group.updatedAt,
-        memberCount: 0,
-        members: [],
-        businessUnitId: group.businessUnits?.[0]?.businessUnitId || undefined,
+        ...serializeGroup(group),
+        memberCount: group.members?.length || 0,
+        members: group.members?.map((m: any) => ({
+          userId: m.userId,
+          role: m.role,
+          joinedAt: m.joinedAt instanceof Date ? m.joinedAt.toISOString() : m.joinedAt,
+          isLead: m.isLead,
+          user: m.user,
+        })) || [],
       }));
-      
+
       return res.json({
         success: true,
         data: transformedGroups,
@@ -2370,45 +2760,48 @@ export const userController = {
   async createGroup(req: Request, res: Response, next: NextFunction) {
     try {
       const data = createGroupSchema.parse(req.body);
-      
-      const groupEmail = `${data.name.toLowerCase().replace(/\s+/g, '.')}@group.local`;
-      
-      const existingGroup = await prisma.user.findFirst({
-        where: { email: groupEmail },
-      });
-      
-      if (existingGroup) {
-        throw new AppError('Group with this name already exists', 409);
-      }
-      
-      const group = await prisma.user.create({
+      const userId = (req as any).user?.id || (req as any).userId || 'system';
+
+      const group = await prisma.userGroup.create({
         data: {
-          email: groupEmail,
-          firstName: data.name,
-          lastName: '(Group)',
-          role: UserRole.USER,
-          password: 'GroupPlaceholder123!',
-          isActive: true,
+          name: data.name,
+          description: data.description,
+          icon: data.icon,
+          color: data.color,
           permissions: data.permissions || [],
-          clerkId: `group_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+          createdBy: (req as any).user?.email || 'System',
+          createdById: userId,
+          metadata: data.metadata,
         },
       });
-      
+
+      if (data.members && data.members.length > 0) {
+        await prisma.userGroupMember.createMany({
+          data: data.members.map((m) => ({
+            groupId: group.id,
+            userId: m.userId,
+            role: (m.role || 'USER') as UserRole,
+            isLead: m.isLead || false,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       await prisma.auditLog.create({
         data: {
           action: 'CREATE',
           entityType: 'USER_GROUP',
           entityId: group.id,
-          userId: (req as any).user?.id || group.id,
-          entityName: group.firstName,
-          changes: { name: group.firstName, description: data.description },
+          userId,
+          entityName: group.name,
+          changes: { name: group.name, description: data.description },
           severity: 'INFO',
         },
       });
-      
+
       return res.status(201).json({
         success: true,
-        data: sanitizeUser(group),
+        data: serializeGroup(group),
         message: 'Group created successfully',
       });
     } catch (error) {
@@ -2423,29 +2816,27 @@ export const userController = {
     try {
       const { id } = req.params;
       const data = updateGroupSchema.parse(req.body);
-      
-      const group = await prisma.user.findUnique({ where: { id } });
-      
-      if (!group) {
-        throw new AppError('Group not found', 404);
-      }
-      
+
+      const group = await prisma.userGroup.findUnique({ where: { id } });
+      if (!group) throw new AppError('Group not found', 404);
+
       const updateData: any = {};
-      if (data.name) {
-        updateData.firstName = data.name;
-        updateData.email = `${data.name.toLowerCase().replace(/\s+/g, '.')}@group.local`;
-      }
-      if (data.permissions) updateData.permissions = data.permissions;
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.icon !== undefined) updateData.icon = data.icon;
+      if (data.color !== undefined) updateData.color = data.color;
+      if (data.permissions !== undefined) updateData.permissions = data.permissions;
       if (data.isActive !== undefined) updateData.isActive = data.isActive;
-      
-      const updatedGroup = await prisma.user.update({
+      if (data.metadata !== undefined) updateData.metadata = data.metadata;
+
+      const updatedGroup = await prisma.userGroup.update({
         where: { id },
         data: updateData,
       });
-      
+
       return res.json({
         success: true,
-        data: sanitizeUser(updatedGroup),
+        data: serializeGroup(updatedGroup),
         message: 'Group updated successfully',
       });
     } catch (error) {
@@ -2459,15 +2850,12 @@ export const userController = {
   async deleteGroup(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      
-      const group = await prisma.user.findUnique({ where: { id } });
-      
-      if (!group) {
-        throw new AppError('Group not found', 404);
-      }
-      
-      await prisma.user.delete({ where: { id } });
-      
+
+      const group = await prisma.userGroup.findUnique({ where: { id } });
+      if (!group) throw new AppError('Group not found', 404);
+
+      await prisma.userGroup.delete({ where: { id } });
+
       return res.json({
         success: true,
         message: 'Group deleted successfully',
@@ -2481,35 +2869,41 @@ export const userController = {
     try {
       const { id } = req.params;
       const data = assignUsersToGroupSchema.parse(req.body);
-      
-      const group = await prisma.user.findUnique({ where: { id } });
-      
-      if (!group) {
-        throw new AppError('Group not found', 404);
-      }
-      
+
+      const group = await prisma.userGroup.findUnique({ where: { id } });
+      if (!group) throw new AppError('Group not found', 404);
+
       const assignedUsers: string[] = [];
       const skippedUsers: string[] = [];
-      const groupPermissions = group.permissions || [];
-      
+
       for (const userId of data.userIds) {
         const user = await prisma.user.findUnique({ where: { id: userId } });
-        
         if (!user) {
           skippedUsers.push(userId);
           continue;
         }
-        
-        const mergedPermissions = [...new Set([...(user.permissions || []), ...groupPermissions])];
-        
-        await prisma.user.update({
-          where: { id: userId },
-          data: { permissions: mergedPermissions },
+
+        const existing = await prisma.userGroupMember.findUnique({
+          where: { groupId_userId: { groupId: id, userId } },
         });
-        
+
+        if (existing) {
+          skippedUsers.push(userId);
+          continue;
+        }
+
+        await prisma.userGroupMember.create({
+          data: {
+            groupId: id,
+            userId,
+            role: data.role as UserRole,
+            isLead: data.isLead,
+          },
+        });
+
         assignedUsers.push(userId);
       }
-      
+
       return res.json({
         success: true,
         data: {
@@ -2538,7 +2932,7 @@ export const getUserActivityStats = async (req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const { dateRange = 'month' } = req.query as { dateRange?: string };
-    
+
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new AppError('User not found', 404);
@@ -2603,7 +2997,7 @@ export const getUserActivityTrends = async (req: Request, res: Response, next: N
   try {
     const { id } = req.params;
     const { period = 'week' } = req.query as { period?: string };
-    
+
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new AppError('User not found', 404);
@@ -2688,7 +3082,7 @@ export const getRecentUserActivity = async (req: Request, res: Response, next: N
   try {
     const { id } = req.params;
     const limit = parseInt(req.query.limit as string) || 10;
-    
+
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new AppError('User not found', 404);
@@ -2712,7 +3106,7 @@ export const getRecentUserActivity = async (req: Request, res: Response, next: N
 export const getUserActivityById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id, activityId } = req.params;
-    
+
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new AppError('User not found', 404);
@@ -2739,7 +3133,7 @@ export const exportUserActivity = async (req: Request, res: Response, next: Next
   try {
     const { id } = req.params;
     const format = (req.query.format as string) || 'json';
-    
+
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new AppError('User not found', 404);
@@ -2770,7 +3164,7 @@ export const exportUserActivity = async (req: Request, res: Response, next: Next
         a.ipAddress || '',
       ]);
       const csvContent = [headers, ...rows].map((row: any[]) => row.join(',')).join('\n');
-      
+
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=user_activity_${id}_${Date.now()}.csv`);
       return res.send(csvContent);
@@ -2786,7 +3180,7 @@ export const exportUserAuditTrail = async (req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const format = (req.query.format as string) || 'json';
-    
+
     const auditLogs = await prisma.auditLog.findMany({
       where: { userId: id },
       orderBy: { createdAt: 'desc' },
@@ -2812,7 +3206,7 @@ export const exportUserAuditTrail = async (req: Request, res: Response, next: Ne
         JSON.stringify(log.changes),
       ]);
       const csvContent = [headers, ...rows].map((row: any[]) => row.join(',')).join('\n');
-      
+
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=user_audit_trail_${id}_${Date.now()}.csv`);
       return res.send(csvContent);
@@ -2830,23 +3224,23 @@ export const exportUserAuditTrail = async (req: Request, res: Response, next: Ne
 
 export const importUsersFromCSV = async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
-  
+
   try {
     const { content, skipDuplicates = true, autoActivate = true, defaultPassword } = req.body;
-    
+
     if (!content) {
       throw new AppError('CSV content is required', 400);
     }
 
     const rows = parseCSVContentSimple(content);
-    
+
     if (rows.length < 2) {
       throw new AppError('CSV must contain at least a header row and one data row', 400);
     }
 
     const headers = rows[0];
     const dataRows = rows.slice(1);
-    
+
     const missingHeaders = REQUIRED_HEADERS.filter((h: string) => !headers.includes(h));
     if (missingHeaders.length > 0) {
       throw new AppError(`Missing required headers: ${missingHeaders.join(', ')}`, 400);
@@ -2854,7 +3248,7 @@ export const importUsersFromCSV = async (req: Request, res: Response, next: Next
 
     const { users, errors, warnings } = validateImportData(dataRows, headers);
     const validUsers = users.filter((u: any) => u.status === 'valid' || u.status === 'warning');
-    
+
     const importedUsers: string[] = [];
     const failedUsers: string[] = [];
 
@@ -2921,10 +3315,10 @@ export const importUsersFromCSV = async (req: Request, res: Response, next: Next
 
 export const importUsersFromJSON = async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
-  
+
   try {
     const { users, skipDuplicates = true, autoActivate = true, defaultPassword } = req.body;
-    
+
     if (!users || !Array.isArray(users) || users.length === 0) {
       throw new AppError('At least one user is required', 400);
     }
@@ -3056,7 +3450,7 @@ export const validateImportDataHandler = async (req: Request & { file?: Express.
 
     const headers = rows[0];
     const dataRows = rows.slice(1);
-    
+
     const missingHeaders = REQUIRED_HEADERS.filter((h: string) => !headers.includes(h));
     if (missingHeaders.length > 0) {
       return res.json({
@@ -3104,7 +3498,7 @@ export const validateImportDataHandler = async (req: Request & { file?: Express.
 export const getImportTemplate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { templateId } = req.params;
-    
+
     const template = IMPORT_TEMPLATES[templateId];
     if (!template) {
       throw new AppError('Template not found', 404);
@@ -3133,7 +3527,7 @@ export const getImportTemplates = async (req: Request, res: Response, next: Next
 export const downloadImportTemplate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { templateId } = req.params;
-    
+
     const template = IMPORT_TEMPLATES[templateId];
     if (!template) {
       throw new AppError('Template not found', 404);
@@ -3204,8 +3598,8 @@ export const getImportStats = async (req: Request, res: Response, next: NextFunc
 export const cancelInvitation = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const invitation = await (prisma as any).invitation.findUnique({ where: { id } });
+
+    const invitation = await prisma.invitation.findUnique({ where: { id } });
     if (!invitation) {
       throw new AppError('Invitation not found', 404);
     }
@@ -3214,14 +3608,14 @@ export const cancelInvitation = async (req: Request, res: Response, next: NextFu
       throw new AppError('Invitation has already been accepted', 400);
     }
 
-    const updatedInvitation = await (prisma as any).invitation.update({
+    const updatedInvitation = await prisma.invitation.update({
       where: { id },
       data: { status: 'cancelled', cancelledAt: new Date() },
     });
 
     return res.json({
       success: true,
-      data: updatedInvitation,
+      data: serializeInvitation(updatedInvitation),
       message: 'Invitation cancelled successfully',
     });
   } catch (error) {
@@ -3232,12 +3626,12 @@ export const cancelInvitation = async (req: Request, res: Response, next: NextFu
 export const cancelInvitations = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { invitationIds } = req.body;
-    
+
     if (!invitationIds || !Array.isArray(invitationIds) || invitationIds.length === 0) {
       throw new AppError('At least one invitation ID is required', 400);
     }
 
-    const result = await (prisma as any).invitation.updateMany({
+    const result = await prisma.invitation.updateMany({
       where: { id: { in: invitationIds } },
       data: { status: 'cancelled', cancelledAt: new Date() },
     });
@@ -3255,8 +3649,8 @@ export const cancelInvitations = async (req: Request, res: Response, next: NextF
 export const checkInvitationStatus = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { token } = req.params;
-    
-    const invitation = await (prisma as any).invitation.findUnique({
+
+    const invitation = await prisma.invitation.findUnique({
       where: { invitationToken: token },
     });
 
@@ -3286,12 +3680,12 @@ export const checkInvitationStatus = async (req: Request, res: Response, next: N
 export const validateInvitationToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { token } = req.body;
-    
+
     if (!token) {
       throw new AppError('Token is required', 400);
     }
 
-    const invitation = await (prisma as any).invitation.findUnique({
+    const invitation = await prisma.invitation.findUnique({
       where: { invitationToken: token },
     });
 
@@ -3306,7 +3700,7 @@ export const validateInvitationToken = async (req: Request, res: Response, next:
       success: true,
       data: {
         valid: true,
-        invitation,
+        invitation: serializeInvitation(invitation),
       },
     });
   } catch (error) {
@@ -3316,7 +3710,7 @@ export const validateInvitationToken = async (req: Request, res: Response, next:
 
 export const getPendingInvitationsCount = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const count = await (prisma as any).invitation.count({
+    const count = await prisma.invitation.count({
       where: { status: 'pending' },
     });
 
@@ -3332,8 +3726,8 @@ export const getPendingInvitationsCount = async (req: Request, res: Response, ne
 export const sendInvitationReminder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const invitation = await (prisma as any).invitation.findUnique({ where: { id } });
+
+    const invitation = await prisma.invitation.findUnique({ where: { id } });
     if (!invitation) {
       throw new AppError('Invitation not found', 404);
     }
@@ -3346,7 +3740,7 @@ export const sendInvitationReminder = async (req: Request, res: Response, next: 
       throw new AppError('Invitation has been cancelled', 400);
     }
 
-    const updatedInvitation = await (prisma as any).invitation.update({
+    const updatedInvitation = await prisma.invitation.update({
       where: { id },
       data: {
         reminderSent: true,
@@ -3357,7 +3751,7 @@ export const sendInvitationReminder = async (req: Request, res: Response, next: 
 
     return res.json({
       success: true,
-      data: updatedInvitation,
+      data: serializeInvitation(updatedInvitation),
       message: 'Reminder sent successfully',
     });
   } catch (error) {
@@ -3367,7 +3761,7 @@ export const sendInvitationReminder = async (req: Request, res: Response, next: 
 
 export const clearExpiredInvitations = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await (prisma as any).invitation.deleteMany({
+    const result = await prisma.invitation.deleteMany({
       where: {
         status: 'expired',
         expiresAt: { lt: new Date() },
@@ -3398,7 +3792,7 @@ export const getInvitationTemplates = async (req: Request, res: Response, next: 
 export const getInvitationTemplate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { templateId } = req.params;
-    
+
     const template = INVITATION_TEMPLATES[templateId];
     if (!template) {
       throw new AppError('Template not found', 404);
@@ -3416,12 +3810,12 @@ export const getInvitationTemplate = async (req: Request, res: Response, next: N
 export const createInvitationTemplate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, subject, body, role, variables, isDefault } = req.body;
-    
+
     if (!name || !subject || !body) {
       throw new AppError('Name, subject, and body are required', 400);
     }
 
-    const template = await (prisma as any).invitationTemplate.create({
+    const template = await prisma.invitationTemplate.create({
       data: {
         name,
         subject,
@@ -3446,13 +3840,13 @@ export const updateInvitationTemplate = async (req: Request, res: Response, next
   try {
     const { id } = req.params;
     const updates = req.body;
-    
-    const template = await (prisma as any).invitationTemplate.findUnique({ where: { id } });
+
+    const template = await prisma.invitationTemplate.findUnique({ where: { id } });
     if (!template) {
       throw new AppError('Template not found', 404);
     }
 
-    const updatedTemplate = await (prisma as any).invitationTemplate.update({
+    const updatedTemplate = await prisma.invitationTemplate.update({
       where: { id },
       data: updates,
     });
@@ -3470,13 +3864,13 @@ export const updateInvitationTemplate = async (req: Request, res: Response, next
 export const deleteInvitationTemplate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const template = await (prisma as any).invitationTemplate.findUnique({ where: { id } });
+
+    const template = await prisma.invitationTemplate.findUnique({ where: { id } });
     if (!template) {
       throw new AppError('Template not found', 404);
     }
 
-    await (prisma as any).invitationTemplate.delete({ where: { id } });
+    await prisma.invitationTemplate.delete({ where: { id } });
 
     return res.json({
       success: true,
@@ -3494,35 +3888,17 @@ export const deleteInvitationTemplate = async (req: Request, res: Response, next
 export const getGroupById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const group = await prisma.user.findUnique({
+
+    const group = await prisma.userGroup.findUnique({
       where: { id },
       include: {
-        businessUnits: true,
-        company: true,
-      },
-    });
-
-    if (!group || !group.email.endsWith('@group.local')) {
-      throw new AppError('Group not found', 404);
-    }
-
-    return res.json({
-      success: true,
-      data: sanitizeUser(group),
-    });
-  } catch (error) {
-    return handleError(error, res, next);
-  }
-};
-
-export const getGroupByName = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { name } = req.params;
-    
-    const group = await prisma.user.findFirst({
-      where: {
-        email: `${name.toLowerCase().replace(/\s+/g, '.')}@group.local`,
+        members: {
+          include: {
+            user: {
+              select: { id: true, email: true, firstName: true, lastName: true },
+            },
+          },
+        },
       },
     });
 
@@ -3532,7 +3908,39 @@ export const getGroupByName = async (req: Request, res: Response, next: NextFunc
 
     return res.json({
       success: true,
-      data: sanitizeUser(group),
+      data: {
+        ...serializeGroup(group),
+        memberCount: group.members?.length || 0,
+        members:
+          group.members?.map((m: any) => ({
+            userId: m.userId,
+            role: m.role,
+            joinedAt: m.joinedAt instanceof Date ? m.joinedAt.toISOString() : m.joinedAt,
+            isLead: m.isLead,
+            user: m.user,
+          })) || [],
+      },
+    });
+  } catch (error) {
+    return handleError(error, res, next);
+  }
+};
+
+export const getGroupByName = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { name } = req.params;
+
+    const group = await prisma.userGroup.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
+
+    if (!group) {
+      throw new AppError('Group not found', 404);
+    }
+
+    return res.json({
+      success: true,
+      data: serializeGroup(group),
     });
   } catch (error) {
     return handleError(error, res, next);
@@ -3542,45 +3950,32 @@ export const getGroupByName = async (req: Request, res: Response, next: NextFunc
 export const removeUsersFromGroup = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const { userIds } = req.body;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+    const { userIds } = removeUsersFromGroupSchema.parse(req.body);
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const removedUsers: string[] = [];
-    const skippedUsers: string[] = [];
-    const groupPermissions = group.permissions || [];
-
-    for (const userId of userIds) {
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user) {
-        skippedUsers.push(userId);
-        continue;
-      }
-
-      const filteredPermissions = (user.permissions || []).filter((p: string) => !groupPermissions.includes(p));
-      await prisma.user.update({
-        where: { id: userId },
-        data: { permissions: filteredPermissions },
-      });
-
-      removedUsers.push(userId);
-    }
+    const result = await prisma.userGroupMember.deleteMany({
+      where: { groupId: id, userId: { in: userIds } },
+    });
 
     return res.json({
       success: true,
       data: {
         groupId: id,
-        removedCount: removedUsers.length,
-        skippedCount: skippedUsers.length,
-        removedUsers,
-        skippedUsers,
+        removedCount: result.count,
+        skippedCount: userIds.length - result.count,
+        removedUsers: userIds,
+        skippedUsers: [],
       },
-      message: `Removed ${removedUsers.length} users successfully`,
+      message: `Removed ${result.count} users successfully`,
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return handleValidationError(error, res);
+    }
     return handleError(error, res, next);
   }
 };
@@ -3589,51 +3984,50 @@ export const getGroupMembers = async (req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
     const { page = '1', limit = '20', search } = req.query;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const groupPermissions = group.permissions || [];
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    const where: any = {
-      permissions: { hasSome: groupPermissions },
-    };
-
-    if (search) {
-      where.OR = [
-        { firstName: { contains: search as string, mode: 'insensitive' } },
-        { lastName: { contains: search as string, mode: 'insensitive' } },
-        { email: { contains: search as string, mode: 'insensitive' } },
-      ];
-    }
+    const where: any = { groupId: id };
 
     const [members, total] = await Promise.all([
-      prisma.user.findMany({
+      prisma.userGroupMember.findMany({
         where,
         skip,
         take: limitNum,
-        select: {
-          id: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          role: true,
-          isActive: true,
-          permissions: true,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+              isActive: true,
+              permissions: true,
+            },
+          },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { joinedAt: 'desc' },
       }),
-      prisma.user.count({ where }),
+      prisma.userGroupMember.count({ where }),
     ]);
 
     return res.json({
       success: true,
-      data: members,
+      data: members.map((m: any) => ({
+        userId: m.userId,
+        role: m.role,
+        joinedAt: m.joinedAt instanceof Date ? m.joinedAt.toISOString() : m.joinedAt,
+        isLead: m.isLead,
+        user: m.user,
+      })),
       pagination: {
         total,
         page: pageNum,
@@ -3650,28 +4044,41 @@ export const updateMemberRole = async (req: Request, res: Response, next: NextFu
   try {
     const { id, userId } = req.params;
     const { role } = req.body;
-    
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
+
+    const member = await prisma.userGroupMember.findUnique({
+      where: { groupId_userId: { groupId: id, userId } },
+    });
+    if (!member) {
       throw new AppError('Member not found', 404);
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
+    const updated = await prisma.userGroupMember.update({
+      where: { groupId_userId: { groupId: id, userId } },
       data: { role: role as UserRole },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        isActive: true,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            isActive: true,
+          },
+        },
       },
     });
 
     return res.json({
       success: true,
-      data: updatedUser,
+      data: {
+        userId: updated.userId,
+        role: updated.role,
+        joinedAt:
+          updated.joinedAt instanceof Date ? updated.joinedAt.toISOString() : updated.joinedAt,
+        isLead: updated.isLead,
+        user: (updated as any).user,
+      },
       message: 'Member role updated successfully',
     });
   } catch (error) {
@@ -3683,37 +4090,28 @@ export const setGroupLead = async (req: Request, res: Response, next: NextFuncti
   try {
     const { id, userId } = req.params;
     const { isLead } = req.body;
-    
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
+
+    const member = await prisma.userGroupMember.findUnique({
+      where: { groupId_userId: { groupId: id, userId } },
+    });
+    if (!member) {
       throw new AppError('Member not found', 404);
     }
 
-    let permissions = [...(user.permissions || [])];
-    const leadPermission = 'group:lead';
-
-    if (isLead && !permissions.includes(leadPermission)) {
-      permissions.push(leadPermission);
-    } else if (!isLead && permissions.includes(leadPermission)) {
-      permissions = permissions.filter((p: string) => p !== leadPermission);
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: { permissions },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-        permissions: true,
-      },
+    const updated = await prisma.userGroupMember.update({
+      where: { groupId_userId: { groupId: id, userId } },
+      data: { isLead },
     });
 
     return res.json({
       success: true,
-      data: updatedUser,
+      data: {
+        userId: updated.userId,
+        role: updated.role,
+        joinedAt:
+          updated.joinedAt instanceof Date ? updated.joinedAt.toISOString() : updated.joinedAt,
+        isLead: updated.isLead,
+      },
       message: `Member ${isLead ? 'set as lead' : 'removed as lead'} successfully`,
     });
   } catch (error) {
@@ -3724,14 +4122,14 @@ export const setGroupLead = async (req: Request, res: Response, next: NextFuncti
 export const updateGroupPermissions = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const { permissions } = req.body;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+    const { permissions } = updateGroupPermissionsSchema.parse(req.body);
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const updatedGroup = await prisma.user.update({
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
       data: { permissions },
     });
@@ -3741,11 +4139,17 @@ export const updateGroupPermissions = async (req: Request, res: Response, next: 
       data: {
         groupId: id,
         permissions: updatedGroup.permissions,
-        updatedAt: updatedGroup.updatedAt,
+        updatedAt:
+          updatedGroup.updatedAt instanceof Date
+            ? updatedGroup.updatedAt.toISOString()
+            : updatedGroup.updatedAt,
       },
       message: 'Group permissions updated successfully',
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return handleValidationError(error, res);
+    }
     return handleError(error, res, next);
   }
 };
@@ -3754,21 +4158,21 @@ export const addGroupPermissions = async (req: Request, res: Response, next: Nex
   try {
     const { id } = req.params;
     const { permissions } = req.body;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
     const mergedPermissions = [...new Set([...(group.permissions || []), ...permissions])];
-    const updatedGroup = await prisma.user.update({
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
       data: { permissions: mergedPermissions },
     });
 
     return res.json({
       success: true,
-      data: updatedGroup,
+      data: serializeGroup(updatedGroup),
       message: 'Permissions added successfully',
     });
   } catch (error) {
@@ -3780,21 +4184,23 @@ export const removeGroupPermissions = async (req: Request, res: Response, next: 
   try {
     const { id } = req.params;
     const { permissions } = req.body;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const filteredPermissions = (group.permissions || []).filter((p: string) => !permissions.includes(p));
-    const updatedGroup = await prisma.user.update({
+    const filteredPermissions = (group.permissions || []).filter(
+      (p: string) => !permissions.includes(p)
+    );
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
       data: { permissions: filteredPermissions },
     });
 
     return res.json({
       success: true,
-      data: updatedGroup,
+      data: serializeGroup(updatedGroup),
       message: 'Permissions removed successfully',
     });
   } catch (error) {
@@ -3804,11 +4210,12 @@ export const removeGroupPermissions = async (req: Request, res: Response, next: 
 
 export const getGroupStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [totalGroups, totalMembers, activeGroups, inactiveGroups] = await Promise.all([
-      prisma.user.count({ where: { email: { endsWith: '@group.local' } } }),
-      prisma.user.count(),
-      prisma.user.count({ where: { isActive: true, email: { endsWith: '@group.local' } } }),
-      prisma.user.count({ where: { isActive: false, email: { endsWith: '@group.local' } } }),
+    const [totalGroups, totalMembers, activeGroups, inactiveGroups, byRole] = await Promise.all([
+      prisma.userGroup.count(),
+      prisma.userGroupMember.count(),
+      prisma.userGroup.count({ where: { isActive: true } }),
+      prisma.userGroup.count({ where: { isActive: false } }),
+      prisma.userGroupMember.groupBy({ by: ['role'], _count: { _all: true } }),
     ]);
 
     return res.json({
@@ -3819,7 +4226,10 @@ export const getGroupStats = async (req: Request, res: Response, next: NextFunct
         activeGroups,
         inactiveGroups,
         averageMembersPerGroup: totalGroups > 0 ? totalMembers / totalGroups : 0,
-        byRole: {},
+        byRole: byRole.reduce((acc: Record<string, number>, item: any) => {
+          acc[item.role] = item._count._all;
+          return acc;
+        }, {}),
       },
     });
   } catch (error) {
@@ -3834,7 +4244,7 @@ export const getGroupStats = async (req: Request, res: Response, next: NextFunct
 export const createGroups = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { groups } = req.body;
-    
+
     if (!groups || !Array.isArray(groups) || groups.length === 0) {
       throw new AppError('At least one group is required', 400);
     }
@@ -3842,25 +4252,19 @@ export const createGroups = async (req: Request, res: Response, next: NextFuncti
     const createdGroups: any[] = [];
 
     for (const groupData of groups) {
-      const groupEmail = `${groupData.name.toLowerCase().replace(/\s+/g, '.')}@group.local`;
-      
-      const existingGroup = await prisma.user.findFirst({ where: { email: groupEmail } });
-      if (existingGroup) continue;
-
-      const group = await prisma.user.create({
+      const group = await prisma.userGroup.create({
         data: {
-          email: groupEmail,
-          firstName: groupData.name,
-          lastName: '(Group)',
-          role: UserRole.USER,
-          password: 'GroupPlaceholder123!',
-          isActive: true,
+          name: groupData.name,
+          description: groupData.description,
+          icon: groupData.icon,
+          color: groupData.color,
           permissions: groupData.permissions || [],
-          clerkId: `group_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+          createdBy: (req as any).user?.email || 'System',
+          createdById: (req as any).user?.id,
         },
       });
 
-      createdGroups.push(group);
+      createdGroups.push(serializeGroup(group));
     }
 
     return res.status(201).json({
@@ -3876,16 +4280,13 @@ export const createGroups = async (req: Request, res: Response, next: NextFuncti
 export const deleteGroups = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { ids } = req.body;
-    
+
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       throw new AppError('At least one group ID is required', 400);
     }
 
-    const result = await prisma.user.deleteMany({
-      where: {
-        id: { in: ids },
-        email: { endsWith: '@group.local' },
-      },
+    const result = await prisma.userGroup.deleteMany({
+      where: { id: { in: ids } },
     });
 
     return res.json({
@@ -3901,7 +4302,7 @@ export const deleteGroups = async (req: Request, res: Response, next: NextFuncti
 export const assignUsersToMultipleGroups = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { assignments } = req.body;
-    
+
     if (!assignments || !Array.isArray(assignments) || assignments.length === 0) {
       throw new AppError('At least one assignment is required', 400);
     }
@@ -3909,23 +4310,30 @@ export const assignUsersToMultipleGroups = async (req: Request, res: Response, n
     const results: any[] = [];
 
     for (const assignment of assignments) {
-      const group = await prisma.user.findUnique({ where: { id: assignment.groupId } });
-      if (!group || !group.email.endsWith('@group.local')) {
+      const group = await prisma.userGroup.findUnique({ where: { id: assignment.groupId } });
+      if (!group) {
         results.push({ groupId: assignment.groupId, error: 'Group not found' });
         continue;
       }
 
-      const groupPermissions = group.permissions || [];
       const assignedUsers: string[] = [];
 
       for (const userId of assignment.userIds) {
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user) continue;
 
-        const mergedPermissions = [...new Set([...(user.permissions || []), ...groupPermissions])];
-        await prisma.user.update({
-          where: { id: userId },
-          data: { permissions: mergedPermissions },
+        const existing = await prisma.userGroupMember.findUnique({
+          where: { groupId_userId: { groupId: assignment.groupId, userId } },
+        });
+        if (existing) continue;
+
+        await prisma.userGroupMember.create({
+          data: {
+            groupId: assignment.groupId,
+            userId,
+            role: (assignment.role || 'USER') as UserRole,
+            isLead: assignment.isLead || false,
+          },
         });
         assignedUsers.push(userId);
       }
@@ -3945,39 +4353,19 @@ export const assignUsersToMultipleGroups = async (req: Request, res: Response, n
 
 export const getGroupHierarchy = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const groups = await prisma.user.findMany({
-      where: { email: { endsWith: '@group.local' } },
-      select: {
-        id: true,
-        firstName: true,
-        email: true,
-        permissions: true,
-        isActive: true,
-        createdAt: true,
-      },
+    const groups = await prisma.userGroup.findMany({
+      orderBy: { name: 'asc' },
     });
 
-    const buildHierarchy = (parentPermission: string | null, depth: number = 0): any[] => {
-      return groups
-        .filter((g: any) => {
-          if (!parentPermission) {
-            return !(g.permissions || []).some((p: string) => p.startsWith('parent:'));
-          }
-          return (g.permissions || []).includes(parentPermission);
-        })
-        .map((group: any) => ({
-          group: {
-            id: group.id,
-            name: group.firstName,
-            permissions: group.permissions,
-            isActive: group.isActive,
-          },
-          children: buildHierarchy(`parent:${group.id}`, depth + 1),
-          depth,
+    const buildHierarchy = (items: any[], parentId: string | null = null): any[] =>
+      items
+        .filter((g) => g.parentGroupId === parentId)
+        .map((g) => ({
+          group: serializeGroup(g),
+          children: buildHierarchy(items, g.id),
         }));
-    };
 
-    const hierarchy = buildHierarchy(null);
+    const hierarchy = buildHierarchy(groups);
 
     return res.json({
       success: true,
@@ -3991,24 +4379,14 @@ export const getGroupHierarchy = async (req: Request, res: Response, next: NextF
 export const getChildGroups = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const children = await prisma.user.findMany({
-      where: {
-        email: { endsWith: '@group.local' },
-        permissions: { has: `parent:${id}` },
-      },
-      select: {
-        id: true,
-        firstName: true,
-        email: true,
-        permissions: true,
-        isActive: true,
-      },
+
+    const children = await prisma.userGroup.findMany({
+      where: { parentGroupId: id },
     });
 
     return res.json({
       success: true,
-      data: children,
+      data: children.map(serializeGroup),
     });
   } catch (error) {
     return handleError(error, res, next);
@@ -4018,35 +4396,26 @@ export const getChildGroups = async (req: Request, res: Response, next: NextFunc
 export const getParentGroup = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
     if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const parentPermission = (group.permissions || []).find((p: string) => p.startsWith('parent:'));
-    if (!parentPermission) {
+    if (!group.parentGroupId) {
       return res.json({
         success: true,
         data: null,
       });
     }
 
-    const parentId = parentPermission.replace('parent:', '');
-    const parent = await prisma.user.findUnique({
-      where: { id: parentId },
-      select: {
-        id: true,
-        firstName: true,
-        email: true,
-        permissions: true,
-        isActive: true,
-      },
+    const parent = await prisma.userGroup.findUnique({
+      where: { id: group.parentGroupId },
     });
 
     return res.json({
       success: true,
-      data: parent,
+      data: parent ? serializeGroup(parent) : null,
     });
   } catch (error) {
     return handleError(error, res, next);
@@ -4057,9 +4426,9 @@ export const moveGroup = async (req: Request, res: Response, next: NextFunction)
   try {
     const { id } = req.params;
     const { parentGroupId } = req.body;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
@@ -4067,19 +4436,18 @@ export const moveGroup = async (req: Request, res: Response, next: NextFunction)
       throw new AppError('Group cannot be its own parent', 400);
     }
 
-    let permissions = (group.permissions || []).filter((p: string) => !p.startsWith('parent:'));
-    if (parentGroupId) {
-      permissions.push(`parent:${parentGroupId}`);
-    }
-
-    const updatedGroup = await prisma.user.update({
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
-      data: { permissions },
+      data: {
+        parentGroup: parentGroupId
+          ? { connect: { id: parentGroupId } }
+          : { disconnect: true },
+      },
     });
 
     return res.json({
       success: true,
-      data: updatedGroup,
+      data: serializeGroup(updatedGroup),
       message: 'Group moved successfully',
     });
   } catch (error) {
@@ -4090,10 +4458,13 @@ export const moveGroup = async (req: Request, res: Response, next: NextFunction)
 export const mergeGroups = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { sourceGroupId, targetGroupId } = req.body;
-    
+
     const [sourceGroup, targetGroup] = await Promise.all([
-      prisma.user.findUnique({ where: { id: sourceGroupId } }),
-      prisma.user.findUnique({ where: { id: targetGroupId } }),
+      prisma.userGroup.findUnique({
+        where: { id: sourceGroupId },
+        include: { members: true },
+      }),
+      prisma.userGroup.findUnique({ where: { id: targetGroupId } }),
     ]);
 
     if (!sourceGroup || !targetGroup) {
@@ -4105,16 +4476,34 @@ export const mergeGroups = async (req: Request, res: Response, next: NextFunctio
       ...(sourceGroup.permissions || []),
     ])];
 
-    await prisma.user.update({
+    await prisma.userGroup.update({
       where: { id: targetGroupId },
       data: { permissions: mergedPermissions },
     });
 
-    await prisma.user.delete({ where: { id: sourceGroupId } });
+    if (sourceGroup.members && sourceGroup.members.length > 0) {
+      for (const member of sourceGroup.members) {
+        const existing = await prisma.userGroupMember.findUnique({
+          where: { groupId_userId: { groupId: targetGroupId, userId: member.userId } },
+        });
+        if (!existing) {
+          await prisma.userGroupMember.create({
+            data: {
+              groupId: targetGroupId,
+              userId: member.userId,
+              role: member.role,
+              isLead: member.isLead,
+            },
+          });
+        }
+      }
+    }
+
+    await prisma.userGroup.delete({ where: { id: sourceGroupId } });
 
     return res.json({
       success: true,
-      data: targetGroup,
+      data: serializeGroup(targetGroup),
       message: 'Groups merged successfully',
     });
   } catch (error) {
@@ -4126,28 +4515,42 @@ export const duplicateGroup = async (req: Request, res: Response, next: NextFunc
   try {
     const { id } = req.params;
     const { name } = req.body;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({
+      where: { id },
+      include: { members: true },
+    });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const newGroup = await prisma.user.create({
+    const newGroup = await prisma.userGroup.create({
       data: {
-        email: `${(name || `${group.firstName}_copy`).toLowerCase().replace(/\s+/g, '.')}@group.local`,
-        firstName: name || `${group.firstName} (Copy)`,
-        lastName: '(Group)',
-        role: UserRole.USER,
-        password: 'GroupPlaceholder123!',
-        isActive: true,
+        name: name || `${group.name} (Copy)`,
+        description: group.description,
+        icon: group.icon,
+        color: group.color,
         permissions: group.permissions || [],
-        clerkId: `group_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        createdBy: (req as any).user?.email || 'System',
+        createdById: (req as any).user?.id,
       },
     });
 
+    if (group.members && group.members.length > 0) {
+      await prisma.userGroupMember.createMany({
+        data: group.members.map((m: any) => ({
+          groupId: newGroup.id,
+          userId: m.userId,
+          role: m.role,
+          isLead: m.isLead,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     return res.status(201).json({
       success: true,
-      data: newGroup,
+      data: serializeGroup(newGroup),
       message: 'Group duplicated successfully',
     });
   } catch (error) {
@@ -4158,20 +4561,20 @@ export const duplicateGroup = async (req: Request, res: Response, next: NextFunc
 export const activateGroup = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const updatedGroup = await prisma.user.update({
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
       data: { isActive: true },
     });
 
     return res.json({
       success: true,
-      data: updatedGroup,
+      data: serializeGroup(updatedGroup),
       message: 'Group activated successfully',
     });
   } catch (error) {
@@ -4182,20 +4585,20 @@ export const activateGroup = async (req: Request, res: Response, next: NextFunct
 export const deactivateGroup = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const updatedGroup = await prisma.user.update({
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
       data: { isActive: false },
     });
 
     return res.json({
       success: true,
-      data: updatedGroup,
+      data: serializeGroup(updatedGroup),
       message: 'Group deactivated successfully',
     });
   } catch (error) {
@@ -4206,21 +4609,20 @@ export const deactivateGroup = async (req: Request, res: Response, next: NextFun
 export const archiveGroup = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    
-    const group = await prisma.user.findUnique({ where: { id } });
-    if (!group || !group.email.endsWith('@group.local')) {
+
+    const group = await prisma.userGroup.findUnique({ where: { id } });
+    if (!group) {
       throw new AppError('Group not found', 404);
     }
 
-    const permissions = [...(group.permissions || []), 'group:archived'];
-    const updatedGroup = await prisma.user.update({
+    const updatedGroup = await prisma.userGroup.update({
       where: { id },
-      data: { isActive: false, permissions },
+      data: { isActive: false },
     });
 
     return res.json({
       success: true,
-      data: updatedGroup,
+      data: serializeGroup(updatedGroup),
       message: 'Group archived successfully',
     });
   } catch (error) {
@@ -4231,41 +4633,36 @@ export const archiveGroup = async (req: Request, res: Response, next: NextFuncti
 export const exportGroups = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const format = (req.query.format as string) || 'json';
-    
-    const groups = await prisma.user.findMany({
-      where: { email: { endsWith: '@group.local' } },
-      select: {
-        id: true,
-        firstName: true,
-        email: true,
-        permissions: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+
+    const groups = await prisma.userGroup.findMany({
+      include: { _count: { select: { members: true } } },
     });
 
     if (format === 'json') {
       return res.json({
         success: true,
-        data: groups,
+        data: groups.map((g: any) => ({
+          ...serializeGroup(g),
+          memberCount: g._count?.members || 0,
+        })),
         total: groups.length,
         format: 'json',
       });
     }
 
     if (format === 'csv') {
-      const headers = ['ID', 'Name', 'Email', 'Permissions', 'Status', 'Created At'];
+      const headers = ['ID', 'Name', 'Description', 'Permissions', 'Members', 'Status', 'Created At'];
       const rows = groups.map((g: any) => [
         g.id,
-        g.firstName,
-        g.email,
+        g.name,
+        g.description || '',
         (g.permissions || []).join('; '),
+        g._count?.members || 0,
         g.isActive ? 'Active' : 'Inactive',
         g.createdAt.toISOString(),
       ]);
       const csvContent = [headers, ...rows].map((row: any[]) => row.join(',')).join('\n');
-      
+
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=user_groups_${Date.now()}.csv`);
       return res.send(csvContent);
@@ -4282,3 +4679,5 @@ export const exportGroups = async (req: Request, res: Response, next: NextFuncti
 // ============================================
 
 export default userController;
+
+// ===== END PART 3 of 3 — FILE COMPLETE =====

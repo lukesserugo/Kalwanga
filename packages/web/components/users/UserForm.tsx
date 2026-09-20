@@ -5,15 +5,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../hooks/useAuth';
-import { PERMISSIONS } from '../../types/permissions';
 import { UserRole } from '../../types/enums';
 import { userService } from '../../services/userService';
 import { userManagementService } from '../../services/userManagementService';
 import { businessUnitService } from '../../services/businessUnitService';
 import { userGroupService } from '../../services/userGroupService';
 import { toast } from 'react-hot-toast';
-import { 
-  Save, User, Mail, Phone, Shield, Building, 
+import {
+  Save, User, Mail, Phone, Shield, Building,
   Lock, Eye, EyeOff, Loader2, AlertCircle,
   CheckCircle, XCircle, ArrowLeft, Key, Plus, X,
   Search, ChevronDown, ChevronUp, Info, Settings,
@@ -27,6 +26,47 @@ import {
   Share2, Bookmark, Tag, Tags, Grid, Layout,
   LayoutGrid, LayoutList, Columns, Rows, Circle
 } from 'lucide-react';
+
+
+const PERMISSIONS = {
+  USER_MANAGE: 'user:manage',
+} as const;
+
+interface UserGroupMembershipShape {
+  id?: string;
+  groupId?: string;
+  userId?: string;
+  role?: string;
+  isLead?: boolean;
+  joinedAt?: string;
+  group?: {
+    id: string;
+    name?: string;
+  };
+}
+
+interface UserWithRelations {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber?: string | null;
+  role: string;
+  isActive: boolean;
+  companyId?: string | null;
+  permissions?: string[];
+  businessUnits?: Array<{
+    id?: string;
+    businessUnitId?: string;
+    role?: string;
+    isActive?: boolean;
+  }>;
+  /**
+   * Runtime-only field populated by the backend. Not declared on
+   * the canonical `User` type — see the note above.
+   */
+  groupMemberships?: UserGroupMembershipShape[];
+}
 
 export interface UserFormData {
   firstName: string;
@@ -212,7 +252,7 @@ const PERMISSION_GROUPS = {
   BUSINESS_UNITS: {
     label: '🏢 Business Units',
     permissions: [
-      'business_unit:view', 'business_unit:create', 'business_unit:edit', 
+      'business_unit:view', 'business_unit:create', 'business_unit:edit',
       'business_unit:delete', 'business_unit:manage'
     ],
     color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
@@ -229,10 +269,10 @@ const PERMISSION_GROUPS = {
   }
 };
 
-export function UserForm({ 
-  userId, 
-  initialData, 
-  onSuccess, 
+export function UserForm({
+  userId,
+  initialData,
+  onSuccess,
   onCancel,
   onError,
   onSubmittingChange,
@@ -255,7 +295,7 @@ export function UserForm({
     permissions: initialData?.permissions || [],
     groupIds: initialData?.groupIds || [],
   });
-  
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -294,7 +334,7 @@ export function UserForm({
   const loadBusinessUnits = useCallback(async () => {
     try {
       const response = await businessUnitService.getAllBusinessUnits();
-      
+
       if (response && Array.isArray(response)) {
         setBusinessUnits(response);
       } else if (response?.data && Array.isArray(response.data)) {
@@ -316,7 +356,7 @@ export function UserForm({
   const loadUserGroups = useCallback(async () => {
     try {
       const response = await userGroupService.getGroups({ limit: 100, isActive: true });
-      
+
       if (response?.data && Array.isArray(response.data)) {
         setUserGroups(response.data.map((group: any) => ({
           id: group.id,
@@ -337,7 +377,13 @@ export function UserForm({
   const loadUser = useCallback(async () => {
     try {
       setLoading(true);
-      const user = await userService.getUserById(userId!);
+
+      // ✅ FIX: Cast the canonical `User` to `UserWithRelations` so the
+      //    runtime-only `groupMemberships` field is typed. The backend
+      //    populates this field on `/users/:id` even though the canonical
+      //    `User` interface in `types/user.ts` doesn't declare it.
+      const user = (await userService.getUserById(userId!)) as unknown as UserWithRelations;
+
       setFormData({
         firstName: user.firstName,
         lastName: user.lastName,
@@ -349,8 +395,9 @@ export function UserForm({
         isActive: user.isActive,
         companyId: user.companyId || '',
         permissions: user.permissions || [],
-        groupIds: user.groupMemberships?.map((gm: any) => gm.groupId) || [],
+        groupIds: user.groupMemberships?.map((gm) => gm.groupId ?? '') .filter(Boolean) as string[] || [],
       });
+
       if (user.permissions && user.permissions.length > 0) {
         setShowPermissionManager(true);
       }
@@ -383,7 +430,7 @@ export function UserForm({
       [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
     }));
     setTouched(prev => ({ ...prev, [name]: true }));
-    
+
     if (errors[name]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -391,7 +438,7 @@ export function UserForm({
         return newErrors;
       });
     }
-    
+
     if (submitError) {
       setSubmitError(null);
     }
@@ -437,18 +484,18 @@ export function UserForm({
   const addCustomPermission = useCallback(() => {
     const permission = customPermission.trim().toLowerCase();
     if (!permission) return;
-    
+
     if (!permission.includes(':')) {
       toast.error('Permission must be in format "resource:action"');
       return;
     }
-    
+
     const [resource, action] = permission.split(':');
     if (!resource || !action) {
       toast.error('Invalid permission format. Use "resource:action"');
       return;
     }
-    
+
     setFormData(prev => ({
       ...prev,
       permissions: [...(prev.permissions || []), permission]
@@ -469,11 +516,11 @@ export function UserForm({
   const applyPermissionGroup = useCallback((groupKey: string) => {
     const group = PERMISSION_GROUPS[groupKey as keyof typeof PERMISSION_GROUPS];
     if (!group) return;
-    
+
     setFormData(prev => {
       const currentPermissions = prev.permissions || [];
       const allAssigned = group.permissions.every(p => currentPermissions.includes(p));
-      
+
       if (allAssigned) {
         return {
           ...prev,
@@ -487,7 +534,7 @@ export function UserForm({
         };
       }
     });
-    
+
     setSelectedGroup(groupKey);
     toast.success(`Toggled ${group.label} permissions`);
   }, []);
@@ -519,19 +566,19 @@ export function UserForm({
     } else if (formData.firstName.trim().length < 2) {
       newErrors.firstName = 'First name must be at least 2 characters';
     }
-    
+
     if (!formData.lastName.trim()) {
       newErrors.lastName = 'Last name is required';
     } else if (formData.lastName.trim().length < 2) {
       newErrors.lastName = 'Last name must be at least 2 characters';
     }
-    
+
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = 'Invalid email address format';
     }
-    
+
     if (!isEdit && !formData.password) {
       newErrors.password = 'Password is required';
     } else if (!isEdit && formData.password && formData.password.length < 8) {
@@ -539,7 +586,7 @@ export function UserForm({
     } else if (isEdit && formData.password && formData.password.length > 0 && formData.password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
     }
-    
+
     if (!formData.role) {
       newErrors.role = 'Role is required';
     }
@@ -549,7 +596,7 @@ export function UserForm({
   }, [formData, isEdit]);
 
   /**
-   * ✅ FIXED: Handle form submission
+   * ✅ Handle form submission
    * - For NEW users: Use userManagementService.createUser()
    *   - This handles clerkId generation automatically
    *   - Routes data to correct endpoints (users, permissions, business units, groups, invitations, activities)
@@ -559,7 +606,7 @@ export function UserForm({
     e.preventDefault();
     setSubmitError(null);
     setSuccessMessage(null);
-    
+
     if (!validate()) {
       const firstError = Object.values(errors)[0];
       toast.error(firstError || 'Please fix the validation errors');
@@ -592,7 +639,7 @@ export function UserForm({
         }
 
         result = await userService.updateUser(userId!, updateData);
-        
+
         // Update groups if managed separately
         if (canManageGroups && formData.groupIds && formData.groupIds.length > 0) {
           try {
@@ -640,9 +687,9 @@ export function UserForm({
 
     } catch (error: any) {
       console.error('❌ Failed to save user:', error);
-      
+
       let errorMessage = 'Failed to save user. Please try again.';
-      
+
       if (error?.response?.data?.errors) {
         const fieldErrors: Record<string, string> = {};
         error.response.data.errors.forEach((err: any) => {
@@ -655,7 +702,7 @@ export function UserForm({
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       setSubmitError(errorMessage);
       onError?.(errorMessage);
       toast.error(errorMessage);
@@ -693,7 +740,7 @@ export function UserForm({
   // Filter permissions based on search
   const filteredPermissionGroups = useMemo(() => {
     if (!permissionSearch) return Object.entries(PERMISSION_GROUPS);
-    
+
     return Object.entries(PERMISSION_GROUPS).filter(([key, group]) => {
       const searchLower = permissionSearch.toLowerCase();
       return (
@@ -707,8 +754,8 @@ export function UserForm({
   // Filter groups based on search
   const filteredUserGroups = useMemo(() => {
     if (!groupSearch) return userGroups;
-    
-    return userGroups.filter(group => 
+
+    return userGroups.filter(group =>
       group.name.toLowerCase().includes(groupSearch.toLowerCase()) ||
       group.description?.toLowerCase().includes(groupSearch.toLowerCase())
     );
@@ -757,7 +804,7 @@ export function UserForm({
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Status:</span>
               <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 border ${
-                formData.isActive 
+                formData.isActive
                   ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700'
                   : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700'
               }`}>
@@ -848,7 +895,7 @@ export function UserForm({
                   className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 ${
                     errors.lastName && touched.lastName ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                   }`}
-                  disabled={saving} 
+                  disabled={saving}
                 />
               </div>
               {errors.lastName && touched.lastName && (
@@ -911,7 +958,7 @@ export function UserForm({
             <Shield className="w-4 h-4" />
             Role & Assignment
           </h3>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Role <span className="text-red-500">*</span>
@@ -1023,7 +1070,7 @@ export function UserForm({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {filteredUserGroups.map((group) => {
                       const isSelected = formData.groupIds?.includes(group.id);
-                      
+
                       return (
                         <button
                           key={group.id}

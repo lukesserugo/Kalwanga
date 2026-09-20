@@ -3,8 +3,8 @@
 'use client';
 
 import React, { ReactNode } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, AlertCircle, Shield, CheckCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Lock, Shield } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { usePermission } from '../../hooks/usePermission';
 import { PermissionResource } from '../../types/enums';
@@ -12,8 +12,13 @@ import { PermissionResource } from '../../types/enums';
 // ============================================
 // TYPES
 // ============================================
+//
+// NOTE: These names describe the *semantic* resource, not the
+// string casing that the backend or usePermission use. The
+// normalizers below convert them to the canonical lowercase
+// `resource:action` form before every comparison.
 
-export type InventoryPermission = 
+export type InventoryPermission =
   | 'INVENTORY:view'
   | 'INVENTORY:create'
   | 'INVENTORY:edit'
@@ -27,7 +32,7 @@ export type InventoryPermission =
   | 'INVENTORY:import'
   | 'INVENTORY:audit';
 
-export type UserRole = 
+export type UserRole =
   | 'SUPER_ADMIN'
   | 'ADMIN'
   | 'MANAGER'
@@ -42,71 +47,26 @@ export interface PermissionConfig {
 }
 
 export interface InventoryPermissionGuardProps {
-  /**
-   * The permission required to view the children
-   */
   permission: InventoryPermission | PermissionConfig;
-  /**
-   * The children to render if permission is granted
-   */
   children: ReactNode;
-  /**
-   * Optional fallback content to render if permission is denied
-   */
   fallback?: ReactNode;
-  /**
-   * Whether to show a lock icon when permission is denied
-   */
   showLockIcon?: boolean;
-  /**
-   * Custom message to show when permission is denied
-   */
   deniedMessage?: string;
-  /**
-   * Additional CSS classes
-   */
   className?: string;
 }
 
 export interface InventoryRoleGuardProps {
-  /**
-   * The roles allowed to view the children
-   */
   roles: UserRole | UserRole[];
-  /**
-   * The children to render if role is granted
-   */
   children: ReactNode;
-  /**
-   * Optional fallback content to render if role is denied
-   */
   fallback?: ReactNode;
-  /**
-   * Whether to show a lock icon when role is denied
-   */
   showLockIcon?: boolean;
-  /**
-   * Custom message to show when role is denied
-   */
   deniedMessage?: string;
-  /**
-   * Additional CSS classes
-   */
   className?: string;
 }
 
 export interface InventoryPermissionCheckProps {
-  /**
-   * The permission to check
-   */
   permission: InventoryPermission | PermissionConfig;
-  /**
-   * The children to render if permission is granted (render prop)
-   */
   children: (hasPermission: boolean, isLoading: boolean) => ReactNode;
-  /**
-   * Whether to check the permission on mount
-   */
   checkOnMount?: boolean;
 }
 
@@ -140,17 +100,42 @@ const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
 };
 
 // ============================================
+// NORMALIZATION
+// ============================================
+//
+// Every comparison against usePermission's `hasPermission` MUST
+// be in lowercase `resource:action` form. The canonical catalogue
+// (see packages/web/types/permissions.ts) uses lowercase strings.
+// Anything upper- or mixed-case silently fails.
+
+/**
+ * Normalize an InventoryPermission or PermissionConfig into the
+ * canonical lowercase `resource:action` string that
+ * `usePermission().hasPermission` accepts.
+ */
+export function normalizePermissionString(
+  permission: InventoryPermission | PermissionConfig
+): string {
+  if (typeof permission === 'object') {
+    return `${String(permission.resource).toLowerCase()}:${permission.action.toLowerCase()}`;
+  }
+  const [resource, action] = permission.split(':');
+  return `${String(resource).toLowerCase()}:${String(action || 'view').toLowerCase()}`;
+}
+
+// ============================================
 // UTILITY FUNCTIONS
 // ============================================
 
 /**
- * Convert InventoryPermission to PermissionResource and action
+ * Convert InventoryPermission to PermissionConfig. Kept for
+ * back-compat — the guard itself uses `normalizePermissionString`
+ * directly, which is the safer path.
  */
-export function parsePermission(permission: InventoryPermission | PermissionConfig): PermissionConfig {
-  if (typeof permission === 'object') {
-    return permission;
-  }
-  
+export function parsePermission(
+  permission: InventoryPermission | PermissionConfig
+): PermissionConfig {
+  if (typeof permission === 'object') return permission;
   const [resource, action] = permission.split(':');
   return {
     resource: resource as PermissionResource,
@@ -159,7 +144,11 @@ export function parsePermission(permission: InventoryPermission | PermissionConf
 }
 
 /**
- * Check if a user has a specific inventory permission
+ * Legacy helper. Accepts an optional hasPermission function.
+ *
+ * Prefer `useInventoryPermission` from this module — it reads
+ * the authoritative super-admin state from `usePermission`
+ * instead of guessing from `user.role`.
  */
 export function hasInventoryPermission(
   user: any,
@@ -167,32 +156,22 @@ export function hasInventoryPermission(
   hasPermissionFn?: (permission: string) => boolean
 ): boolean {
   if (!user) return false;
-  
-  // Super admin always has access
   if (user.role === 'SUPER_ADMIN') return true;
-  
-  // Use the provided hasPermission function if available
-  if (hasPermissionFn) {
-    const perm = typeof permission === 'string' ? permission : `${permission.resource}:${permission.action}`;
-    return hasPermissionFn(perm);
-  }
-  
-  // Fallback: Check if user has the permission in their permissions array
-  const perm = typeof permission === 'string' ? permission : `${permission.resource}:${permission.action}`;
+
+  const perm = normalizePermissionString(permission);
+  if (hasPermissionFn) return hasPermissionFn(perm);
   return user.permissions?.includes?.(perm) || false;
 }
 
 /**
- * Check if a user has a specific role
+ * Legacy role check. `user.role === 'SUPER_ADMIN'` short-circuit
+ * is retained for callers that don't have access to `usePermission`.
  */
 export function hasRole(user: any, roles: UserRole | UserRole[]): boolean {
   if (!user) return false;
-  
-  // Super admin always has access
   if (user.role === 'SUPER_ADMIN') return true;
-  
-  const roleList = Array.isArray(roles) ? roles : [roles];
-  return roleList.some(role => user.role === role);
+  const list = Array.isArray(roles) ? roles : [roles];
+  return list.some((r) => user.role === r);
 }
 
 // ============================================
@@ -208,40 +187,69 @@ export function InventoryPermissionGuard({
   className = '',
 }: InventoryPermissionGuardProps) {
   const { user, isAuthenticated } = useAuth();
-  const { hasPermission, isLoading } = usePermission();
-  
-  // Determine if user has permission
-  const hasAccess = React.useMemo(() => {
-    if (!isAuthenticated || !user) return false;
-    
-    // Super admin always has access
-    if (user.role === 'SUPER_ADMIN') return true;
-    
-    // Parse permission
-    const parsed = parsePermission(permission);
-    const permString = typeof permission === 'string' ? permission : `${parsed.resource}:${parsed.action}`;
-    
-    // Check using hasPermission from usePermission hook
-    return hasPermission(permString);
-  }, [user, isAuthenticated, permission, hasPermission]);
+  const {
+    hasPermission,
+    isLoading: permLoading,
+    isSuperAdmin,
+  } = usePermission();
 
-  // Loading state
-  if (isLoading) {
+  // Stable string form of the permission we're checking.
+  const permString = React.useMemo(
+    () => normalizePermissionString(permission),
+    [permission]
+  );
+
+  // ────────────────────────────────────────────────────────────
+  // FIX — the decision is made AFTER both auth and permission
+  // hooks have settled, and it uses the AUTHORITATIVE super-admin
+  // flag rather than `user.role === 'SUPER_ADMIN'`.
+  //
+  // We return a tri-state:
+  //   null  → still loading
+  //   true  → access granted
+  //   false → access denied
+  // ────────────────────────────────────────────────────────────
+  const decision = React.useMemo<'loading' | 'granted' | 'denied'>(() => {
+    if (permLoading) return 'loading';
+    if (!isAuthenticated || !user) return 'denied';
+
+    // ✅ AUTHORITATIVE: usePermission already folds in Clerk role,
+    //    user.role, wildcard, and the cached user. Do NOT
+    //    re-check `user.role === 'SUPER_ADMIN'` here — that path
+    //    misses three of the four sources.
+    if (isSuperAdmin) return 'granted';
+
+    // ✅ NORMALIZED: lowercase `resource:action` matches the
+    //    strings that usePermission's named checkers compare
+    //    against.
+    return hasPermission(permString) ? 'granted' : 'denied';
+  }, [
+    permLoading,
+    isAuthenticated,
+    user,
+    isSuperAdmin,
+    hasPermission,
+    permString,
+  ]);
+
+  if (decision === 'loading') {
     return (
       <div className={`flex items-center justify-center p-4 ${className}`}>
         <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent" />
-        <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Checking permissions...</span>
+        <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+          Checking permissions…
+        </span>
       </div>
     );
   }
 
-  // Permission denied
-  if (!hasAccess) {
-    if (fallback !== null) {
-      return <>{fallback}</>;
-    }
+  if (decision === 'denied') {
+    if (fallback !== null) return <>{fallback}</>;
 
-    const message = deniedMessage || PERMISSION_MESSAGES[permission as InventoryPermission] || 'You do not have permission to access this resource.';
+    const message =
+      deniedMessage ||
+      PERMISSION_MESSAGES[permission as InventoryPermission] ||
+      'You do not have permission to access this resource.';
 
     return (
       <motion.div
@@ -254,7 +262,9 @@ export function InventoryPermissionGuard({
             <Lock className="w-8 h-8 text-gray-400 dark:text-gray-500" />
           </div>
         )}
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Access Restricted</h3>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto">
           {message}
         </p>
@@ -278,21 +288,23 @@ export function InventoryRoleGuard({
   className = '',
 }: InventoryRoleGuardProps) {
   const { user, isAuthenticated } = useAuth();
-  
-  // Determine if user has the required role
-  const hasAccess = React.useMemo(() => {
-    if (!isAuthenticated || !user) return false;
-    return hasRole(user, roles);
-  }, [user, isAuthenticated, roles]);
+  const { isSuperAdmin, userRole } = usePermission();
 
-  if (!hasAccess) {
-    if (fallback !== null) {
-      return <>{fallback}</>;
-    }
+  const decision = React.useMemo<'loading' | 'granted' | 'denied'>(() => {
+    if (!isAuthenticated || !user) return 'denied';
+    if (isSuperAdmin) return 'granted';
+    const list = Array.isArray(roles) ? roles : [roles];
+    return list.some((r) => userRole === r) ? 'granted' : 'denied';
+  }, [user, isAuthenticated, isSuperAdmin, userRole, roles]);
 
-    const roleList = Array.isArray(roles) ? roles : [roles];
-    const roleLabels = roleList.map(role => ROLE_DISPLAY_NAMES[role] || role).join(', ');
-    const message = deniedMessage || `This resource requires one of the following roles: ${roleLabels}`;
+  if (decision === 'denied') {
+    if (fallback !== null) return <>{fallback}</>;
+
+    const list = Array.isArray(roles) ? roles : [roles];
+    const labels = list.map((r) => ROLE_DISPLAY_NAMES[r] || r).join(', ');
+    const message =
+      deniedMessage ||
+      `This resource requires one of the following roles: ${labels}`;
 
     return (
       <motion.div
@@ -305,7 +317,9 @@ export function InventoryRoleGuard({
             <Shield className="w-8 h-8 text-gray-400 dark:text-gray-500" />
           </div>
         )}
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Role Required</h3>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          Role Required
+        </h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-md mx-auto">
           {message}
         </p>
@@ -326,61 +340,77 @@ export function InventoryPermissionCheck({
   checkOnMount = true,
 }: InventoryPermissionCheckProps) {
   const { user, isAuthenticated } = useAuth();
-  const { hasPermission, isLoading } = usePermission();
-  const [hasAccess, setHasAccess] = React.useState(false);
-  const [checked, setChecked] = React.useState(false);
+  const { hasPermission, isLoading, isSuperAdmin } = usePermission();
 
-  React.useEffect(() => {
-    if (checkOnMount) {
-      const parsed = parsePermission(permission);
-      const permString = typeof permission === 'string' ? permission : `${parsed.resource}:${parsed.action}`;
-      const result = hasPermission(permString);
-      setHasAccess(result);
-      setChecked(true);
-    }
-  }, [permission, hasPermission, checkOnMount]);
+  const permString = React.useMemo(
+    () => normalizePermissionString(permission),
+    [permission]
+  );
 
-  // If not checked yet, show loading
-  if (checkOnMount && !checked) {
-    return children(false, true);
-  }
+  // Derive directly — no useState, no useEffect, no stale snapshot.
+  const hasAccess = React.useMemo(() => {
+    if (isLoading) return false;
+    if (!isAuthenticated || !user) return false;
+    if (isSuperAdmin) return true;
+    return hasPermission(permString);
+  }, [isLoading, isAuthenticated, user, isSuperAdmin, hasPermission, permString]);
 
-  return children(hasAccess, false);
+  // `checkOnMount` is retained for back-compat. In practice the
+  // hook is fully synchronous now, so the flag is a no-op.
+  void checkOnMount;
+
+  return children(hasAccess, isLoading);
 }
 
 // ============================================
 // COMPOSED GUARD COMPONENTS
 // ============================================
 
-export function InventoryCreateGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryCreateGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:create" {...props} />;
 }
 
-export function InventoryEditGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryEditGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:edit" {...props} />;
 }
 
-export function InventoryDeleteGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryDeleteGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:delete" {...props} />;
 }
 
-export function InventoryViewGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryViewGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:view" {...props} />;
 }
 
-export function InventoryManageGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryManageGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:manage" {...props} />;
 }
 
-export function InventoryAdjustGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryAdjustGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:adjust" {...props} />;
 }
 
-export function InventoryTransferGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryTransferGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:transfer" {...props} />;
 }
 
-export function InventoryExportGuard(props: Omit<InventoryPermissionGuardProps, 'permission'>) {
+export function InventoryExportGuard(
+  props: Omit<InventoryPermissionGuardProps, 'permission'>
+) {
   return <InventoryPermissionGuard permission="INVENTORY:export" {...props} />;
 }
 
@@ -388,89 +418,93 @@ export function InventoryExportGuard(props: Omit<InventoryPermissionGuardProps, 
 // HOOKS
 // ============================================
 
-/**
- * Hook to check if the user has a specific inventory permission
- */
-export function useInventoryPermission(permission: InventoryPermission | PermissionConfig): {
+export function useInventoryPermission(
+  permission: InventoryPermission | PermissionConfig
+): {
   hasPermission: boolean;
   isLoading: boolean;
   isSuperAdmin: boolean;
 } {
   const { user, isAuthenticated } = useAuth();
-  const { hasPermission: hasPerm, isLoading } = usePermission();
+  const {
+    hasPermission: hasPerm,
+    isLoading,
+    isSuperAdmin,
+  } = usePermission();
+
+  const permString = React.useMemo(
+    () => normalizePermissionString(permission),
+    [permission]
+  );
 
   const hasPermission = React.useMemo(() => {
+    if (isLoading) return false;
     if (!isAuthenticated || !user) return false;
-    if (user.role === 'SUPER_ADMIN') return true;
-    
-    const parsed = parsePermission(permission);
-    const permString = typeof permission === 'string' ? permission : `${parsed.resource}:${parsed.action}`;
+    if (isSuperAdmin) return true;
     return hasPerm(permString);
-  }, [user, isAuthenticated, permission, hasPerm]);
+  }, [isLoading, isAuthenticated, user, isSuperAdmin, hasPerm, permString]);
 
-  return {
-    hasPermission,
-    isLoading,
-    isSuperAdmin: user?.role === 'SUPER_ADMIN',
-  };
+  return { hasPermission, isLoading, isSuperAdmin };
 }
 
-/**
- * Hook to check if the user has any of the specified inventory permissions
- */
-export function useAnyInventoryPermission(permissions: (InventoryPermission | PermissionConfig)[]): {
+export function useAnyInventoryPermission(
+  permissions: (InventoryPermission | PermissionConfig)[]
+): {
   hasAny: boolean;
   isLoading: boolean;
   isSuperAdmin: boolean;
 } {
   const { user, isAuthenticated } = useAuth();
-  const { hasPermission: hasPerm, isLoading } = usePermission();
+  const {
+    hasPermission: hasPerm,
+    isLoading,
+    isSuperAdmin,
+  } = usePermission();
+
+  const permStrings = React.useMemo(
+    () => permissions.map(normalizePermissionString),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(permissions)]
+  );
 
   const hasAny = React.useMemo(() => {
+    if (isLoading) return false;
     if (!isAuthenticated || !user) return false;
-    if (user.role === 'SUPER_ADMIN') return true;
-    
-    return permissions.some(perm => {
-      const parsed = parsePermission(perm);
-      const permString = typeof perm === 'string' ? perm : `${parsed.resource}:${parsed.action}`;
-      return hasPerm(permString);
-    });
-  }, [user, isAuthenticated, permissions, hasPerm]);
+    if (isSuperAdmin) return true;
+    return permStrings.some((p) => hasPerm(p));
+  }, [isLoading, isAuthenticated, user, isSuperAdmin, hasPerm, permStrings]);
 
-  return {
-    hasAny,
-    isLoading,
-    isSuperAdmin: user?.role === 'SUPER_ADMIN',
-  };
+  return { hasAny, isLoading, isSuperAdmin };
 }
 
-/**
- * Hook to check if the user has all of the specified inventory permissions
- */
-export function useAllInventoryPermissions(permissions: (InventoryPermission | PermissionConfig)[]): {
+export function useAllInventoryPermissions(
+  permissions: (InventoryPermission | PermissionConfig)[]
+): {
   hasAll: boolean;
   isLoading: boolean;
   isSuperAdmin: boolean;
 } {
   const { user, isAuthenticated } = useAuth();
-  const { hasPermission: hasPerm, isLoading } = usePermission();
+  const {
+    hasPermission: hasPerm,
+    isLoading,
+    isSuperAdmin,
+  } = usePermission();
+
+  const permStrings = React.useMemo(
+    () => permissions.map(normalizePermissionString),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(permissions)]
+  );
 
   const hasAll = React.useMemo(() => {
+    if (isLoading) return false;
     if (!isAuthenticated || !user) return false;
-    if (user.role === 'SUPER_ADMIN') return true;
-    
-    return permissions.every(perm => {
-      const parsed = parsePermission(perm);
-      const permString = typeof perm === 'string' ? perm : `${parsed.resource}:${parsed.action}`;
-      return hasPerm(permString);
-    });
-  }, [user, isAuthenticated, permissions, hasPerm]);
+    if (isSuperAdmin) return true;
+    return permStrings.every((p) => hasPerm(p));
+  }, [isLoading, isAuthenticated, user, isSuperAdmin, hasPerm, permStrings]);
 
-  return {
-    hasAll,
-    isLoading,
-    isSuperAdmin: user?.role === 'SUPER_ADMIN',
-  };
+  return { hasAll, isLoading, isSuperAdmin };
 }
 
 // ============================================

@@ -1,11 +1,14 @@
 // src/components/sales/SaleList.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Search, Filter, Download, Eye, RefreshCw, Printer,
-  DollarSign, Calendar, Users, TrendingUp, TrendingDown,
-  ChevronDown, FileText, CreditCard, Clock, CheckCircle,
-  XCircle, AlertCircle
+  Search,
+  Download,
+  Eye,
+  RefreshCw,
+  Printer,
+  TrendingUp,
+  XCircle,
 } from 'lucide-react';
 import { saleService } from '../../services/saleService';
 import { Table } from '../common/Table';
@@ -16,6 +19,10 @@ import { toast } from '../../utils/toast-manager';
 // Import the Sale type from the types folder
 import type { Sale } from '../../types/sale';
 
+// ============================================================
+// TYPES
+// ============================================================
+
 interface SalesStats {
   totalRevenue: number;
   totalSales: number;
@@ -24,10 +31,37 @@ interface SalesStats {
   todaySales: number;
 }
 
+interface SaleFilters {
+  search: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  customerId: string;
+  userId: string;
+}
+
+// ============================================================
+// CONSTANTS — static class maps (Tailwind can't see dynamic
+// strings like `bg-${color}-100`, so we map them explicitly).
+// ============================================================
+
+const STATUS_BADGE_STYLES: Record<string, string> = {
+  COMPLETED: 'bg-green-100 text-green-700',
+  PENDING: 'bg-yellow-100 text-yellow-700',
+  REFUNDED: 'bg-red-100 text-red-700',
+  CANCELLED: 'bg-gray-100 text-gray-700',
+};
+
+const DEFAULT_STATUS_BADGE = 'bg-blue-100 text-blue-700';
+
+// ============================================================
+// COMPONENT
+// ============================================================
+
 export function SaleList() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<SaleFilters>({
     search: '',
     status: '',
     startDate: '',
@@ -53,12 +87,11 @@ export function SaleList() {
   });
   const [showStats, setShowStats] = useState(false);
 
-  useEffect(() => {
-    loadSales();
-    loadStats();
-  }, [filters, pagination.page]);
+  // ============================================================
+  // DATA LOADING
+  // ============================================================
 
-  const loadSales = async () => {
+  const loadSales = useCallback(async () => {
     try {
       setLoading(true);
       const result = await saleService.getAllSales({
@@ -67,11 +100,12 @@ export function SaleList() {
         ...filters,
       });
       setSales(result.data || []);
-      setPagination({
-        ...pagination,
+      // Functional update — never read the stale `pagination` closure.
+      setPagination((prev) => ({
+        ...prev,
         total: result.total || 0,
         totalPages: result.totalPages || 1,
-      });
+      }));
     } catch (error) {
       console.error('Failed to load sales:', error);
       toast.error('Failed to load sales');
@@ -79,9 +113,10 @@ export function SaleList() {
     } finally {
       setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagination.page, pagination.limit, filters]);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const data = await saleService.getSalesStats();
       setStats({
@@ -94,171 +129,215 @@ export function SaleList() {
     } catch (error) {
       console.error('Failed to load stats:', error);
     }
-  };
+  }, []);
 
-  const handleRefund = async () => {
+  // Separate effects so each one owns exactly one concern.
+  useEffect(() => {
+    loadSales();
+  }, [loadSales]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  // ============================================================
+  // HANDLERS
+  // ============================================================
+
+  const handleRefund = useCallback(async () => {
     if (!selectedSale) return;
     try {
       await saleService.refundSale(selectedSale.id, refundReason);
       toast.success('Sale refunded successfully');
       setShowRefundModal(false);
+      setRefundReason('');
+      setSelectedSale(null);
+      // Refresh both list and stats after a state change.
       loadSales();
       loadStats();
     } catch (error) {
       toast.error('Failed to refund sale');
     }
-  };
+  }, [selectedSale, refundReason, loadSales, loadStats]);
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     try {
       await saleService.exportSales({
-        startDate: filters.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: filters.endDate || new Date().toISOString().split('T')[0],
+        startDate:
+          filters.startDate ||
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split('T')[0],
+        endDate:
+          filters.endDate || new Date().toISOString().split('T')[0],
         format: 'csv',
       });
       toast.success('Sales exported successfully');
     } catch (error) {
       toast.error('Failed to export sales');
     }
-  };
+  }, [filters.startDate, filters.endDate]);
 
-  const handlePrintReceipt = (sale: Sale) => {
+  const handlePrintReceipt = useCallback((sale: Sale) => {
     const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head><title>Receipt #${sale.receiptNumber}</title></head>
-          <body>
-            <h2>Receipt #${sale.receiptNumber}</h2>
-            <p>Date: ${new Date(sale.saleDate).toLocaleString()}</p>
-            <table>
-              ${sale.items?.map((item: any) => `
-                <tr>
-                  <td>${item.product?.name || 'Product'} x${item.quantity}</td>
-                  <td>$${item.total.toFixed(2)}</td>
-                </tr>
-              `).join('') || ''}
-            </table>
-            <h3>Total: $${sale.total.toFixed(2)}</h3>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.print();
+    if (!printWindow) {
+      toast.error('Please allow popups to print receipts');
+      return;
     }
-  };
+    printWindow.document.write(`
+      <html>
+        <head><title>Receipt #${sale.receiptNumber}</title></head>
+        <body>
+          <h2>Receipt #${sale.receiptNumber}</h2>
+          <p>Date: ${new Date(sale.saleDate).toLocaleString()}</p>
+          <table>
+            ${
+              sale.items
+                ?.map(
+                  (item: any) => `
+              <tr>
+                <td>${item.product?.name || 'Product'} x${item.quantity}</td>
+                <td>$${item.total.toFixed(2)}</td>
+              </tr>
+            `
+                )
+                .join('') || ''
+            }
+          </table>
+          <h3>Total: $${sale.total.toFixed(2)}</h3>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  }, []);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'COMPLETED': return 'green';
-      case 'PENDING': return 'yellow';
-      case 'REFUNDED': return 'red';
-      case 'CANCELLED': return 'gray';
-      default: return 'blue';
-    }
-  };
+  // ============================================================
+  // COLUMNS
+  // ============================================================
+  // Memoized so `Table` doesn't receive a fresh array on every
+  // render of this component.
+  // ============================================================
 
-  const columns = [
-    {
-      key: 'receipt',
-      header: 'Receipt',
-      render: (sale: Sale) => (
-        <div>
-          <p className="font-medium text-gray-900">#{sale.receiptNumber}</p>
-          <p className="text-sm text-gray-500">
-            {new Date(sale.saleDate).toLocaleString()}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: 'customer',
-      header: 'Customer',
-      render: (sale: Sale) => (
-        <div>
-          <p className="font-medium">
-            {sale.customer ? `${sale.customer.firstName} ${sale.customer.lastName}` : 'Guest'}
-          </p>
-          {sale.customer && (
-            <p className="text-sm text-gray-500">{sale.customer.email}</p>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'items',
-      header: 'Items',
-      render: (sale: Sale) => (
-        <span>{sale.items?.length || 0} items</span>
-      ),
-    },
-    {
-      key: 'total',
-      header: 'Total',
-      render: (sale: Sale) => (
-        <div>
-          <p className="font-bold text-gray-900">${sale.total.toFixed(2)}</p>
-          {sale.discount > 0 && (
-            <p className="text-sm text-green-600">-${sale.discount.toFixed(2)}</p>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: 'payment',
-      header: 'Payment',
-      render: (sale: Sale) => (
-        <div>
-          <span className="px-2 py-1 bg-gray-100 rounded-full text-xs">
-            {sale.payments?.[0]?.paymentMethod || 'N/A'}
+  const columns = useMemo(
+    () => [
+      {
+        key: 'receipt',
+        header: 'Receipt',
+        render: (sale: Sale) => (
+          <div>
+            <p className="font-medium text-gray-900">#{sale.receiptNumber}</p>
+            <p className="text-sm text-gray-500">
+              {new Date(sale.saleDate).toLocaleString()}
+            </p>
+          </div>
+        ),
+      },
+      {
+        key: 'customer',
+        header: 'Customer',
+        render: (sale: Sale) => (
+          <div>
+            <p className="font-medium">
+              {sale.customer
+                ? `${sale.customer.firstName} ${sale.customer.lastName}`
+                : 'Guest'}
+            </p>
+            {sale.customer && (
+              <p className="text-sm text-gray-500">{sale.customer.email}</p>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'items',
+        header: 'Items',
+        render: (sale: Sale) => (
+          <span>{sale.items?.length || 0} items</span>
+        ),
+      },
+      {
+        key: 'total',
+        header: 'Total',
+        render: (sale: Sale) => (
+          <div>
+            <p className="font-bold text-gray-900">
+              ${sale.total.toFixed(2)}
+            </p>
+            {sale.discount > 0 && (
+              <p className="text-sm text-green-600">
+                -${sale.discount.toFixed(2)}
+              </p>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: 'payment',
+        header: 'Payment',
+        render: (sale: Sale) => (
+          <div>
+            <span className="px-2 py-1 bg-gray-100 rounded-full text-xs">
+              {sale.payments?.[0]?.paymentMethod || 'N/A'}
+            </span>
+            <p className="text-sm text-gray-500 mt-1">
+              Paid: ${sale.paidAmount?.toFixed(2) || '0.00'}
+            </p>
+          </div>
+        ),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        render: (sale: Sale) => (
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              STATUS_BADGE_STYLES[sale.status] ?? DEFAULT_STATUS_BADGE
+            }`}
+          >
+            {sale.status}
           </span>
-          <p className="text-sm text-gray-500 mt-1">
-            Paid: ${sale.paidAmount?.toFixed(2) || '0.00'}
-          </p>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (sale: Sale) => (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${getStatusColor(sale.status)}-100 text-${getStatusColor(sale.status)}-700`}>
-          {sale.status}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      render: (sale: Sale) => (
-        <div className="flex items-center gap-2">
-          <Link
-            to={`/sales/${sale.id}`}
-            className="p-1 hover:bg-blue-100 rounded transition-colors"
-          >
-            <Eye className="w-4 h-4 text-blue-600" />
-          </Link>
-          <button
-            onClick={() => handlePrintReceipt(sale)}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
-          >
-            <Printer className="w-4 h-4 text-gray-600" />
-          </button>
-          {sale.status === 'COMPLETED' && (
-            <button
-              onClick={() => {
-                setSelectedSale(sale);
-                setShowRefundModal(true);
-              }}
-              className="p-1 hover:bg-red-100 rounded transition-colors"
+        ),
+      },
+      {
+        key: 'actions',
+        header: 'Actions',
+        render: (sale: Sale) => (
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/sales/${sale.id}`}
+              className="p-1 hover:bg-blue-100 rounded transition-colors"
             >
-              <XCircle className="w-4 h-4 text-red-600" />
+              <Eye className="w-4 h-4 text-blue-600" />
+            </Link>
+            <button
+              onClick={() => handlePrintReceipt(sale)}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+            >
+              <Printer className="w-4 h-4 text-gray-600" />
             </button>
-          )}
-        </div>
-      ),
-    },
-  ];
+            {sale.status === 'COMPLETED' && (
+              <button
+                onClick={() => {
+                  setSelectedSale(sale);
+                  setRefundReason('');
+                  setShowRefundModal(true);
+                }}
+                className="p-1 hover:bg-red-100 rounded transition-colors"
+              >
+                <XCircle className="w-4 h-4 text-red-600" />
+              </button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [handlePrintReceipt]
+  );
+
+  // ============================================================
+  // RENDER
+  // ============================================================
 
   return (
     <div className="p-6">
@@ -266,11 +345,13 @@ export function SaleList() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Sales</h1>
-          <p className="text-gray-600 mt-1">View and manage all sales transactions</p>
+          <p className="text-gray-600 mt-1">
+            View and manage all sales transactions
+          </p>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowStats(!showStats)}
+            onClick={() => setShowStats((s) => !s)}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
           >
             <TrendingUp className="w-4 h-4" />
@@ -304,7 +385,9 @@ export function SaleList() {
           </div>
           <div className="bg-white rounded-xl shadow-sm p-4">
             <p className="text-sm text-gray-500">Total Sales</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.totalSales || 0}</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {stats.totalSales || 0}
+            </p>
           </div>
           <div className="bg-white rounded-xl shadow-sm p-4">
             <p className="text-sm text-gray-500">Average Ticket</p>
@@ -320,7 +403,9 @@ export function SaleList() {
           </div>
           <div className="bg-white rounded-xl shadow-sm p-4">
             <p className="text-sm text-gray-500">Today's Sales</p>
-            <p className="text-2xl font-bold text-blue-600">{stats.todaySales || 0}</p>
+            <p className="text-2xl font-bold text-blue-600">
+              {stats.todaySales || 0}
+            </p>
           </div>
         </div>
       )}
@@ -335,7 +420,9 @@ export function SaleList() {
                 type="text"
                 placeholder="Search by receipt number..."
                 value={filters.search}
-                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, search: e.target.value }))
+                }
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -343,19 +430,25 @@ export function SaleList() {
           <input
             type="date"
             value={filters.startDate}
-            onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, startDate: e.target.value }))
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
           <span className="text-gray-500">to</span>
           <input
             type="date"
             value={filters.endDate}
-            onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, endDate: e.target.value }))
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
           <select
             value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, status: e.target.value }))
+            }
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Status</option>
@@ -369,16 +462,14 @@ export function SaleList() {
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <Table
-          columns={columns}
-          data={sales}
-          loading={loading}
-        />
+        <Table columns={columns} data={sales} loading={loading} />
         <div className="border-t border-gray-200 p-4">
           <Pagination
             currentPage={pagination.page}
             totalPages={pagination.totalPages}
-            onPageChange={(page) => setPagination({ ...pagination, page })}
+            onPageChange={(page) =>
+              setPagination((p) => ({ ...p, page }))
+            }
           />
         </div>
       </div>
@@ -386,13 +477,19 @@ export function SaleList() {
       {/* Refund Modal */}
       <Modal
         isOpen={showRefundModal}
-        onClose={() => setShowRefundModal(false)}
+        onClose={() => {
+          setShowRefundModal(false);
+          setSelectedSale(null);
+          setRefundReason('');
+        }}
         title="Refund Sale"
       >
         <div className="p-6">
           {selectedSale && (
             <div className="mb-4 space-y-2">
-              <p className="font-medium">Receipt: #{selectedSale.receiptNumber}</p>
+              <p className="font-medium">
+                Receipt: #{selectedSale.receiptNumber}
+              </p>
               <p className="text-sm text-gray-600">
                 Amount: ${selectedSale.total.toFixed(2)}
               </p>
@@ -415,14 +512,19 @@ export function SaleList() {
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button
-              onClick={() => setShowRefundModal(false)}
+              onClick={() => {
+                setShowRefundModal(false);
+                setSelectedSale(null);
+                setRefundReason('');
+              }}
               className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               onClick={handleRefund}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              disabled={!refundReason.trim()}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Process Refund
             </button>

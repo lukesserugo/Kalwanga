@@ -1,43 +1,62 @@
 // D:\Projects\Kalwanga\packages\web\services\inventoryService.ts
-// PART 1 of 2
 
 import { api } from './api';
 
-// ============================================
-// TYPES - Match Backend Response Structures
-// ============================================
+import type {
+  Inventory,
+  InventoryStats,
+  InventoryTransaction,
+  InventorySummary,
+  InventoryValue,
+  InventoryListResponse,
+  InventoryItemResponse as CanonicalInventoryItemResponse,
+  InventorySearchParams,
+  InventoryTransactionType,
+  InventoryStatus,
+  InventoryIssueStatus,
+  InventoryTransferStatus,
+  CreateInventoryItemData,
+  UpdateInventoryItemData,
+  AdjustStockData,
+  TransferStockData,
+  IssueItemData as CanonicalIssueItemData,
+  RestockItemData as CanonicalRestockItemData,
+  ReturnItemData as CanonicalReturnItemData,
+  BulkUpdateResult as CanonicalBulkUpdateResult,
+  ExportFormat as CanonicalExportFormat,
+} from '../types/inventory';
 
-export interface Inventory {
-  id: string;
-  productId: string | null;
-  product: any | null;
-  variantId: string | null;
-  variant: any | null;
-  name: string;
-  sku: string;
-  barcode: string | null;
-  quantity: number;
-  reserved: number;
-  available: number;
-  unitPrice: number;
-  costPrice: number;
-  category: string;
-  categoryId: string | null;
-  supplier: string | null;
-  supplierId: string | null;
-  reorderPoint: number;
-  location: string;
-  notes: string | null;
-  hasProduct: boolean;
-  images: string[];
-  description: string | null;
-  weight: number;
-  taxRate: number;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-  status?: string;
-  businessUnitId?: string;
+export type {
+  Inventory,
+  InventoryStats,
+  InventoryTransaction,
+  InventorySummary,
+  InventoryValue,
+  InventoryListResponse,
+  InventorySearchParams,
+  InventoryTransactionType,
+  InventoryStatus,
+  InventoryIssueStatus,
+  InventoryTransferStatus,
+};
+
+export interface FlatInventory
+  extends Omit<Inventory, 'reorderPoint' | 'reorderQuantity'> {
+  name?: string;
+  sku?: string;
+  barcode?: string | null;
+  unitPrice?: number;
+  costPrice?: number;
+  category?: string;
+  categoryId?: string | null;
+  supplier?: string | null;
+  supplierId?: string | null;
+  hasProduct?: boolean;
+  images?: string[];
+  description?: string | null;
+  weight?: number;
+  taxRate?: number;
+  tags?: string[];
   maxStock?: number;
   minStock?: number;
   stock?: number;
@@ -45,47 +64,13 @@ export interface Inventory {
   isActive?: boolean;
   isDigital?: boolean;
   featured?: boolean;
+  reorderPoint?: number;
   reorderQuantity?: number;
+  /** The Inventory row's own primary key (never rewritten). */
+  inventoryId?: string;
 }
 
-export interface InventoryItemResponse {
-  id: string;
-  productId: string | null;
-  product: any | null;
-  variantId: string | null;
-  variant: any | null;
-  name: string;
-  sku: string;
-  barcode: string | null;
-  quantity: number;
-  reserved: number;
-  available: number;
-  unitPrice: number;
-  costPrice: number;
-  category: string;
-  categoryId: string | null;
-  supplier: string | null;
-  supplierId: string | null;
-  reorderPoint: number;
-  location: string;
-  notes: string | null;
-  hasProduct: boolean;
-  images: string[];
-  description: string | null;
-  weight: number;
-  taxRate: number;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-  maxStock?: number;
-  minStock?: number;
-  stock?: number;
-  price?: number;
-  isActive?: boolean;
-  isDigital?: boolean;
-  featured?: boolean;
-  reorderQuantity?: number;
-}
+export interface InventoryItemResponse extends FlatInventory {}
 
 export interface InventoryItemsResponse {
   items: InventoryItemResponse[];
@@ -95,9 +80,9 @@ export interface InventoryItemsResponse {
   totalPages: number;
 }
 
-export interface InventoryListResponse {
-  inventory: any[];
-  items?: any[];
+export interface InventoryListResponseExtended {
+  inventory: FlatInventory[];
+  items?: FlatInventory[];
   total: number;
   page: number;
   limit: number;
@@ -112,38 +97,6 @@ export interface InventoryListResponse {
   };
 }
 
-export interface InventoryStats {
-  totalProducts: number;
-  lowStockCount: number;
-  outOfStockCount: number;
-  totalValue: number;
-  totalCost: number;
-  potentialProfit: number;
-  profitMargin: number;
-  totalUnits: number;
-  totalReserved: number;
-  availableUnits: number;
-  byCategory: Array<{ category: string; count: number; value: number }>;
-}
-
-export interface InventoryTransaction {
-  id: string;
-  transactionType: string;
-  quantity: number;
-  notes: string | null;
-  reference: string | null;
-  productId: string;
-  variantId: string | null;
-  inventoryId: string;
-  businessUnitId: string;
-  userId: string;
-  createdAt: string;
-  updatedAt: string;
-  product?: { id: string; name: string; sku: string };
-  variant?: { id: string; name: string; sku: string };
-  user?: { id: string; firstName: string; lastName: string };
-}
-
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;
@@ -153,33 +106,12 @@ export interface PaginatedResponse<T> {
   stats?: InventoryStats;
 }
 
-export interface CreateItemData {
-  name: string;
-  sku?: string;
-  unitPrice?: number;
-  quantity?: number;
-  minStock?: number;
-  maxStock?: number;
+export interface CreateItemData extends CreateInventoryItemData {
   category?: string;
-  categoryId?: string;
   location?: string;
   supplier?: string;
-  supplierId?: string;
-  notes?: string;
-  description?: string;
-  barcode?: string;
-  businessUnitId?: string;
-  userId?: string;
   unit?: string;
-  costPrice?: number;
-  taxRate?: number;
-  weight?: number;
-  images?: string[];
-  tags?: string[];
-  isActive?: boolean;
-  featured?: boolean;
-  isDigital?: boolean;
-  productType?: 'SIMPLE' | 'VARIABLE' | 'GROUPED' | 'BUNDLE' | 'DIGITAL' | 'SERVICE';
+  userId?: string;
   variantAttributes?: Record<string, any>;
   variants?: Array<{
     name: string;
@@ -192,57 +124,24 @@ export interface CreateItemData {
   }>;
 }
 
-export interface UpdateItemData {
-  name?: string;
-  sku?: string;
-  unitPrice?: number;
-  quantity?: number;
-  minStock?: number;
-  maxStock?: number;
+export interface UpdateItemData extends UpdateInventoryItemData {
   category?: string;
-  categoryId?: string;
   location?: string;
   supplier?: string;
-  supplierId?: string;
-  notes?: string;
-  description?: string;
-  barcode?: string;
-  businessUnitId?: string;
-  userId?: string;
   unit?: string;
-  costPrice?: number;
-  taxRate?: number;
-  weight?: number;
-  images?: string[];
-  tags?: string[];
-  isActive?: boolean;
-  featured?: boolean;
-  isDigital?: boolean;
-  productType?: 'SIMPLE' | 'VARIABLE' | 'GROUPED' | 'BUNDLE' | 'DIGITAL' | 'SERVICE';
+  userId?: string;
+  productType?:
+    | 'SIMPLE'
+    | 'VARIABLE'
+    | 'GROUPED'
+    | 'BUNDLE'
+    | 'DIGITAL'
+    | 'SERVICE';
 }
 
-export interface IssueItemData {
-  issuedTo: string;
-  quantity: number;
-  purpose?: string;
-  remarks?: string;
-  expectedReturnDate?: string;
-}
-
-export interface ReturnItemData {
-  quantity?: number;
-  returnDate?: string;
-  remarks?: string;
-}
-
-export interface RestockItemData {
-  quantity: number;
-  supplier?: string;
-  unitPrice?: number;
-  purchaseDate?: string;
-  notes?: string;
-  invoiceNumber?: string;
-}
+export interface IssueItemData extends Omit<CanonicalIssueItemData, 'inventoryId'> {}
+export interface ReturnItemData extends Omit<CanonicalReturnItemData, 'inventoryId'> {}
+export interface RestockItemData extends Omit<CanonicalRestockItemData, 'inventoryId'> {}
 
 export interface UpdateStockData {
   quantity: number;
@@ -251,7 +150,7 @@ export interface UpdateStockData {
   reference?: string;
 }
 
-export interface TransferStockData {
+export interface TransferStockInput {
   productId: string;
   fromLocation: string;
   toLocation: string;
@@ -261,39 +160,11 @@ export interface TransferStockData {
   variantId?: string;
 }
 
-export interface InventorySummary {
-  totalItems: number;
-  lowStockItems: number;
-  outOfStockItems: number;
-  totalValue: number;
-  totalCost: number;
-  potentialProfit: number;
-  categories: Array<{ category: string; count: number; value: number }>;
-  locations: Array<{ location: string; count: number; value: number }>;
-  stockStatus: {
-    inStock: number;
-    lowStock: number;
-    outOfStock: number;
-  };
-}
-
-export interface InventoryValue {
-  totalValue: number;
-  totalCost: number;
-  profitMargin: number;
-  byLocation: Array<{ location: string; value: number; cost: number }>;
-  byCategory: Array<{ category: string; value: number; cost: number }>;
-}
-
-export interface BulkUpdateResult {
-  results: any[];
-  errors: any[];
-  summary: { total: number; succeeded: number; failed: number };
-}
+export interface BulkUpdateResult extends CanonicalBulkUpdateResult {}
 
 export interface InventoryMovementParams {
   productId?: string;
-  businessUnitId: string;
+  businessUnitId?: string;
   startDate?: string;
   endDate?: string;
   limit?: number;
@@ -309,7 +180,7 @@ export interface InventoryTransactionParams {
   endDate?: string;
 }
 
-export type ExportFormat = 'csv' | 'excel' | 'json';
+export type ExportFormat = CanonicalExportFormat | 'pdf';
 
 export interface InventorySearchFilters {
   search?: string;
@@ -358,80 +229,87 @@ export interface GetInventoryParams {
 }
 
 export interface GetAllInventoryResponse {
-  items: any[];
+  items: FlatInventory[];
   stats: InventoryStats;
 }
 
 // ============================================
-// HELPER FUNCTIONS
+// BUSINESS UNIT RESOLUTION
 // ============================================
+//
+// The backend resolves the business unit for every inventory
+// request in `inventoryController.getBusinessUnitId`. The frontend
+// must NOT invent a rule that disagrees with it.
+//
+// Backend priority (in order):
+//   1. `x-business-unit-id` header
+//   2. `req.body.businessUnitId`
+//   3. `req.query.businessUnitId`     ← the only one we can set
+//   4. `req.user.businessUnitId`      ← used when (3) is absent
+//   5. `req.user.businessUnits[0]`    ← used when (4) is absent
+//   6. First active BU in DB          ← backend-only fallback
+//
+// The frontend can only influence (3). So the frontend should:
+//
+//   • Prefer an EXPLICIT caller-provided BU (the caller knows).
+//   • Otherwise send NOTHING and let the backend use (4), (5), (6).
+//
+// ⚠️ The frontend MUST NOT read `localStorage.user.businessUnitId`
+//    to make this decision. That value is a UI cache populated
+//    during a previous `/auth/sync`; it can be stale, and when it
+//    is, the frontend ends up querying BU B while the list page
+//    queried BU A. Letting the backend use `req.user.businessUnitId`
+//    guarantees both pages resolve to the same BU on every request.
 
-function sanitizeBusinessUnitId(businessUnitId?: string): string | undefined {
-  if (!businessUnitId) return undefined;
-  if (
-    businessUnitId === 'default' ||
-    businessUnitId === 'default-business-unit' ||
-    businessUnitId === 'undefined' ||
-    businessUnitId === 'null' ||
-    businessUnitId === ''
-  ) {
-    return undefined;
-  }
-  return businessUnitId;
+const SENTINEL_BUSINESS_UNIT_IDS = new Set([
+  'default',
+  'default-business-unit',
+  'undefined',
+  'null',
+  '',
+]);
+
+function isSentinelId(id: string | null | undefined): boolean {
+  if (!id) return true;
+  return SENTINEL_BUSINESS_UNIT_IDS.has(id);
+}
+
+function sanitizeBusinessUnitId(id?: string | null): string | undefined {
+  if (!id) return undefined;
+  if (isSentinelId(id)) return undefined;
+  return id;
 }
 
 /**
- * Read the canonical businessUnitId from localStorage.
- * Matches the key that api.ts and useAuth/usePermission write.
- */
-function getBusinessUnitIdFromStorage(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const stored = localStorage.getItem('businessUnitId');
-    if (stored && stored !== 'default' && stored !== 'null' && stored !== 'undefined') {
-      return stored;
-    }
-  } catch (_e) {
-    /* ignore */
-  }
-
-  try {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      const user = JSON.parse(userStr);
-      if (user?.businessUnitId && user.businessUnitId !== 'default') {
-        return user.businessUnitId;
-      }
-      const fromArray = user?.businessUnits?.[0]?.businessUnitId;
-      if (fromArray && fromArray !== 'default') {
-        return fromArray;
-      }
-    }
-  } catch (_e) {
-    /* ignore */
-  }
-
-  return null;
-}
-
-/**
- * Resolve the effective business unit ID for a request.
- * Order: explicit param → storage fallback → undefined.
+ * Resolve the BU to send to the backend.
+ *
+ * Priority:
+ *   1. Explicit caller argument — the caller knows what it wants.
+ *   2. `undefined` — send nothing; the backend resolves it from
+ *      `req.user.businessUnitId`, which is the same value it would
+ *      use if the frontend sent nothing at all.
+ *
+ * This function deliberately does NOT consult `localStorage`.
+ * See the block comment above for why.
  */
 function resolveBusinessUnitId(explicit?: string): string | undefined {
-  const sanitized = sanitizeBusinessUnitId(explicit);
-  if (sanitized) return sanitized;
-  const stored = getBusinessUnitIdFromStorage();
-  return stored || undefined;
+  return sanitizeBusinessUnitId(explicit);
 }
 
 /**
- * Public helper: get the currently selected business unit ID.
- * Useful for components that need to pass it explicitly into a call.
+ * Public helper for pages that need to pass a BU explicitly.
+ *
+ * Returns `null` when the frontend genuinely can't determine one —
+ * callers should then omit the param entirely and let the backend
+ * decide.
  */
 export function getCurrentBusinessUnitId(): string | null {
-  return getBusinessUnitIdFromStorage();
+  return resolveBusinessUnitId() ?? null;
 }
+
+// ============================================
+// GENERIC HELPERS
+// ============================================
 
 function cleanObject<T extends Record<string, any>>(obj: T): T {
   const cleaned: any = {};
@@ -443,77 +321,173 @@ function cleanObject<T extends Record<string, any>>(obj: T): T {
   return cleaned;
 }
 
+function errorShape(error: any) {
+  return {
+    message: error?.response?.data?.message || error?.message || 'Unknown error',
+    status: error?.response?.status,
+    url: error?.config?.url,
+    params: error?.config?.params,
+  };
+}
+
 /**
- * Normalize inventory item to ensure product ID is available at top level.
- * Handles images, description, weight, taxRate, tags.
- * Matches the backend normalization exactly.
+ * Distinguish "route not registered on the backend" from "record not
+ * found". Both come back as HTTP 404, but they mean very different
+ * things:
+ *
+ *   { error: 'Route not found' }             → route missing (bug)
+ *   { message: 'Inventory item not found' }  → record missing (normal)
  */
-function normalizeInventoryItem(item: any): any {
-  if (!item) return item;
+function isRouteNotFound(error: any): boolean {
+  const body = error?.response?.data;
+  return (
+    error?.response?.status === 404 &&
+    typeof body === 'object' &&
+    body !== null &&
+    (body as any).error === 'Route not found'
+  );
+}
+
+function seg(value: string): string {
+  return encodeURIComponent(value);
+}
+
+function toImageUrls(input: unknown): string[] {
+  if (!input) return [];
+  if (typeof input === 'string') return [input];
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((v) => {
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof (v as any).url === 'string') {
+        return (v as any).url as string;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
+}
+
+// ============================================
+// UNWRAPPING
+// ============================================
+//
+// Every backend controller method responds with `{ success, data }`.
+// This single helper enforces that contract so the rest of the
+// service doesn't need to guess which key holds the payload.
+
+function unwrapData<T = any>(response: any): T | undefined {
+  if (response === null || response === undefined) return undefined;
+  if (typeof response !== 'object') return response as T;
+  if ('data' in response) return (response as any).data as T;
+  return response as T;
+}
+
+// ============================================
+// NORMALIZATION
+// ============================================
+//
+// ⚠️ CRITICAL: `normalizeInventoryItem` must NEVER overwrite `id`
+//    with `product.id`. The Inventory row's primary key is the only
+//    value the backend's `/inventory/items/:id` endpoint accepts.
+//    Rewriting it here is what caused every detail-page fetch to
+//    404: the list page rendered rows whose `id` was the *product*
+//    ID, the detail page routed on that ID, and the backend looked
+//    up `Inventory.id === productId` — which never matched.
+//
+//    The product ID is preserved separately on `productId`, and the
+//    inventory row's own ID is preserved on `inventoryId` (when it
+//    differs), so any caller that needs the product ID can still
+//    find it.
+
+function normalizeInventoryItem(item: any): FlatInventory | null {
+  if (!item) return null;
 
   if (item.product && item.product.id) {
-    if (!item.id || item.id !== item.product.id) {
-      return {
-        ...item,
-        id: item.product.id,
-        name: item.name || item.product.name,
-        unitPrice: item.unitPrice || item.product.unitPrice,
-        images:
-          item.images && item.images.length > 0
-            ? item.images
-            : item.product.images || [],
-        description: item.description || item.product.description,
-        weight: item.weight !== undefined ? item.weight : item.product.weight,
-        taxRate: item.taxRate !== undefined ? item.taxRate : item.product.taxRate,
-        tags:
-          item.tags && item.tags.length > 0
-            ? item.tags
-            : item.product.tags || [],
-        isActive:
-          item.isActive !== undefined ? item.isActive : item.product?.isActive,
-        sku: item.sku || item.product.sku,
-        category: item.category || item.product.category,
-        categoryId: item.categoryId || item.product.categoryId,
-        supplier: item.supplier || item.product.supplier,
-        supplierId: item.supplierId || item.product.supplierId,
-        minStock: item.minStock || item.product.minStock,
-        maxStock: item.maxStock || item.product.maxStock,
-        featured: item.featured || item.product.featured,
-        isDigital: item.isDigital || item.product.isDigital,
-        attributes: item.attributes || item.product.attributes || {},
-        notes: item.notes || item.product.notes,
-        costPrice: item.costPrice || item.product.costPrice,
-        _product: item.product,
-        productId: item.product.id,
-        inventory: item.inventory || [
-          {
-            quantity: item.quantity || item.product?.stock || 0,
-            reserved: item.reserved || 0,
-          },
-        ],
-        stock: item.quantity || item.stock || 0,
-        price: item.price || item.unitPrice || item.product?.unitPrice || 0,
-        available:
-          item.available !== undefined
-            ? item.available
-            : (item.quantity || 0) - (item.reserved || 0),
-        status: item.status || item.product?.status || 'ACTIVE',
-        businessUnitId: item.businessUnitId || item.product?.businessUnitId,
-        createdAt: item.createdAt || item.product?.createdAt,
-        updatedAt: item.updatedAt || item.product?.updatedAt,
-        reorderQuantity:
-          item.reorderQuantity || item.product?.maxStock || 10,
-      };
-    }
+    const reorder =
+      item.reorderPoint ??
+      item.product.reorderPoint ??
+      item.reorderQuantity ??
+      item.product.reorderQuantity;
+
+    // Preserve the inventory row's own ID. If the payload carries
+    // it under `inventoryId`, use that; otherwise use `item.id`.
+    // Whatever we do, we do NOT substitute `product.id`.
+    const inventoryRowId = item.id || item.inventoryId || null;
+
+    return {
+      ...item,
+      // ⚠️ Keep the inventory row's ID. It is the identifier the
+      //    detail endpoint requires. Do not replace it with
+      //    `item.product.id`.
+      id: inventoryRowId,
+      // Keep the product ID available under a dedicated key so
+      // callers that need it (productService, cart, etc.) still
+      // have it.
+      productId: item.product.id,
+      // If the raw payload had a distinct `inventoryId`, keep it.
+      inventoryId: item.inventoryId || inventoryRowId || undefined,
+      name: item.name || item.product.name,
+      unitPrice: item.unitPrice || item.product.unitPrice,
+      images:
+        item.images && item.images.length > 0
+          ? toImageUrls(item.images)
+          : toImageUrls(item.product.images),
+      description: item.description || item.product.description,
+      weight: item.weight !== undefined ? item.weight : item.product.weight,
+      taxRate:
+        item.taxRate !== undefined ? item.taxRate : item.product.taxRate,
+      tags:
+        item.tags && item.tags.length > 0
+          ? item.tags
+          : item.product.tags || [],
+      isActive:
+        item.isActive !== undefined ? item.isActive : item.product?.isActive,
+      sku: item.sku || item.product.sku,
+      category: item.category || item.product.category,
+      categoryId: item.categoryId || item.product.categoryId,
+      supplier: item.supplier || item.product.supplier,
+      supplierId: item.supplierId || item.product.supplierId,
+      minStock: item.minStock || item.product.minStock,
+      maxStock: item.maxStock || item.product.maxStock,
+      featured: item.featured || item.product.featured,
+      isDigital: item.isDigital || item.product.isDigital,
+      attributes: item.attributes || item.product.attributes || {},
+      notes: item.notes || item.product.notes,
+      costPrice: item.costPrice || item.product.costPrice,
+      _product: item.product,
+      inventory: item.inventory || [
+        {
+          quantity: item.quantity || item.product?.stock || 0,
+          reserved: item.reserved || 0,
+        },
+      ],
+      stock: item.quantity || item.stock || 0,
+      price: item.price || item.unitPrice || item.product?.unitPrice || 0,
+      available:
+        item.available !== undefined
+          ? item.available
+          : (item.quantity || 0) - (item.reserved || 0),
+      status: item.status || item.product?.status || 'ACTIVE',
+      businessUnitId: item.businessUnitId || item.product?.businessUnitId,
+      createdAt: item.createdAt || item.product?.createdAt,
+      updatedAt: item.updatedAt || item.product?.updatedAt,
+      reorderPoint: reorder ?? 10,
+      reorderQuantity: reorder ?? 10,
+    } as FlatInventory;
   }
 
   if (!item.id && item.inventoryId) {
-    return { ...item, id: item.inventoryId };
+    return { ...item, id: item.inventoryId } as FlatInventory;
   }
 
   if (!item.id && item.productId) {
-    return { ...item, id: item.productId };
+    // No id at all — fall back to productId. This branch is only
+    // reached for legacy payloads that genuinely have no inventory
+    // ID; it is not the normal path.
+    return { ...item, id: item.productId } as FlatInventory;
   }
+
+  if (item && item.images) item.images = toImageUrls(item.images);
 
   if (item && !item.inventory) {
     item.inventory = [
@@ -532,41 +506,30 @@ function normalizeInventoryItem(item: any): any {
     item.available = (item.quantity || 0) - (item.reserved || 0);
   }
 
-  if (item && !item.images) {
-    item.images = [];
-  }
+  if (item && !item.images) item.images = [];
+  if (item && !item.tags) item.tags = [];
+  if (item && item.price === undefined) item.price = item.unitPrice || 0;
 
-  if (item && !item.tags) {
-    item.tags = [];
-  }
-
-  if (item && item.price === undefined) {
-    item.price = item.unitPrice || 0;
-  }
-
-  if (item && item.reorderQuantity === undefined) {
+  if (
+    item &&
+    item.reorderPoint === undefined &&
+    item.reorderQuantity === undefined
+  ) {
+    item.reorderPoint = item.maxStock || 10;
     item.reorderQuantity = item.maxStock || 10;
+  } else {
+    const resolved = item.reorderPoint ?? item.reorderQuantity;
+    item.reorderPoint = resolved;
+    item.reorderQuantity = resolved;
   }
 
-  if (item && item.maxStock === undefined) {
-    item.maxStock = 100;
-  }
-
+  if (item && item.maxStock === undefined) item.maxStock = 100;
   if (item && item.minStock === undefined) {
     item.minStock = item.reorderPoint || 5;
   }
-
-  if (item && item.isActive === undefined) {
-    item.isActive = true;
-  }
-
-  if (item && item.isDigital === undefined) {
-    item.isDigital = false;
-  }
-
-  if (item && item.featured === undefined) {
-    item.featured = false;
-  }
+  if (item && item.isActive === undefined) item.isActive = true;
+  if (item && item.isDigital === undefined) item.isDigital = false;
+  if (item && item.featured === undefined) item.featured = false;
 
   if (item && item.status === undefined) {
     item.status =
@@ -577,50 +540,82 @@ function normalizeInventoryItem(item: any): any {
         : 'ACTIVE';
   }
 
-  return item;
+  // Preserve the inventory row ID on `inventoryId` for callers that
+  // need to distinguish it from a product ID.
+  if (item && !item.inventoryId && item.id) {
+    item.inventoryId = item.id;
+  }
+
+  return item as FlatInventory;
 }
 
-function normalizeInventoryItems(items: any[]): any[] {
+function normalizeInventoryItems(items: any[]): FlatInventory[] {
   if (!items || !Array.isArray(items)) return [];
-  return items.map(normalizeInventoryItem);
+  return items
+    .map(normalizeInventoryItem)
+    .filter((item): item is FlatInventory => item !== null);
+}
+
+/**
+ * Given a `pagination` object the backend nests under the response
+ * envelope, apply those values to a top-level pagination shape.
+ * The controller puts `total/page/limit/totalPages` under
+ * `pagination`; this helper normalizes both shapes.
+ */
+function applyPagination(
+  target: any,
+  pagination: any,
+  fallbackPage: number,
+  fallbackLimit: number
+): void {
+  if (pagination && typeof pagination === 'object') {
+    if (typeof target.total !== 'number')
+      target.total = pagination.total;
+    if (typeof target.page !== 'number')
+      target.page = pagination.page;
+    if (typeof target.limit !== 'number')
+      target.limit = pagination.limit;
+    if (typeof target.totalPages !== 'number')
+      target.totalPages = pagination.totalPages;
+  }
+
+  if (typeof target.total !== 'number')
+    target.total = Array.isArray(target.data)
+      ? target.data.length
+      : Array.isArray(target.items)
+      ? target.items.length
+      : Array.isArray(target.inventory)
+      ? target.inventory.length
+      : 0;
+  if (typeof target.page !== 'number') target.page = fallbackPage;
+  if (typeof target.limit !== 'number') target.limit = fallbackLimit;
+  if (typeof target.totalPages !== 'number') {
+    target.totalPages = Math.max(
+      1,
+      Math.ceil((target.total || 0) / (target.limit || 1))
+    );
+  }
 }
 
 // ============================================
-// INVENTORY SERVICE
+// SERVICE
 // ============================================
 
 export const inventoryService = {
-  // ============================================
-  // REFERENCE DATA ENDPOINTS
-  // ============================================
+  // ── REFERENCE DATA ─────────────────────────
 
   async getCategories(businessUnitId?: string): Promise<CategoryOption[]> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = { limit: 100, isActive: true };
+      if (clean) params.businessUnitId = clean;
 
-      console.log('📤 Fetching categories with params:', params);
+      const response = await api.get<any>('/categories', { params });
+      const data = unwrapData<any[]>(response);
 
-      const response = await api.get<any>('/categories', {
-        params: { ...params, limit: 100, isActive: true },
-      });
+      if (!Array.isArray(data)) return [];
 
-      let categoriesData: any[] = [];
-
-      if (response) {
-        if (response.data && Array.isArray(response.data)) {
-          categoriesData = response.data;
-        } else if (response.data?.data && Array.isArray(response.data.data)) {
-          categoriesData = response.data.data;
-        } else if (response.data?.items && Array.isArray(response.data.items)) {
-          categoriesData = response.data.items;
-        } else if (Array.isArray(response)) {
-          categoriesData = response;
-        }
-      }
-
-      const formattedCategories = categoriesData.map((cat: any) => ({
+      return data.map((cat: any) => ({
         id: cat.id || cat.categoryId || cat.category,
         name: cat.name || cat.category || 'Uncategorized',
         productCount: cat.productCount || cat._count?.products || 0,
@@ -628,23 +623,13 @@ export const inventoryService = {
         hasChildren: (cat.childrenCount || cat._count?.children || 0) > 0,
         parentId: cat.parentId || null,
       }));
-
-      console.log(`✅ Categories fetched: ${formattedCategories.length}`);
-      return formattedCategories;
     } catch (error: any) {
-      console.error('❌ Failed to get categories:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to get categories:', errorShape(error));
       return [];
     }
   },
 
-  async getCategorySummary(
-    businessUnitId: string
-  ): Promise<
+  async getCategorySummary(businessUnitId?: string): Promise<
     Array<{
       id: string;
       name: string;
@@ -654,130 +639,75 @@ export const inventoryService = {
     }>
   > {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
-
-      console.log('📤 Fetching category summary with params:', params);
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = { limit: 100, isActive: true };
+      if (clean) params.businessUnitId = clean;
 
       const response = await api.get<any>('/inventory/category-summary', {
-        params: { ...params, limit: 100, isActive: true },
+        params,
       });
+      const data = unwrapData<any[]>(response);
 
-      let categories: any[] = [];
-      if (response) {
-        if (response.data && Array.isArray(response.data)) {
-          categories = response.data;
-        } else if (response.data?.data && Array.isArray(response.data.data)) {
-          categories = response.data.data;
-        } else if (response.data?.items && Array.isArray(response.data.items)) {
-          categories = response.data.items;
-        } else if (Array.isArray(response)) {
-          categories = response;
-        }
-      }
+      if (!Array.isArray(data)) return [];
 
-      const summaryData = categories.map((cat: any) => ({
+      return data.map((cat: any) => ({
         id: cat.id || cat.categoryId || cat.category,
         name: cat.name || cat.category || 'Uncategorized',
         categoryId: cat.id || cat.categoryId || null,
         count: cat.count || 0,
         value: cat.value || 0,
       }));
-
-      console.log(`📥 Category summary: ${summaryData.length} categories`);
-      return summaryData;
     } catch (error: any) {
-      console.error('❌ Failed to get category summary:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to get category summary:', errorShape(error));
       return [];
     }
   },
 
   async getSuppliers(businessUnitId?: string): Promise<SupplierOption[]> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
       const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
+      if (clean) params.businessUnitId = clean;
 
-      console.log('📤 Fetching suppliers with params:', params);
       const response = await api.get<any>('/inventory/suppliers', { params });
-
-      let suppliersData: any[] = [];
-
-      if (Array.isArray(response)) {
-        suppliersData = response;
-      } else if (response?.data && Array.isArray(response.data)) {
-        suppliersData = response.data;
-      } else if (response?.data?.data && Array.isArray(response.data.data)) {
-        suppliersData = response.data.data;
-      } else if (response?.data?.items && Array.isArray(response.data.items)) {
-        suppliersData = response.data.items;
-      }
-
-      if (suppliersData && suppliersData.length > 0) {
-        console.log(`✅ Suppliers found: ${suppliersData.length}`);
-        return suppliersData;
-      }
-
-      console.warn('⚠️ No suppliers found');
-      return [];
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? data : [];
     } catch (error: any) {
-      console.error('❌ Failed to get suppliers:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to get suppliers:', errorShape(error));
       return [];
     }
   },
 
-  // ============================================
-  // GET ENDPOINTS
-  // ============================================
+  // ── LISTS ──────────────────────────────────
 
-  async getInventory(params?: GetInventoryParams): Promise<InventoryListResponse> {
+  async getInventory(
+    params?: GetInventoryParams
+  ): Promise<InventoryListResponseExtended> {
     try {
       const cleanParams: any = { ...params };
 
-      if (cleanParams.sortBy) {
-        if (
-          cleanParams.sortBy === 'name' ||
-          cleanParams.sortBy === 'productName'
-        ) {
-          cleanParams.sortByProductName = 'true';
-        }
+      if (cleanParams.sortBy === 'name' || cleanParams.sortBy === 'productName') {
+        cleanParams.sortByProductName = 'true';
       }
 
-      const resolvedBusinessUnitId = resolveBusinessUnitId(
-        cleanParams.businessUnitId
-      );
-      if (resolvedBusinessUnitId) {
-        cleanParams.businessUnitId = resolvedBusinessUnitId;
-      } else {
-        delete cleanParams.businessUnitId;
-      }
+      const resolvedBU = resolveBusinessUnitId(cleanParams.businessUnitId);
+      if (resolvedBU) cleanParams.businessUnitId = resolvedBU;
+      else delete cleanParams.businessUnitId;
 
       const cleanedParams = cleanObject(cleanParams);
-
-      console.log('📤 Fetching inventory with params:', cleanedParams);
 
       const response = await api.get<any>('/inventory/items', {
         params: cleanedParams,
       });
 
       if (Array.isArray(response)) {
+        const normalized = normalizeInventoryItems(response);
         return {
-          inventory: response.map(normalizeInventoryItem),
-          items: response.map(normalizeInventoryItem),
-          total: response.length,
+          inventory: normalized,
+          items: normalized,
+          total: normalized.length,
           page: 1,
-          limit: response.length || 10,
+          limit: normalized.length || 10,
           totalPages: 1,
           stats: {} as InventoryStats,
           appliedFilters: {
@@ -790,108 +720,35 @@ export const inventoryService = {
         };
       }
 
-      if (!response || typeof response !== 'object') {
-        console.warn(
-          '⚠️ getInventory: unexpected response shape, returning empty',
-          response
-        );
-        return {
-          inventory: [],
-          items: [],
-          total: 0,
-          page: 1,
-          limit: cleanParams.limit || 10,
-          totalPages: 1,
-          stats: {} as InventoryStats,
-          appliedFilters: {
-            search: null,
-            category: null,
-            location: null,
-            status: null,
-            lowStock: false,
-          },
-        };
-      }
-
-      if (Array.isArray(response.items) && !response.inventory) {
-        const normalized = response.items.map(normalizeInventoryItem);
-        response.inventory = normalized;
-        response.items = normalized;
-      }
-
-      if (Array.isArray(response.inventory)) {
-        const normalized = response.inventory.map(normalizeInventoryItem);
-        response.inventory = normalized;
-        if (!Array.isArray(response.items)) {
-          response.items = normalized;
-        }
-      }
-
-      if (Array.isArray(response.data) && !response.inventory) {
-        const normalized = response.data.map(normalizeInventoryItem);
-        response.inventory = normalized;
-        response.items = normalized;
-      }
-
-      if (
-        response.data &&
-        typeof response.data === 'object' &&
-        Array.isArray(response.data.inventory) &&
-        !response.inventory
-      ) {
-        const normalized = response.data.inventory.map(normalizeInventoryItem);
-        response.inventory = normalized;
-        response.items = normalized;
-      }
-
-      if (!Array.isArray(response.inventory)) {
-        response.inventory = [];
-      }
-      if (!Array.isArray(response.items)) {
-        response.items = response.inventory;
-      }
-      if (typeof response.total !== 'number') {
-        response.total = response.inventory.length;
-      }
-      if (typeof response.page !== 'number') {
-        response.page = cleanParams.page || 1;
-      }
-      if (typeof response.limit !== 'number') {
-        response.limit = cleanParams.limit || 10;
-      }
-      if (typeof response.totalPages !== 'number') {
-        response.totalPages = Math.max(
-          1,
-          Math.ceil(response.total / response.limit)
-        );
-      }
-      if (!response.stats || typeof response.stats !== 'object') {
-        response.stats = {} as InventoryStats;
-      }
-      if (!response.appliedFilters) {
-        response.appliedFilters = {
-          search: null,
-          category: null,
-          location: null,
-          status: null,
-          lowStock: false,
-        };
-      }
-
-      console.log(
-        `✅ getInventory: businessUnitId="${
-          resolvedBusinessUnitId ?? 'auto'
-        }", items=${response.inventory.length}, total=${response.total}`
+      const data = unwrapData<any[]>(response);
+      const normalized = normalizeInventoryItems(
+        Array.isArray(data) ? data : []
       );
 
-      return response as InventoryListResponse;
+      const result: any = {
+        inventory: normalized,
+        items: normalized,
+        stats: (response as any)?.stats || ({} as InventoryStats),
+        appliedFilters: (response as any)?.filters ||
+          (response as any)?.appliedFilters || {
+            search: cleanParams.search ?? null,
+            category: cleanParams.category ?? null,
+            location: cleanParams.location ?? null,
+            status: cleanParams.status ?? null,
+            lowStock: !!cleanParams.lowStock,
+          },
+      };
+
+      applyPagination(
+        result,
+        (response as any)?.pagination,
+        cleanParams.page ?? 1,
+        cleanParams.limit ?? 10
+      );
+
+      return result as InventoryListResponseExtended;
     } catch (error: any) {
-      console.error('❌ Failed to get inventory:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to get inventory:', errorShape(error));
       throw error;
     }
   },
@@ -906,25 +763,18 @@ export const inventoryService = {
     try {
       const cleanParams: any = { ...params };
 
-      const resolvedBusinessUnitId = resolveBusinessUnitId(
-        cleanParams.businessUnitId
-      );
-      if (resolvedBusinessUnitId) {
-        cleanParams.businessUnitId = resolvedBusinessUnitId;
-      } else {
-        delete cleanParams.businessUnitId;
-      }
+      const resolvedBU = resolveBusinessUnitId(cleanParams.businessUnitId);
+      if (resolvedBU) cleanParams.businessUnitId = resolvedBU;
+      else delete cleanParams.businessUnitId;
 
       const cleanedParams = cleanObject(cleanParams);
-
-      console.log('📤 Fetching inventory items with params:', cleanedParams);
 
       const response = await api.get<any>('/inventory/items', {
         params: cleanedParams,
       });
 
       if (Array.isArray(response)) {
-        const normalized = response.map(normalizeInventoryItem);
+        const normalized = normalizeInventoryItems(response);
         return {
           items: normalized,
           total: normalized.length,
@@ -934,179 +784,152 @@ export const inventoryService = {
         };
       }
 
-      if (!response || typeof response !== 'object') {
-        console.warn(
-          '⚠️ getInventoryItems: unexpected response shape, returning empty',
-          response
-        );
-        return {
-          items: [],
-          total: 0,
-          page: cleanParams.page || 1,
-          limit: cleanParams.limit || 20,
-          totalPages: 1,
-        };
-      }
-
-      if (Array.isArray(response.items)) {
-        response.items = response.items.map(normalizeInventoryItem);
-      }
-
-      if (!Array.isArray(response.items) && Array.isArray(response.data)) {
-        response.items = response.data.map(normalizeInventoryItem);
-      }
-
-      if (
-        !Array.isArray(response.items) &&
-        Array.isArray(response.inventory)
-      ) {
-        response.items = response.inventory.map(normalizeInventoryItem);
-      }
-
-      if (
-        !Array.isArray(response.items) &&
-        response.data &&
-        typeof response.data === 'object' &&
-        Array.isArray(response.data.items)
-      ) {
-        response.items = response.data.items.map(normalizeInventoryItem);
-      }
-
-      if (!Array.isArray(response.items)) {
-        response.items = [];
-      }
-      if (typeof response.total !== 'number') {
-        response.total = response.items.length;
-      }
-      if (typeof response.page !== 'number') {
-        response.page = cleanParams.page || 1;
-      }
-      if (typeof response.limit !== 'number') {
-        response.limit = cleanParams.limit || 20;
-      }
-      if (typeof response.totalPages !== 'number') {
-        response.totalPages = Math.max(
-          1,
-          Math.ceil(response.total / response.limit)
-        );
-      }
-
-      console.log(
-        `✅ getInventoryItems: businessUnitId="${
-          resolvedBusinessUnitId ?? 'auto'
-        }", items=${response.items.length}, total=${response.total}`
+      const data = unwrapData<any[]>(response);
+      const normalized = normalizeInventoryItems(
+        Array.isArray(data) ? data : []
       );
 
-      return response as InventoryItemsResponse;
+      const result: any = { items: normalized };
+      applyPagination(
+        result,
+        (response as any)?.pagination,
+        cleanParams.page ?? 1,
+        cleanParams.limit ?? 20
+      );
+
+      return result as InventoryItemsResponse;
     } catch (error: any) {
-      console.error('❌ Failed to get inventory items:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to get inventory items:', errorShape(error));
       throw error;
     }
   },
 
-  async getAllInventory(businessUnitId: string): Promise<GetAllInventoryResponse> {
+  /**
+   * Fetch all inventory under the resolved BU (no pagination).
+   *
+   * `businessUnitId` is optional. When omitted, the query param is
+   * not sent and the backend resolves the BU from
+   * `req.user.businessUnitId` — the same value the detail endpoint
+   * uses, so both pages agree on the BU.
+   */
+  async getAllInventory(
+    businessUnitId?: string
+  ): Promise<GetAllInventoryResponse> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
       const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
+      if (clean) params.businessUnitId = clean;
 
-      console.log('📤 getAllInventory - businessUnitId:', cleanBusinessUnitId);
+      console.log('📤 getAllInventory - businessUnitId:', clean ?? '(auto)');
 
       const response = await api.get<any>('/inventory/all', { params });
+      const data = unwrapData<any[]>(response);
+      const items = Array.isArray(data) ? data : [];
 
-      console.log('📥 getAllInventory response:', response);
+      const normalizedItems = items
+        .map((item: any) => normalizeInventoryItem(item))
+        .filter((item): item is FlatInventory => item !== null);
 
-      let items: any[] = [];
-      let stats: InventoryStats = {} as InventoryStats;
+      console.log(
+        `✅ getAllInventory returning ${normalizedItems.length} items`
+      );
 
-      if (response) {
-        if (response.items && Array.isArray(response.items)) {
-          items = response.items;
-          stats = response.stats || ({} as InventoryStats);
-        } else if (response.data && Array.isArray(response.data)) {
-          items = response.data;
-          stats = response.stats || ({} as InventoryStats);
-        } else if (
-          response.success &&
-          response.data &&
-          Array.isArray(response.data)
-        ) {
-          items = response.data;
-          stats = response.stats || ({} as InventoryStats);
-        } else if (Array.isArray(response)) {
-          items = response;
-        }
-      }
-
-      const normalizedItems = items.map((item: any) => {
-        const normalized = normalizeInventoryItem(item);
-        return {
-          ...normalized,
-          name: normalized.name || normalized.product?.name || 'Unknown Product',
-          sku: normalized.sku || normalized.product?.sku || 'N/A',
-          quantity: normalized.quantity || normalized.stock || 0,
-          price:
-            normalized.price ||
-            normalized.unitPrice ||
-            normalized.product?.unitPrice ||
-            0,
-          stock: normalized.stock || normalized.quantity || 0,
-          productId:
-            normalized.productId || normalized.product?.id || normalized.id,
-          images: normalized.images || [],
-          description: normalized.description || null,
-          weight: normalized.weight || 0,
-          taxRate: normalized.taxRate || 0,
-          tags: normalized.tags || [],
-          inventory: normalized.inventory || [
-            {
-              quantity: normalized.quantity || 0,
-              reserved: normalized.reserved || 0,
-            },
-          ],
-        };
-      });
-
-      console.log(`✅ getAllInventory returning ${normalizedItems.length} items`);
-      return { items: normalizedItems, stats };
+      return {
+        items: normalizedItems,
+        stats: (response as any)?.stats || ({} as InventoryStats),
+      };
     } catch (error: any) {
-      console.error('❌ Failed to get all inventory:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to get all inventory:', errorShape(error));
       return { items: [], stats: {} as InventoryStats };
     }
   },
 
-  async getInventoryByProduct(
-    productId: string,
-    businessUnitId: string,
-    variantId?: string
-  ): Promise<any> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
-      if (variantId) params.variantId = variantId;
+  // ── DETAIL ─────────────────────────────────
 
-      const response = await api.get<any>(`/inventory/product/${productId}`, {
+  /**
+   * Fetch a single inventory item by ID.
+   *
+   * `businessUnitId` is optional. When omitted, no BU query param
+   * is sent and the backend uses `req.user.businessUnitId` — the
+   * same value `getAllInventory` would use. This guarantees the
+   * detail request targets the same BU as the list request.
+   *
+   * 404 handling:
+   *   • `{ error: 'Route not found' }` → rethrow. The backend
+   *      route is missing — this is a deployment/config bug that
+   *      must not be silently converted to `null`.
+   *   • `{ message: 'Inventory item not found' }` → return null.
+   *      The record genuinely doesn't exist for the resolved BU.
+   */
+  async getInventoryItemById(
+    id: string,
+    businessUnitId?: string
+  ): Promise<FlatInventory | null> {
+    try {
+      if (!id) throw new Error('Inventory ID is required');
+
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>(`/inventory/items/${seg(id)}`, {
         params,
       });
-      return response ? normalizeInventoryItem(response) : response;
+
+      const result = unwrapData<any>(response);
+      return result ? normalizeInventoryItem(result) : null;
     } catch (error: any) {
-      console.error('❌ Failed to get inventory by product:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      if (isRouteNotFound(error)) {
+        console.error(
+          `❌ Backend route missing: GET /inventory/items/:id ` +
+            `(requested id="${id}"). Register this route in ` +
+            `packages/backend/src/routes/inventory.ts.`
+        );
+        throw error;
+      }
+
+      if (error?.response?.status === 404) {
+        console.warn(`⚠️ Inventory item ${id} not found`);
+        return null;
+      }
+
+      console.error(
+        '❌ Failed to get inventory item by ID:',
+        errorShape(error)
+      );
+      throw error;
+    }
+  },
+
+  /**
+   * Legacy alias. Delegates so both paths share the same BU
+   * resolution and the same 404 classification.
+   */
+  async getInventoryItem(id: string): Promise<FlatInventory | null> {
+    return this.getInventoryItemById(id);
+  },
+
+  async getInventoryByProduct(
+    productId: string,
+    businessUnitId?: string,
+    variantId?: string
+  ): Promise<FlatInventory | null> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+      if (variantId) params.variantId = variantId;
+
+      const response = await api.get<any>(
+        `/inventory/product/${seg(productId)}`,
+        { params }
+      );
+      const result = unwrapData<any>(response);
+      return result ? normalizeInventoryItem(result) : null;
+    } catch (error: any) {
+      if (isRouteNotFound(error)) throw error;
+      if (error?.response?.status === 404) return null;
+      console.error('❌ Failed to get inventory by product:', errorShape(error));
       throw error;
     }
   },
@@ -1114,283 +937,279 @@ export const inventoryService = {
   async getInventoryByBarcode(
     barcode: string,
     businessUnitId?: string
-  ): Promise<any> {
+  ): Promise<FlatInventory | null> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
       const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
+      if (clean) params.businessUnitId = clean;
 
-      const response = await api.get<any>(`/inventory/barcode/${barcode}`, {
-        params,
-      });
-      return response ? normalizeInventoryItem(response) : response;
-    } catch (error: any) {
-      if (error?.response?.status === 404) return null;
-      console.error(`❌ Failed to get inventory by barcode ${barcode}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryBySku(sku: string, businessUnitId?: string): Promise<any> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
-
-      const response = await api.get<any>(`/inventory/sku/${sku}`, { params });
-      return response ? normalizeInventoryItem(response) : response;
-    } catch (error: any) {
-      if (error?.response?.status === 404) return null;
-      console.error(`❌ Failed to get inventory by SKU ${sku}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryItemById(id: string, businessUnitId?: string): Promise<any> {
-    try {
-      if (!id) {
-        throw new Error('Inventory ID is required');
-      }
-
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
-
-      const response = await api.get<any>(`/inventory/items/${id}`, { params });
-
-      let result = null;
-      if (response) {
-        if (response.data) {
-          result = response.data;
-        } else if (response.success && response.data) {
-          result = response.data;
-        } else if (response.id) {
-          result = response;
-        }
-      }
-
+      const response = await api.get<any>(
+        `/inventory/barcode/${seg(barcode)}`,
+        { params }
+      );
+      const result = unwrapData<any>(response);
       return result ? normalizeInventoryItem(result) : null;
     } catch (error: any) {
-      if (error?.response?.status === 404) {
-        console.warn(`⚠️ Inventory item ${id} not found`);
-        return null;
-      }
-      console.error('❌ Failed to get inventory item by ID:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryItem(id: string): Promise<any> {
-    try {
-      if (!id) {
-        throw new Error('Inventory ID is required');
-      }
-
-      const response = await api.get(`/inventory/items/${id}`);
-      return response ? normalizeInventoryItem(response) : response;
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
-        console.warn(`⚠️ Inventory item ${id} not found`);
-        return null;
-      }
-      console.error(`❌ Failed to get inventory item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getLowStockItems(businessUnitId: string): Promise<any[]> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>('/inventory/low-stock', {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      const data = response?.data || response || [];
-      return Array.isArray(data) ? data.map(normalizeInventoryItem) : [];
-    } catch (error: any) {
-      console.error('❌ Failed to get low stock items:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getOutOfStockItems(businessUnitId: string): Promise<any[]> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>('/inventory/out-of-stock', {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      const data = response?.data || response || [];
-      return Array.isArray(data) ? data.map(normalizeInventoryItem) : [];
-    } catch (error: any) {
-      console.error('❌ Failed to get out of stock items:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryValue(businessUnitId: string): Promise<InventoryValue> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>('/inventory/value', {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      return response?.data || response;
-    } catch (error: any) {
-      console.error('❌ Failed to get inventory value:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryTransactions(
-    params?: InventoryTransactionParams
-  ): Promise<PaginatedResponse<InventoryTransaction>> {
-    try {
-      const cleanParams: any = { ...params };
-      const sanitizedBusinessUnitId = resolveBusinessUnitId(
-        cleanParams.businessUnitId
+      if (isRouteNotFound(error)) throw error;
+      if (error?.response?.status === 404) return null;
+      console.error(
+        `❌ Failed to get inventory by barcode ${barcode}:`,
+        errorShape(error)
       );
+      throw error;
+    }
+  },
 
-      if (sanitizedBusinessUnitId) {
-        cleanParams.businessUnitId = sanitizedBusinessUnitId;
-      } else {
-        delete cleanParams.businessUnitId;
-      }
+  async getInventoryBySku(
+    sku: string,
+    businessUnitId?: string
+  ): Promise<FlatInventory | null> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
 
-      const cleanedParams = cleanObject(cleanParams);
-      const response = await api.get<any>('/inventory/transactions', {
-        params: cleanedParams,
+      const response = await api.get<any>(`/inventory/sku/${seg(sku)}`, {
+        params,
       });
-
-      if (!response || typeof response !== 'object') {
-        return {
-          data: [],
-          total: 0,
-          page: cleanParams.page || 1,
-          limit: cleanParams.limit || 20,
-          totalPages: 1,
-        };
-      }
-      if (!Array.isArray(response.data)) {
-        response.data = Array.isArray(response.transactions)
-          ? response.transactions
-          : Array.isArray(response.items)
-          ? response.items
-          : [];
-      }
-      if (typeof response.total !== 'number')
-        response.total = response.data.length;
-      if (typeof response.page !== 'number')
-        response.page = cleanParams.page || 1;
-      if (typeof response.limit !== 'number')
-        response.limit = cleanParams.limit || 20;
-      if (typeof response.totalPages !== 'number') {
-        response.totalPages = Math.max(
-          1,
-          Math.ceil(response.total / response.limit)
-        );
-      }
-      return response as PaginatedResponse<InventoryTransaction>;
+      const result = unwrapData<any>(response);
+      return result ? normalizeInventoryItem(result) : null;
     } catch (error: any) {
-      console.error('❌ Failed to get inventory transactions:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      if (isRouteNotFound(error)) throw error;
+      if (error?.response?.status === 404) return null;
+      console.error(
+        `❌ Failed to get inventory by SKU ${sku}:`,
+        errorShape(error)
+      );
       throw error;
     }
   },
 
   async getInventoryByLocation(
     location: string,
-    businessUnitId: string
-  ): Promise<any[]> {
+    businessUnitId?: string
+  ): Promise<FlatInventory[]> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>(`/inventory/location/${location}`, {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      const data = response?.data || response || [];
-      return Array.isArray(data) ? data.map(normalizeInventoryItem) : [];
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>(
+        `/inventory/location/${seg(location)}`,
+        { params }
+      );
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? normalizeInventoryItems(data) : [];
     } catch (error: any) {
-      console.error('❌ Failed to get inventory by location:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        '❌ Failed to get inventory by location:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
   async getInventoryByCategory(
     category: string,
-    businessUnitId: string
-  ): Promise<any[]> {
+    businessUnitId?: string
+  ): Promise<FlatInventory[]> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>(`/inventory/category/${category}`, {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      const data = response?.data || response || [];
-      return Array.isArray(data) ? data.map(normalizeInventoryItem) : [];
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>(
+        `/inventory/category/${seg(category)}`,
+        { params }
+      );
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? normalizeInventoryItems(data) : [];
     } catch (error: any) {
-      console.error('❌ Failed to get inventory by category:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        '❌ Failed to get inventory by category:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  async searchInventory(
-    query: string,
-    businessUnitId: string,
-    filters?: InventorySearchFilters
-  ): Promise<any[]> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = { query, businessUnitId: cleanBusinessUnitId };
-      if (filters) Object.assign(params, filters);
+  // ── TRANSACTIONS / MOVEMENTS ───────────────
 
-      const cleanedParams = cleanObject(params);
-      const response = await api.get<any>('/inventory/search', {
+  async getInventoryTransactions(
+    params?: InventoryTransactionParams
+  ): Promise<PaginatedResponse<InventoryTransaction>> {
+    try {
+      const cleanParams: any = { ...params };
+      const resolvedBU = resolveBusinessUnitId(cleanParams.businessUnitId);
+      if (resolvedBU) cleanParams.businessUnitId = resolvedBU;
+      else delete cleanParams.businessUnitId;
+
+      const cleanedParams = cleanObject(cleanParams);
+
+      const response = await api.get<any>('/inventory/transactions', {
         params: cleanedParams,
       });
-      const data = response?.data || response || [];
-      return Array.isArray(data) ? data.map(normalizeInventoryItem) : [];
+
+      const data = unwrapData<any[]>(response);
+      const result: any = {
+        data: Array.isArray(data) ? data : [],
+        stats: (response as any)?.stats,
+      };
+
+      applyPagination(
+        result,
+        (response as any)?.pagination,
+        cleanParams.page ?? 1,
+        cleanParams.limit ?? 20
+      );
+
+      return result as PaginatedResponse<InventoryTransaction>;
     } catch (error: any) {
-      console.error('❌ Failed to search inventory:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
+      console.error(
+        '❌ Failed to get inventory transactions:',
+        errorShape(error)
+      );
+      throw error;
+    }
+  },
+
+  async getStockMovements(
+    params: InventoryMovementParams
+  ): Promise<InventoryTransaction[]> {
+    try {
+      const cleanParams: any = { ...params };
+      const resolvedBU = resolveBusinessUnitId(cleanParams.businessUnitId);
+      if (resolvedBU) cleanParams.businessUnitId = resolvedBU;
+      else delete cleanParams.businessUnitId;
+
+      const response = await api.get<any>('/inventory/movements', {
+        params: cleanObject(cleanParams),
       });
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? data : [];
+    } catch (error: any) {
+      console.error('❌ Failed to get stock movements:', errorShape(error));
+      throw error;
+    }
+  },
+
+  // ── AGGREGATES ─────────────────────────────
+
+  async getInventorySummary(
+    businessUnitId?: string
+  ): Promise<InventorySummary> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>('/inventory/summary', { params });
+      return unwrapData<any>(response) ?? ({} as InventorySummary);
+    } catch (error: any) {
+      console.error('❌ Failed to get inventory summary:', errorShape(error));
+      throw error;
+    }
+  },
+
+  async getInventoryValue(businessUnitId?: string): Promise<InventoryValue> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>('/inventory/value', { params });
+      return unwrapData<any>(response) ?? ({} as InventoryValue);
+    } catch (error: any) {
+      console.error('❌ Failed to get inventory value:', errorShape(error));
+      throw error;
+    }
+  },
+
+  async getInventoryStats(businessUnitId?: string): Promise<InventoryStats> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>('/inventory/stats', { params });
+      return unwrapData<any>(response) ?? ({} as InventoryStats);
+    } catch (error: any) {
+      console.error('❌ Failed to get inventory stats:', errorShape(error));
+      throw error;
+    }
+  },
+
+  async getTotalItems(businessUnitId?: string): Promise<number> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>('/inventory/total', { params });
+      const data = unwrapData<any>(response);
+      return typeof data === 'number' ? data : 0;
+    } catch (error: any) {
+      console.error('❌ Failed to get total items:', errorShape(error));
+      throw error;
+    }
+  },
+
+  async getLowStockItems(
+    businessUnitId?: string
+  ): Promise<FlatInventory[]> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>('/inventory/low-stock', { params });
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? normalizeInventoryItems(data) : [];
+    } catch (error: any) {
+      console.error('❌ Failed to get low stock items:', errorShape(error));
+      throw error;
+    }
+  },
+
+  async getOutOfStockItems(
+    businessUnitId?: string
+  ): Promise<FlatInventory[]> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = {};
+      if (clean) params.businessUnitId = clean;
+
+      const response = await api.get<any>('/inventory/out-of-stock', {
+        params,
+      });
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? normalizeInventoryItems(data) : [];
+    } catch (error: any) {
+      console.error('❌ Failed to get out of stock items:', errorShape(error));
+      throw error;
+    }
+  },
+
+  // ── SEARCH ─────────────────────────────────
+
+  async searchInventory(
+    query: string,
+    businessUnitId?: string,
+    filters?: InventorySearchFilters
+  ): Promise<FlatInventory[]> {
+    try {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = { query };
+      if (clean) params.businessUnitId = clean;
+      if (filters) Object.assign(params, filters);
+
+      const response = await api.get<any>('/inventory/search', {
+        params: cleanObject(params),
+      });
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? normalizeInventoryItems(data) : [];
+    } catch (error: any) {
+      console.error('❌ Failed to search inventory:', errorShape(error));
       throw error;
     }
   },
@@ -1401,146 +1220,34 @@ export const inventoryService = {
     minPrice?: number;
     maxPrice?: number;
     status?: string;
-    businessUnitId: string;
-  }): Promise<any[]> {
+    businessUnitId?: string;
+  }): Promise<FlatInventory[]> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(params.businessUnitId);
-      const cleanParams = { ...params, businessUnitId: cleanBusinessUnitId };
-      const cleanedParams = cleanObject(cleanParams);
+      const clean = resolveBusinessUnitId(params.businessUnitId);
+      const cleanParams: any = { ...params };
+      if (clean) cleanParams.businessUnitId = clean;
+      else delete cleanParams.businessUnitId;
+
       const response = await api.get<any>('/inventory/search', {
-        params: cleanedParams,
+        params: cleanObject(cleanParams),
       });
-      const data = response?.data || response || [];
-      return Array.isArray(data) ? data.map(normalizeInventoryItem) : [];
+      const data = unwrapData<any[]>(response);
+      return Array.isArray(data) ? normalizeInventoryItems(data) : [];
     } catch (error: any) {
-      console.error('❌ Failed to search products:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-        params: error?.config?.params,
-      });
+      console.error('❌ Failed to search products:', errorShape(error));
       return [];
     }
   },
 
-  async getInventorySummary(businessUnitId: string): Promise<InventorySummary> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
-
-      const response = await api.get<any>('/inventory/summary', { params });
-      return response?.data || response;
-    } catch (error: any) {
-      console.error('❌ Failed to get inventory summary:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getTotalItems(businessUnitId: string): Promise<number> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>('/inventory/total', {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      return response?.data || response || 0;
-    } catch (error: any) {
-      console.error('❌ Failed to get total items:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getStockMovements(
-    params: InventoryMovementParams
-  ): Promise<InventoryTransaction[]> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(params.businessUnitId);
-      const cleanParams = { ...params, businessUnitId: cleanBusinessUnitId };
-      const cleanedParams = cleanObject(cleanParams);
-
-      const response = await api.get<any>('/inventory/movements', {
-        params: cleanedParams,
-      });
-      return response?.data || response || [];
-    } catch (error: any) {
-      console.error('❌ Failed to get stock movements:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryStats(businessUnitId: string): Promise<InventoryStats> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.get<any>('/inventory/stats', {
-        params: { businessUnitId: cleanBusinessUnitId },
-      });
-      return response?.data || response;
-    } catch (error: any) {
-      console.error('❌ Failed to get inventory stats:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
-
-  async getInventoryReport(
-    businessUnitId: string,
-    params?: {
-      includeInactive?: boolean;
-      categoryId?: string;
-      location?: string;
-      dateRange?: { start: Date; end: Date };
-    }
-  ): Promise<any> {
-    try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const queryParams: any = { businessUnitId: cleanBusinessUnitId };
-      if (params) {
-        if (params.includeInactive !== undefined)
-          queryParams.includeInactive = params.includeInactive;
-        if (params.categoryId) queryParams.categoryId = params.categoryId;
-        if (params.location) queryParams.location = params.location;
-        if (params.dateRange) {
-          queryParams.startDate = params.dateRange.start?.toISOString();
-          queryParams.endDate = params.dateRange.end?.toISOString();
-        }
-      }
-      const response = await api.get<any>('/inventory/report', {
-        params: cleanObject(queryParams),
-      });
-      return response?.data || response;
-    } catch (error: any) {
-      console.error('❌ Failed to get inventory report:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
-      throw error;
-    }
-  },
+  // ── WRITES ─────────────────────────────────
 
   async createItem(data: CreateItemData): Promise<any> {
     try {
-      console.log('📤 Creating inventory item with data:', data);
       if (!data.name) throw new Error('Item name is required');
 
-      const cleanBusinessUnitId = resolveBusinessUnitId(data.businessUnitId);
+      const clean = resolveBusinessUnitId(data.businessUnitId);
 
-      const payload = {
+      const payload = cleanObject({
         name: data.name.trim(),
         sku: data.sku?.trim() || undefined,
         unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : 0,
@@ -1565,57 +1272,36 @@ export const inventoryService = {
         isActive: data.isActive !== undefined ? data.isActive : true,
         featured: data.featured || false,
         isDigital: data.isDigital || false,
-        businessUnitId: cleanBusinessUnitId || undefined,
+        businessUnitId: clean || undefined,
         userId: data.userId,
-      };
-
-      const cleanedPayload = cleanObject(payload);
-      const response = await api.post<any>('/inventory/items', cleanedPayload);
-      console.log('✅ Inventory item created successfully');
-      return response;
-    } catch (error: any) {
-      console.error('❌ Failed to create inventory item:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
       });
+
+      return api.post<any>('/inventory/items', payload);
+    } catch (error: any) {
+      console.error('❌ Failed to create inventory item:', errorShape(error));
       throw error;
     }
   },
 
   async createInventory(data: any): Promise<any> {
     try {
-      const cleanData = { ...data };
-      const sanitizedBusinessUnitId = resolveBusinessUnitId(
-        cleanData.businessUnitId
-      );
+      const cleanData: any = { ...data };
+      const clean = resolveBusinessUnitId(cleanData.businessUnitId);
+      if (clean) cleanData.businessUnitId = clean;
+      else delete cleanData.businessUnitId;
 
-      if (sanitizedBusinessUnitId) {
-        cleanData.businessUnitId = sanitizedBusinessUnitId;
-      } else {
-        delete cleanData.businessUnitId;
-      }
-
-      const cleanedData = cleanObject(cleanData);
-      const response = await api.post('/inventory', cleanedData);
-      return response;
+      return api.post('/inventory', cleanObject(cleanData));
     } catch (error: any) {
-      console.error('❌ Failed to create inventory:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error('❌ Failed to create inventory:', errorShape(error));
       throw error;
     }
   },
 
   async createProductWithInventory(data: CreateItemData): Promise<any> {
     try {
-      console.log('📤 Creating product with inventory:', data);
+      const clean = resolveBusinessUnitId(data.businessUnitId);
 
-      const cleanBusinessUnitId = resolveBusinessUnitId(data.businessUnitId);
-
-      const payload = {
+      const payload = cleanObject({
         name: data.name.trim(),
         sku: data.sku?.trim() || undefined,
         unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : 0,
@@ -1634,36 +1320,23 @@ export const inventoryService = {
         weight: typeof data.weight === 'number' ? data.weight : undefined,
         taxRate: typeof data.taxRate === 'number' ? data.taxRate : undefined,
         tags: data.tags || [],
-        businessUnitId: cleanBusinessUnitId || undefined,
+        businessUnitId: clean || undefined,
         userId: data.userId,
-      };
-
-      const cleanedPayload = cleanObject(payload);
-      const response = await api.post<any>(
-        '/inventory/products',
-        cleanedPayload
-      );
-      console.log('✅ Product with inventory created successfully');
-      return response;
-    } catch (error: any) {
-      console.error('❌ Failed to create product with inventory:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
       });
+
+      return api.post<any>('/inventory/products', payload);
+    } catch (error: any) {
+      console.error(
+        '❌ Failed to create product with inventory:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  // ============================================
-  // UPDATE ENDPOINTS
-  // ============================================
-
   async updateItem(id: string, data: UpdateItemData): Promise<any> {
     try {
-      console.log(`📤 Updating inventory item ${id}:`, data);
-
-      const cleanBusinessUnitId = resolveBusinessUnitId(data.businessUnitId);
+      const clean = resolveBusinessUnitId(data.businessUnitId);
 
       const payload: any = {};
       if (data.name !== undefined) payload.name = data.name.trim();
@@ -1692,47 +1365,28 @@ export const inventoryService = {
       if (data.isDigital !== undefined) payload.isDigital = data.isDigital;
       if (data.productType !== undefined)
         payload.productType = data.productType;
-      if (cleanBusinessUnitId) payload.businessUnitId = cleanBusinessUnitId;
+      if (clean) payload.businessUnitId = clean;
 
-      const cleanedPayload = cleanObject(payload);
-      const response = await api.put<any>(
-        `/inventory/items/${id}`,
-        cleanedPayload
-      );
-      console.log(`✅ Inventory item ${id} updated successfully`);
-      return response;
+      return api.put<any>(`/inventory/items/${seg(id)}`, cleanObject(payload));
     } catch (error: any) {
-      console.error(`❌ Failed to update inventory item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        `❌ Failed to update inventory item ${id}:`,
+        errorShape(error)
+      );
       throw error;
     }
   },
 
   async updateInventory(id: string, data: any): Promise<any> {
     try {
-      const cleanData = { ...data };
-      const sanitizedBusinessUnitId = resolveBusinessUnitId(
-        cleanData.businessUnitId
-      );
+      const cleanData: any = { ...data };
+      const clean = resolveBusinessUnitId(cleanData.businessUnitId);
+      if (clean) cleanData.businessUnitId = clean;
+      else delete cleanData.businessUnitId;
 
-      if (sanitizedBusinessUnitId) {
-        cleanData.businessUnitId = sanitizedBusinessUnitId;
-      } else {
-        delete cleanData.businessUnitId;
-      }
-
-      const cleanedData = cleanObject(cleanData);
-      const response = await api.put(`/inventory/${id}`, cleanedData);
-      return response;
+      return api.put(`/inventory/${seg(id)}`, cleanObject(cleanData));
     } catch (error: any) {
-      console.error(`❌ Failed to update inventory ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(`❌ Failed to update inventory ${id}:`, errorShape(error));
       throw error;
     }
   },
@@ -1743,32 +1397,24 @@ export const inventoryService = {
 
   async updateStock(id: string, data: UpdateStockData): Promise<any> {
     try {
-      const payload = {
+      const payload = cleanObject({
         quantity: data.quantity,
         transactionType: data.transactionType || 'ADJUSTMENT',
         notes: data.notes,
         reference: data.reference,
-      };
-      const cleanedPayload = cleanObject(payload);
-
-      const response = await api.patch<any>(
-        `/inventory/items/${id}/stock`,
-        cleanedPayload
-      );
-      return response;
-    } catch (error: any) {
-      console.error(`❌ Failed to update stock for item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
       });
+
+      return api.patch<any>(`/inventory/items/${seg(id)}/stock`, payload);
+    } catch (error: any) {
+      console.error(
+        `❌ Failed to update stock for item ${id}:`,
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  // ============================================
-  // BULK OPERATIONS
-  // ============================================
+  // ── BULK ───────────────────────────────────
 
   async bulkUpdateStock(
     updates: Array<{
@@ -1779,39 +1425,26 @@ export const inventoryService = {
     }>
   ): Promise<BulkUpdateResult> {
     try {
-      console.log(`📤 Bulk updating stock for ${updates.length} items`);
-
       const cleanedUpdates = updates.map((update) => cleanObject(update));
-      const response = await api.patch<BulkUpdateResult>(
-        '/inventory/bulk/stock',
-        { updates: cleanedUpdates }
-      );
-      return response;
-    } catch (error: any) {
-      console.error('❌ Failed to bulk update stock:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
+      return api.patch<BulkUpdateResult>('/inventory/bulk/stock', {
+        updates: cleanedUpdates,
       });
+    } catch (error: any) {
+      console.error('❌ Failed to bulk update stock:', errorShape(error));
       throw error;
     }
   },
 
   async bulkDeleteItems(ids: string[]): Promise<BulkUpdateResult> {
     try {
-      console.log(`📤 Bulk deleting ${ids.length} inventory items`);
-
-      const response = await api.delete<BulkUpdateResult>(
-        '/inventory/bulk/items',
-        { data: { ids } }
-      );
-      return response;
-    } catch (error: any) {
-      console.error('❌ Failed to bulk delete inventory items:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
+      return api.delete<BulkUpdateResult>('/inventory/bulk/items', {
+        data: { ids },
       });
+    } catch (error: any) {
+      console.error(
+        '❌ Failed to bulk delete inventory items:',
+        errorShape(error)
+      );
       throw error;
     }
   },
@@ -1819,55 +1452,45 @@ export const inventoryService = {
   async bulkCreateItems(items: CreateItemData[]): Promise<BulkUpdateResult> {
     try {
       const cleanedItems = items.map((item) => {
-        const cleanBusinessUnitId = resolveBusinessUnitId(
-          item.businessUnitId
-        );
-        const cleanItem = {
+        const clean = resolveBusinessUnitId(item.businessUnitId);
+        return cleanObject({
           ...item,
-          businessUnitId: cleanBusinessUnitId,
-        };
-        return cleanObject(cleanItem);
+          businessUnitId: clean,
+        });
       });
 
-      const response = await api.post<BulkUpdateResult>(
-        '/inventory/bulk/items',
-        { items: cleanedItems }
-      );
-      return response;
-    } catch (error: any) {
-      console.error('❌ Failed to bulk create inventory items:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
+      return api.post<BulkUpdateResult>('/inventory/bulk/items', {
+        items: cleanedItems,
       });
+    } catch (error: any) {
+      console.error(
+        '❌ Failed to bulk create inventory items:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  // ============================================
-  // DELETE ENDPOINTS
-  // ============================================
+  // ── DELETE ─────────────────────────────────
 
   async deleteInventoryItem(
     id: string,
     businessUnitId?: string
   ): Promise<{ message: string }> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
       const params: any = {};
-      if (cleanBusinessUnitId) params.businessUnitId = cleanBusinessUnitId;
+      if (clean) params.businessUnitId = clean;
 
-      const response = await api.delete<{ message: string }>(
-        `/inventory/items/${id}`,
+      return api.delete<{ message: string }>(
+        `/inventory/items/${seg(id)}`,
         { params }
       );
-      return response;
     } catch (error: any) {
-      console.error(`❌ Failed to delete inventory item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        `❌ Failed to delete inventory item ${id}:`,
+        errorShape(error)
+      );
       throw error;
     }
   },
@@ -1875,106 +1498,77 @@ export const inventoryService = {
   async deleteProduct(
     id: string,
     businessUnitId?: string,
-    userId?: string
+    _userId?: string
   ): Promise<{ message: string }> {
     return this.deleteInventoryItem(id, businessUnitId);
   },
 
   async deleteInventory(id: string): Promise<any> {
     try {
-      const response = await api.delete(`/inventory/${id}`);
-      return response;
+      return api.delete(`/inventory/${seg(id)}`);
     } catch (error: any) {
-      console.error(`❌ Failed to delete inventory ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(`❌ Failed to delete inventory ${id}:`, errorShape(error));
       throw error;
     }
   },
 
-  // ============================================
-  // STOCK OPERATIONS - ISSUE, RETURN, RESTOCK
-  // ============================================
+  // ── ISSUE / RETURN / RESTOCK ───────────────
 
   async issueItem(id: string, data: IssueItemData): Promise<any> {
     try {
-      const cleanedData = cleanObject(data);
-      const response = await api.post<any>(
-        `/inventory/items/${id}/issue`,
-        cleanedData
+      return api.post<any>(
+        `/inventory/items/${seg(id)}/issue`,
+        cleanObject(data)
       );
-      return response;
     } catch (error: any) {
-      console.error(`❌ Failed to issue item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(`❌ Failed to issue item ${id}:`, errorShape(error));
       throw error;
     }
   },
 
   async returnItem(id: string, data: ReturnItemData): Promise<any> {
     try {
-      const cleanedData = cleanObject(data);
-      const response = await api.post<any>(
-        `/inventory/items/${id}/return`,
-        cleanedData
+      return api.post<any>(
+        `/inventory/items/${seg(id)}/return`,
+        cleanObject(data)
       );
-      return response;
     } catch (error: any) {
-      console.error(`❌ Failed to return item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(`❌ Failed to return item ${id}:`, errorShape(error));
       throw error;
     }
   },
 
   async restockItem(id: string, data: RestockItemData): Promise<any> {
     try {
-      const cleanedData = cleanObject(data);
-      const response = await api.post<any>(
-        `/inventory/items/${id}/restock`,
-        cleanedData
+      return api.post<any>(
+        `/inventory/items/${seg(id)}/restock`,
+        cleanObject(data)
       );
-      return response;
     } catch (error: any) {
-      console.error(`❌ Failed to restock item ${id}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(`❌ Failed to restock item ${id}:`, errorShape(error));
       throw error;
     }
   },
 
-  // ============================================
-  // BARCODE / QR CODE OPERATIONS
-  // ============================================
+  // ── BARCODE / QR ───────────────────────────
 
   async generateInventoryBarcode(
     inventoryId: string,
-    businessUnitId: string
+    businessUnitId?: string
   ): Promise<{ barcode: string; barcodeUrl: string; qrCodeUrl: string }> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const payload = clean ? { businessUnitId: clean } : {};
+
       const response = await api.post<any>(
-        `/inventory/${inventoryId}/generate-barcode`,
-        { businessUnitId: cleanBusinessUnitId }
+        `/inventory/${seg(inventoryId)}/generate-barcode`,
+        payload
       );
-      return response?.data || response;
+      return unwrapData<any>(response) ?? response;
     } catch (error: any) {
       console.error(
         `❌ Failed to generate barcode for inventory item ${inventoryId}:`,
-        {
-          message: error?.response?.data?.message || error?.message,
-          status: error?.response?.status,
-          url: error?.config?.url,
-        }
+        errorShape(error)
       );
       throw error;
     }
@@ -1982,23 +1576,21 @@ export const inventoryService = {
 
   async generateInventoryQRCode(
     inventoryId: string,
-    businessUnitId: string
+    businessUnitId?: string
   ): Promise<{ qrCodeUrl: string; qrData: any }> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const payload = clean ? { businessUnitId: clean } : {};
+
       const response = await api.post<any>(
-        `/inventory/${inventoryId}/generate-qr`,
-        { businessUnitId: cleanBusinessUnitId }
+        `/inventory/${seg(inventoryId)}/generate-qr`,
+        payload
       );
-      return response?.data || response;
+      return unwrapData<any>(response) ?? response;
     } catch (error: any) {
       console.error(
         `❌ Failed to generate QR code for inventory item ${inventoryId}:`,
-        {
-          message: error?.response?.data?.message || error?.message,
-          status: error?.response?.status,
-          url: error?.config?.url,
-        }
+        errorShape(error)
       );
       throw error;
     }
@@ -2006,73 +1598,67 @@ export const inventoryService = {
 
   async bulkGenerateInventoryBarcodes(
     ids: string[],
-    businessUnitId: string
+    businessUnitId?: string
   ): Promise<{ results: any[]; errors: any[] }> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const payload: any = { ids };
+      if (clean) payload.businessUnitId = clean;
+
       const response = await api.post<any>(
         '/inventory/bulk/generate-barcodes',
-        { ids, businessUnitId: cleanBusinessUnitId }
+        payload
       );
-      return response?.data || response || { results: [], errors: [] };
+      return unwrapData<any>(response) ?? { results: [], errors: [] };
     } catch (error: any) {
-      console.error('❌ Failed to bulk generate inventory barcodes:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        '❌ Failed to bulk generate inventory barcodes:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  async scanInventory(barcode: string, businessUnitId: string): Promise<any> {
+  async scanInventory(
+    barcode: string,
+    businessUnitId?: string
+  ): Promise<any> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.post<any>('/inventory/scan', {
-        barcode,
-        businessUnitId: cleanBusinessUnitId,
-      });
-      return response?.data || response;
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const payload: any = { barcode };
+      if (clean) payload.businessUnitId = clean;
+
+      const response = await api.post<any>('/inventory/scan', payload);
+      return unwrapData<any>(response) ?? response;
     } catch (error: any) {
       if (error?.response?.status === 404) return null;
-      console.error('❌ Failed to scan inventory item:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error('❌ Failed to scan inventory item:', errorShape(error));
       throw error;
     }
   },
 
-  // ============================================
-  // RESERVE / RELEASE / TRANSFER STOCK OPERATIONS
-  // ============================================
+  // ── RESERVE / RELEASE / TRANSFER ───────────
 
   async reserveStock(
     productId: string,
     quantity: number,
-    businessUnitId: string,
+    businessUnitId?: string,
     variantId?: string
   ): Promise<any> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const payload = {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const payload = cleanObject({
         productId,
         quantity,
-        businessUnitId: cleanBusinessUnitId,
+        businessUnitId: clean,
         variantId,
-      };
-      const cleanedPayload = cleanObject(payload);
-      const response = await api.post<any>('/inventory/reserve', cleanedPayload);
-      return response;
+      });
+
+      return api.post<any>('/inventory/reserve', payload);
     } catch (error: any) {
       console.error(
         `❌ Failed to reserve stock for product ${productId}:`,
-        {
-          message: error?.response?.data?.message || error?.message,
-          status: error?.response?.status,
-          url: error?.config?.url,
-        }
+        errorShape(error)
       );
       throw error;
     }
@@ -2081,80 +1667,70 @@ export const inventoryService = {
   async releaseReservedStock(
     productId: string,
     quantity: number,
-    businessUnitId: string,
+    businessUnitId?: string,
     variantId?: string
   ): Promise<any> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const payload = {
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const payload = cleanObject({
         productId,
         quantity,
-        businessUnitId: cleanBusinessUnitId,
+        businessUnitId: clean,
         variantId,
-      };
-      const cleanedPayload = cleanObject(payload);
-      const response = await api.post<any>('/inventory/release', cleanedPayload);
-      return response;
+      });
+
+      return api.post<any>('/inventory/release', payload);
     } catch (error: any) {
       console.error(
         `❌ Failed to release reserved stock for product ${productId}:`,
-        {
-          message: error?.response?.data?.message || error?.message,
-          status: error?.response?.status,
-          url: error?.config?.url,
-        }
+        errorShape(error)
       );
       throw error;
     }
   },
 
-  async transferStock(data: TransferStockData): Promise<any> {
+  async transferStock(data: TransferStockInput): Promise<any> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(data.businessUnitId);
-      const cleanData = { ...data, businessUnitId: cleanBusinessUnitId };
-      const cleanedData = cleanObject(cleanData);
-      const response = await api.post<any>('/inventory/transfer', cleanedData);
-      return response;
-    } catch (error: any) {
-      console.error('❌ Failed to transfer stock:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
+      const clean = resolveBusinessUnitId(data.businessUnitId);
+      const payload = cleanObject({
+        ...data,
+        businessUnitId: clean,
       });
+      return api.post<any>('/inventory/transfer', payload);
+    } catch (error: any) {
+      console.error('❌ Failed to transfer stock:', errorShape(error));
       throw error;
     }
   },
 
-  // ============================================
-  // EXPORT OPERATIONS
-  // ============================================
+  // ── EXPORT ─────────────────────────────────
 
   async exportInventory(
-    businessUnitId: string,
+    businessUnitId: string | undefined,
     format: ExportFormat = 'csv',
     filters?: InventorySearchFilters
   ): Promise<Blob> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const params: any = { businessUnitId: cleanBusinessUnitId, format };
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = { format };
+      if (clean) params.businessUnitId = clean;
       if (filters) Object.assign(params, filters);
 
-      const cleanedParams = cleanObject(params);
-      const queryString = new URLSearchParams(cleanedParams).toString();
-      const response = await api.download(`/inventory/export?${queryString}`);
-      return response;
+      const queryString = new URLSearchParams(
+        cleanObject(params) as any
+      ).toString();
+      return api.download(`/inventory/export?${queryString}`);
     } catch (error: any) {
-      console.error(`❌ Failed to export inventory as ${format}:`, {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        `❌ Failed to export inventory as ${format}:`,
+        errorShape(error)
+      );
       throw error;
     }
   },
 
   async exportInventoryToFile(
-    businessUnitId: string,
+    businessUnitId?: string,
     format: ExportFormat = 'json'
   ): Promise<{
     filePath: string;
@@ -2163,90 +1739,80 @@ export const inventoryService = {
     totalRecords: number;
   }> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
+      const clean = resolveBusinessUnitId(businessUnitId);
+      const params: any = { format };
+      if (clean) params.businessUnitId = clean;
+
       const response = await api.get<any>('/inventory/export/file', {
-        params: { businessUnitId: cleanBusinessUnitId, format },
+        params,
       });
-      return response?.data || response;
+      return unwrapData<any>(response) ?? response;
     } catch (error: any) {
-      console.error('❌ Failed to export inventory to file:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        '❌ Failed to export inventory to file:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  // ============================================
-  // SYNC OPERATIONS
-  // ============================================
+  // ── SYNC ───────────────────────────────────
 
   async syncInventoryFromProduct(
     productId: string,
-    businessUnitId: string
+    businessUnitId?: string
   ): Promise<any> {
     try {
-      const cleanBusinessUnitId = resolveBusinessUnitId(businessUnitId);
-      const response = await api.post<any>('/inventory/sync/product', {
-        productId,
-        businessUnitId: cleanBusinessUnitId,
-      });
-      return response;
+      const clean = resolveBusinessUnitId(businessUnitId);
+      return api.post<any>(
+        '/inventory/sync/product',
+        cleanObject({ productId, businessUnitId: clean })
+      );
     } catch (error: any) {
-      console.error('❌ Error syncing inventory from product:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        '❌ Error syncing inventory from product:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
   async syncProductFromInventory(inventoryId: string): Promise<any> {
     try {
-      const response = await api.post<any>(
-        `/inventory/${inventoryId}/sync/product`
-      );
-      return response;
+      return api.post<any>(`/inventory/${seg(inventoryId)}/sync/product`);
     } catch (error: any) {
-      console.error('❌ Error syncing product from inventory:', {
-        message: error?.response?.data?.message || error?.message,
-        status: error?.response?.status,
-        url: error?.config?.url,
-      });
+      console.error(
+        '❌ Error syncing product from inventory:',
+        errorShape(error)
+      );
       throw error;
     }
   },
 
-  // ============================================
-  // LEGACY / BACKWARD COMPATIBILITY
-  // ============================================
+  // ── LEGACY ALIASES ─────────────────────────
 
-  async getSummary(businessUnitId: string): Promise<InventorySummary> {
+  async getSummary(businessUnitId?: string): Promise<InventorySummary> {
     return this.getInventorySummary(businessUnitId);
   },
 
-  async getValue(businessUnitId: string): Promise<InventoryValue> {
+  async getValue(businessUnitId?: string): Promise<InventoryValue> {
     return this.getInventoryValue(businessUnitId);
   },
 
-  async getLowStock(businessUnitId: string): Promise<any[]> {
+  async getLowStock(businessUnitId?: string): Promise<FlatInventory[]> {
     return this.getLowStockItems(businessUnitId);
   },
 
-  async getOutOfStock(businessUnitId: string): Promise<any[]> {
+  async getOutOfStock(businessUnitId?: string): Promise<FlatInventory[]> {
     return this.getOutOfStockItems(businessUnitId);
   },
 
-  // ============================================
-  // UTILITY METHODS
-  // ============================================
+  // ── UTILITY ────────────────────────────────
 
-  getStockStatus(item: Inventory): string {
+  getStockStatus(item: FlatInventory): string {
     if (!item) return 'unknown';
     const available = item.available || 0;
-    const reorderPoint = item.reorderPoint || 5;
+    const reorderPoint = item.reorderPoint ?? item.reorderQuantity ?? 5;
 
     if (available <= 0) return 'out_of_stock';
     if (available <= reorderPoint) return 'low_stock';
@@ -2266,19 +1832,19 @@ export const inventoryService = {
     }
   },
 
-  isLowStock(item: Inventory): boolean {
+  isLowStock(item: FlatInventory): boolean {
     if (!item) return false;
     const available = item.available || 0;
-    const reorderPoint = item.reorderPoint || 5;
+    const reorderPoint = item.reorderPoint ?? item.reorderQuantity ?? 5;
     return available > 0 && available <= reorderPoint;
   },
 
-  isOutOfStock(item: Inventory): boolean {
+  isOutOfStock(item: FlatInventory): boolean {
     if (!item) return false;
     return (item.available || 0) <= 0;
   },
 
-  getStockPercentage(item: Inventory): number {
+  getStockPercentage(item: FlatInventory): number {
     if (!item) return 0;
     const maxStock = typeof item.maxStock === 'number' ? item.maxStock : 100;
     const available = typeof item.available === 'number' ? item.available : 0;
@@ -2287,5 +1853,3 @@ export const inventoryService = {
 };
 
 export default inventoryService;
-
-// ===== END PART 2 of 2 — FILE COMPLETE =====

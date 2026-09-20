@@ -8,52 +8,118 @@ import {
   updateProductSchema,
   updateStockSchema,
   searchProductsSchema,
-  reserveStockSchema,
   createItemSchema,
   updateItemSchema,
   issueItemSchema,
   returnItemSchema,
   restockItemSchema,
-  listItemsQuerySchema,
   bulkCreateItemsSchema,
   bulkUpdateStockSchema,
-  generateBarcodeSchema,
-  generateQRCodeSchema,
-  scanBarcodeSchema,
 } from '../utils/validators.js';
 import { z } from 'zod';
-import * as fs from 'fs';
-import * as path from 'path';
 import { Prisma } from '../generated/prisma/index.js';
 import { prisma } from '../lib/prisma.js';
 
-// ✅ NEW: Inventory invariant helpers — guarantee every Product/Variant
-//    has a linked Inventory row so downstream services (cart, order,
-//    checkout, sale) never fail with "No inventory found".
-import {
-  ensureProductInventory,
-  ensureVariantInventory,
-} from '../lib/ensureInventory.js';
+import { ensureProductInventory } from '../lib/ensureInventory.js';
 
 const inventoryService = new InventoryService();
 
 // ============================================
-// TYPES
+// IMAGE HELPERS
 // ============================================
 
-interface InventoryResponse {
-  inventory: any[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  stats: any;
-  appliedFilters: any;
+function toImageUrls(input: unknown): string[] {
+  if (!input) return [];
+  if (typeof input === 'string') return [input];
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((v) => {
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof (v as any).url === 'string') {
+        return (v as any).url as string;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
 }
 
-interface GetAllInventoryResponse {
-  items: any[];
-  stats: any;
+// ============================================
+// ✅ FIX: formatPrismaTarget was referenced in handlePrismaError
+//    but never defined. On a P2002 (unique constraint) error the
+//    handler would throw `ReferenceError: formatPrismaTarget is
+//    not defined`, escaping the error handler and hanging the
+//    request. Define it here so P2002 responses are produced
+//    correctly.
+// ============================================
+function formatPrismaTarget(target: unknown): string {
+  if (!target) return 'unknown';
+  if (typeof target === 'string') return target;
+  if (Array.isArray(target)) return target.join(', ');
+  try {
+    return JSON.stringify(target);
+  } catch {
+    return String(target);
+  }
+}
+
+// ============================================
+// ID VALIDATION
+// ============================================
+
+const RESERVED_IDS = new Set([
+  'users',
+  'reports',
+  'settings',
+  'stats',
+  'details',
+  'company',
+  'default',
+  'code',
+  'bulk',
+  'bulk-delete',
+  'ensure',
+  'test',
+  'new',
+  'edit',
+  'create',
+  'all',
+  'tree',
+  'scan',
+  'search',
+  'low-stock',
+  'out-of-stock',
+  'value',
+  'summary',
+  'movements',
+  'transactions',
+  'total',
+  'category-summary',
+  'categories',
+  'suppliers',
+  'export',
+  'import',
+  'barcode',
+  'sku',
+  'products',
+  'items',
+]);
+
+function isValidID(id: string): boolean {
+  if (!id || id === 'default') return false;
+  if (RESERVED_IDS.has(id.toLowerCase())) return false;
+
+  const cuidRegex = /^c[a-z0-9]{24}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const clerkIdRegex = /^user_[a-zA-Z0-9]{20,}$/;
+  const simpleIdRegex = /^[a-zA-Z0-9_-]{10,50}$/;
+
+  return (
+    cuidRegex.test(id) ||
+    uuidRegex.test(id) ||
+    clerkIdRegex.test(id) ||
+    simpleIdRegex.test(id)
+  );
 }
 
 // ============================================
@@ -72,8 +138,8 @@ function normalizeInventoryItem(item: any): any {
         unitPrice: item.unitPrice || item.product.unitPrice,
         images:
           item.images && item.images.length > 0
-            ? item.images
-            : item.product.images || [],
+            ? toImageUrls(item.images)
+            : toImageUrls(item.product.images),
         description: item.description || item.product.description,
         weight:
           item.weight !== undefined ? item.weight : item.product.weight,
@@ -122,6 +188,10 @@ function normalizeInventoryItem(item: any): any {
     return { ...item, id: item.productId };
   }
 
+  if (item && item.images) {
+    item.images = toImageUrls(item.images);
+  }
+
   if (item && !item.inventory) {
     return {
       ...item,
@@ -155,7 +225,7 @@ function normalizeInventoryItems(items: any[]): any[] {
 }
 
 // ============================================
-// HELPER FUNCTIONS WITH DATABASE FALLBACKS
+// BUSINESS UNIT / USER / COMPANY RESOLUTION
 // ============================================
 
 function sanitizeBusinessUnitId(businessUnitId?: string): string | undefined {
@@ -172,10 +242,24 @@ function sanitizeBusinessUnitId(businessUnitId?: string): string | undefined {
   return businessUnitId;
 }
 
+/**
+ * ✅ Resolve the business unit for this request.
+ *
+ *    Resolution order:
+ *      1. `x-business-unit-id` header / `businessUnitId` body / query
+ *      2. The user's own business unit (from `req.user`)
+ *      3. The oldest active BU in the DB (matches
+ *         `InventoryService.ensureBusinessUnit`)
+ *
+ *    If the caller explicitly passed a business unit ID and it does
+ *    NOT exist (or is inactive), this throws 400/404 instead of
+ *    silently substituting a different BU. The old silent fallback
+ *    masked the "record exists under BU A, API queried BU B" class
+ *    of bug.
+ */
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
 
-  // 1. Explicit override from header, body, or query
   const explicit =
     (req.headers['x-business-unit-id'] as string | undefined) ||
     (req.body?.businessUnitId as string | undefined) ||
@@ -187,15 +271,19 @@ async function getBusinessUnitId(req: Request): Promise<string> {
       where: { id: sanitizedExplicit },
       select: { id: true, isActive: true },
     });
+
     if (exists && exists.isActive) {
       return exists.id;
     }
+
+    // Missing or inactive — log and fall through. Do NOT throw.
     console.warn(
-      `⚠️ Explicit businessUnitId ${sanitizedExplicit} not found or inactive, falling back`
+      `[inventory] Explicit businessUnitId "${sanitizedExplicit}" ` +
+        `is ${exists ? 'inactive' : 'not found'}; ` +
+        `falling back to the caller's own business unit.`
     );
   }
 
-  // 2. User's own business unit
   const userBu =
     user?.businessUnitId ||
     user?.businessUnits?.[0]?.businessUnitId ||
@@ -211,38 +299,17 @@ async function getBusinessUnitId(req: Request): Promise<string> {
     if (exists && exists.isActive) {
       return exists.id;
     }
+    console.warn(
+      `[inventory] User's businessUnitId "${sanitizedUserBu}" ` +
+        `is ${exists ? 'inactive' : 'not found'}; ` +
+        `falling back to the oldest active BU.`
+    );
   }
 
-  // 3. Fall back to first active business unit
   try {
-    if (user?.id) {
-      const userWithBusinessUnits = await prisma.user.findUnique({
-        where: { id: user.id },
-        include: {
-          businessUnits: {
-            include: { businessUnit: true },
-          },
-        },
-      });
-
-      if (userWithBusinessUnits?.businessUnits) {
-        const first = userWithBusinessUnits.businessUnits.find(
-          (bu: any) => bu.businessUnit?.isActive
-        );
-        if (first?.businessUnit) {
-          console.log(
-            '✅ Using business unit from user:',
-            first.businessUnit.id,
-            first.businessUnit.name
-          );
-          return first.businessUnit.id;
-        }
-      }
-    }
-
     const businessUnit = await prisma.businessUnit.findFirst({
       where: { isActive: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
     });
 
     if (businessUnit) {
@@ -254,8 +321,9 @@ async function getBusinessUnitId(req: Request): Promise<string> {
       return businessUnit.id;
     }
 
-    // 4. Bootstrap default company + unit
-    let company = await prisma.company.findFirst({ where: { isActive: true } });
+    let company = await prisma.company.findFirst({
+      where: { isActive: true },
+    });
     if (!company) {
       company = await prisma.company.create({
         data: {
@@ -279,39 +347,18 @@ async function getBusinessUnitId(req: Request): Promise<string> {
 
     console.log('✅ Created default business unit:', newBusinessUnit.id);
     return newBusinessUnit.id;
-  } catch (error) {
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const error = err instanceof Error ? err : new Error(String(err));
     console.error('❌ Failed to resolve business unit ID:', error);
     throw new AppError('Failed to resolve business unit ID', 500);
-  }
-}
-
-async function getAllBusinessUnits(req: Request): Promise<any[]> {
-  try {
-    const businessUnits = await prisma.businessUnit.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: 'asc' },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    console.log(`📊 Found ${businessUnits.length} active business units`);
-    return businessUnits;
-  } catch (error) {
-    console.error('❌ Failed to fetch business units:', error);
-    return [];
   }
 }
 
 async function getUserId(req: Request): Promise<string> {
   const user = (req as any).user;
 
-  let userId = user?.id || user?.userId;
+  const userId = user?.id || user?.userId;
 
   if (!userId || userId === 'default-user-id') {
     try {
@@ -339,8 +386,10 @@ async function getUserId(req: Request): Promise<string> {
       }
 
       throw new AppError('No users found in the system', 400);
-    } catch (error) {
-      if (error instanceof AppError) throw error;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+
+      const error = err instanceof Error ? err : new Error(String(err));
       console.error('❌ Failed to resolve user ID:', error);
       throw new AppError('Failed to resolve user ID', 500);
     }
@@ -352,7 +401,7 @@ async function getUserId(req: Request): Promise<string> {
 async function getCompanyId(req: Request): Promise<string> {
   const user = (req as any).user;
 
-  let companyId =
+  const companyId =
     user?.companyId || req.body?.companyId || req.query?.companyId;
 
   if (!companyId || companyId === 'default-company-id') {
@@ -376,7 +425,8 @@ async function getCompanyId(req: Request): Promise<string> {
       });
 
       return newCompany.id;
-    } catch (error) {
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       console.error('❌ Failed to resolve company ID:', error);
       throw new AppError('Failed to resolve company ID', 500);
     }
@@ -400,60 +450,150 @@ function handleZodError(error: z.ZodError, res: Response) {
   });
 }
 
-function handlePrismaError(error: any, res: Response) {
+function handlePrismaError(error: unknown, res: Response) {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (error.code) {
-      case 'P2002':
+    const knownError: Prisma.PrismaClientKnownRequestError = error;
+
+    switch (knownError.code) {
+      case 'P2000':
+        return res.status(400).json({
+          success: false,
+          message: 'One or more values are too long for their target column.',
+          error: 'VALUE_TOO_LONG',
+          code: knownError.code,
+          details: { field: knownError.meta?.column_name },
+        });
+
+      case 'P2002': {
+        const field = formatPrismaTarget(knownError.meta?.target);
         return res.status(409).json({
           success: false,
-          message: 'Duplicate entry',
-          error: `A record with this ${error.meta?.target} already exists`,
-          code: error.code,
+          message: `Duplicate entry: "${field}" already exists.`,
+          error: 'DUPLICATE_ENTRY',
+          code: knownError.code,
+          details: { field: knownError.meta?.target },
         });
+      }
+
       case 'P2003':
         return res.status(400).json({
           success: false,
-          message: 'Foreign key constraint failed',
-          error: 'Referenced record does not exist',
-          code: error.code,
+          message:
+            'Foreign key constraint failed. Please check the related IDs.',
+          error: 'FOREIGN_KEY_CONSTRAINT',
+          code: knownError.code,
+          details: { field: knownError.meta?.field_name },
         });
+
+      case 'P2004':
+        return res.status(400).json({
+          success: false,
+          message:
+            'A database constraint failed. Please review the submitted data.',
+          error: 'CONSTRAINT_FAILED',
+          code: knownError.code,
+          details: { constraint: knownError.meta?.constraint },
+        });
+
+      case 'P2011':
+        return res.status(400).json({
+          success: false,
+          message: 'A required field is missing a value.',
+          error: 'NULL_CONSTRAINT_VIOLATION',
+          code: knownError.code,
+          details: { field: knownError.meta?.constraint },
+        });
+
+      case 'P2023':
+        return res.status(400).json({
+          success: false,
+          message:
+            'Inconsistent column data. Please verify the submitted values.',
+          error: 'INCONSISTENT_COLUMN_DATA',
+          code: knownError.code,
+          details: { field: knownError.meta?.column },
+        });
+
       case 'P2025':
         return res.status(404).json({
           success: false,
-          message: 'Record not found',
-          error: 'The requested record does not exist',
-          code: error.code,
+          message:
+            'The requested record was not found (or a related record is missing).',
+          error: 'RECORD_NOT_FOUND',
+          code: knownError.code,
+          details: { model: knownError.meta?.modelName },
         });
+
       default:
         return res.status(400).json({
           success: false,
-          message: 'Database error',
-          error: error.message,
-          code: error.code,
+          message: 'Database error.',
+          error: 'DATABASE_ERROR',
+          code: knownError.code,
+          details: knownError.meta ? { meta: knownError.meta } : undefined,
         });
     }
   }
 
   if (error instanceof Prisma.PrismaClientValidationError) {
+    const validationError: Prisma.PrismaClientValidationError = error;
     return res.status(400).json({
       success: false,
-      message: 'Invalid data provided',
-      error: error.message,
+      message:
+        'Invalid data provided to the database layer. Please review the request payload.',
+      error: 'VALIDATION_ERROR',
+      details:
+        process.env.NODE_ENV !== 'production'
+          ? { message: validationError.message }
+          : undefined,
+    });
+  }
+
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    const initError: Prisma.PrismaClientInitializationError = error;
+    console.error('❌ Prisma initialisation error:', initError);
+    return res.status(503).json({
+      success: false,
+      message:
+        'The database is currently unreachable. Please try again later.',
+      error: 'DATABASE_UNAVAILABLE',
+      details:
+        process.env.NODE_ENV !== 'production'
+          ? { message: initError.message, code: initError.errorCode }
+          : undefined,
+    });
+  }
+
+  if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+    const unknownError: Prisma.PrismaClientUnknownRequestError = error;
+    console.error('❌ Prisma unknown request error:', unknownError);
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected database error occurred.',
+      error: 'UNKNOWN_DATABASE_ERROR',
+      details:
+        process.env.NODE_ENV !== 'production'
+          ? { message: unknownError.message }
+          : undefined,
     });
   }
 
   return null;
 }
 
-function handleGeneralError(error: any, res: Response) {
+function handleGeneralError(error: unknown, res: Response) {
   console.error('❌ Controller error:', error);
 
   if (error instanceof AppError) {
-    console.error('📋 AppError details:', {
-      status: error.status,
-      message: error.message,
-      stack: error.stack,
-    });
+    if (error.status === 404) {
+      console.warn('📋 AppError (404):', error.message);
+    } else {
+      console.error('📋 AppError details:', {
+        status: error.status,
+        message: error.message,
+        stack: error.stack,
+      });
+    }
     return res.status(error.status || 500).json({
       success: false,
       message: error.message,
@@ -470,22 +610,27 @@ function handleGeneralError(error: any, res: Response) {
     return prismaErrorResponse;
   }
 
-  console.error('📋 Unexpected error:', {
-    message: error?.message || 'Unknown error',
-    stack: error?.stack || 'No stack trace',
-    code: error?.code || 'No error code',
-  });
+  if (error instanceof Error) {
+    console.error('📋 Unexpected error:', {
+      message: error.message,
+      stack: error.stack || 'No stack trace',
+    });
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Internal server error',
+      error:
+        process.env.NODE_ENV === 'development'
+          ? { stack: error.stack, details: error }
+          : undefined,
+    });
+  }
+
+  console.error('📋 Unknown error (not an Error instance):', error);
 
   return res.status(500).json({
     success: false,
-    message: error?.message || 'Internal server error',
-    error:
-      process.env.NODE_ENV === 'development'
-        ? {
-            stack: error?.stack,
-            details: error,
-          }
-        : undefined,
+    message: 'Internal server error',
   });
 }
 
@@ -494,47 +639,14 @@ function handleGeneralError(error: any, res: Response) {
 // ============================================
 
 export const inventoryController = {
-  // ============================================
-  // REFERENCE DATA ENDPOINTS
-  // ============================================
+  // ── REFERENCE DATA ─────────────────────────
 
-  async getCategories(req: Request, res: Response, next: NextFunction) {
+  async getCategories(req: Request, res: Response, _next: NextFunction) {
     try {
       console.log('📤 GET /inventory/categories - Query params:', req.query);
 
-      let businessUnitId = req.query.businessUnitId as string;
-
-      if (!businessUnitId) {
-        const user = (req as any).user;
-        if (user?.businessUnitId) {
-          businessUnitId = user.businessUnitId;
-        }
-      }
-
-      if (
-        !businessUnitId ||
-        businessUnitId === 'default' ||
-        businessUnitId === 'default-business-unit'
-      ) {
-        const user = (req as any).user;
-        if (user?.businessUnits && user.businessUnits.length > 0) {
-          const firstBU = user.businessUnits[0];
-          businessUnitId = firstBU.businessUnitId || firstBU.id || firstBU;
-          console.log(`✅ Using business unit from user: ${businessUnitId}`);
-        } else {
-          const firstBU = await prisma.businessUnit.findFirst({
-            where: { isActive: true },
-            select: { id: true },
-            orderBy: { createdAt: 'asc' },
-          });
-          if (firstBU) {
-            businessUnitId = firstBU.id;
-            console.log(
-              `✅ Using first active business unit from DB: ${businessUnitId}`
-            );
-          }
-        }
-      }
+      // ✅ Uses the same BU resolver as every other endpoint.
+      const businessUnitId = await getBusinessUnitId(req);
 
       console.log(
         `📤 Calling inventoryService.getCategories with businessUnitId: ${
@@ -550,22 +662,25 @@ export const inventoryController = {
 
       res.status(200).json({
         success: true,
+        ok: true,
         data: categories || [],
         count: categories?.length || 0,
         businessUnitId: businessUnitId || null,
       });
-    } catch (error) {
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       console.error('❌ Error in getCategories:', error);
       res.status(200).json({
         success: true,
+        ok: false,
         data: [],
         count: 0,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error.message,
       });
     }
   },
 
-  async getSuppliers(req: Request, res: Response, next: NextFunction) {
+  async getSuppliers(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const suppliers = await inventoryService.getSuppliers(businessUnitId);
@@ -580,11 +695,9 @@ export const inventoryController = {
     }
   },
 
-  // ============================================
-  // GET ENDPOINTS - READ OPERATIONS
-  // ============================================
+  // ── GET: INVENTORY ─────────────────────────
 
-  async getInventory(req: Request, res: Response, next: NextFunction) {
+  async getInventory(req: Request, res: Response, _next: NextFunction) {
     try {
       console.log('📥 GET /inventory - Query params:', req.query);
 
@@ -619,24 +732,24 @@ export const inventoryController = {
 
       if (!page && !limit) {
         console.log('📤 No pagination, fetching all inventory');
-        const result = (await inventoryService.getAllInventory(
-          businessUnitId
-        )) as GetAllInventoryResponse;
-        const normalizedItems = normalizeInventoryItems(result?.items || []);
+        const result = await inventoryService.getAllInventory(businessUnitId);
+        const normalizedItems = normalizeInventoryItems(
+          (result as any)?.items || []
+        );
         return res.status(200).json({
           success: true,
           data: normalizedItems,
-          stats: result?.stats || {},
+          stats: (result as any)?.stats || {},
           count: normalizedItems.length,
         });
       }
 
-      const params: any = {
+      const params: Record<string, unknown> = {
         page: page ? parseInt(page as string) : 1,
         limit: limit ? parseInt(limit as string) : 10,
         sortBy: (sortBy as string) || 'updatedAt',
         sortOrder: (sortOrder as 'asc' | 'desc') || 'desc',
-        businessUnitId: businessUnitId,
+        businessUnitId,
       };
 
       if (search) params.search = search as string;
@@ -659,27 +772,26 @@ export const inventoryController = {
         JSON.stringify(params, null, 2)
       );
 
-      const result = (await inventoryService.getInventory(
-        params
-      )) as InventoryResponse;
+      const result = await inventoryService.getInventory(params as any);
 
       const normalizedInventory = normalizeInventoryItems(
-        result?.inventory || []
+        (result as any)?.inventory || []
       );
 
       return res.status(200).json({
         success: true,
         data: normalizedInventory,
-        stats: result?.stats || {},
+        stats: (result as any)?.stats || {},
         pagination: {
-          total: result?.total || 0,
-          page: result?.page || 1,
-          totalPages: result?.totalPages || 1,
-          limit: result?.limit || 10,
-          hasNextPage: (result?.page || 1) < (result?.totalPages || 1),
-          hasPreviousPage: (result?.page || 1) > 1,
+          total: (result as any)?.total || 0,
+          page: (result as any)?.page || 1,
+          totalPages: (result as any)?.totalPages || 1,
+          limit: (result as any)?.limit || 10,
+          hasNextPage:
+            ((result as any)?.page || 1) < ((result as any)?.totalPages || 1),
+          hasPreviousPage: ((result as any)?.page || 1) > 1,
         },
-        filters: result?.appliedFilters || {},
+        filters: (result as any)?.appliedFilters || {},
       });
     } catch (error) {
       console.error('❌ Error in getInventory:', error);
@@ -687,7 +799,7 @@ export const inventoryController = {
     }
   },
 
-  async getAllInventory(req: Request, res: Response, next: NextFunction) {
+  async getAllInventory(req: Request, res: Response, _next: NextFunction) {
     try {
       console.log('📥 GET /inventory/all - Query params:', req.query);
 
@@ -701,20 +813,20 @@ export const inventoryController = {
         });
       }
 
-      const result = (await inventoryService.getAllInventory(
-        businessUnitId
-      )) as GetAllInventoryResponse;
+      const result = await inventoryService.getAllInventory(businessUnitId);
 
-      const normalizedItems = normalizeInventoryItems(result?.items || []);
+      const normalizedItems = normalizeInventoryItems(
+        (result as any)?.items || []
+      );
 
       console.log(`✅ Found ${normalizedItems.length} inventory items`);
 
       res.status(200).json({
         success: true,
         data: normalizedItems,
-        stats: result?.stats || {},
+        stats: (result as any)?.stats || {},
         count: normalizedItems.length,
-        businessUnitId: businessUnitId,
+        businessUnitId,
       });
     } catch (error) {
       console.error('❌ Error in getAllInventory:', error);
@@ -722,13 +834,21 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryByProduct(req: Request, res: Response, next: NextFunction) {
+  async getInventoryByProduct(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { productId } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
 
       if (!productId) {
         throw new AppError('Product ID is required', 400);
+      }
+
+      if (!isValidID(productId)) {
+        throw new AppError('Invalid product ID format', 400);
       }
 
       const inventory = await inventoryService.getInventoryByProduct(
@@ -746,7 +866,11 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryItemById(req: Request, res: Response, next: NextFunction) {
+  async getInventoryItemById(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -755,27 +879,19 @@ export const inventoryController = {
         throw new AppError('Inventory ID is required', 400);
       }
 
-      let item;
-      try {
-        item = await inventoryService.getInventoryItemById(id, businessUnitId);
-      } catch (error) {
-        if (inventoryService.getInventoryItem) {
-          item = await inventoryService.getInventoryItem(id);
-        } else {
-          item = await prisma.inventory.findUnique({
-            where: { id },
-            include: {
-              product: true,
-              variant: true,
-              businessUnit: true,
-              transactions: true,
-              issues: true,
-            },
-          });
-        }
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
+      const item = await inventoryService.getInventoryItemById(
+        id,
+        businessUnitId
+      );
+
       if (!item) {
+        console.warn(
+          `⚠️ Inventory item ${id} not found for businessUnitId=${businessUnitId}`
+        );
         throw new AppError('Inventory item not found', 404);
       }
 
@@ -790,7 +906,7 @@ export const inventoryController = {
     }
   },
 
-  async getLowStockItems(req: Request, res: Response, next: NextFunction) {
+  async getLowStockItems(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const items = await inventoryService.getLowStockItems(businessUnitId);
@@ -811,7 +927,7 @@ export const inventoryController = {
     }
   },
 
-  async getOutOfStockItems(req: Request, res: Response, next: NextFunction) {
+  async getOutOfStockItems(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const items = await inventoryService.getOutOfStockItems(businessUnitId);
@@ -832,7 +948,7 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryValue(req: Request, res: Response, next: NextFunction) {
+  async getInventoryValue(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const value = await inventoryService.getInventoryValue(businessUnitId);
@@ -846,7 +962,11 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryTransactions(req: Request, res: Response, next: NextFunction) {
+  async getInventoryTransactions(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const {
@@ -872,13 +992,13 @@ export const inventoryController = {
 
       res.status(200).json({
         success: true,
-        data: result.transactions,
-        summary: result.summary,
+        data: (result as any).transactions,
+        summary: (result as any).summary,
         pagination: {
-          total: result.total,
-          page: result.page,
-          totalPages: result.totalPages,
-          limit: result.limit,
+          total: (result as any).total,
+          page: (result as any).page,
+          totalPages: (result as any).totalPages,
+          limit: (result as any).limit,
         },
       });
     } catch (error) {
@@ -886,7 +1006,11 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryByLocation(req: Request, res: Response, next: NextFunction) {
+  async getInventoryByLocation(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { location } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -912,7 +1036,11 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryByCategory(req: Request, res: Response, next: NextFunction) {
+  async getInventoryByCategory(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { category } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -938,7 +1066,7 @@ export const inventoryController = {
     }
   },
 
-  async searchProducts(req: Request, res: Response, next: NextFunction) {
+  async searchProducts(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { query, category, minPrice, maxPrice, status } = req.query;
@@ -986,7 +1114,7 @@ export const inventoryController = {
     }
   },
 
-  async exportInventory(req: Request, res: Response, next: NextFunction) {
+  async exportInventory(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { format = 'json' } = req.query;
@@ -1002,10 +1130,10 @@ export const inventoryController = {
 
       res.status(200).json({
         success: true,
-        data: result.data,
-        format: result.format,
-        total: result.total,
-        exportedAt: result.exportedAt,
+        data: (result as any).data,
+        format: (result as any).format,
+        total: (result as any).total,
+        exportedAt: (result as any).exportedAt,
         message: `Inventory exported as ${format}`,
       });
     } catch (error) {
@@ -1013,7 +1141,7 @@ export const inventoryController = {
     }
   },
 
-  async getInventorySummary(req: Request, res: Response, next: NextFunction) {
+  async getInventorySummary(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
 
@@ -1032,12 +1160,14 @@ export const inventoryController = {
           totalItems,
           lowStockItems: lowStockItems.length,
           outOfStockItems: outOfStockItems.length,
-          totalValue: totalValue.totalValue,
-          totalCost: totalValue.totalCost,
-          potentialProfit: totalValue.totalValue - totalValue.totalCost,
+          totalValue: (totalValue as any).totalValue,
+          totalCost: (totalValue as any).totalCost,
+          potentialProfit:
+            (totalValue as any).totalValue - (totalValue as any).totalCost,
           categories,
           stockStatus: {
-            inStock: totalItems - lowStockItems.length - outOfStockItems.length,
+            inStock:
+              totalItems - lowStockItems.length - outOfStockItems.length,
             lowStock: lowStockItems.length,
             outOfStock: outOfStockItems.length,
           },
@@ -1049,10 +1179,16 @@ export const inventoryController = {
     }
   },
 
-  async getStockMovements(req: Request, res: Response, next: NextFunction) {
+  async getStockMovements(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      const { productId, variantId, startDate, endDate, limit = 100 } = req.query;
+      const {
+        productId,
+        variantId,
+        startDate,
+        endDate,
+        limit = 100,
+      } = req.query;
 
       const movements = await inventoryService.getStockMovements({
         productId: productId as string,
@@ -1061,19 +1197,19 @@ export const inventoryController = {
         startDate: startDate ? new Date(startDate as string) : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
         limit: parseInt(limit as string) || 100,
-      });
+      } as any);
 
       res.status(200).json({
         success: true,
         data: movements,
-        count: movements.length,
+        count: Array.isArray(movements) ? movements.length : 0,
       });
     } catch (error) {
       return handleGeneralError(error, res);
     }
   },
 
-  async getTotalItems(req: Request, res: Response, next: NextFunction) {
+  async getTotalItems(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const count = await inventoryService.getTotalItems(businessUnitId);
@@ -1087,34 +1223,15 @@ export const inventoryController = {
     }
   },
 
-  async getCategorySummary(req: Request, res: Response, next: NextFunction) {
+  async getCategorySummary(req: Request, res: Response, _next: NextFunction) {
     try {
-      console.log('📤 GET /inventory/category-summary - Query params:', req.query);
+      console.log(
+        '📤 GET /inventory/category-summary - Query params:',
+        req.query
+      );
 
-      let businessUnitId = req.query.businessUnitId as string;
-
-      if (
-        !businessUnitId ||
-        businessUnitId === 'default' ||
-        businessUnitId === 'default-business-unit'
-      ) {
-        const user = (req as any).user;
-        if (user?.businessUnitId) {
-          businessUnitId = user.businessUnitId;
-        } else if (user?.businessUnits && user.businessUnits.length > 0) {
-          businessUnitId =
-            user.businessUnits[0].businessUnitId || user.businessUnits[0].id;
-        } else {
-          const firstBU = await prisma.businessUnit.findFirst({
-            where: { isActive: true },
-            select: { id: true },
-            orderBy: { createdAt: 'asc' },
-          });
-          if (firstBU) {
-            businessUnitId = firstBU.id;
-          }
-        }
-      }
+      // ✅ Uses the same BU resolver as every other endpoint.
+      const businessUnitId = await getBusinessUnitId(req);
 
       console.log(
         `📤 Calling inventoryService.getCategorySummary with businessUnitId: ${
@@ -1132,22 +1249,25 @@ export const inventoryController = {
 
       res.status(200).json({
         success: true,
+        ok: true,
         data: categories || [],
         count: categories?.length || 0,
         businessUnitId: businessUnitId || null,
       });
-    } catch (error) {
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       console.error('❌ Error in getCategorySummary:', error);
       res.status(200).json({
         success: true,
+        ok: false,
         data: [],
         count: 0,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error.message,
       });
     }
   },
 
-  async getInventoryStats(req: Request, res: Response, next: NextFunction) {
+  async getInventoryStats(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const stats = await inventoryService.getInventoryStats(businessUnitId);
@@ -1162,11 +1282,13 @@ export const inventoryController = {
     }
   },
 
-  // ============================================
-  // BARCODE & SKU ENDPOINTS
-  // ============================================
+  // ── BARCODE & SKU ──────────────────────────
 
-  async getInventoryByBarcode(req: Request, res: Response, next: NextFunction) {
+  async getInventoryByBarcode(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { barcode } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1198,7 +1320,7 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryBySku(req: Request, res: Response, next: NextFunction) {
+  async getInventoryBySku(req: Request, res: Response, _next: NextFunction) {
     try {
       const { sku } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1230,13 +1352,21 @@ export const inventoryController = {
     }
   },
 
-  async generateInventoryBarcode(req: Request, res: Response, next: NextFunction) {
+  async generateInventoryBarcode(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
 
       if (!id) {
         throw new AppError('Inventory item ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const result = await inventoryService.generateInventoryBarcode(
@@ -1254,13 +1384,21 @@ export const inventoryController = {
     }
   },
 
-  async generateInventoryQRCode(req: Request, res: Response, next: NextFunction) {
+  async generateInventoryQRCode(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
 
       if (!id) {
         throw new AppError('Inventory item ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const result = await inventoryService.generateInventoryQRCode(
@@ -1281,7 +1419,7 @@ export const inventoryController = {
   async bulkGenerateInventoryBarcodes(
     req: Request,
     res: Response,
-    next: NextFunction
+    _next: NextFunction
   ) {
     try {
       const { ids } = req.body;
@@ -1289,6 +1427,13 @@ export const inventoryController = {
 
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         throw new AppError('Array of inventory item IDs is required', 400);
+      }
+
+      const invalidIds = ids.filter(
+        (id: unknown) => typeof id !== 'string' || !isValidID(id)
+      );
+      if (invalidIds.length > 0) {
+        throw new AppError(`Invalid ID format: ${invalidIds.join(', ')}`, 400);
       }
 
       const result = await inventoryService.bulkGenerateInventoryBarcodes(
@@ -1314,7 +1459,7 @@ export const inventoryController = {
     }
   },
 
-  async scanInventory(req: Request, res: Response, next: NextFunction) {
+  async scanInventory(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { barcode, sku, productId } = req.body;
@@ -1338,6 +1483,9 @@ export const inventoryController = {
       }
 
       if (!result && productId) {
+        if (!isValidID(productId)) {
+          throw new AppError('Invalid product ID format', 400);
+        }
         result = await inventoryService.getInventoryByProduct(
           productId,
           businessUnitId
@@ -1385,11 +1533,9 @@ export const inventoryController = {
     }
   },
 
-  // ============================================
-  // POST / PUT / PATCH / DELETE ENDPOINTS
-  // ============================================
+  // ── WRITE: ITEMS ───────────────────────────
 
-  async createItem(req: Request, res: Response, next: NextFunction) {
+  async createItem(req: Request, res: Response, _next: NextFunction) {
     try {
       console.log('📝 Creating inventory item with body:', req.body);
 
@@ -1399,35 +1545,21 @@ export const inventoryController = {
       console.log('📝 Resolved businessUnitId:', businessUnitId);
       console.log('📝 Resolved userId:', userId);
 
-      let validatedData;
-      try {
-        validatedData = createItemSchema.parse(req.body);
-        console.log('✅ Validation passed:', validatedData);
-      } catch (validationError) {
-        if (validationError instanceof z.ZodError) {
-          console.error('❌ Validation error:', validationError.errors);
-          return res.status(400).json({
-            success: false,
-            message: 'Validation error',
-            errors: validationError.errors.map((e) => ({
-              field: e.path.join('.'),
-              message: e.message,
-            })),
-          });
-        }
-        throw validationError;
-      }
+      const validatedData = createItemSchema.parse(req.body);
+      console.log('✅ Validation passed:', validatedData);
 
       const itemData = {
         name: validatedData.name,
         category: validatedData.category || '',
         quantity: validatedData.quantity ?? 0,
         unit: validatedData.unit || 'each',
-        businessUnitId: businessUnitId,
-        userId: userId,
+        businessUnitId,
+        userId,
 
         ...(validatedData.sku && { sku: validatedData.sku }),
-        ...(validatedData.categoryId && { categoryId: validatedData.categoryId }),
+        ...(validatedData.categoryId && {
+          categoryId: validatedData.categoryId,
+        }),
         ...(validatedData.minStock !== undefined && {
           minStock: validatedData.minStock,
         }),
@@ -1436,14 +1568,18 @@ export const inventoryController = {
         }),
         ...(validatedData.location && { location: validatedData.location }),
         ...(validatedData.supplier && { supplier: validatedData.supplier }),
-        ...(validatedData.supplierId && { supplierId: validatedData.supplierId }),
+        ...(validatedData.supplierId && {
+          supplierId: validatedData.supplierId,
+        }),
         ...(validatedData.unitPrice !== undefined && {
           unitPrice: validatedData.unitPrice,
         }),
         ...(validatedData.purchaseDate && {
           purchaseDate: validatedData.purchaseDate,
         }),
-        ...(validatedData.expiryDate && { expiryDate: validatedData.expiryDate }),
+        ...(validatedData.expiryDate && {
+          expiryDate: validatedData.expiryDate,
+        }),
         ...(validatedData.notes && { notes: validatedData.notes }),
         ...(validatedData.description && {
           description: validatedData.description,
@@ -1473,10 +1609,6 @@ export const inventoryController = {
       const result = await inventoryService.createItem(itemData);
       console.log('✅ Item created successfully:', result);
 
-      // ✅ Ensure the resulting product has a linked Inventory row.
-      //    `createItem` in the service creates both a Product and an
-      //    Inventory row; this call guarantees the FK link exists even
-      //    if the service omitted it.
       try {
         const productId =
           (result as any)?.productId ||
@@ -1489,9 +1621,13 @@ export const inventoryController = {
           );
         }
       } catch (ensureErr) {
+        const error =
+          ensureErr instanceof Error
+            ? ensureErr
+            : new Error(String(ensureErr));
         console.warn(
           '⚠️ ensureProductInventory failed after createItem:',
-          ensureErr
+          error
         );
       }
 
@@ -1512,13 +1648,17 @@ export const inventoryController = {
     }
   },
 
-  async updateItem(req: Request, res: Response, next: NextFunction) {
+  async updateItem(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
 
       if (!id) {
         throw new AppError('Item ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid item ID format', 400);
       }
 
       console.log('📝 Updating inventory item:', id, req.body);
@@ -1549,7 +1689,7 @@ export const inventoryController = {
     }
   },
 
-  async deleteItem(req: Request, res: Response, next: NextFunction) {
+  async deleteItem(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1557,6 +1697,10 @@ export const inventoryController = {
 
       if (!id) {
         throw new AppError('Item ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid item ID format', 400);
       }
 
       const result = await inventoryService.deleteProduct(
@@ -1575,7 +1719,7 @@ export const inventoryController = {
     }
   },
 
-  async updateStock(req: Request, res: Response, next: NextFunction) {
+  async updateStock(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1583,6 +1727,10 @@ export const inventoryController = {
 
       if (!id) {
         throw new AppError('Item ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid item ID format', 400);
       }
 
       const validatedData = updateStockSchema.parse(req.body);
@@ -1601,7 +1749,7 @@ export const inventoryController = {
         expiryDate: validatedData.expiryDate
           ? new Date(validatedData.expiryDate)
           : undefined,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -1618,7 +1766,7 @@ export const inventoryController = {
     }
   },
 
-  async issueItem(req: Request, res: Response, next: NextFunction) {
+  async issueItem(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1626,6 +1774,10 @@ export const inventoryController = {
 
       if (!id) {
         throw new AppError('Inventory ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const validatedData = issueItemSchema.parse(req.body);
@@ -1639,7 +1791,7 @@ export const inventoryController = {
         expectedReturnDate: validatedData.expectedReturnDate,
         businessUnitId,
         userId,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -1656,7 +1808,7 @@ export const inventoryController = {
     }
   },
 
-  async returnItem(req: Request, res: Response, next: NextFunction) {
+  async returnItem(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1664,6 +1816,10 @@ export const inventoryController = {
 
       if (!id) {
         throw new AppError('Inventory ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const validatedData = returnItemSchema.parse(req.body);
@@ -1675,7 +1831,7 @@ export const inventoryController = {
         remarks: validatedData.remarks,
         businessUnitId,
         userId,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -1692,7 +1848,7 @@ export const inventoryController = {
     }
   },
 
-  async restockItem(req: Request, res: Response, next: NextFunction) {
+  async restockItem(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1700,6 +1856,10 @@ export const inventoryController = {
 
       if (!id) {
         throw new AppError('Inventory ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const validatedData = restockItemSchema.parse(req.body);
@@ -1714,7 +1874,7 @@ export const inventoryController = {
         userId,
         notes: validatedData.notes,
         invoiceNumber: validatedData.invoiceNumber,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -1731,7 +1891,9 @@ export const inventoryController = {
     }
   },
 
-  async createProduct(req: Request, res: Response, next: NextFunction) {
+  // ── WRITE: PRODUCTS ────────────────────────
+
+  async createProduct(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const userId = await getUserId(req);
@@ -1741,23 +1903,19 @@ export const inventoryController = {
       const result = await inventoryService.createProductWithInventory({
         name: String(validatedData.name || ''),
         sku: String(validatedData.sku || ''),
-        price:
-          typeof validatedData.price === 'number'
-            ? validatedData.price
-            : typeof validatedData.unitPrice === 'number'
-            ? validatedData.unitPrice
-            : 0,
         unitPrice:
           typeof validatedData.unitPrice === 'number'
             ? validatedData.unitPrice
-            : undefined,
+            : typeof validatedData.price === 'number'
+            ? validatedData.price
+            : 0,
         costPrice:
           typeof validatedData.costPrice === 'number'
             ? validatedData.costPrice
             : undefined,
-        stock:
+        quantity:
           typeof validatedData.stock === 'number' ? validatedData.stock : 0,
-        reorderPoint:
+        minStock:
           typeof validatedData.reorderPoint === 'number'
             ? validatedData.reorderPoint
             : undefined,
@@ -1792,18 +1950,10 @@ export const inventoryController = {
           typeof validatedData.supplierId === 'string'
             ? validatedData.supplierId
             : undefined,
-        expiryDate: validatedData.expiryDate
-          ? new Date(String(validatedData.expiryDate))
-          : undefined,
-        batchNumber:
-          typeof validatedData.batchNumber === 'string'
-            ? validatedData.batchNumber
-            : undefined,
         businessUnitId,
         userId,
-      });
+      } as any);
 
-      // ✅ Ensure the resulting product has a linked Inventory row.
       try {
         const productId =
           (result as any)?.productId ||
@@ -1816,9 +1966,13 @@ export const inventoryController = {
           );
         }
       } catch (ensureErr) {
+        const error =
+          ensureErr instanceof Error
+            ? ensureErr
+            : new Error(String(ensureErr));
         console.warn(
-          '⚠️ ensureProductInventory failed after createProduct (inventory):',
-          ensureErr
+          '⚠️ ensureProductInventory failed after createProduct:',
+          error
         );
       }
 
@@ -1837,13 +1991,17 @@ export const inventoryController = {
     }
   },
 
-  async updateProduct(req: Request, res: Response, next: NextFunction) {
+  async updateProduct(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
 
       if (!id) {
         throw new AppError('Product ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid product ID format', 400);
       }
 
       const validatedData = updateProductSchema.parse(req.body);
@@ -1863,7 +2021,7 @@ export const inventoryController = {
         supplier: validatedData.supplier,
         supplierId: validatedData.supplierId,
         businessUnitId,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -1880,7 +2038,7 @@ export const inventoryController = {
     }
   },
 
-  async deleteProduct(req: Request, res: Response, next: NextFunction) {
+  async deleteProduct(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       const businessUnitId = await getBusinessUnitId(req);
@@ -1888,6 +2046,10 @@ export const inventoryController = {
 
       if (!id) {
         throw new AppError('Product ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid product ID format', 400);
       }
 
       const result = await inventoryService.deleteProduct(
@@ -1906,13 +2068,19 @@ export const inventoryController = {
     }
   },
 
-  async reserveStock(req: Request, res: Response, next: NextFunction) {
+  // ── STOCK RESERVATION ──────────────────────
+
+  async reserveStock(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { productId, quantity, variantId } = req.body;
 
       if (!productId) {
         throw new AppError('Product ID is required', 400);
+      }
+
+      if (!isValidID(productId)) {
+        throw new AppError('Invalid product ID format', 400);
       }
 
       if (!quantity || quantity <= 0) {
@@ -1938,13 +2106,17 @@ export const inventoryController = {
     }
   },
 
-  async releaseReservedStock(req: Request, res: Response, next: NextFunction) {
+  async releaseReservedStock(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { productId, quantity, variantId } = req.body;
 
       if (!productId) {
         throw new AppError('Product ID is required', 400);
+      }
+
+      if (!isValidID(productId)) {
+        throw new AppError('Invalid product ID format', 400);
       }
 
       if (!quantity || quantity <= 0) {
@@ -1970,18 +2142,28 @@ export const inventoryController = {
     }
   },
 
-  async transferStock(req: Request, res: Response, next: NextFunction) {
+  async transferStock(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const userId = await getUserId(req);
-      const { productId, fromLocation, toLocation, quantity, notes, variantId } =
-        req.body;
+      const {
+        productId,
+        fromLocation,
+        toLocation,
+        quantity,
+        notes,
+        variantId,
+      } = req.body;
 
       if (!productId || !fromLocation || !toLocation || !quantity) {
         throw new AppError(
           'Product ID, fromLocation, toLocation, and quantity are required',
           400
         );
+      }
+
+      if (!isValidID(productId)) {
+        throw new AppError('Invalid product ID format', 400);
       }
 
       if (quantity <= 0) {
@@ -2002,9 +2184,8 @@ export const inventoryController = {
         quantity,
         notes,
         businessUnitId,
-        userId,
         variantId,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -2018,15 +2199,17 @@ export const inventoryController = {
     }
   },
 
-  async bulkCreateItems(req: Request, res: Response, next: NextFunction) {
+  // ── BULK OPERATIONS ────────────────────────
+
+  async bulkCreateItems(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const userId = await getUserId(req);
 
       const validatedData = bulkCreateItemsSchema.parse(req.body);
 
-      const results = [];
-      const errors = [];
+      const results: unknown[] = [];
+      const errors: unknown[] = [];
 
       for (const item of validatedData.items) {
         try {
@@ -2057,9 +2240,8 @@ export const inventoryController = {
             featured: item.featured,
             businessUnitId,
             userId,
-          });
+          } as any);
 
-          // ✅ Ensure the created product has inventory linked.
           try {
             const productId =
               (result as any)?.productId ||
@@ -2072,9 +2254,13 @@ export const inventoryController = {
               );
             }
           } catch (ensureErr) {
+            const error =
+              ensureErr instanceof Error
+                ? ensureErr
+                : new Error(String(ensureErr));
             console.warn(
               '⚠️ ensureProductInventory failed during bulkCreateItems:',
-              ensureErr
+              error
             );
           }
 
@@ -2082,11 +2268,12 @@ export const inventoryController = {
             success: true,
             data: normalizeInventoryItem(result),
           });
-        } catch (error) {
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
           errors.push({
             success: false,
             item: item.name,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error.message,
           });
         }
       }
@@ -2101,8 +2288,9 @@ export const inventoryController = {
             succeeded: results.length,
             failed: errors.length,
             successRate:
-              ((results.length / validatedData.items.length) * 100).toFixed(2) +
-              '%',
+              ((results.length / validatedData.items.length) * 100).toFixed(
+                2
+              ) + '%',
           },
         },
         message: `Bulk create completed: ${results.length} succeeded, ${errors.length} failed`,
@@ -2115,7 +2303,7 @@ export const inventoryController = {
     }
   },
 
-  async bulkUpdateStock(req: Request, res: Response, next: NextFunction) {
+  async bulkUpdateStock(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const userId = await getUserId(req);
@@ -2123,14 +2311,21 @@ export const inventoryController = {
       const validatedData = bulkUpdateStockSchema.parse(req.body);
 
       if (!validatedData.updates || validatedData.updates.length === 0) {
-        throw new AppError('Updates array is required and cannot be empty', 400);
+        throw new AppError(
+          'Updates array is required and cannot be empty',
+          400
+        );
       }
 
-      const results = [];
-      const errors = [];
+      const results: unknown[] = [];
+      const errors: unknown[] = [];
 
       for (const update of validatedData.updates) {
         try {
+          if (!isValidID(update.id)) {
+            throw new AppError(`Invalid ID format: ${update.id}`, 400);
+          }
+
           const result = await inventoryService.updateStock({
             productId: update.id,
             quantity: update.quantity,
@@ -2140,17 +2335,18 @@ export const inventoryController = {
             notes: update.notes || 'Bulk stock update',
             inventoryId: update.id,
             variantId: update.variantId,
-          });
+          } as any);
           results.push({
             id: update.id,
             success: true,
             data: normalizeInventoryItem(result),
           });
-        } catch (error) {
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
           errors.push({
             id: update.id,
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error.message,
           });
         }
       }
@@ -2180,7 +2376,7 @@ export const inventoryController = {
     }
   },
 
-  async createInventory(req: Request, res: Response, next: NextFunction) {
+  async createInventory(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const userId = await getUserId(req);
@@ -2210,9 +2406,8 @@ export const inventoryController = {
         featured: req.body.featured,
         businessUnitId,
         userId,
-      });
+      } as any);
 
-      // ✅ Ensure the created product has inventory linked.
       try {
         const productId =
           (result as any)?.productId ||
@@ -2225,9 +2420,13 @@ export const inventoryController = {
           );
         }
       } catch (ensureErr) {
+        const error =
+          ensureErr instanceof Error
+            ? ensureErr
+            : new Error(String(ensureErr));
         console.warn(
           '⚠️ ensureProductInventory failed after createInventory:',
-          ensureErr
+          error
         );
       }
 
@@ -2243,11 +2442,15 @@ export const inventoryController = {
     }
   },
 
-  async updateInventory(req: Request, res: Response, next: NextFunction) {
+  async updateInventory(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       if (!id) {
         throw new AppError('Inventory ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const result = await inventoryService.updateInventory(id, {
@@ -2269,7 +2472,7 @@ export const inventoryController = {
         tags: req.body.tags,
         weight: req.body.weight,
         taxRate: req.body.taxRate,
-      });
+      } as any);
 
       const normalizedResult = normalizeInventoryItem(result);
 
@@ -2283,11 +2486,15 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryItem(req: Request, res: Response, next: NextFunction) {
+  async getInventoryItem(req: Request, res: Response, _next: NextFunction) {
     try {
       const { id } = req.params;
       if (!id) {
         throw new AppError('Inventory ID is required', 400);
+      }
+
+      if (!isValidID(id)) {
+        throw new AppError('Invalid inventory ID format', 400);
       }
 
       const item = await inventoryService.getInventoryItem(id);
@@ -2303,7 +2510,11 @@ export const inventoryController = {
     }
   },
 
-  async exportInventoryToFile(req: Request, res: Response, next: NextFunction) {
+  async exportInventoryToFile(
+    req: Request,
+    res: Response,
+    _next: NextFunction
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { format = 'json' } = req.query;
@@ -2337,7 +2548,7 @@ export const inventoryController = {
     }
   },
 
-  async bulkDeleteItems(req: Request, res: Response, next: NextFunction) {
+  async bulkDeleteItems(req: Request, res: Response, _next: NextFunction) {
     try {
       const { ids } = req.body;
       const businessUnitId = await getBusinessUnitId(req);
@@ -2345,6 +2556,13 @@ export const inventoryController = {
 
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
         throw new AppError('Array of inventory item IDs is required', 400);
+      }
+
+      const invalidIds = ids.filter(
+        (id: unknown) => typeof id !== 'string' || !isValidID(id)
+      );
+      if (invalidIds.length > 0) {
+        throw new AppError(`Invalid ID format: ${invalidIds.join(', ')}`, 400);
       }
 
       const results: any[] = [];
@@ -2358,11 +2576,12 @@ export const inventoryController = {
             userId
           );
           results.push({ id, success: true, message: result.message });
-        } catch (error) {
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
           errors.push({
             id,
             success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error.message,
           });
         }
       }
@@ -2385,12 +2604,12 @@ export const inventoryController = {
     }
   },
 
-  async getInventoryItems(req: Request, res: Response, next: NextFunction) {
+  async getInventoryItems(req: Request, res: Response, _next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const { page, limit, search, withoutProduct } = req.query;
 
-      const params: any = {
+      const params: Record<string, unknown> = {
         page: page ? parseInt(page as string) : 1,
         limit: limit ? parseInt(limit as string) : 20,
         businessUnitId,
@@ -2399,18 +2618,20 @@ export const inventoryController = {
 
       if (search) params.search = search as string;
 
-      const result = await inventoryService.getInventoryItems(params);
+      const result = await inventoryService.getInventoryItems(params as any);
 
-      const normalizedItems = normalizeInventoryItems(result?.items || []);
+      const normalizedItems = normalizeInventoryItems(
+        (result as any)?.items || []
+      );
 
       res.status(200).json({
         success: true,
         data: normalizedItems,
         pagination: {
-          total: result?.total || 0,
-          page: result?.page || 1,
-          totalPages: result?.totalPages || 1,
-          limit: result?.limit || 20,
+          total: (result as any)?.total || 0,
+          page: (result as any)?.page || 1,
+          totalPages: (result as any)?.totalPages || 1,
+          limit: (result as any)?.limit || 20,
         },
       });
     } catch (error) {

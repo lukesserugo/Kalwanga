@@ -3,6 +3,10 @@ import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { reorderService } from './reorderService.js';
 
+// ============================================
+// TYPES
+// ============================================
+
 interface DashboardStats {
   sales: {
     today: { total: number; count: number };
@@ -48,6 +52,28 @@ interface RealtimeData {
   openRegisters: any[];
   pendingOrders: any[];
   alerts: any[];
+}
+
+export interface ActivityEvent {
+  id: string;
+  type: 'SALE' | 'ORDER' | 'LOW_STOCK' | 'SYSTEM';
+  title: string;
+  description: string;
+  amount: number;
+  status: string;
+  createdAt: Date;
+  metadata?: Record<string, any>;
+}
+
+export interface TrendPoint {
+  date: string;
+  value: number;
+}
+
+export interface TrendsResult {
+  range: string;
+  sales: TrendPoint[];
+  orders: TrendPoint[];
 }
 
 export class DashboardService extends BaseService {
@@ -163,7 +189,7 @@ export class DashboardService extends BaseService {
         this.prisma.inventory.findMany({
           where: {
             businessUnitId,
-            quantity: { lte: 10, gt: 0 }, // FIXED: Hardcoded threshold
+            quantity: { lte: 10, gt: 0 },
           },
         }),
         this.prisma.inventory.findMany({
@@ -247,7 +273,7 @@ export class DashboardService extends BaseService {
       }, 0);
 
       const totalCash = openRegisters.reduce((sum: number, session: any) => {
-        return sum + (session.cashRegister?.cashBalance || 0); // FIXED: Use cashBalance
+        return sum + (session.cashRegister?.cashBalance || 0);
       }, 0);
 
       // Get product names for top products
@@ -355,7 +381,7 @@ export class DashboardService extends BaseService {
         this.prisma.inventory.findMany({
           where: {
             businessUnitId,
-            quantity: { lte: 10 }, // FIXED: Hardcoded
+            quantity: { lte: 10 },
           },
           include: {
             product: {
@@ -400,7 +426,6 @@ export class DashboardService extends BaseService {
           },
           orderBy: { createdAt: 'desc' },
           take: 10,
-          // FIXED: Removed supplier include since Order model doesn't have supplier relation
           include: {
             items: true,
           },
@@ -459,7 +484,7 @@ export class DashboardService extends BaseService {
         throw new AppError('Business unit ID is required', 400);
       }
 
-      // Trigger reorder check
+      // Trigger reorder check (non-blocking)
       try {
         await reorderService.checkAndCreateReorderOrders(businessUnitId);
       } catch (error) {
@@ -505,7 +530,7 @@ export class DashboardService extends BaseService {
 
       // Group by date
       const dailySales = new Map<string, { total: number; count: number }>();
-      
+
       for (const sale of sales) {
         const dateKey = sale.saleDate.toISOString().split('T')[0];
         const current = dailySales.get(dateKey) || { total: 0, count: 0 };
@@ -517,17 +542,17 @@ export class DashboardService extends BaseService {
       // Fill in all dates
       const trend: any[] = [];
       const currentDate = new Date(startDate);
-      
+
       while (currentDate <= new Date()) {
         const dateKey = currentDate.toISOString().split('T')[0];
         const data = dailySales.get(dateKey) || { total: 0, count: 0 };
-        
+
         trend.push({
           date: dateKey,
           total: data.total,
           count: data.count,
         });
-        
+
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
@@ -616,7 +641,7 @@ export class DashboardService extends BaseService {
       const lowStockItems = await this.prisma.inventory.findMany({
         where: {
           businessUnitId,
-          quantity: { lte: 10 }, // FIXED: Hardcoded
+          quantity: { lte: 10 },
         },
         include: {
           product: {
@@ -681,6 +706,206 @@ export class DashboardService extends BaseService {
       }));
     } catch (error) {
       this.handleError(error, 'DashboardService.getSalesSummary');
+    }
+  }
+
+  // ============================================================
+  // NEW: Activity feed — used by GET /dashboard/activity
+  // ============================================================
+
+  /**
+   * Get a merged, chronological activity feed for the dashboard.
+   * Combines recent sales, orders, and low-stock events.
+   */
+  async getActivity(
+    businessUnitId: string,
+    limit: number = 10,
+    days: number = 7,
+  ): Promise<ActivityEvent[]> {
+    try {
+      if (!businessUnitId) {
+        throw new AppError('Business unit ID is required', 400);
+      }
+
+      const since = new Date();
+      since.setDate(since.getDate() - days);
+      since.setHours(0, 0, 0, 0);
+
+      const [recentSales, recentOrders, lowStock] = await Promise.all([
+        this.prisma.sale.findMany({
+          where: {
+            businessUnitId,
+            saleDate: { gte: since },
+            status: { not: 'CANCELLED' },
+          },
+          orderBy: { saleDate: 'desc' },
+          take: limit,
+          include: {
+            customer: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+            items: {
+              include: {
+                product: { select: { id: true, name: true, sku: true } },
+              },
+            },
+          },
+        }),
+        this.prisma.order.findMany({
+          where: {
+            businessUnitId,
+            createdAt: { gte: since },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            total: true,
+            createdAt: true,
+          },
+        }),
+        this.prisma.inventory.findMany({
+          where: {
+            businessUnitId,
+            quantity: { lte: 10 },
+          },
+          orderBy: { quantity: 'asc' },
+          take: limit,
+          include: {
+            product: { select: { id: true, name: true, sku: true } },
+          },
+        }),
+      ]);
+
+      const saleEvents: ActivityEvent[] = recentSales.map((s: any) => ({
+        id: `sale-${s.id}`,
+        type: 'SALE',
+        title: `Sale #${s.receiptNumber}`,
+        description: s.customer
+          ? `${s.customer.firstName} ${s.customer.lastName}`
+          : 'Walk-in customer',
+        amount: s.total ?? 0,
+        status: s.status ?? 'COMPLETED',
+        createdAt: s.saleDate,
+        metadata: {
+          itemCount: s.items?.length ?? 0,
+          items: (s.items ?? []).map((i: any) => ({
+            productId: i.productId,
+            productName: i.product?.name,
+            sku: i.product?.sku,
+            quantity: i.quantity,
+            total: i.total,
+          })),
+        },
+      }));
+
+      const orderEvents: ActivityEvent[] = recentOrders.map((o: any) => ({
+        id: `order-${o.id}`,
+        type: 'ORDER',
+        title: `Order #${o.orderNumber}`,
+        description: `Status: ${o.status}`,
+        amount: o.total ?? 0,
+        status: o.status ?? 'PENDING',
+        createdAt: o.createdAt,
+      }));
+
+      const stockEvents: ActivityEvent[] = lowStock.map((inv: any) => ({
+        id: `stock-${inv.id}`,
+        type: 'LOW_STOCK',
+        title: `Low stock: ${inv.product?.name ?? 'Unknown product'}`,
+        description: `SKU ${inv.product?.sku ?? '—'} — ${inv.quantity} remaining`,
+        amount: 0,
+        status: inv.quantity === 0 ? 'OUT_OF_STOCK' : 'LOW_STOCK',
+        createdAt: inv.updatedAt ?? new Date(),
+      }));
+
+      return [...saleEvents, ...orderEvents, ...stockEvents]
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        .slice(0, limit);
+    } catch (error) {
+      this.handleError(error, 'DashboardService.getActivity');
+    }
+  }
+
+  // ============================================================
+  // NEW: Trends — used by GET /dashboard/trends
+  // ============================================================
+
+  /**
+   * Get chart-ready trends for the dashboard.
+   * Returns a gap-filled day-by-day series for both sales and orders.
+   */
+  async getTrends(businessUnitId: string, days: number = 7): Promise<TrendsResult> {
+    try {
+      if (!businessUnitId) {
+        throw new AppError('Business unit ID is required', 400);
+      }
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
+
+      const [sales, orders] = await Promise.all([
+        this.prisma.sale.findMany({
+          where: {
+            businessUnitId,
+            saleDate: { gte: startDate },
+            status: { not: 'CANCELLED' },
+          },
+          select: { saleDate: true, total: true },
+          orderBy: { saleDate: 'asc' },
+        }),
+        this.prisma.order.findMany({
+          where: {
+            businessUnitId,
+            createdAt: { gte: startDate },
+          },
+          select: { createdAt: true, total: true },
+          orderBy: { createdAt: 'asc' },
+        }),
+      ]);
+
+      const buildSeries = (
+        rows: Array<{ date: Date; value: number }>,
+      ): TrendPoint[] => {
+        const map = new Map<string, number>();
+        for (const r of rows) {
+          const key = r.date.toISOString().split('T')[0];
+          map.set(key, (map.get(key) ?? 0) + (r.value ?? 0));
+        }
+
+        const out: TrendPoint[] = [];
+        const cursor = new Date(startDate);
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+
+        while (cursor <= today) {
+          const key = cursor.toISOString().split('T')[0];
+          out.push({ date: key, value: map.get(key) ?? 0 });
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        return out;
+      };
+
+      const salesSeries = buildSeries(
+        sales.map((s: any) => ({ date: s.saleDate, value: s.total })),
+      );
+      const ordersSeries = buildSeries(
+        orders.map((o: any) => ({ date: o.createdAt, value: o.total })),
+      );
+
+      return {
+        range: `${days}d`,
+        sales: salesSeries,
+        orders: ordersSeries,
+      };
+    } catch (error) {
+      this.handleError(error, 'DashboardService.getTrends');
     }
   }
 }

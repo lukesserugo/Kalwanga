@@ -135,7 +135,36 @@ exports.Prisma.UserScalarFieldEnum = {
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   permissions: 'permissions',
-  companyId: 'companyId'
+  companyId: 'companyId',
+  stripeCustomerId: 'stripeCustomerId',
+  stripePaymentMethodId: 'stripePaymentMethodId'
+};
+
+exports.Prisma.OnboardingProgressScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  companyId: 'companyId',
+  businessUnitId: 'businessUnitId',
+  steps: 'steps',
+  completedAt: 'completedAt',
+  isComplete: 'isComplete',
+  totalSteps: 'totalSteps',
+  completedCount: 'completedCount',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.OnboardingEventScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  stepId: 'stepId',
+  stepKey: 'stepKey',
+  event: 'event',
+  previousState: 'previousState',
+  newState: 'newState',
+  source: 'source',
+  notes: 'notes',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.ImportHistoryScalarFieldEnum = {
@@ -301,6 +330,42 @@ exports.Prisma.BusinessUnitScalarFieldEnum = {
   companyId: 'companyId'
 };
 
+exports.Prisma.LocationScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  code: 'code',
+  description: 'description',
+  address: 'address',
+  phone: 'phone',
+  type: 'type',
+  isActive: 'isActive',
+  isDefault: 'isDefault',
+  metadata: 'metadata',
+  businessUnitId: 'businessUnitId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt',
+  deletedBy: 'deletedBy'
+};
+
+exports.Prisma.LocationSettingsScalarFieldEnum = {
+  id: 'id',
+  businessUnitId: 'businessUnitId',
+  defaultLocationId: 'defaultLocationId',
+  enabledTypes: 'enabledTypes',
+  allowNegativeStock: 'allowNegativeStock',
+  reserveStockOnAdd: 'reserveStockOnAdd',
+  defaultReorderPoint: 'defaultReorderPoint',
+  defaultReorderQuantity: 'defaultReorderQuantity',
+  requireTransferReference: 'requireTransferReference',
+  autoReceiveTransfers: 'autoReceiveTransfers',
+  allowCrossBusinessUnitTransfers: 'allowCrossBusinessUnitTransfers',
+  showCodeOnCards: 'showCodeOnCards',
+  showInactiveInLists: 'showInactiveInLists',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.SalesSettingsScalarFieldEnum = {
   id: 'id',
   companyId: 'companyId',
@@ -420,7 +485,14 @@ exports.Prisma.CategoryScalarFieldEnum = {
   featured: 'featured',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
-  businessUnitId: 'businessUnitId'
+  businessUnitId: 'businessUnitId',
+  color: 'color',
+  icon: 'icon',
+  image: 'image',
+  metaDescription: 'metaDescription',
+  metaTitle: 'metaTitle',
+  slug: 'slug',
+  sortOrder: 'sortOrder'
 };
 
 exports.Prisma.ProductScalarFieldEnum = {
@@ -439,7 +511,6 @@ exports.Prisma.ProductScalarFieldEnum = {
   featured: 'featured',
   weight: 'weight',
   dimensions: 'dimensions',
-  images: 'images',
   attributes: 'attributes',
   notes: 'notes',
   rating: 'rating',
@@ -461,6 +532,19 @@ exports.Prisma.ProductScalarFieldEnum = {
   updatedBy: 'updatedBy'
 };
 
+exports.Prisma.ProductImageScalarFieldEnum = {
+  id: 'id',
+  productId: 'productId',
+  url: 'url',
+  alt: 'alt',
+  width: 'width',
+  height: 'height',
+  order: 'order',
+  isPrimary: 'isPrimary',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.ProductVariantScalarFieldEnum = {
   id: 'id',
   productId: 'productId',
@@ -469,7 +553,6 @@ exports.Prisma.ProductVariantScalarFieldEnum = {
   price: 'price',
   costPrice: 'costPrice',
   stock: 'stock',
-  images: 'images',
   attributes: 'attributes',
   isActive: 'isActive',
   barcode: 'barcode',
@@ -480,6 +563,17 @@ exports.Prisma.ProductVariantScalarFieldEnum = {
   inventoryId: 'inventoryId'
 };
 
+exports.Prisma.ProductVariantImageScalarFieldEnum = {
+  id: 'id',
+  variantId: 'variantId',
+  url: 'url',
+  alt: 'alt',
+  order: 'order',
+  isPrimary: 'isPrimary',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.ProductReviewScalarFieldEnum = {
   id: 'id',
   productId: 'productId',
@@ -487,13 +581,21 @@ exports.Prisma.ProductReviewScalarFieldEnum = {
   rating: 'rating',
   title: 'title',
   comment: 'comment',
-  images: 'images',
   isVerified: 'isVerified',
   helpfulCount: 'helpfulCount',
   status: 'status',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   businessUnitId: 'businessUnitId'
+};
+
+exports.Prisma.ProductReviewImageScalarFieldEnum = {
+  id: 'id',
+  reviewId: 'reviewId',
+  url: 'url',
+  alt: 'alt',
+  order: 'order',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.QRCodeRecordScalarFieldEnum = {
@@ -552,6 +654,16 @@ exports.Prisma.RecentlyViewedScalarFieldEnum = {
   businessUnitId: 'businessUnitId'
 };
 
+exports.Prisma.GuestSessionScalarFieldEnum = {
+  id: 'id',
+  cartId: 'cartId',
+  wishlist: 'wishlist',
+  recentlyView: 'recentlyView',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  expiresAt: 'expiresAt'
+};
+
 exports.Prisma.InventoryScalarFieldEnum = {
   id: 'id',
   businessUnitId: 'businessUnitId',
@@ -571,7 +683,8 @@ exports.Prisma.InventoryScalarFieldEnum = {
   description: 'description',
   weight: 'weight',
   taxRate: 'taxRate',
-  tags: 'tags'
+  tags: 'tags',
+  locationId: 'locationId'
 };
 
 exports.Prisma.InventoryTransactionScalarFieldEnum = {
@@ -648,6 +761,7 @@ exports.Prisma.SaleScalarFieldEnum = {
   notes: 'notes',
   status: 'status',
   saleDate: 'saleDate',
+  idempotencyKey: 'idempotencyKey',
   invoiceId: 'invoiceId',
   businessUnitId: 'businessUnitId',
   userId: 'userId',
@@ -672,6 +786,7 @@ exports.Prisma.SaleItemScalarFieldEnum = {
 exports.Prisma.PaymentScalarFieldEnum = {
   id: 'id',
   amount: 'amount',
+  currency: 'currency',
   paymentMethod: 'paymentMethod',
   status: 'status',
   transactionId: 'transactionId',
@@ -685,7 +800,11 @@ exports.Prisma.PaymentScalarFieldEnum = {
   cashRegisterSessionId: 'cashRegisterSessionId',
   userId: 'userId',
   gatewayId: 'gatewayId',
-  businessUnitId: 'businessUnitId'
+  businessUnitId: 'businessUnitId',
+  refundedAt: 'refundedAt',
+  refundReason: 'refundReason',
+  refundedBy: 'refundedBy',
+  refundedAmount: 'refundedAmount'
 };
 
 exports.Prisma.PaymentGatewayScalarFieldEnum = {
@@ -760,6 +879,14 @@ exports.Prisma.PaymentMethodConfigScalarFieldEnum = {
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   deletedAt: 'deletedAt'
+};
+
+exports.Prisma.ProcessedWebhookScalarFieldEnum = {
+  id: 'id',
+  eventId: 'eventId',
+  eventType: 'eventType',
+  provider: 'provider',
+  processedAt: 'processedAt'
 };
 
 exports.Prisma.CustomerScalarFieldEnum = {
@@ -1284,17 +1411,30 @@ exports.Prisma.BillScalarFieldEnum = {
   updatedAt: 'updatedAt'
 };
 
+exports.Prisma.Backup_recordsScalarFieldEnum = {
+  id: 'id',
+  fileName: 'fileName',
+  filePath: 'filePath',
+  type: 'type',
+  size: 'size',
+  createdAt: 'createdAt',
+  createdBy: 'createdBy',
+  status: 'status',
+  metadata: 'metadata',
+  checksum: 'checksum'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
 };
 
-exports.Prisma.NullableJsonNullValueInput = {
-  DbNull: Prisma.DbNull,
+exports.Prisma.JsonNullValueInput = {
   JsonNull: Prisma.JsonNull
 };
 
-exports.Prisma.JsonNullValueInput = {
+exports.Prisma.NullableJsonNullValueInput = {
+  DbNull: Prisma.DbNull,
   JsonNull: Prisma.JsonNull
 };
 
@@ -1329,6 +1469,17 @@ exports.BusinessUnitType = exports.$Enums.BusinessUnitType = {
   BRANCH: 'BRANCH',
   WAREHOUSE: 'WAREHOUSE',
   STORE: 'STORE'
+};
+
+exports.LocationType = exports.$Enums.LocationType = {
+  WAREHOUSE: 'WAREHOUSE',
+  STORE: 'STORE',
+  BACKROOM: 'BACKROOM',
+  DISTRIBUTION_CENTER: 'DISTRIBUTION_CENTER',
+  STORE_FRONT: 'STORE_FRONT',
+  IN_TRANSIT: 'IN_TRANSIT',
+  SUPPLIER: 'SUPPLIER',
+  OTHER: 'OTHER'
 };
 
 exports.ReturnStatus = exports.$Enums.ReturnStatus = {
@@ -1649,7 +1800,11 @@ exports.NotificationType = exports.$Enums.NotificationType = {
   WARNING: 'WARNING',
   ERROR: 'ERROR',
   PROMOTION: 'PROMOTION',
-  REMINDER: 'REMINDER'
+  REMINDER: 'REMINDER',
+  LOW_STOCK: 'LOW_STOCK',
+  PURCHASE_ORDER: 'PURCHASE_ORDER',
+  SHIFT: 'SHIFT',
+  RECEIPT: 'RECEIPT'
 };
 
 exports.NotificationPriority = exports.$Enums.NotificationPriority = {
@@ -1730,6 +1885,8 @@ exports.TaxFilingStatus = exports.$Enums.TaxFilingStatus = {
 
 exports.Prisma.ModelName = {
   User: 'User',
+  OnboardingProgress: 'OnboardingProgress',
+  OnboardingEvent: 'OnboardingEvent',
   ImportHistory: 'ImportHistory',
   Invitation: 'Invitation',
   UserGroup: 'UserGroup',
@@ -1740,6 +1897,8 @@ exports.Prisma.ModelName = {
   CompanySettings: 'CompanySettings',
   BusinessUnitUser: 'BusinessUnitUser',
   BusinessUnit: 'BusinessUnit',
+  Location: 'Location',
+  LocationSettings: 'LocationSettings',
   SalesSettings: 'SalesSettings',
   Return: 'Return',
   ReturnItem: 'ReturnItem',
@@ -1748,12 +1907,16 @@ exports.Prisma.ModelName = {
   ExportHistory: 'ExportHistory',
   Category: 'Category',
   Product: 'Product',
+  ProductImage: 'ProductImage',
   ProductVariant: 'ProductVariant',
+  ProductVariantImage: 'ProductVariantImage',
   ProductReview: 'ProductReview',
+  ProductReviewImage: 'ProductReviewImage',
   QRCodeRecord: 'QRCodeRecord',
   BarcodeImageRecord: 'BarcodeImageRecord',
   Wishlist: 'Wishlist',
   RecentlyViewed: 'RecentlyViewed',
+  GuestSession: 'GuestSession',
   Inventory: 'Inventory',
   InventoryTransaction: 'InventoryTransaction',
   InventoryIssue: 'InventoryIssue',
@@ -1767,6 +1930,7 @@ exports.Prisma.ModelName = {
   PaymentProviderCurrency: 'PaymentProviderCurrency',
   PaymentProviderConfig: 'PaymentProviderConfig',
   PaymentMethodConfig: 'PaymentMethodConfig',
+  ProcessedWebhook: 'ProcessedWebhook',
   Customer: 'Customer',
   GiftCard: 'GiftCard',
   GiftCardTransaction: 'GiftCardTransaction',
@@ -1798,7 +1962,8 @@ exports.Prisma.ModelName = {
   FinancialReport: 'FinancialReport',
   TaxCalculation: 'TaxCalculation',
   Expense: 'Expense',
-  Bill: 'Bill'
+  Bill: 'Bill',
+  backup_records: 'backup_records'
 };
 
 /**

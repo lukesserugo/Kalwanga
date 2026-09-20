@@ -1,15 +1,32 @@
 // D:\Projects\Kalwanga\packages\web\types\inventory.ts
 
-import { Product, ProductVariant } from './product';
-import { BusinessUnit, User } from './user';
-import { Sale } from './sale';
-import { PurchaseOrder } from './order';
+// ============================================
+// CANONICAL IMPORTS
+// ============================================
+//
+// Ownership map (do not deviate):
+//   Product, ProductVariant → ./product
+//   BusinessUnit            → ./businessUnit   (NOT ./user)
+//   User                    → ./user
+//   Sale                    → ./sale
+//   PurchaseOrder           → ./purchaseOrder  (NOT ./order)
+//
+// All cross-module imports are type-only. The cycle
+//   inventory ↔ product, inventory ↔ businessUnit,
+//   inventory ↔ sale, inventory ↔ purchaseOrder
+// is broken at runtime because `import type` is erased.
+
+import type { Product, ProductVariant } from './product';
+import type { BusinessUnit } from './businessUnit';
+import type { User } from './user';
+import type { Sale } from './sale';
+import type { PurchaseOrder } from './purchaseOrder';
 
 // ============================================
-// ENUMS & TYPE ALIASES
+// ENUMS & TYPE ALIASESPP
 // ============================================
 
-export type InventoryTransactionType = 
+export type InventoryTransactionType =
   | 'INITIAL'
   | 'ADJUSTMENT'
   | 'ADJUSTMENT_IN'
@@ -26,7 +43,7 @@ export type InventoryTransactionType =
   | 'LOST'
   | 'TRANSFER';
 
-export type InventoryIssueStatus = 
+export type InventoryIssueStatus =
   | 'ISSUED'
   | 'RETURNED'
   | 'OVERDUE'
@@ -34,7 +51,7 @@ export type InventoryIssueStatus =
   | 'LOST'
   | 'DAMAGED';
 
-export type InventoryStatus = 
+export type InventoryStatus =
   | 'ACTIVE'
   | 'INACTIVE'
   | 'DISCONTINUED'
@@ -48,145 +65,163 @@ export type InventoryTransferStatus =
   | 'CANCELLED';
 
 // ============================================
-// CORE INTERFACES
+// CORE INTERFACE
 // ============================================
+//
+// ⚠️ This interface mirrors the backend `Inventory` Prisma model.
+//    Product-specific fields (name, sku, barcode, unitPrice, category,
+//    etc.) are NOT declared here — they live on `product`, which is
+//    already a relation below. Access them as `inventory.product?.name`.
+//
+//    Declaring them here would produce a second, drifting copy of the
+//    Product shape that gets out of sync the moment Product changes.
 
 export interface Inventory {
   id: string;
-  productId: string;
-  product?: Product;
-  variantId?: string;
-  variant?: ProductVariant;
+
+  // Relations — productId/variantId are not columns on the Inventory
+  // table; they are exposed by the API when the relation is included.
+  // Hence optional.
+  productId?: string | null;
+  product?: Product | null;
+
+  variantId?: string | null;
+  variant?: ProductVariant | null;
+
   businessUnitId: string;
   businessUnit?: BusinessUnit;
-  
+
   // Stock quantities
   quantity: number;
   reserved: number;
-  available: number; // quantity - reserved
+  available: number;
   reorderPoint: number;
   reorderQuantity: number;
-  
+
   // Location & physical attributes
-  location?: string;
-  shelfNumber?: string;
-  supplier?: string;
-  supplierId?: string;
-  notes?: string;
-  
-  // Product attributes (sometimes directly on inventory)
-  name?: string;
-  sku?: string;
-  barcode?: string | null;
-  unitPrice?: number;
-  costPrice?: number;
-  price?: number;
-  unit?: string;
-  weight?: number;
-  taxRate?: number;
-  tags?: string[];
-  description?: string;
-  images?: string[];
-  category?: string;
-  categoryId?: string;
-  
-  // Status flags
+  location?: string | null;
+  shelfNumber?: string | null;
+
+  // Denormalised-from-Product fields kept on Inventory for query speed.
+  // These are the ones the backend Prisma model actually stores.
+  supplier?: string | null;
+  notes?: string | null;
+
+  // Status
   status: InventoryStatus;
-  isActive?: boolean;
-  isDigital?: boolean;
-  featured?: boolean;
-  
-  // Relations
-  transactions?: InventoryTransaction[];
-  issues?: InventoryIssue[];
-  transfers?: InventoryTransfer[];
-  
+
   // Timestamps
   createdAt: string;
   updatedAt: string;
-  deletedAt?: string | null;
-  deletedBy?: string | null;
+
+  // Relations populated on include
+  transactions?: InventoryTransaction[];
+  issues?: InventoryIssue[];
 }
+
+// ============================================
+// INVENTORY TRANSACTION
+// ============================================
 
 export interface InventoryTransaction {
   id: string;
   transactionType: InventoryTransactionType;
   quantity: number;
-  notes?: string;
-  reference?: string;
-  
-  // Relations
+  notes?: string | null;
+  reference?: string | null;
+
   productId: string;
   product?: Product;
-  variantId?: string;
-  variant?: ProductVariant;
+  variantId?: string | null;
+  variant?: ProductVariant | null;
+
   inventoryId: string;
   inventory?: Inventory;
+
   businessUnitId: string;
   businessUnit?: BusinessUnit;
+
   userId: string;
   user?: User;
-  saleId?: string;
-  sale?: Sale;
-  purchaseOrderId?: string;
-  purchaseOrder?: PurchaseOrder;
-  
-  // Timestamps
+
+  saleId?: string | null;
+  sale?: Sale | null;
+
+  purchaseOrderId?: string | null;
+  purchaseOrder?: PurchaseOrder | null;
+
   createdAt: string;
-  updatedAt?: string;
 }
+
+// ============================================
+// INVENTORY ISSUE
+// ============================================
 
 export interface InventoryIssue {
   id: string;
+
   inventoryId: string;
   inventory?: Inventory;
+
   productId: string;
   product?: Product;
-  variantId?: string;
-  variant?: ProductVariant;
+
+  variantId?: string | null;
+  variant?: ProductVariant | null;
+
   businessUnitId: string;
   businessUnit?: BusinessUnit;
-  
-  // Issue details
+
   issuedTo: string;
-  issuedToUser?: User;
+  issuedToUser?: User | null;
+
   quantity: number;
-  purpose?: string;
-  remarks?: string;
+  purpose?: string | null;
+  remarks?: string | null;
   status: InventoryIssueStatus;
-  expectedReturnDate?: string;
-  returnDate?: string;
-  
-  // Relations
+  expectedReturnDate?: string | null;
+  returnDate?: string | null;
+
   userId: string;
   user?: User;
-  
-  // Timestamps
+
   createdAt: string;
   updatedAt: string;
 }
 
+// ============================================
+// INVENTORY TRANSFER
+// ============================================
+
 export interface InventoryTransfer {
   id: string;
+
   fromInventoryId: string;
   fromInventory?: Inventory;
+
   toInventoryId: string;
   toInventory?: Inventory;
+
   productId: string;
   product?: Product;
-  variantId?: string;
-  variant?: ProductVariant;
+
+  variantId?: string | null;
+  variant?: ProductVariant | null;
+
   quantity: number;
   status: InventoryTransferStatus;
-  notes?: string;
+  notes?: string | null;
+
   businessUnitId: string;
   businessUnit?: BusinessUnit;
+
   userId: string;
   user?: User;
+
   createdAt: string;
   updatedAt: string;
-  completedAt?: string;
-  cancelledAt?: string;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
 }
 
 // ============================================
@@ -255,7 +290,7 @@ export interface InventoryListResponse {
 }
 
 // ============================================
-// DTOs (Data Transfer Objects)
+// DTOs
 // ============================================
 
 export interface CreateInventoryItemData {
@@ -282,7 +317,13 @@ export interface CreateInventoryItemData {
   unit?: string;
   tags?: string[];
   images?: string[];
-  productType?: 'SIMPLE' | 'VARIABLE' | 'GROUPED' | 'BUNDLE' | 'DIGITAL' | 'SERVICE';
+  productType?:
+    | 'SIMPLE'
+    | 'VARIABLE'
+    | 'GROUPED'
+    | 'BUNDLE'
+    | 'DIGITAL'
+    | 'SERVICE';
   variants?: Array<{
     name: string;
     sku: string;
@@ -486,7 +527,7 @@ export interface BulkOperationResponse {
 // SORTING & FILTERING HELPERS
 // ============================================
 
-export type InventorySortField = 
+export type InventorySortField =
   | 'name'
   | 'sku'
   | 'quantity'

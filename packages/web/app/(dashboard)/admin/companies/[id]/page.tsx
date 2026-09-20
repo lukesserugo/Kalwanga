@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -12,129 +12,135 @@ import {
   Mail,
   Phone,
   MapPin,
-  Globe,
   Users,
   Briefcase,
-  DollarSign,
-  Clock,
-  Calendar,
   Loader2,
-  CheckCircle,
-  XCircle,
   ArrowLeft,
   Settings,
   TrendingUp,
-  Package,
-  ShoppingBag,
-  UserPlus,
   Plus,
   Copy,
   Check,
   Info,
 } from 'lucide-react';
-// ✅ FIX: Use relative imports instead of @ imports
 import { companyService } from '../../../../../services/companyService';
 import { toast } from '../../../../../utils/toast-manager';
 import { formatDistanceToNow } from 'date-fns';
-import { CompanyStats } from '../components/CompanyStats';
+import { CompanyStats } from '../../../../../components/companies/CompanyStats';
+// ✅ Use the canonical type — do not redefine it locally
+import type { Company } from '../../../../../types/company';
 
-interface Company {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address?: string | null;
-  taxId?: string | null;
-  currency: string;
-  timezone: string;
-  logo?: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  stats?: {
-    totalUsers: number;
-    totalBusinessUnits: number;
-    totalProducts: number;
-    totalSales: number;
-    totalRevenue: number;
-    totalCustomers: number;
-    totalSuppliers: number;
-  };
-  _count?: {
-    businessUnits: number;
-    users: number;
-    customers: number;
-    suppliers: number;
-    invoices: number;
-    giftCards: number;
-    promotions: number;
-  };
-  businessUnits?: Array<{
-    id: string;
-    name: string;
-    code: string;
-    type: string;
-    isActive: boolean;
-    address?: string;
-    phone?: string;
-    email?: string;
-    _count?: {
-      products: number;
-      users: number;
-      sales: number;
-    };
-  }>;
-  users?: any[];
+// ============================================================
+// RESERVED ROUTE GUARD
+// These strings are route segments, not company IDs.
+// If any of them appears as the dynamic [id] param, we must
+// NOT call the API — the route is invalid.
+// ============================================================
+const RESERVED_ROUTE_IDS = new Set([
+  'settings',
+  'default',
+  'search',
+  'email',
+  'by-business-unit',
+  'ensure-user',
+  'bulk',
+  'export',
+  'activity',
+  'stats',
+  'business-units',
+  'default-business-unit',
+  'new',
+  'edit',
+]);
+
+function isReservedRouteId(id: string | undefined | null): boolean {
+  if (!id) return false;
+  return RESERVED_ROUTE_IDS.has(id);
 }
 
 export default function CompanyDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params?.id as string;
+  const id = typeof params?.id === 'string' ? params.id : '';
 
   const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      loadCompany();
+  // ============================================================
+  // LOAD COMPANY
+  // Guarded against reserved route IDs and 404s.
+  // ============================================================
+  const loadCompany = useCallback(async () => {
+    // ✅ Defense in depth: never call the API with a reserved word
+    if (!id || isReservedRouteId(id)) {
+      setLoading(false);
+      return;
     }
-  }, [id]);
 
-  const loadCompany = async () => {
     try {
       setLoading(true);
       const data = await companyService.getById(id);
       setCompany(data);
-      
-      // Store company ID for future use
+
+      // ✅ Use the service's setter (guards reserved IDs)
       if (data?.id) {
         companyService.setCompanyId(data.id);
-        localStorage.setItem('companyId', data.id);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load company:', error);
-      toast.error('Failed to load company details');
+
+      // ✅ Redirect on 404 — bad ID shouldn't strand the user
+      if (error?.response?.status === 404) {
+        toast.error('Company not found. Redirecting...');
+        router.replace('/admin/companies');
+        return;
+      }
+
+      // ✅ Reserved route ID → also redirect
+      if (
+        typeof error?.message === 'string' &&
+        error.message.includes('reserved route')
+      ) {
+        toast.error('Invalid company ID');
+        router.replace('/admin/companies');
+        return;
+      }
+
+      toast.error(error?.message || 'Failed to load company details');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, router]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    if (isReservedRouteId(id)) {
+      // ✅ Fail fast — don't even render the detail view
+      toast.error(`Invalid company ID: "${id}" is a reserved route`);
+      router.replace('/admin/companies');
+      return;
+    }
+
+    loadCompany();
+  }, [id, loadCompany, router]);
 
   const handleDelete = async () => {
     if (!company) return;
-    
-    const hasAssociations = (company._count?.businessUnits || 0) > 0 || 
-                           (company._count?.users || 0) > 0 ||
-                           (company._count?.customers || 0) > 0;
-    
+
+    const hasAssociations =
+      (company._count?.businessUnits || 0) > 0 ||
+      (company._count?.users || 0) > 0 ||
+      (company._count?.customers || 0) > 0;
+
     const confirmMessage = hasAssociations
       ? `This company has ${company._count?.businessUnits || 0} business units and ${company._count?.users || 0} users. It will be archived (soft deleted). Continue?`
       : 'Are you sure you want to permanently delete this company? This action cannot be undone.';
-    
+
     if (!window.confirm(confirmMessage)) return;
-    
+
     try {
       setDeleting(true);
       const result = await companyService.delete(id);
@@ -167,9 +173,14 @@ export default function CompanyDetailPage() {
       <div className="p-6 text-center">
         <div className="max-w-md mx-auto">
           <Building className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">Company Not Found</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">The company you're looking for doesn't exist or has been removed.</p>
+          <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300">
+            Company Not Found
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            The company you're looking for doesn't exist or has been removed.
+          </p>
           <button
+            type="button"
             onClick={() => router.push('/admin/companies')}
             className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
@@ -186,8 +197,10 @@ export default function CompanyDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <button
+            type="button"
             onClick={() => router.push('/admin/companies')}
             className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            aria-label="Back to companies"
           >
             <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           </button>
@@ -195,19 +208,29 @@ export default function CompanyDetailPage() {
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-xl">
                 {company.logo ? (
-                  <img src={company.logo} alt={company.name} className="w-10 h-10 rounded-full object-cover" />
+                  <img
+                    src={company.logo}
+                    alt={company.name}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
                 ) : (
                   <Building className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 )}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{company.name}</h1>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {company.name}
+                </h1>
                 <div className="flex items-center gap-2">
-                  <p className="text-gray-600 dark:text-gray-400">{company.email}</p>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {company.email}
+                  </p>
                   <button
+                    type="button"
                     onClick={() => copyToClipboard(company.email, 'Email')}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                     title="Copy email"
+                    aria-label="Copy email"
                   >
                     {copied === 'Email' ? (
                       <Check className="w-3 h-3 text-green-500" />
@@ -219,16 +242,19 @@ export default function CompanyDetailPage() {
               </div>
             </div>
           </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-            company.isActive 
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
-              : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-          }`}>
+          <span
+            className={`px-3 py-1 rounded-full text-sm font-medium ${
+              company.isActive
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+            }`}
+          >
             {company.isActive ? 'Active' : 'Inactive'}
           </span>
         </div>
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={() => copyToClipboard(company.id, 'Company ID')}
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2 text-sm"
           >
@@ -239,14 +265,17 @@ export default function CompanyDetailPage() {
             )}
             <span className="text-gray-700 dark:text-gray-300">Copy ID</span>
           </button>
+          {/* ✅ prefetch={false} */}
           <Link
             href={`/admin/companies/${company.id}/edit`}
+            prefetch={false}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
           >
             <Edit className="w-4 h-4" />
             Edit
           </Link>
           <button
+            type="button"
             onClick={handleDelete}
             disabled={deleting}
             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
@@ -263,8 +292,8 @@ export default function CompanyDetailPage() {
 
       {/* Stats */}
       {company.stats && (
-        <CompanyStats 
-          stats={company.stats} 
+        <CompanyStats
+          stats={company.stats}
           currency={company.currency || 'USD'}
           timezone={company.timezone || 'UTC'}
         />
@@ -274,14 +303,20 @@ export default function CompanyDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         {/* Company Information */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Company Information</h3>
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
+            Company Information
+          </h3>
           <div className="space-y-3">
             <div className="flex items-center gap-3 text-sm">
               <Mail className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <span className="text-gray-900 dark:text-white">{company.email}</span>
+              <span className="text-gray-900 dark:text-white">
+                {company.email}
+              </span>
               <button
+                type="button"
                 onClick={() => copyToClipboard(company.email, 'Email')}
                 className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                aria-label="Copy email"
               >
                 {copied === 'Email' ? (
                   <Check className="w-3 h-3 text-green-500" />
@@ -292,10 +327,14 @@ export default function CompanyDetailPage() {
             </div>
             <div className="flex items-center gap-3 text-sm">
               <Phone className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <span className="text-gray-900 dark:text-white">{company.phone}</span>
+              <span className="text-gray-900 dark:text-white">
+                {company.phone}
+              </span>
               <button
+                type="button"
                 onClick={() => copyToClipboard(company.phone, 'Phone')}
                 className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                aria-label="Copy phone"
               >
                 {copied === 'Phone' ? (
                   <Check className="w-3 h-3 text-green-500" />
@@ -307,21 +346,31 @@ export default function CompanyDetailPage() {
             {company.address && (
               <div className="flex items-center gap-3 text-sm">
                 <MapPin className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                <span className="text-gray-900 dark:text-white">{company.address}</span>
+                <span className="text-gray-900 dark:text-white">
+                  {company.address}
+                </span>
               </div>
             )}
             {company.taxId && (
               <div className="flex items-center gap-3 text-sm">
-                <span className="text-gray-400 dark:text-gray-500 font-mono">#</span>
-                <span className="text-gray-900 dark:text-white">{company.taxId}</span>
+                <span className="text-gray-400 dark:text-gray-500 font-mono">
+                  #
+                </span>
+                <span className="text-gray-900 dark:text-white">
+                  {company.taxId}
+                </span>
               </div>
             )}
             <div className="flex items-center gap-3 text-sm">
               <span className="text-gray-400 dark:text-gray-500">ID:</span>
-              <span className="text-gray-900 dark:text-white font-mono text-xs">{company.id}</span>
+              <span className="text-gray-900 dark:text-white font-mono text-xs">
+                {company.id}
+              </span>
               <button
+                type="button"
                 onClick={() => copyToClipboard(company.id, 'Company ID')}
                 className="ml-auto p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                aria-label="Copy company ID"
               >
                 {copied === 'Company ID' ? (
                   <Check className="w-3 h-3 text-green-500" />
@@ -335,26 +384,38 @@ export default function CompanyDetailPage() {
 
         {/* Additional Info */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Additional Information</h3>
+          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
+            Additional Information
+          </h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500 dark:text-gray-400">Currency</span>
-              <span className="font-medium text-gray-900 dark:text-white">{company.currency}</span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {company.currency}
+              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500 dark:text-gray-400">Timezone</span>
-              <span className="font-medium text-gray-900 dark:text-white">{company.timezone}</span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {company.timezone}
+              </span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500 dark:text-gray-400">Created</span>
               <span className="font-medium text-gray-900 dark:text-white">
-                {formatDistanceToNow(new Date(company.createdAt), { addSuffix: true })}
+                {formatDistanceToNow(new Date(company.createdAt), {
+                  addSuffix: true,
+                })}
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-500 dark:text-gray-400">Last Updated</span>
+              <span className="text-gray-500 dark:text-gray-400">
+                Last Updated
+              </span>
               <span className="font-medium text-gray-900 dark:text-white">
-                {formatDistanceToNow(new Date(company.updatedAt), { addSuffix: true })}
+                {formatDistanceToNow(new Date(company.updatedAt), {
+                  addSuffix: true,
+                })}
               </span>
             </div>
           </div>
@@ -366,13 +427,18 @@ export default function CompanyDetailPage() {
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Business Units</h3>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                Business Units
+              </h3>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                {company.businessUnits.length} active business unit{company.businessUnits.length > 1 ? 's' : ''}
+                {company.businessUnits.length} active business unit
+                {company.businessUnits.length > 1 ? 's' : ''}
               </p>
             </div>
+            {/* ✅ prefetch={false} */}
             <Link
               href={`/admin/business-units/new?companyId=${company.id}`}
+              prefetch={false}
               className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm"
             >
               <Plus className="w-4 h-4" />
@@ -387,23 +453,35 @@ export default function CompanyDetailPage() {
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <h4 className="font-medium text-gray-900 dark:text-white">{unit.name}</h4>
+                    <h4 className="font-medium text-gray-900 dark:text-white">
+                      {unit.name}
+                    </h4>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{unit.code}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        unit.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                      }`}>
+                      <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                        {unit.code}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          unit.isActive
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                        }`}
+                      >
                         {unit.isActive ? 'Active' : 'Inactive'}
                       </span>
-                      <span className="text-xs text-gray-400 dark:text-gray-500">{unit.type}</span>
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {unit.type}
+                      </span>
                     </div>
                   </div>
                   <button
-                    onClick={() => copyToClipboard(unit.id, 'Business Unit ID')}
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard(unit.id, 'Business Unit ID')
+                    }
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                     title="Copy ID"
+                    aria-label="Copy business unit ID"
                   >
                     {copied === 'Business Unit ID' ? (
                       <Check className="w-3.5 h-3.5 text-green-500" />
@@ -413,11 +491,14 @@ export default function CompanyDetailPage() {
                   </button>
                 </div>
                 {unit.address && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{unit.address}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    {unit.address}
+                  </p>
                 )}
                 <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
                   <span>{unit._count?.products || 0} Products</span>
-                  <span>{unit._count?.users || 0} Users</span>
+                  {/* ✅ canonical type uses `userBusinessUnits`, not `users` */}
+                  <span>{unit._count?.userBusinessUnits || 0} Users</span>
                   <span>{unit._count?.sales || 0} Sales</span>
                 </div>
               </div>
@@ -428,35 +509,50 @@ export default function CompanyDetailPage() {
 
       {/* Quick Actions */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6">
-        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Quick Actions</h3>
+        <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
+          Quick Actions
+        </h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* ✅ prefetch={false} on all quick action links */}
           <Link
             href={`/admin/business-units/new?companyId=${company.id}`}
+            prefetch={false}
             className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
           >
             <Briefcase className="w-6 h-6 text-blue-500 mx-auto mb-2" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add Business Unit</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Add Business Unit
+            </span>
           </Link>
           <Link
             href={`/admin/users/new?companyId=${company.id}`}
+            prefetch={false}
             className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
           >
             <Users className="w-6 h-6 text-green-500 mx-auto mb-2" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add User</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Add User
+            </span>
           </Link>
           <Link
             href={`/admin/companies/${company.id}/settings`}
+            prefetch={false}
             className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
           >
             <Settings className="w-6 h-6 text-gray-500 mx-auto mb-2" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Settings</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Settings
+            </span>
           </Link>
           <Link
             href={`/admin/reports?companyId=${company.id}`}
+            prefetch={false}
             className="p-4 text-center border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
           >
             <TrendingUp className="w-6 h-6 text-purple-500 mx-auto mb-2" />
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Reports</span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Reports
+            </span>
           </Link>
         </div>
       </div>
@@ -468,7 +564,9 @@ export default function CompanyDetailPage() {
             <Info className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div className="flex-1">
-            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">Company ID Ready</h4>
+            <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">
+              Company ID Ready
+            </h4>
             <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
               Use this Company ID when creating suppliers:
             </p>
@@ -477,6 +575,7 @@ export default function CompanyDetailPage() {
                 {company.id}
               </code>
               <button
+                type="button"
                 onClick={() => copyToClipboard(company.id, 'Company ID')}
                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm"
               >

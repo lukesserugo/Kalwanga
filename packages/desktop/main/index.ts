@@ -1,7 +1,8 @@
+// D:\Projects\Kalwanga\packages\desktop\main\index.ts
+
 import { app, BrowserWindow, ipcMain, Menu, Tray, shell, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import Store from 'electron-store';
 import dotenv from 'dotenv';
@@ -12,7 +13,7 @@ import { logger } from './logger.js';
 import { getSyncService, closeSyncService } from './sync.js';
 
 // Load environment variables from .env file
-const envPath = path.join(__dirname, '../.env');
+const envPath = path.join(__dirname, '../../.env');
 dotenv.config({ path: envPath });
 
 // Also load from process.env for production
@@ -23,8 +24,22 @@ if (!process.env.WS_URL) {
   process.env.WS_URL = 'ws://localhost:3001';
 }
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ============================================
+// Electron command-line switches
+// ============================================
+//
+// These two switches work around a Chromium/Electron initialization
+// failure on some Windows configurations. The crashpad_handler
+// subprocess fails to spawn, which aborts the main process before it
+// can even print anything useful. Once that's disabled, the Chromium
+// sandbox fails to initialize on the same machines, so we disable that
+// too.
+//
+// For an internal POS desktop app running on a trusted Windows
+// installation, running without the sandbox is acceptable.
+
+app.commandLine.appendSwitch('disable-crash-reporter');
+app.commandLine.appendSwitch('no-sandbox');
 
 // ============================================
 // PLACE 1: Store Configuration with defaults
@@ -34,8 +49,8 @@ const store = new Store({
     windowBounds: { width: 1200, height: 800 },
     rememberLastSession: true,
     autoUpdate: true,
-    autoSync: true,        // Auto sync enabled by default
-    syncInterval: 300,     // 5 minutes
+    autoSync: true,
+    syncInterval: 300,
   },
 });
 
@@ -48,7 +63,12 @@ let tray: Tray | null = null;
 
 // Create the main window
 function createWindow() {
-  const { width, height } = store.get('windowBounds') as { width: number; height: number };
+  const { width, height } = store.get('windowBounds') as {
+    width: number;
+    height: number;
+  };
+
+  console.log('[debug] createWindow: creating BrowserWindow');
 
   mainWindow = new BrowserWindow({
     width,
@@ -61,24 +81,54 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
     },
     icon: path.join(__dirname, '../assets/icon.png'),
-    show: false,
+    show: true,
     frame: true,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#ffffff',
   });
 
+  // Log load failures so we can see WHY the renderer didn't render
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL) => {
+      console.error(
+        `[Electron] did-fail-load: ${errorCode} ${errorDescription} (${validatedURL})`,
+      );
+    },
+  );
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[debug] renderer did-finish-load');
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[debug] render-process-gone:', details);
+  });
+
   // Load the app
   if (isDev) {
-    mainWindow.loadURL(process.env.WEB_URL || 'http://localhost:3000');
+    const url = process.env.WEB_URL || 'http://localhost:3000';
+    console.log(`[Electron] Loading dev URL: ${url}`);
+    mainWindow.loadURL(url).catch((err) => {
+      console.error('[debug] loadURL rejected:', err);
+    });
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    const file = path.join(__dirname, '../renderer/index.html');
+    console.log(`[Electron] Loading production file: ${file}`);
+    mainWindow.loadFile(file).catch((err) => {
+      console.error('[debug] loadFile rejected:', err);
+    });
   }
 
-  // Show window when ready
+  // Window is already shown via `show: true`, but keep the hook
+  // in case someone flips `show` back to false.
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-    
+    console.log('[debug] window ready-to-show');
+    if (!mainWindow?.isVisible()) {
+      mainWindow?.show();
+    }
+
     // Check for updates
     if (!isDev && store.get('autoUpdate') as boolean) {
       autoUpdater.checkForUpdatesAndNotify();
@@ -89,15 +139,18 @@ function createWindow() {
     // ============================================
     setTimeout(() => {
       const syncService = getSyncService();
-      syncService.syncData().then((result) => {
-        if (result.success) {
-          logger.info('Initial sync completed successfully');
-        } else {
-          logger.warn('Initial sync failed:', result.message);
-        }
-      }).catch((error) => {
-        logger.error('Initial sync error:', error);
-      });
+      syncService
+        .syncData()
+        .then((result) => {
+          if (result.success) {
+            logger.info('Initial sync completed successfully');
+          } else {
+            logger.warn('Initial sync failed:', result.message);
+          }
+        })
+        .catch((error) => {
+          logger.error('Initial sync error:', error);
+        });
     }, 5000);
   });
 
@@ -105,7 +158,10 @@ function createWindow() {
   mainWindow.on('resize', () => {
     if (mainWindow) {
       const bounds = mainWindow.getBounds();
-      store.set('windowBounds', { width: bounds.width, height: bounds.height });
+      store.set('windowBounds', {
+        width: bounds.width,
+        height: bounds.height,
+      });
     }
   });
 
@@ -131,7 +187,7 @@ function setupAutoUpdater() {
 
   const repo = process.env.GITHUB_REPO || 'pos-system';
   const owner = process.env.GITHUB_OWNER || 'your-organization';
-  
+
   autoUpdater.setFeedURL({
     provider: 'github',
     repo,
@@ -147,16 +203,19 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', () => {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Ready',
-      message: 'The update has been downloaded. Restart the application to install it.',
-      buttons: ['Restart', 'Later'],
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    });
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Update Ready',
+        message:
+          'The update has been downloaded. Restart the application to install it.',
+        buttons: ['Restart', 'Later'],
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
   });
 
   autoUpdater.on('error', (err) => {
@@ -166,23 +225,29 @@ function setupAutoUpdater() {
 
 // App lifecycle events
 app.whenReady().then(async () => {
+  console.log('[debug] app.whenReady fired');
+
   try {
-    // Initialize database
+    console.log('[debug] before initializeDatabase');
     await initializeDatabase();
+    console.log('[debug] after initializeDatabase');
 
-    // Create main window
+    console.log('[debug] before createWindow');
     createWindow();
+    console.log('[debug] after createWindow');
 
-    // Create system tray
+    console.log('[debug] before createTray');
     tray = createTray(mainWindow);
+    console.log('[debug] after createTray');
 
-    // Setup IPC handlers
+    console.log('[debug] before setupIPC');
     setupIPC(mainWindow, store);
+    console.log('[debug] after setupIPC');
 
-    // Setup auto updater
+    console.log('[debug] before setupAutoUpdater');
     setupAutoUpdater();
+    console.log('[debug] after setupAutoUpdater');
 
-    // Set app user model id for Windows
     if (process.platform === 'win32') {
       app.setAppUserModelId('com.pos-system.desktop');
     }
@@ -194,8 +259,16 @@ app.whenReady().then(async () => {
     logger.info(`Auto Sync: ${store.get('autoSync')}`);
     logger.info(`Sync Interval: ${store.get('syncInterval')}s`);
   } catch (error) {
+    console.error('[debug] CAUGHT ERROR in app.whenReady:', error);
+    if (error instanceof Error) {
+      console.error('[debug] error message:', error.message);
+      console.error('[debug] error stack:', error.stack);
+    }
     logger.error('App initialization error:', error);
-    dialog.showErrorBox('Initialization Error', 'Failed to start the application. Please check the logs.');
+    dialog.showErrorBox(
+      'Initialization Error',
+      error instanceof Error ? error.message : 'Failed to start the application. Please check the logs.',
+    );
     app.quit();
   }
 });
@@ -214,16 +287,14 @@ app.on('activate', () => {
 // ============================================
 app.on('before-quit', () => {
   logger.info('Application quitting...');
-  
-  // Close sync service
+
   try {
     closeSyncService();
     logger.info('Sync service closed');
   } catch (error) {
     logger.error('Error closing sync service:', error);
   }
-  
-  // Close database
+
   try {
     closeDatabase();
     logger.info('Database closed');
@@ -235,29 +306,28 @@ app.on('before-quit', () => {
 // ============================================
 // PLACE 4: Graceful shutdown handlers
 // ============================================
-// Handle SIGTERM (for graceful shutdown)
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully...');
   app.quit();
 });
 
-// Handle SIGINT (Ctrl+C)
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully...');
   app.quit();
 });
 
-// Handle app window-all-closed
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-// Error handling
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
-  dialog.showErrorBox('Unexpected Error', error.message || 'An unexpected error occurred.');
+  dialog.showErrorBox(
+    'Unexpected Error',
+    error.message || 'An unexpected error occurred.',
+  );
 });
 
 process.on('unhandledRejection', (reason) => {

@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { useParams } from 'next/navigation';
-import { CompanyForm } from '../../components/CompanyForm';
+import { CompanyForm } from '../../../../../../components/companies/CompanyForm';
 
 export default function EditCompanyPage() {
   const params = useParams();

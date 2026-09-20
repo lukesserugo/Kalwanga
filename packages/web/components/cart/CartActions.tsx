@@ -17,6 +17,12 @@ export interface CartActionsProps {
   hasItems?: boolean;
   hasSavedCart?: boolean;
   disabled?: boolean;
+  /**
+   * When false (guest cart), the "Sync Inventory" and "Save for later"
+   * buttons are hidden because those endpoints aren't implemented for
+   * guest carts. Defaults to true.
+   */
+  supportsAdvancedActions?: boolean;
 }
 
 export function CartActions({
@@ -31,51 +37,89 @@ export function CartActions({
   hasItems = false,
   hasSavedCart = false,
   disabled = false,
+  supportsAdvancedActions = true,
 }: CartActionsProps) {
+  const anyBusy = isSyncing || isClearing || isSaving || isRestoring;
+
+  const baseButton =
+    'inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg ' +
+    'transition-colors disabled:opacity-50 disabled:cursor-not-allowed ' +
+    'focus:outline-none focus:ring-2 focus:ring-offset-1 dark:focus:ring-offset-gray-900';
+
+  const neutralButton =
+    baseButton +
+    ' border border-gray-300 dark:border-gray-600 ' +
+    'text-gray-700 dark:text-gray-300 ' +
+    'hover:bg-gray-50 dark:hover:bg-gray-700 ' +
+    'focus:ring-gray-400';
+
+  const dangerButton =
+    baseButton +
+    ' text-red-600 dark:text-red-400 ' +
+    'border border-red-300 dark:border-red-800 ' +
+    'hover:bg-red-50 dark:hover:bg-red-900/20 ' +
+    'focus:ring-red-500';
+
   return (
     <div className="flex flex-wrap gap-2">
-      <button
-        onClick={onSync}
-        disabled={isSyncing || isClearing || disabled || !hasItems}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-        {isSyncing ? 'Syncing...' : 'Sync Inventory'}
-      </button>
+      {supportsAdvancedActions && (
+        <button
+          type="button"
+          onClick={onSync}
+          disabled={anyBusy || disabled || !hasItems}
+          className={neutralButton}
+          title="Sync cart quantities with current inventory"
+        >
+          <RefreshCw
+            className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}
+          />
+          {isSyncing ? 'Syncing…' : 'Sync'}
+        </button>
+      )}
 
       <button
+        type="button"
         onClick={onClear}
-        disabled={isClearing || isSyncing || disabled || !hasItems}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={anyBusy || disabled || !hasItems}
+        className={dangerButton}
+        title="Remove all items from the cart"
       >
         <Trash2 className="w-4 h-4" />
-        {isClearing ? 'Clearing...' : 'Clear'}
+        {isClearing ? 'Clearing…' : 'Clear'}
       </button>
 
-      {onSaveForLater && hasItems && (
+      {supportsAdvancedActions && onSaveForLater && hasItems && (
         <button
+          type="button"
           onClick={onSaveForLater}
-          disabled={isSaving || disabled}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          disabled={anyBusy || disabled}
+          className={neutralButton}
+          title="Save this cart to restore later"
         >
           <Save className="w-4 h-4" />
-          {isSaving ? 'Saving...' : 'Save Later'}
+          {isSaving ? 'Saving…' : 'Save'}
         </button>
       )}
 
-      {onRestore && hasSavedCart && (
-        <button
-          onClick={onRestore}
-          disabled={isRestoring || disabled || hasItems}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-        >
-          <RotateCcw className={`w-4 h-4 ${isRestoring ? 'animate-spin' : ''}`} />
-          {isRestoring ? 'Restoring...' : 'Restore'}
-        </button>
-      )}
+      {supportsAdvancedActions &&
+        onRestore &&
+        hasSavedCart &&
+        !hasItems && (
+          <button
+            type="button"
+            onClick={onRestore}
+            disabled={anyBusy || disabled}
+            className={neutralButton}
+            title="Restore the last saved cart"
+          >
+            <RotateCcw
+              className={`w-4 h-4 ${isRestoring ? 'animate-spin' : ''}`}
+            />
+            {isRestoring ? 'Restoring…' : 'Restore'}
+          </button>
+        )}
     </div>
   );
 }
 
-// ✅ This is the key - default export
 export default CartActions;

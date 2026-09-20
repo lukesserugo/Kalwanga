@@ -1,15 +1,42 @@
-// D:\Projects\Kalwanga\packages\web\components\products\RecentlyViewed.tsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
+// D:\Projects\Kalwanga\packages\web\components\products\RecentlyViewed.tsx
+
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Clock, Eye, Package, ChevronRight } from 'lucide-react';
-import { productService, Product } from '../../services/productService';
-import { toast } from '../../utils/toast-manager';
+import { Clock, Package } from 'lucide-react';
+import { productService, type Product } from '../../services/productService';
+import { guestRecentlyViewedService } from '../../services/guestRecentlyViewedService';
 import { formatCurrency } from '../../utils/formatters';
 import { useAuth } from '../../hooks/useAuth';
 import { WishlistButton } from './WishlistButton';
+
+// ============================================
+// BACKEND CONTRACT
+// ============================================
+//
+// Authenticated:
+//   GET    /products/recently-viewed?limit=N   (auth required)
+//   POST   /products/recently-viewed/:productId   (auth required)
+//   DELETE /products/recently-viewed              (auth required)
+//
+// Anonymous:
+//   GET    /recently-viewed/guest?limit=N
+//   POST   /recently-viewed/guest/:productId
+//   DELETE /recently-viewed/guest
+//     Backed by `GuestSession.recentlyView` (JSON array of ids).
+//     The controller hydrates ids into full product objects before
+//     returning, so both routes have the same response shape.
+
+const BACKEND_MAX_LIMIT = 50;
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 interface RecentlyViewedProps {
   limit?: number;
@@ -27,122 +54,167 @@ export function RecentlyViewed({
   onProductClick,
 }: RecentlyViewedProps) {
   const { isAuthenticated } = useAuth();
+
+  // Clamp to a range the backend honours.
+  const effectiveLimit = Math.min(
+    Math.max(1, Math.floor(limit)),
+    BACKEND_MAX_LIMIT,
+  );
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [isVisible, setIsVisible] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadRecentlyViewed();
-    } else {
-      // For non-authenticated users, use localStorage
-      loadFromLocalStorage();
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // ============================================
+  // DATA LOAD
+  // ============================================
+  //
+  // ✅ Branches on auth:
+  //    • Authenticated → `/products/recently-viewed` (server-side,
+  //      per user).
+  //    • Anonymous → `/recently-viewed/guest` (server-side, per guest
+  //      session, backed by the `guest_session_id` cookie).
+  //
+  // Both routes return hydrated product objects, so the caller shape
+  // is identical.
+
+  const loadRecentlyViewed = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const data = isAuthenticated
+        ? await productService.getRecentlyViewed(effectiveLimit)
+        : await guestRecentlyViewedService.getRecentlyViewed(effectiveLimit);
+
+      if (!isMountedRef.current) return;
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      // The services swallow errors and return [], so this is
+      // defensive only.
+      console.warn('Failed to load recently viewed:', error);
+      if (isMountedRef.current) setProducts([]);
+    } finally {
+      if (isMountedRef.current) setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [effectiveLimit, isAuthenticated]);
 
   useEffect(() => {
-    // Check if component is in viewport
+    loadRecentlyViewed();
+  }, [loadRecentlyViewed]);
+
+  // ============================================
+  // VIEWPORT VISIBILITY
+  // ============================================
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setIsVisible(true);
+          observer.disconnect();
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     );
 
-    const el = document.getElementById('recently-viewed-section');
-    if (el) observer.observe(el);
-
-    return () => {
-      if (el) observer.unobserve(el);
-    };
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
-  const loadRecentlyViewed = async () => {
-    try {
-      setLoading(true);
-      const data = await productService.getRecentlyViewed(limit);
-      setProducts(data || []);
-    } catch (error) {
-      console.error('Failed to load recently viewed:', error);
-      loadFromLocalStorage();
-    } finally {
-      setLoading(false);
-    }
+  // ============================================
+  // IMAGE ERRORS
+  // ============================================
+
+  const resolveImageSrc = (image: string | undefined): string => {
+    if (!image) return PLACEHOLDER_IMAGE;
+    if (imageErrors.has(image)) return PLACEHOLDER_IMAGE;
+    return image;
   };
 
-  const loadFromLocalStorage = () => {
-    try {
-      const stored = localStorage.getItem('recentlyViewed');
-      if (stored) {
-        const ids = JSON.parse(stored);
-        // For non-authenticated, we just show placeholder or empty
-        setProducts([]);
-      }
-    } catch (error) {
-      console.error('Failed to load from localStorage:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleImageError = (image: string) => {
+    setImageErrors((prev) => {
+      if (prev.has(image)) return prev;
+      const next = new Set(prev);
+      next.add(image);
+      return next;
+    });
   };
+
+  // ============================================
+  // HANDLERS
+  // ============================================
 
   const handleProductClick = (productId: string) => {
-    if (onProductClick) {
-      onProductClick(productId);
-    }
+    if (onProductClick) onProductClick(productId);
   };
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   if (loading) {
     return (
-      <div className={`${className}`} id="recently-viewed-section">
+      <div ref={containerRef} className={className}>
         {showTitle && (
           <div className="flex items-center gap-2 mb-4">
             <Clock className="w-5 h-5 text-gray-400" />
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">{title}</h2>
+            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+              {title}
+            </h2>
           </div>
         )}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {[...Array(limit)].map((_, i) => (
-            <div key={i} className="bg-gray-100 dark:bg-gray-700 rounded-lg h-32 animate-pulse" />
+          {[...Array(effectiveLimit)].map((_, i) => (
+            <div
+              key={i}
+              className="bg-gray-100 dark:bg-gray-700 rounded-lg h-32 animate-pulse"
+            />
           ))}
         </div>
       </div>
     );
   }
 
+  // Nothing to show → hide the whole section. No "no items yet" banner.
   if (products.length === 0) {
     return null;
   }
 
   return (
     <motion.div
-      id="recently-viewed-section"
+      ref={containerRef}
       initial={{ opacity: 0, y: 20 }}
       animate={isVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
       transition={{ duration: 0.5 }}
-      className={`${className}`}
+      className={className}
     >
       {showTitle && (
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-gray-400" />
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">{title}</h2>
+            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+              {title}
+            </h2>
           </div>
-          {products.length > limit && (
-            <Link
-              href="/recently-viewed"
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1"
-            >
-              View All
-              <ChevronRight className="w-4 h-4" />
-            </Link>
-          )}
         </div>
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {products.slice(0, limit).map((product, index) => (
+        {products.slice(0, effectiveLimit).map((product, index) => (
           <motion.div
             key={product.id}
             initial={{ opacity: 0, scale: 0.9 }}
@@ -159,10 +231,11 @@ export function RecentlyViewed({
               <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
                 {product.images?.[0] ? (
                   <img
-                    src={product.images[0]}
+                    src={resolveImageSrc(product.images[0])}
                     alt={product.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
+                    onError={() => handleImageError(product.images[0])}
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
@@ -184,10 +257,6 @@ export function RecentlyViewed({
                 <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
                   {formatCurrency(product.unitPrice)}
                 </p>
-                <div className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-                  <Eye className="w-3 h-3" />
-                  <span>Recently viewed</span>
-                </div>
               </div>
             </Link>
           </motion.div>
@@ -196,3 +265,5 @@ export function RecentlyViewed({
     </motion.div>
   );
 }
+
+export default RecentlyViewed;

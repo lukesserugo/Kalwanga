@@ -1,509 +1,674 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Save, X, Building, MapPin, Phone, Mail, Loader2 } from 'lucide-react';
-import { businessUnitService, setBusinessUnitId } from '../../services/businessUnitService';
-import { companyService } from '../../services/companyService';
+import Link from 'next/link';
+import {
+  Plus,
+  Search,
+  Filter,
+  Edit,
+  Trash2,
+  Building2,
+  MapPin,
+  Users,
+  Package,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  MoreVertical,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  RefreshCw,
+} from 'lucide-react';
+import {
+  businessUnitService,
+  type PaginatedResponse,
+  type BulkDeleteResult,
+} from '../../services/businessUnitService';
+import {
+  getBusinessUnitTypeLabel,
+  getBusinessUnitStatusLabel,
+  getBusinessUnitStatusColor,
+  type BusinessUnit,
+  type BusinessUnitType,
+} from '../../types/businessUnit';
 import { toast } from '../../utils/toast-manager';
-import type { BusinessUnit, BusinessUnitType } from '../../types/businessUnit';
 
-interface BusinessUnitFormProps {
-  id?: string;
+// ============================================
+// TYPES
+// ============================================
+
+interface ListFilters {
+  search: string;
+  isActive: 'all' | 'true' | 'false';
+  type: 'all' | BusinessUnitType;
 }
 
-interface FormData {
-  name: string;
-  code: string;
-  address: string | null;
-  phone: string | null;
-  email: string | null;
-  type?: BusinessUnitType;
-  isActive?: boolean;
-}
+const DEFAULT_FILTERS: ListFilters = {
+  search: '',
+  isActive: 'all',
+  type: 'all',
+};
 
-interface FormErrors {
-  name?: string;
-  code?: string;
-  email?: string;
-}
+const PAGE_SIZE = 12;
 
-export function BusinessUnitForm({ id }: BusinessUnitFormProps) {
+// ============================================
+// COMPONENT
+// ============================================
+
+export default function BusinessUnitList() {
   const router = useRouter();
-  const isEdit = !!id;
 
-  const [formData, setFormData] = useState<FormData>({
-    name: '',
-    code: '',
-    address: null,
-    phone: null,
-    email: null,
-    type: 'STORE' as BusinessUnitType,
-    isActive: true,
-  });
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [companyId, setCompanyId] = useState<string>('');
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<ListFilters>(DEFAULT_FILTERS);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // Load company ID on mount
-  useEffect(() => {
-    const loadCompanyId = async () => {
-      try {
-        // Try multiple sources for company ID
-        let id = companyService.getCompanyId();
-        
-        // Check localStorage directly
-        if (!id || id === 'default-company-id' || id.length < 10) {
-          try {
-            const storedCompany = localStorage.getItem('companyId');
-            if (storedCompany && storedCompany !== 'default-company-id' && storedCompany.length >= 10) {
-              id = storedCompany;
-            }
-          } catch (_e) {
-            // Ignore
-          }
-        }
-        
-        // Check user object in localStorage
-        if (!id || id === 'default-company-id' || id.length < 10) {
-          try {
-            const userStr = localStorage.getItem('user');
-            if (userStr) {
-              const user = JSON.parse(userStr);
-              if (user?.companyId && user.companyId !== 'default-company-id' && user.companyId.length >= 10) {
-                id = user.companyId;
-              }
-            }
-          } catch (_e) {
-            // Ignore
-          }
-        }
-        
-        // If still no valid ID, fetch from API
-        if (!id || id === 'default-company-id' || id.length < 10) {
-          try {
-            const companies = await companyService.getAll();
-            if (companies && companies.data && companies.data.length > 0) {
-              id = companies.data[0].id;
-              companyService.setCompanyId(id);
-            }
-          } catch (fetchError) {
-            console.warn('Failed to fetch companies:', fetchError);
-          }
-        }
-        
-        if (id && id !== 'default-company-id' && id.length >= 10) {
-          setCompanyId(id);
-          console.log('✅ Company ID loaded:', id);
-        } else {
-          console.warn('⚠️ No valid company ID found');
-        }
-      } catch (error) {
-        console.error('Failed to load company ID:', error);
-      }
-    };
-    
-    loadCompanyId();
-  }, []);
+  // ============================================
+  // DATA FETCH
+  // ============================================
 
-  useEffect(() => {
-    if (isEdit && id) {
-      loadBusinessUnit();
-    }
-  }, [id]);
+  const loadBusinessUnits = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
-  const loadBusinessUnit = async () => {
     try {
-      setLoading(true);
-      const data = await businessUnitService.getBusinessUnitById(id!);
-      setFormData({
-        name: data.name || '',
-        code: data.code || '',
-        address: data.address || null,
-        phone: data.phone || null,
-        email: data.email || null,
-        type: ((data as any).type as BusinessUnitType) || ('STORE' as BusinessUnitType),
-        isActive: data.isActive !== undefined ? data.isActive : true,
-      });
-      // Also set companyId from loaded data if available
-      if ((data as any).companyId && (data as any).companyId !== 'default-company-id') {
-        setCompanyId((data as any).companyId);
+      const params: {
+        page: number;
+        limit: number;
+        search?: string;
+        isActive?: boolean;
+      } = {
+        page,
+        limit: PAGE_SIZE,
+      };
+
+      if (filters.search.trim()) {
+        params.search = filters.search.trim();
       }
-    } catch (error) {
-      console.error('Failed to load business unit:', error);
-      toast.error('Failed to load business unit');
+
+      if (filters.isActive !== 'all') {
+        params.isActive = filters.isActive === 'true';
+      }
+
+      const result: PaginatedResponse<BusinessUnit> =
+        await businessUnitService.getAll(params);
+
+      setBusinessUnits(result.data);
+      setTotal(result.total);
+      setTotalPages(Math.max(1, result.totalPages));
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to load business units';
+      setError(message);
+      console.error('Failed to load business units:', err);
     } finally {
       setLoading(false);
     }
+  }, [page, filters]);
+
+  useEffect(() => {
+    loadBusinessUnits();
+  }, [loadBusinessUnits]);
+
+  // Reset to page 1 when filters change (but not when only page changes).
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds(new Set());
+  }, [filters.search, filters.isActive, filters.type]);
+
+  // ============================================
+  // FILTER HANDLERS
+  // ============================================
+
+  const handleSearchChange = (value: string) => {
+    setFilters((prev) => ({ ...prev, search: value }));
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    
-    setFormData(prev => {
-      const newData = { ...prev };
-      
-      if (type === 'checkbox') {
-        const checked = (e.target as HTMLInputElement).checked;
-        (newData as any)[name] = checked;
-      } else if (name === 'address' || name === 'phone' || name === 'email') {
-        (newData as any)[name] = value.trim() || null;
-      } else if (name === 'type') {
-        (newData as any)[name] = value ? (value as BusinessUnitType) : undefined;
+  const handleIsActiveChange = (value: 'all' | 'true' | 'false') => {
+    setFilters((prev) => ({ ...prev, isActive: value }));
+  };
+
+  const handleTypeChange = (value: 'all' | BusinessUnitType) => {
+    setFilters((prev) => ({ ...prev, type: value }));
+  };
+
+  const handleClearFilters = () => {
+    setFilters(DEFAULT_FILTERS);
+  };
+
+  // ============================================
+  // SELECTION
+  // ============================================
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
       } else {
-        (newData as any)[name] = value;
+        next.add(id);
       }
-      
-      return newData;
+      return next;
     });
+  };
 
-    if (errors[name as keyof FormErrors]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+  const toggleSelectAll = () => {
+    if (selectedIds.size === businessUnits.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(businessUnits.map((u) => u.id)));
     }
   };
 
-  const validateForm = (): boolean => {
-    const newErrors: FormErrors = {};
+  const isAllSelected =
+    businessUnits.length > 0 && selectedIds.size === businessUnits.length;
 
-    if (!formData.name.trim()) {
-      newErrors.name = 'Business unit name is required';
-    }
+  // ============================================
+  // DELETE HANDLERS
+  // ============================================
 
-    if (!formData.code.trim()) {
-      newErrors.code = 'Business unit code is required';
-    } else if (!/^[A-Z0-9]{2,20}$/i.test(formData.code.trim())) {
-      newErrors.code = 'Code must be 2-20 alphanumeric characters';
-    }
+  const handleDeleteOne = async (unit: BusinessUnit) => {
+    const confirmMessage = unit._count?.products
+      ? `"${unit.name}" has ${unit._count.products} products. It will be archived (soft deleted). Continue?`
+      : `Are you sure you want to delete "${unit.name}"? This cannot be undone.`;
 
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
+    if (!window.confirm(confirmMessage)) return;
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      toast.error('Please fix the errors in the form');
-      return;
-    }
-
-    // For create, ensure we have a valid company ID
-    if (!isEdit && (!companyId || companyId === 'default-company-id' || companyId.length < 10)) {
-      toast.error('Company ID not available. Please select a company first.');
-      console.error('❌ Invalid company ID:', companyId);
-      return;
-    }
-
-    setSaving(true);
-
+    setDeleting(true);
     try {
-      if (isEdit && id) {
-        const updatePayload: Record<string, any> = {};
-        if (formData.name) updatePayload.name = formData.name.trim();
-        if (formData.code) updatePayload.code = formData.code.trim().toUpperCase();
-        if (formData.address !== undefined) updatePayload.address = formData.address;
-        if (formData.phone !== undefined) updatePayload.phone = formData.phone;
-        if (formData.email !== undefined) updatePayload.email = formData.email;
-        if (formData.type) updatePayload.type = formData.type;
-        if (formData.isActive !== undefined) updatePayload.isActive = formData.isActive;
-
-        console.log('📤 Updating business unit with payload:', updatePayload);
-        await businessUnitService.updateBusinessUnit(id, updatePayload);
-        toast.success('Business unit updated successfully');
-      } else {
-        const createPayload: Record<string, any> = {
-          name: formData.name.trim(),
-          code: formData.code.trim().toUpperCase(),
-          companyId: companyId,
-          isActive: formData.isActive !== undefined ? formData.isActive : true,
-          type: formData.type || ('STORE' as BusinessUnitType),
-        };
-        if (formData.address) createPayload.address = formData.address;
-        if (formData.phone) createPayload.phone = formData.phone;
-        if (formData.email) createPayload.email = formData.email;
-
-        console.log('📤 Creating business unit with payload:', createPayload);
-        
-        const result = await businessUnitService.createBusinessUnit(createPayload);
-        console.log('✅ Business unit created:', result);
-        
-        // Save the new business unit ID using standalone function
-        if (result?.id && result.id !== 'default') {
-          setBusinessUnitId(result.id);
-          console.log('✅ Business unit ID saved to storage:', result.id);
-        }
-        
-        toast.success('Business unit created successfully');
-      }
-      router.push('/admin/business-units');
-    } catch (error: any) {
-      console.error('Failed to save business unit:', error);
-      
-      // Better error handling with validation errors
-      if (error?.response?.data?.errors) {
-        const validationErrors = error.response.data.errors;
-        validationErrors.forEach((err: any) => {
-          if (err.field === 'companyId') {
-            toast.error('Invalid company ID. Please refresh and try again.');
-          } else {
-            toast.error(err.message);
-          }
-        });
-      } else if (error?.message?.includes('code already exists')) {
-        setErrors(prev => ({ ...prev, code: 'This code is already taken' }));
-        toast.error('Business unit code already exists');
-      } else if (error?.response?.data?.message) {
-        toast.error(error.response.data.message);
-      } else if (error?.response?.data?.error) {
-        toast.error(error.response.data.error);
-      } else {
-        toast.error(error?.message || 'Failed to save business unit');
-      }
+      const result = await businessUnitService.delete(unit.id);
+      toast.success(result.message || 'Business unit deleted successfully');
+      await loadBusinessUnits();
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to delete business unit';
+      toast.error(message);
     } finally {
-      setSaving(false);
+      setDeleting(false);
+      setOpenMenuId(null);
     }
   };
 
-  const handleCancel = () => {
-    if (saving) return;
-    router.push('/admin/business-units');
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${ids.length} business unit(s)? Business units with associated records will be archived instead of removed.`
+      )
+    ) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const result: BulkDeleteResult =
+        await businessUnitService.bulkDeleteBusinessUnits(ids);
+
+      if (result.errors.length > 0) {
+        toast.error(
+          `Deleted ${result.deletedCount + result.softDeletedCount}, but ${result.errors.length} failed`
+        );
+      } else {
+        toast.success(
+          `Deleted ${result.deletedCount} and archived ${result.softDeletedCount} business unit(s)`
+        );
+      }
+
+      setSelectedIds(new Set());
+      await loadBusinessUnits();
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to delete business units';
+      toast.error(message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
-      </div>
+  // ============================================
+  // NAVIGATION HANDLERS
+  // ============================================
+
+  const handleCreate = () => {
+    router.push('/admin/business-units/new');
+  };
+
+  const handleEdit = (id: string) => {
+    router.push(`/admin/business-units/${id}/edit`);
+  };
+
+  const handleView = (id: string) => {
+    router.push(`/admin/business-units/${id}`);
+  };
+
+  // ============================================
+  // RENDER HELPERS
+  // ============================================
+
+  const renderStatusBadge = (isActive: boolean) => {
+    return isActive ? (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+        <CheckCircle className="w-3 h-3" />
+        Active
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+        <XCircle className="w-3 h-3" />
+        Inactive
+      </span>
     );
-  }
+  };
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {isEdit ? 'Edit Business Unit' : 'Create Business Unit'}
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              {isEdit ? 'Update business unit information' : 'Add a new business location'}
-            </p>
-          </div>
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            Business Units
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            {total} {total === 1 ? 'business unit' : 'business units'} total
+          </p>
+        </div>
+        <div className="flex gap-2">
           <button
-            type="button"
-            onClick={handleCancel}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            aria-label="Close"
-            disabled={saving}
+            onClick={loadBusinessUnits}
+            disabled={loading}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+            aria-label="Refresh"
           >
-            <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+            <RefreshCw
+              className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
+            />
+            Refresh
+          </button>
+          <button
+            onClick={handleCreate}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Business Unit
           </button>
         </div>
+      </div>
 
-        {/* Show company ID for debugging */}
-        {!isEdit && (
-          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              <span className="font-semibold">Company ID:</span> {companyId || 'Loading...'}
-            </p>
+      {/* Filters */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Search */}
+          <div className="md:col-span-2 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={filters.search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder="Search by name, code, or email..."
+              className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400"
+            />
+          </div>
+
+          {/* Status filter */}
+          <select
+            value={filters.isActive}
+            onChange={(e) =>
+              handleIsActiveChange(e.target.value as 'all' | 'true' | 'false')
+            }
+            className="px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white"
+          >
+            <option value="all">All Statuses</option>
+            <option value="true">Active only</option>
+            <option value="false">Inactive only</option>
+          </select>
+
+          {/* Type filter */}
+          <select
+            value={filters.type}
+            onChange={(e) =>
+              handleTypeChange(e.target.value as 'all' | BusinessUnitType)
+            }
+            className="px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white"
+          >
+            <option value="all">All Types</option>
+            <option value="HEADQUARTERS">Headquarters</option>
+            <option value="BRANCH">Branch</option>
+            <option value="WAREHOUSE">Warehouse</option>
+            <option value="STORE">Store</option>
+          </select>
+        </div>
+
+        {(filters.search || filters.isActive !== 'all' || filters.type !== 'all') && (
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={handleClearFilters}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              Clear filters
+            </button>
+            <span className="text-xs text-gray-400">|</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {businessUnits.length} result{businessUnits.length !== 1 ? 's' : ''} shown
+            </span>
           </div>
         )}
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Business Unit Name <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
-              <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
-              <input
-                id="name"
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
-                  errors.name ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-                }`}
-                placeholder="Main Store"
-                required
-                disabled={saving}
-                autoFocus
-              />
-            </div>
-            {errors.name && (
-              <p className="mt-1 text-sm text-red-500">{errors.name}</p>
-            )}
+      {/* Bulk actions */}
+      {selectedIds.size > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            <span className="font-semibold">{selectedIds.size}</span>{' '}
+            business unit{selectedIds.size !== 1 ? 's' : ''} selected
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-sm text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-lg transition-colors"
+            >
+              Clear selection
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting}
+              className="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              Delete Selected
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
+          <AlertCircle className="w-12 h-12 text-red-600 dark:text-red-400 mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-red-800 dark:text-red-300 mb-2">
+            Failed to Load Business Units
+          </h3>
+          <p className="text-sm text-red-700 dark:text-red-400 mb-4">{error}</p>
+          <button
+            onClick={loadBusinessUnits}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      ) : businessUnits.length === 0 ? (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+          <Building2 className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            {filters.search || filters.isActive !== 'all' || filters.type !== 'all'
+              ? 'No business units match your filters'
+              : 'No business units yet'}
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            {filters.search || filters.isActive !== 'all' || filters.type !== 'all'
+              ? 'Try adjusting or clearing your filters.'
+              : 'Create your first business unit to get started.'}
+          </p>
+          {filters.search || filters.isActive !== 'all' || filters.type !== 'all' ? (
+            <button
+              onClick={handleClearFilters}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+            >
+              Clear Filters
+            </button>
+          ) : (
+            <button
+              onClick={handleCreate}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Business Unit
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Table */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                <tr>
+                  <th className="px-4 py-3 text-left w-12">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Counts
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Created
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {businessUnits.map((unit) => (
+                  <tr
+                    key={unit.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                  >
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(unit.id)}
+                        onChange={() => toggleSelect(unit.id)}
+                        className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                        aria-label={`Select ${unit.name}`}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleView(unit.id)}
+                        className="text-left group"
+                      >
+                        <p className="font-medium text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                          {unit.name}
+                        </p>
+                        <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          <span className="font-mono">{unit.code}</span>
+                          {unit.address && (
+                            <>
+                              <span className="text-gray-300 dark:text-gray-600">
+                                ·
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />
+                                {unit.address}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
+                      {getBusinessUnitTypeLabel(unit.type)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {renderStatusBadge(unit.isActive)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <Package className="w-3.5 h-3.5" />
+                          {unit._count?.products ?? 0}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5" />
+                          {unit._count?.userBusinessUnits ?? 0}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      {new Date(unit.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="relative inline-block">
+                        <button
+                          onClick={() =>
+                            setOpenMenuId(
+                              openMenuId === unit.id ? null : unit.id
+                            )
+                          }
+                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                          aria-label="Actions"
+                        >
+                          <MoreVertical className="w-4 h-4 text-gray-500" />
+                        </button>
+
+                        {openMenuId === unit.id && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={() => setOpenMenuId(null)}
+                            />
+                            <div className="absolute right-0 mt-1 w-40 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
+                              <button
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  handleView(unit.id);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                              >
+                                <Building2 className="w-3.5 h-3.5" />
+                                View
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  handleEdit(unit.id);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDeleteOne(unit)}
+                                disabled={deleting}
+                                className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 disabled:opacity-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
-          <div>
-            <label htmlFor="code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Business Unit Code <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 font-mono">#</span>
-              <input
-                id="code"
-                type="text"
-                name="code"
-                value={formData.code}
-                onChange={handleChange}
-                className={`w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
-                  errors.code ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-                }`}
-                placeholder="STORE001"
-                required
-                disabled={saving}
-                maxLength={20}
-              />
-            </div>
-            {errors.code ? (
-              <p className="mt-1 text-sm text-red-500">{errors.code}</p>
-            ) : (
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Unique identifier (2-20 alphanumeric characters)
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Page {page} of {totalPages}
               </p>
-            )}
-          </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1 || loading}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
 
-          <div>
-            <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Business Unit Type
-            </label>
-            <div className="relative">
-              <select
-                id="type"
-                name="type"
-                value={formData.type || 'STORE'}
-                onChange={handleChange}
-                className="w-full px-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white appearance-none"
-                disabled={saving}
-              >
-                <option value="HEADQUARTERS">Headquarters</option>
-                <option value="BRANCH">Branch</option>
-                <option value="WAREHOUSE">Warehouse</option>
-                <option value="STORE">Store</option>
-              </select>
-            </div>
-          </div>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((p) => {
+                    // Show first, last, current, and neighbors of current.
+                    if (p === 1 || p === totalPages) return true;
+                    if (Math.abs(p - page) <= 1) return true;
+                    return false;
+                  })
+                  .map((p, idx, arr) => {
+                    const prev = arr[idx - 1];
+                    const showEllipsis = prev !== undefined && p - prev > 1;
+                    return (
+                      <React.Fragment key={p}>
+                        {showEllipsis && (
+                          <span className="px-2 text-gray-400">…</span>
+                        )}
+                        <button
+                          onClick={() => setPage(p)}
+                          disabled={loading}
+                          className={`min-w-[36px] px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                            p === page
+                              ? 'bg-blue-600 text-white'
+                              : 'border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
 
-          <div>
-            <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Address
-            </label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
-              <input
-                id="address"
-                type="text"
-                name="address"
-                value={formData.address || ''}
-                onChange={handleChange}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                placeholder="123 Main St, City, State"
-                disabled={saving}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Phone Number
-            </label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
-              <input
-                id="phone"
-                type="tel"
-                name="phone"
-                value={formData.phone || ''}
-                onChange={handleChange}
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                placeholder="+1 234 567 890"
-                disabled={saving}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
-              <input
-                id="email"
-                type="email"
-                name="email"
-                value={formData.email || ''}
-                onChange={handleChange}
-                className={`w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 ${
-                  errors.email ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-                }`}
-                placeholder="store@example.com"
-                disabled={saving}
-              />
-            </div>
-            {errors.email && (
-              <p className="mt-1 text-sm text-red-500">{errors.email}</p>
-            )}
-          </div>
-
-          {isEdit && (
-            <div className="flex items-center gap-3 pt-2">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="isActive"
-                  checked={formData.isActive !== false}
-                  onChange={handleChange}
-                  className="sr-only peer"
-                  disabled={saving}
-                />
-                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                <span className="ms-3 text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {formData.isActive !== false ? 'Active' : 'Inactive'}
-                </span>
-              </label>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || loading}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
-
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
-              disabled={saving}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {isEdit ? 'Updating...' : 'Creating...'}
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  {isEdit ? 'Update Business Unit' : 'Create Business Unit'}
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+        </>
+      )}
     </div>
   );
 }
-
-export default BusinessUnitForm;

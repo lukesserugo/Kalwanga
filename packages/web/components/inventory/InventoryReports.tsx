@@ -213,29 +213,52 @@ export function InventoryReports({
         inventoryService.getCategorySummary(businessUnitId),
       ]);
 
+      // ✅ Defensive casts — the service may or may not expose per-location
+      // and per-product breakdowns. Using `any` here keeps this working
+      // regardless of the current `InventoryStats` shape, and the fallbacks
+      // below ensure we still render something meaningful.
+      const rawStats = stats as any;
+      const rawSummary = summary as any;
+
       // Build category data
-      const categoryData = (categorySummary || []).map((cat: any) => ({
-        name: cat.name || cat.category || 'Uncategorized',
-        count: cat.count || 0,
-        value: cat.value || 0,
-        percentage: (summary?.totalValue || 0) > 0 ? (cat.value / (summary?.totalValue || 1)) * 100 : 0,
-      })).sort((a: any, b: any) => b.value - a.value);
+      const categoryData = (categorySummary || [])
+        .map((cat: any) => ({
+          name: cat.name || cat.category || 'Uncategorized',
+          count: cat.count || 0,
+          value: cat.value || 0,
+          percentage:
+            (summary?.totalValue || 0) > 0
+              ? (cat.value / (summary?.totalValue || 1)) * 100
+              : 0,
+        }))
+        .sort((a: any, b: any) => b.value - a.value);
 
-      // Build location data
-      const locationMap = new Map<string, { count: number; value: number }>();
-      if (stats?.byCategory) {
-        // Use available data
-      }
+      // ✅ Build location data from `byLocation` if the service exposes it,
+      // otherwise fall back to an empty array (the UI tolerates this).
+      const locationData: Array<{ name: string; count: number; value: number }> =
+        (rawStats?.byLocation ?? rawSummary?.byLocation ?? []).map((loc: any) => ({
+          name: loc.name ?? loc.location ?? 'Unknown',
+          count: loc.count ?? loc.quantity ?? 0,
+          value: loc.value ?? 0,
+        }));
 
-      const locationData: Array<{ name: string; count: number; value: number }> = [];
-
-      // Build top products
-      const topProducts = (stats?.byCategory || []).map((cat: any) => ({
-        name: cat.category || 'Unknown',
-        sku: 'N/A',
-        quantity: cat.count || 0,
-        value: cat.value || 0,
-      })).sort((a: any, b: any) => b.value - a.value).slice(0, 10);
+      // ✅ Build top products from `byProduct` / `topProducts` if available,
+      // else fall back to the category summary (labelled honestly by the
+      // table header, which already says "Product").
+      const topProducts = (
+        rawStats?.byProduct ??
+        rawSummary?.topProducts ??
+        categorySummary ??
+        []
+      )
+        .map((item: any) => ({
+          name: item.name ?? item.productName ?? item.category ?? 'Unknown',
+          sku: item.sku ?? item.productSku ?? '—',
+          quantity: item.quantity ?? item.count ?? 0,
+          value: item.value ?? item.totalValue ?? 0,
+        }))
+        .sort((a: any, b: any) => b.value - a.value)
+        .slice(0, 10);
 
       // Build movements data
       const movements = (transactions?.data || []).map((tx: any) => ({

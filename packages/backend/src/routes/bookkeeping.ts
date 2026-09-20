@@ -32,6 +32,12 @@ router.post('/journal-entries/:id/void', bookkeepingController.voidJournalEntry)
 // Get all accounts
 router.get('/accounts', bookkeepingController.getAccounts);
 
+// Create a new account
+router.post('/accounts', bookkeepingController.createAccount);
+
+// Update account
+router.put('/accounts/:id', bookkeepingController.updateAccount);
+
 // Get account by ID
 router.get('/accounts/:id', bookkeepingController.getAccountById);
 

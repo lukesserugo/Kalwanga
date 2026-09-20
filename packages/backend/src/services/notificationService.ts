@@ -5,10 +5,25 @@ import { AppError } from '../middleware/errorHandler.js';
 import { EventEmitter } from 'events';
 
 // ============================================
-// TYPES - Define enums as string literals
+// PRISMA ENUMS — canonical source of truth
+// ============================================
+//
+// We import the generated enums so every string written to the
+// database is validated by TypeScript at compile time and by Postgres
+// at runtime. The local string unions below are kept for the public
+// API surface, but they're now derived from the Prisma enums so they
+// can never drift.
+
+import {
+  NotificationType as PrismaNotificationType,
+  NotificationPriority as PrismaNotificationPriority,
+} from '../generated/prisma/index.js';
+
+// ============================================
+// TYPES - String unions mirror the Prisma enums
 // ============================================
 
-export type NotificationType = 
+export type NotificationType =
   | 'SALE'
   | 'INVENTORY'
   | 'ORDER'
@@ -87,6 +102,7 @@ interface NotificationPreferences {
   systemAlerts: boolean;
   promotionalAlerts: boolean;
   reminderAlerts: boolean;
+  receiptAlerts: boolean;
   emailFrequency: 'immediate' | 'daily' | 'weekly' | 'never';
   quietHoursStart?: string;
   quietHoursEnd?: string;
@@ -169,15 +185,38 @@ interface BulkNotificationResult {
 // ============================================
 
 const VALID_NOTIFICATION_TYPES: NotificationType[] = [
-  'SALE', 'INVENTORY', 'ORDER', 'PAYMENT', 'CUSTOMER',
-  'SYSTEM', 'ALERT', 'SUCCESS', 'INFO', 'WARNING',
-  'ERROR', 'PROMOTION', 'REMINDER', 'LOW_STOCK',
-  'PURCHASE_ORDER', 'SHIFT', 'RECEIPT'
+  'SALE',
+  'INVENTORY',
+  'ORDER',
+  'PAYMENT',
+  'CUSTOMER',
+  'SYSTEM',
+  'ALERT',
+  'SUCCESS',
+  'INFO',
+  'WARNING',
+  'ERROR',
+  'PROMOTION',
+  'REMINDER',
+  'LOW_STOCK',
+  'PURCHASE_ORDER',
+  'SHIFT',
+  'RECEIPT',
 ];
 
-const VALID_PRIORITIES: NotificationPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+const VALID_PRIORITIES: NotificationPriority[] = [
+  'LOW',
+  'MEDIUM',
+  'HIGH',
+  'URGENT',
+];
 
-const VALID_CHANNELS: NotificationChannel[] = ['EMAIL', 'SMS', 'PUSH', 'IN_APP'];
+const VALID_CHANNELS: NotificationChannel[] = [
+  'EMAIL',
+  'SMS',
+  'PUSH',
+  'IN_APP',
+];
 
 const DEFAULT_PREFERENCES: Omit<NotificationPreferences, 'userId'> = {
   emailEnabled: true,
@@ -191,29 +230,62 @@ const DEFAULT_PREFERENCES: Omit<NotificationPreferences, 'userId'> = {
   systemAlerts: true,
   promotionalAlerts: false,
   reminderAlerts: true,
+  receiptAlerts: true,
   emailFrequency: 'immediate',
   quietHoursStart: '22:00',
   quietHoursEnd: '07:00',
 };
 
 // ============================================
-// TYPE HELPERS
+// TYPE HELPERS — return Prisma enums directly
 // ============================================
 
-function mapToNotificationType(type: string): string {
-  const mapped = type.toUpperCase();
-  if (VALID_NOTIFICATION_TYPES.includes(mapped as NotificationType)) {
-    return mapped;
-  }
-  return 'INFO';
+/**
+ * Coerce a caller-supplied string into a Prisma NotificationType.
+ *
+ * Uses the generated enum so the four extended members
+ * (LOW_STOCK / PURCHASE_ORDER / SHIFT / RECEIPT) resolve correctly.
+ * Unrecognized values fall back to INFO, matching the previous
+ * behavior.
+ */
+function mapToNotificationType(
+  type: string,
+): PrismaNotificationType {
+  const map: Record<string, PrismaNotificationType> = {
+    SALE: PrismaNotificationType.SALE,
+    INVENTORY: PrismaNotificationType.INVENTORY,
+    ORDER: PrismaNotificationType.ORDER,
+    PAYMENT: PrismaNotificationType.PAYMENT,
+    CUSTOMER: PrismaNotificationType.CUSTOMER,
+    SYSTEM: PrismaNotificationType.SYSTEM,
+    ALERT: PrismaNotificationType.ALERT,
+    SUCCESS: PrismaNotificationType.SUCCESS,
+    INFO: PrismaNotificationType.INFO,
+    WARNING: PrismaNotificationType.WARNING,
+    ERROR: PrismaNotificationType.ERROR,
+    PROMOTION: PrismaNotificationType.PROMOTION,
+    REMINDER: PrismaNotificationType.REMINDER,
+    LOW_STOCK: PrismaNotificationType.LOW_STOCK,
+    PURCHASE_ORDER: PrismaNotificationType.PURCHASE_ORDER,
+    SHIFT: PrismaNotificationType.SHIFT,
+    RECEIPT: PrismaNotificationType.RECEIPT,
+  };
+  return map[type.toUpperCase()] ?? PrismaNotificationType.INFO;
 }
 
-function mapToPriority(priority: string): string {
-  const mapped = priority.toUpperCase();
-  if (VALID_PRIORITIES.includes(mapped as NotificationPriority)) {
-    return mapped;
-  }
-  return 'MEDIUM';
+/**
+ * Coerce a caller-supplied string into a Prisma NotificationPriority.
+ */
+function mapToPriority(
+  priority: string,
+): PrismaNotificationPriority {
+  const map: Record<string, PrismaNotificationPriority> = {
+    LOW: PrismaNotificationPriority.LOW,
+    MEDIUM: PrismaNotificationPriority.MEDIUM,
+    HIGH: PrismaNotificationPriority.HIGH,
+    URGENT: PrismaNotificationPriority.URGENT,
+  };
+  return map[priority.toUpperCase()] ?? PrismaNotificationPriority.MEDIUM;
 }
 
 function isValidNotificationType(type: string): boolean {
@@ -263,15 +335,27 @@ export class NotificationService extends EventEmitter {
   }
 
   private handleNotificationCreated(notification: any): void {
-    console.log(`📨 Notification created: ${notification.id} - ${notification.title}`);
+    console.log(
+      `📨 Notification created: ${notification.id} - ${notification.title}`,
+    );
   }
 
-  private handleNotificationRead(data: { notificationId: string; userId: string }): void {
-    console.log(`📖 Notification read: ${data.notificationId} by ${data.userId}`);
+  private handleNotificationRead(data: {
+    notificationId: string;
+    userId: string;
+  }): void {
+    console.log(
+      `📖 Notification read: ${data.notificationId} by ${data.userId}`,
+    );
   }
 
-  private handleNotificationDeleted(data: { notificationId: string; userId: string }): void {
-    console.log(`🗑️ Notification deleted: ${data.notificationId} by ${data.userId}`);
+  private handleNotificationDeleted(data: {
+    notificationId: string;
+    userId: string;
+  }): void {
+    console.log(
+      `🗑️ Notification deleted: ${data.notificationId} by ${data.userId}`,
+    );
   }
 
   private handleError(error: Error): void {
@@ -281,9 +365,14 @@ export class NotificationService extends EventEmitter {
   /**
    * Safely emit notification
    */
-  private safeEmitNotification(notification: any, businessUnitId: string): void {
+  private safeEmitNotification(
+    notification: any,
+    businessUnitId: string,
+  ): void {
     try {
-      console.log(`🔔 Notification: ${notification?.title || 'New notification'} - ${businessUnitId}`);
+      console.log(
+        `🔔 Notification: ${notification?.title || 'New notification'} - ${businessUnitId}`,
+      );
       this.emit('notification', notification);
     } catch (error) {
       console.warn('Failed to emit notification:', error);
@@ -299,8 +388,11 @@ export class NotificationService extends EventEmitter {
     }
 
     const now = new Date();
-    const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-    
+    const currentTime =
+      now.getHours().toString().padStart(2, '0') +
+      ':' +
+      now.getMinutes().toString().padStart(2, '0');
+
     const start = preferences.quietHoursStart;
     const end = preferences.quietHoursEnd;
 
@@ -317,7 +409,7 @@ export class NotificationService extends EventEmitter {
   private shouldSendNotification(
     preferences: NotificationPreferences,
     type: string,
-    channel: NotificationChannel
+    channel: NotificationChannel,
   ): boolean {
     // Check channel enabled
     if (channel === 'EMAIL' && !preferences.emailEnabled) return false;
@@ -332,13 +424,14 @@ export class NotificationService extends EventEmitter {
 
     // Check type-specific preferences
     const typeMap: Record<string, keyof NotificationPreferences> = {
-      'LOW_STOCK': 'lowStockAlerts',
-      'SALE': 'saleAlerts',
-      'PURCHASE_ORDER': 'purchaseOrderAlerts',
-      'SHIFT': 'shiftAlerts',
-      'SYSTEM': 'systemAlerts',
-      'PROMOTION': 'promotionalAlerts',
-      'REMINDER': 'reminderAlerts',
+      LOW_STOCK: 'lowStockAlerts',
+      SALE: 'saleAlerts',
+      PURCHASE_ORDER: 'purchaseOrderAlerts',
+      SHIFT: 'shiftAlerts',
+      SYSTEM: 'systemAlerts',
+      PROMOTION: 'promotionalAlerts',
+      REMINDER: 'reminderAlerts',
+      RECEIPT: 'receiptAlerts',
     };
 
     const preferenceKey = typeMap[type];
@@ -494,7 +587,9 @@ export class NotificationService extends EventEmitter {
       if (!data.type) throw new AppError('Type is required', 400);
 
       const notificationType = mapToNotificationType(data.type);
-      const priority = data.priority ? mapToPriority(data.priority) : 'MEDIUM';
+      const priority = data.priority
+        ? mapToPriority(data.priority)
+        : PrismaNotificationPriority.MEDIUM;
       const channel = data.channel || 'IN_APP';
 
       // Check if user exists
@@ -510,8 +605,16 @@ export class NotificationService extends EventEmitter {
       // Get user preferences
       const preferences = await this.getPreferences(data.userId);
 
-      // Check if should send based on preferences
-      if (!this.shouldSendNotification(preferences, notificationType, channel)) {
+      // Check if should send based on preferences.
+      // NOTE: notificationType is a Prisma enum value, but
+      // shouldSendNotification expects the raw string. Convert.
+      if (
+        !this.shouldSendNotification(
+          preferences,
+          notificationType as unknown as string,
+          channel,
+        )
+      ) {
         return null;
       }
 
@@ -563,7 +666,11 @@ export class NotificationService extends EventEmitter {
   /**
    * Send notification via specific channel
    */
-  private async sendViaChannel(notification: any, channel: NotificationChannel, user: any): Promise<NotificationResult> {
+  private async sendViaChannel(
+    notification: any,
+    channel: NotificationChannel,
+    user: any,
+  ): Promise<NotificationResult> {
     try {
       switch (channel) {
         case 'EMAIL':
@@ -666,7 +773,7 @@ export class NotificationService extends EventEmitter {
       // Process in batches
       for (let i = 0; i < notifications.length; i += this.batchSize) {
         const batch = notifications.slice(i, i + this.batchSize);
-        
+
         for (let j = 0; j < batch.length; j++) {
           const index = i + j;
           try {
@@ -696,9 +803,11 @@ export class NotificationService extends EventEmitter {
           total: notifications.length,
           succeeded: results.length,
           failed: errors.length,
-          successRate: notifications.length > 0 
-            ? ((results.length / notifications.length) * 100).toFixed(2) + '%'
-            : '0%',
+          successRate:
+            notifications.length > 0
+              ? ((results.length / notifications.length) * 100).toFixed(2) +
+                '%'
+              : '0%',
         },
       };
     } catch (error) {
@@ -759,7 +868,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Mark multiple notifications as read
    */
-  async markMultipleAsRead(ids: string[], userId: string): Promise<{ count: number }> {
+  async markMultipleAsRead(
+    ids: string[],
+    userId: string,
+  ): Promise<{ count: number }> {
     try {
       if (!ids || ids.length === 0) {
         throw new AppError('At least one notification ID is required', 400);
@@ -790,7 +902,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Mark all notifications as read
    */
-  async markAllAsRead(params: { userId: string; businessUnitId?: string }): Promise<{ count: number }> {
+  async markAllAsRead(params: {
+    userId: string;
+    businessUnitId?: string;
+  }): Promise<{ count: number }> {
     try {
       const { userId, businessUnitId } = params;
       if (!userId) throw new AppError('User ID is required', 400);
@@ -818,7 +933,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Delete notification
    */
-  async deleteNotification(id: string, userId: string): Promise<{ message: string }> {
+  async deleteNotification(
+    id: string,
+    userId: string,
+  ): Promise<{ message: string }> {
     try {
       if (!id) throw new AppError('Notification ID is required', 400);
       if (!userId) throw new AppError('User ID is required', 400);
@@ -847,7 +965,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Delete all notifications
    */
-  async deleteAllNotifications(params: { userId: string; businessUnitId?: string }): Promise<{ count: number }> {
+  async deleteAllNotifications(params: {
+    userId: string;
+    businessUnitId?: string;
+  }): Promise<{ count: number }> {
     try {
       const { userId, businessUnitId } = params;
       if (!userId) throw new AppError('User ID is required', 400);
@@ -859,7 +980,10 @@ export class NotificationService extends EventEmitter {
         where,
       });
 
-      this.emit('allNotificationsDeleted', { count: result.count, userId });
+      this.emit('allNotificationsDeleted', {
+        count: result.count,
+        userId,
+      });
       return { count: result.count };
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -871,7 +995,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Delete all read notifications
    */
-  async deleteReadNotifications(params: { userId: string; businessUnitId?: string }): Promise<{ count: number }> {
+  async deleteReadNotifications(params: {
+    userId: string;
+    businessUnitId?: string;
+  }): Promise<{ count: number }> {
     try {
       const { userId, businessUnitId } = params;
       if (!userId) throw new AppError('User ID is required', 400);
@@ -883,7 +1010,10 @@ export class NotificationService extends EventEmitter {
         where,
       });
 
-      this.emit('readNotificationsDeleted', { count: result.count, userId });
+      this.emit('readNotificationsDeleted', {
+        count: result.count,
+        userId,
+      });
       return { count: result.count };
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -895,7 +1025,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Get unread count
    */
-  async getUnreadCount(params: { userId: string; businessUnitId?: string }): Promise<number> {
+  async getUnreadCount(params: {
+    userId: string;
+    businessUnitId?: string;
+  }): Promise<number> {
     try {
       const { userId, businessUnitId } = params;
       if (!userId) throw new AppError('User ID is required', 400);
@@ -912,8 +1045,12 @@ export class NotificationService extends EventEmitter {
   }
 
   // ============================================
-  // NOTIFICATION PREFERENCES - FIXED: No Prisma model
+  // NOTIFICATION PREFERENCES
   // ============================================
+  //
+  // Preferences are currently held in memory. The Prisma model
+  // `NotificationPreference` now exists, so the persistence layer can
+  // be swapped in later without changing the method signatures.
 
   /**
    * Get user notification preferences - returns defaults
@@ -959,21 +1096,27 @@ export class NotificationService extends EventEmitter {
   /**
    * Update user notification preferences - in-memory only
    */
-  async updatePreferences(userId: string, data: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+  async updatePreferences(
+    userId: string,
+    data: Partial<NotificationPreferences>,
+  ): Promise<NotificationPreferences> {
     try {
       if (!userId) throw new AppError('User ID is required', 400);
 
       const current = await this.getPreferences(userId);
-      const updated = { 
-        ...current, 
-        ...data, 
-        updatedAt: new Date() 
+      const updated = {
+        ...current,
+        ...data,
+        updatedAt: new Date(),
       };
 
       // Update cache
       this.preferencesCache.set(userId, updated);
 
-      console.log(`Notification preferences updated for user ${userId}:`, updated);
+      console.log(
+        `Notification preferences updated for user ${userId}:`,
+        updated,
+      );
       this.emit('preferencesUpdated', { userId, preferences: updated });
 
       return updated;
@@ -998,7 +1141,10 @@ export class NotificationService extends EventEmitter {
       };
 
       this.preferencesCache.set(userId, defaultPrefs);
-      this.emit('preferencesReset', { userId, preferences: defaultPrefs });
+      this.emit('preferencesReset', {
+        userId,
+        preferences: defaultPrefs,
+      });
       return defaultPrefs;
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -1033,24 +1179,26 @@ export class NotificationService extends EventEmitter {
         data: {
           title: options.subject,
           message: options.html.substring(0, 500),
-          type: 'SYSTEM',
-          priority: 'MEDIUM',
+          type: PrismaNotificationType.SYSTEM,
+          priority: PrismaNotificationPriority.MEDIUM,
           userId: 'system',
         },
       });
 
       console.log(`📧 Email queued: ${options.to} - ${options.subject}`);
-      this.emit('emailQueued', { 
-        to: options.to, 
-        subject: options.subject, 
-        notificationId: notification.id 
+      this.emit('emailQueued', {
+        to: options.to,
+        subject: options.subject,
+        notificationId: notification.id,
       });
 
       return {
         success: true,
         notificationId: notification.id,
         channel: 'EMAIL',
-        messageId: `email_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        messageId: `email_${Date.now()}_${Math.random()
+          .toString(36)
+          .substring(2, 8)}`,
       };
     } catch (error) {
       console.error('Email queue failed:', error);
@@ -1073,32 +1221,35 @@ export class NotificationService extends EventEmitter {
 
       // Truncate message if too long
       const maxLength = 160;
-      const message = options.message.length > maxLength 
-        ? options.message.substring(0, maxLength - 3) + '...' 
-        : options.message;
+      const message =
+        options.message.length > maxLength
+          ? options.message.substring(0, maxLength - 3) + '...'
+          : options.message;
 
       const notification = await prisma.notification.create({
         data: {
           title: 'SMS',
           message: message,
-          type: 'SYSTEM',
-          priority: 'MEDIUM',
+          type: PrismaNotificationType.SYSTEM,
+          priority: PrismaNotificationPriority.MEDIUM,
           userId: 'system',
         },
       });
 
       console.log(`📱 SMS queued: ${options.to} - ${message}`);
-      this.emit('smsQueued', { 
-        to: options.to, 
-        message: message, 
-        notificationId: notification.id 
+      this.emit('smsQueued', {
+        to: options.to,
+        message: message,
+        notificationId: notification.id,
       });
 
       return {
         success: true,
         notificationId: notification.id,
         channel: 'SMS',
-        messageId: `sms_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        messageId: `sms_${Date.now()}_${Math.random()
+          .toString(36)
+          .substring(2, 8)}`,
       };
     } catch (error) {
       console.error('SMS queue failed:', error);
@@ -1109,38 +1260,51 @@ export class NotificationService extends EventEmitter {
   /**
    * Send push notification
    */
-  async sendPushNotification(options: PushNotificationOptions): Promise<NotificationResult> {
+  async sendPushNotification(
+    options: PushNotificationOptions,
+  ): Promise<NotificationResult> {
     try {
       if (!options.userId) {
         return { success: false, error: 'User ID is required' };
       }
 
       if (!options.title) {
-        return { success: false, error: 'Push notification title is required' };
+        return {
+          success: false,
+          error: 'Push notification title is required',
+        };
       }
 
       if (!options.body) {
-        return { success: false, error: 'Push notification body is required' };
+        return {
+          success: false,
+          error: 'Push notification body is required',
+        };
       }
 
       const notification = await prisma.notification.create({
         data: {
           title: options.title,
           message: options.body,
-          type: 'SYSTEM',
-          priority: 'MEDIUM',
+          type: PrismaNotificationType.SYSTEM,
+          priority: PrismaNotificationPriority.MEDIUM,
           userId: options.userId,
           data: options.data || null,
         },
       });
 
-      this.safeEmitNotification(notification, (notification as any).businessUnitId || '');
+      this.safeEmitNotification(
+        notification,
+        (notification as any).businessUnitId || '',
+      );
 
       return {
         success: true,
         notificationId: notification.id,
         channel: 'PUSH',
-        messageId: `push_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        messageId: `push_${Date.now()}_${Math.random()
+          .toString(36)
+          .substring(2, 8)}`,
       };
     } catch (error) {
       console.error('Push notification failed:', error);
@@ -1151,7 +1315,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Send receipt via email
    */
-  async sendReceiptEmail(saleId: string, email: string): Promise<NotificationResult> {
+  async sendReceiptEmail(
+    saleId: string,
+    email: string,
+  ): Promise<NotificationResult> {
     try {
       if (!saleId) throw new AppError('Sale ID is required', 400);
       if (!this.isValidEmail(email)) {
@@ -1197,7 +1364,9 @@ export class NotificationService extends EventEmitter {
       if (!sale) throw new AppError('Sale not found', 404);
 
       const html = this.generateReceiptHTML(sale);
-      const subject = `Receipt #${sale.receiptNumber} - ${sale.businessUnit?.name || 'Kalwanga'}`;
+      const subject = `Receipt #${sale.receiptNumber} - ${
+        sale.businessUnit?.name || 'Kalwanga'
+      }`;
 
       const result = await this.sendEmail({
         to: email,
@@ -1213,6 +1382,12 @@ export class NotificationService extends EventEmitter {
           message: `Receipt #${sale.receiptNumber} sent to ${email}`,
           type: 'RECEIPT',
           businessUnitId: sale.businessUnitId,
+          data: {
+            saleId: sale.id,
+            receiptNumber: sale.receiptNumber,
+            email,
+            total: sale.total,
+          },
         });
       }
 
@@ -1228,19 +1403,35 @@ export class NotificationService extends EventEmitter {
    * Generate receipt HTML
    */
   private generateReceiptHTML(sale: any): string {
-    const items = sale.items.map((item: any) => `
+    const items = sale.items
+      .map(
+        (item: any) => `
       <tr>
         <td style="padding: 8px; border-bottom: 1px solid #eee;">
           ${item.product.name}
-          ${item.product.sku ? `<br><small style="color: #999;">SKU: ${item.product.sku}</small>` : ''}
+          ${
+            item.product.sku
+              ? `<br><small style="color: #999;">SKU: ${item.product.sku}</small>`
+              : ''
+          }
         </td>
-        <td style="padding: 8px; text-align: center; border-bottom: 1px solid #eee;">${item.quantity}</td>
-        <td style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">$${item.unitPrice.toFixed(2)}</td>
-        <td style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">$${item.total.toFixed(2)}</td>
+        <td style="padding: 8px; text-align: center; border-bottom: 1px solid #eee;">${
+          item.quantity
+        }</td>
+        <td style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">$${item.unitPrice.toFixed(
+          2,
+        )}</td>
+        <td style="padding: 8px; text-align: right; border-bottom: 1px solid #eee;">$${item.total.toFixed(
+          2,
+        )}</td>
       </tr>
-    `).join('');
+    `,
+      )
+      .join('');
 
-    const totalPaid = sale.payments?.reduce((sum: number, p: any) => sum + p.amount, 0) || sale.total;
+    const totalPaid =
+      sale.payments?.reduce((sum: number, p: any) => sum + p.amount, 0) ||
+      sale.total;
 
     return `
       <!DOCTYPE html>
@@ -1263,7 +1454,11 @@ export class NotificationService extends EventEmitter {
       <body>
         <div class="container">
           <div class="header">
-            ${sale.businessUnit?.logo ? `<img src="${sale.businessUnit.logo}" alt="Logo" style="max-height: 60px; margin-bottom: 10px;" />` : ''}
+            ${
+              sale.businessUnit?.logo
+                ? `<img src="${sale.businessUnit.logo}" alt="Logo" style="max-height: 60px; margin-bottom: 10px;" />`
+                : ''
+            }
             <h1>${sale.businessUnit?.name || 'Kalwanga'}</h1>
             <div class="subtitle">${sale.businessUnit?.address || ''}</div>
             <div class="subtitle">${sale.businessUnit?.phone || ''}</div>
@@ -1271,10 +1466,22 @@ export class NotificationService extends EventEmitter {
 
           <div class="info">
             <div class="info-grid">
-              <div><div class="label">Receipt #</div><div class="value">${sale.receiptNumber}</div></div>
-              <div><div class="label">Date</div><div class="value">${new Date(sale.saleDate).toLocaleString()}</div></div>
-              <div><div class="label">Customer</div><div class="value">${sale.customer ? `${sale.customer.firstName} ${sale.customer.lastName}` : 'Guest'}</div></div>
-              <div><div class="label">Cashier</div><div class="value">${sale.user ? `${sale.user.firstName} ${sale.user.lastName}` : 'System'}</div></div>
+              <div><div class="label">Receipt #</div><div class="value">${
+                sale.receiptNumber
+              }</div></div>
+              <div><div class="label">Date</div><div class="value">${new Date(
+                sale.saleDate,
+              ).toLocaleString()}</div></div>
+              <div><div class="label">Customer</div><div class="value">${
+                sale.customer
+                  ? `${sale.customer.firstName} ${sale.customer.lastName}`
+                  : 'Guest'
+              }</div></div>
+              <div><div class="label">Cashier</div><div class="value">${
+                sale.user
+                  ? `${sale.user.firstName} ${sale.user.lastName}`
+                  : 'System'
+              }</div></div>
             </div>
           </div>
 
@@ -1290,16 +1497,34 @@ export class NotificationService extends EventEmitter {
 
           <div class="total-section">
             <div class="subtotal">Subtotal: $${sale.subtotal.toFixed(2)}</div>
-            ${sale.discount > 0 ? `<div class="subtotal">Discount: -$${sale.discount.toFixed(2)}</div>` : ''}
-            ${sale.tax > 0 ? `<div class="subtotal">Tax: $${sale.tax.toFixed(2)}</div>` : ''}
-            <div><span class="total-amount">$${sale.total.toFixed(2)}</span></div>
+            ${
+              sale.discount > 0
+                ? `<div class="subtotal">Discount: -$${sale.discount.toFixed(
+                    2,
+                  )}</div>`
+                : ''
+            }
+            ${
+              sale.tax > 0
+                ? `<div class="subtotal">Tax: $${sale.tax.toFixed(2)}</div>`
+                : ''
+            }
+            <div><span class="total-amount">$${sale.total.toFixed(
+              2,
+            )}</span></div>
           </div>
 
           <div class="payment-info">
             <p><strong>Payment Details</strong></p>
-            ${sale.payments?.map((p: any) => `
-              <p>${p.paymentMethod}: $${p.amount.toFixed(2)}</p>
-            `).join('') || '<p>Cash: $' + totalPaid.toFixed(2) + '</p>'}
+            ${
+              sale.payments
+                ?.map(
+                  (p: any) =>
+                    `<p>${p.paymentMethod}: $${p.amount.toFixed(2)}</p>`,
+                )
+                .join('') ||
+              '<p>Cash: $' + totalPaid.toFixed(2) + '</p>'
+            }
           </div>
 
           <div class="footer">
@@ -1325,10 +1550,11 @@ export class NotificationService extends EventEmitter {
     currentStock: number,
     reorderPoint: number,
     productId?: string,
-    inventoryId?: string
+    inventoryId?: string,
   ): Promise<any[]> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const users = await prisma.businessUnitUser.findMany({
         where: { businessUnitId, isActive: true },
@@ -1384,7 +1610,9 @@ export class NotificationService extends EventEmitter {
                 <li>Reorder point: <strong>${reorderPoint}</strong></li>
                 ${productId ? `<li>Product ID: ${productId}</li>` : ''}
               </ul>
-              <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/inventory">View Inventory</a></p>
+              <p><a href="${
+                process.env.FRONTEND_URL || 'http://localhost:3000'
+              }/admin/inventory">View Inventory</a></p>
             `,
           });
         }
@@ -1401,7 +1629,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Send sale notification
    */
-  async sendSaleNotification(businessUnitId: string, saleId: string): Promise<any[]> {
+  async sendSaleNotification(
+    businessUnitId: string,
+    saleId: string,
+  ): Promise<any[]> {
     try {
       const sale = await prisma.sale.findUnique({
         where: { id: saleId },
@@ -1433,7 +1664,9 @@ export class NotificationService extends EventEmitter {
         const notification = await this.createNotification({
           userId: user.userId,
           title: 'New Sale',
-          message: `New sale #${sale.receiptNumber} - ${customerName} - $${sale.total.toFixed(2)} (Cashier: ${cashierName})`,
+          message: `New sale #${sale.receiptNumber} - ${customerName} - $${sale.total.toFixed(
+            2,
+          )} (Cashier: ${cashierName})`,
           type: 'SALE',
           businessUnitId,
           data: {
@@ -1462,15 +1695,17 @@ export class NotificationService extends EventEmitter {
    * Send purchase order notification
    */
   async sendPurchaseOrderNotification(
-    businessUnitId: string, 
-    poNumber: string, 
-    supplierName: string, 
+    businessUnitId: string,
+    poNumber: string,
+    supplierName: string,
     amount?: number,
-    poId?: string
+    poId?: string,
   ): Promise<any[]> {
     try {
       const title = `Purchase Order ${poNumber}`;
-      const message = `Purchase order ${poNumber} created for ${supplierName}${amount ? ` - $${amount.toFixed(2)}` : ''}`;
+      const message = `Purchase order ${poNumber} created for ${supplierName}${
+        amount ? ` - $${amount.toFixed(2)}` : ''
+      }`;
 
       const result = await this.sendBusinessUnitNotification(
         businessUnitId,
@@ -1484,13 +1719,13 @@ export class NotificationService extends EventEmitter {
           amount,
           poId,
           timestamp: new Date().toISOString(),
-        }
+        },
       );
 
       // Send to specific users who need to approve
       const approvalUsers = await prisma.businessUnitUser.findMany({
-        where: { 
-          businessUnitId, 
+        where: {
+          businessUnitId,
           isActive: true,
           role: { in: ['ADMIN', 'MANAGER'] },
         },
@@ -1525,13 +1760,17 @@ export class NotificationService extends EventEmitter {
 
   /**
    * Send shift notification
+   *
+   * Routes through createNotification so preferences, quiet hours,
+   * and the SSE stream all apply. Previously this method bypassed
+   * all of that by writing directly to Prisma.
    */
   async sendShiftNotification(
     businessUnitId: string,
     userId: string,
     action: 'started' | 'ended' | 'discrepancy',
     shiftId?: string,
-    sessionId?: string
+    sessionId?: string,
   ) {
     try {
       const titles: Record<string, string> = {
@@ -1543,24 +1782,23 @@ export class NotificationService extends EventEmitter {
       const messages: Record<string, string> = {
         started: 'You have successfully started a new shift.',
         ended: 'Your shift has been closed successfully.',
-        discrepancy: 'A discrepancy was detected when closing the shift. Please review.',
+        discrepancy:
+          'A discrepancy was detected when closing the shift. Please review.',
       };
 
-      await prisma.notification.create({
+      await this.createNotification({
+        userId,
+        title: titles[action],
+        message: messages[action],
+        type: 'SHIFT',
+        priority: action === 'discrepancy' ? 'HIGH' : 'MEDIUM',
+        businessUnitId,
+        link: shiftId ? `/admin/shifts/${shiftId}` : undefined,
         data: {
-          title: titles[action],
-          message: messages[action],
-          type: action === 'discrepancy' ? 'ALERT' : 'INFO',
-          priority: action === 'discrepancy' ? 'HIGH' : 'MEDIUM',
-          userId,
-          businessUnitId,
-          link: shiftId ? `/admin/shifts/${shiftId}` : undefined,   // ✅ clickable
-          data: {                                                    // ✅ metadata
-            action,
-            shiftId,
-            sessionId,
-            timestamp: new Date().toISOString(),
-          },
+          action,
+          shiftId,
+          sessionId,
+          timestamp: new Date().toISOString(),
         },
       });
     } catch (error) {
@@ -1577,7 +1815,7 @@ export class NotificationService extends EventEmitter {
     message: string,
     type: string = 'INFO',
     excludeUserId?: string,
-    data?: any
+    data?: any,
   ): Promise<any[]> {
     try {
       if (!businessUnitId) {
@@ -1601,7 +1839,7 @@ export class NotificationService extends EventEmitter {
           userId: user.userId,
           title,
           message,
-          type: notificationType,
+          type: notificationType as unknown as string,
           businessUnitId,
           data,
         });
@@ -1611,7 +1849,10 @@ export class NotificationService extends EventEmitter {
         }
       }
 
-      this.safeEmitNotification({ title, message, type, businessUnitId, data }, businessUnitId);
+      this.safeEmitNotification(
+        { title, message, type, businessUnitId, data },
+        businessUnitId,
+      );
 
       return notifications;
     } catch (error) {
@@ -1630,10 +1871,11 @@ export class NotificationService extends EventEmitter {
     title: string,
     message: string,
     type: string = 'INFO',
-    data?: any
+    data?: any,
   ): Promise<any[]> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
       if (!role) throw new AppError('Role is required', 400);
 
       const users = await prisma.businessUnitUser.findMany({
@@ -1652,7 +1894,7 @@ export class NotificationService extends EventEmitter {
           userId: user.userId,
           title,
           message,
-          type: mapToNotificationType(type),
+          type: mapToNotificationType(type) as unknown as string,
           businessUnitId,
           data,
         });
@@ -1671,7 +1913,7 @@ export class NotificationService extends EventEmitter {
   }
 
   // ============================================
-  // NOTIFICATION TEMPLATES - FIXED: No Prisma model
+  // NOTIFICATION TEMPLATES
   // ============================================
 
   private templatesCache: NotificationTemplate[] = [];
@@ -1681,17 +1923,23 @@ export class NotificationService extends EventEmitter {
   /**
    * Get notification templates - returns default templates
    */
-  async getTemplates(params?: { isActive?: boolean; type?: string }): Promise<NotificationTemplate[]> {
+  async getTemplates(params?: {
+    isActive?: boolean;
+    type?: string;
+  }): Promise<NotificationTemplate[]> {
     try {
       // Check cache
       const now = Date.now();
-      if (now - this.templatesCacheTime < this.templatesCacheTTL && this.templatesCache.length > 0) {
+      if (
+        now - this.templatesCacheTime < this.templatesCacheTTL &&
+        this.templatesCache.length > 0
+      ) {
         let result = this.templatesCache;
         if (params?.isActive !== undefined) {
-          result = result.filter(t => t.isActive === params.isActive);
+          result = result.filter((t) => t.isActive === params.isActive);
         }
         if (params?.type) {
-          result = result.filter(t => t.type === params.type);
+          result = result.filter((t) => t.type === params.type);
         }
         return result;
       }
@@ -1704,7 +1952,12 @@ export class NotificationService extends EventEmitter {
           subject: '⚠️ Low Stock Alert: {{productName}}',
           body: 'Product {{productName}} is running low. Current stock: {{currentStock}}, Reorder point: {{reorderPoint}}.',
           type: 'LOW_STOCK',
-          variables: ['productName', 'currentStock', 'reorderPoint', 'productId'],
+          variables: [
+            'productName',
+            'currentStock',
+            'reorderPoint',
+            'productId',
+          ],
           isActive: true,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -1715,7 +1968,12 @@ export class NotificationService extends EventEmitter {
           subject: 'New Sale #{{receiptNumber}}',
           body: 'A new sale has been completed. Customer: {{customerName}}, Total: ${{total}}.',
           type: 'SALE',
-          variables: ['receiptNumber', 'customerName', 'total', 'cashierName'],
+          variables: [
+            'receiptNumber',
+            'customerName',
+            'total',
+            'cashierName',
+          ],
           isActive: true,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -1772,7 +2030,7 @@ export class NotificationService extends EventEmitter {
     try {
       if (!id) throw new AppError('Template ID is required', 400);
       const templates = await this.getTemplates();
-      return templates.find(t => t.id === id) || null;
+      return templates.find((t) => t.id === id) || null;
     } catch (error) {
       console.error('Get template by ID failed:', error);
       return null;
@@ -1782,19 +2040,24 @@ export class NotificationService extends EventEmitter {
   /**
    * Create notification template
    */
-  async createTemplate(data: Omit<NotificationTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<NotificationTemplate> {
+  async createTemplate(
+    data: Omit<NotificationTemplate, 'id' | 'createdAt' | 'updatedAt'>,
+  ): Promise<NotificationTemplate> {
     try {
       if (!data.name) throw new AppError('Template name is required', 400);
-      if (!data.subject) throw new AppError('Template subject is required', 400);
+      if (!data.subject)
+        throw new AppError('Template subject is required', 400);
       if (!data.body) throw new AppError('Template body is required', 400);
       if (!data.type) throw new AppError('Template type is required', 400);
 
       const newTemplate: NotificationTemplate = {
-        id: `template_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        id: `template_${Date.now()}_${Math.random()
+          .toString(36)
+          .substring(2, 8)}`,
         name: data.name,
         subject: data.subject,
         body: data.body,
-        type: mapToNotificationType(data.type) as NotificationType,
+        type: data.type,
         variables: data.variables || [],
         isActive: data.isActive !== undefined ? data.isActive : true,
         createdAt: new Date(),
@@ -1818,12 +2081,17 @@ export class NotificationService extends EventEmitter {
   /**
    * Update notification template
    */
-  async updateTemplate(id: string, data: Partial<Omit<NotificationTemplate, 'id' | 'createdAt' | 'updatedAt'>>): Promise<NotificationTemplate> {
+  async updateTemplate(
+    id: string,
+    data: Partial<
+      Omit<NotificationTemplate, 'id' | 'createdAt' | 'updatedAt'>
+    >,
+  ): Promise<NotificationTemplate> {
     try {
       if (!id) throw new AppError('Template ID is required', 400);
 
       const templates = await this.getTemplates();
-      const index = templates.findIndex(t => t.id === id);
+      const index = templates.findIndex((t) => t.id === id);
       if (index === -1) {
         throw new AppError('Template not found', 404);
       }
@@ -1832,7 +2100,7 @@ export class NotificationService extends EventEmitter {
       if (data.name !== undefined) updated.name = data.name;
       if (data.subject !== undefined) updated.subject = data.subject;
       if (data.body !== undefined) updated.body = data.body;
-      if (data.type !== undefined) updated.type = mapToNotificationType(data.type) as NotificationType;
+      if (data.type !== undefined) updated.type = data.type;
       if (data.variables !== undefined) updated.variables = data.variables;
       if (data.isActive !== undefined) updated.isActive = data.isActive;
       updated.updatedAt = new Date();
@@ -1857,7 +2125,7 @@ export class NotificationService extends EventEmitter {
       if (!id) throw new AppError('Template ID is required', 400);
 
       const templates = await this.getTemplates();
-      const filtered = templates.filter(t => t.id !== id);
+      const filtered = templates.filter((t) => t.id !== id);
       if (filtered.length === templates.length) {
         throw new AppError('Template not found', 404);
       }
@@ -1876,7 +2144,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Render template with variables
    */
-  renderTemplate(template: NotificationTemplate, variables: Record<string, string>): { subject: string; body: string } {
+  renderTemplate(
+    template: NotificationTemplate,
+    variables: Record<string, string>,
+  ): { subject: string; body: string } {
     let subject = template.subject;
     let body = template.body;
 
@@ -1896,7 +2167,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Get notification statistics
    */
-  async getStats(userId?: string, businessUnitId?: string): Promise<NotificationStats> {
+  async getStats(
+    userId?: string,
+    businessUnitId?: string,
+  ): Promise<NotificationStats> {
     try {
       const where: any = {};
       if (userId) where.userId = userId;
@@ -1940,9 +2214,7 @@ export class NotificationService extends EventEmitter {
           priority: p.priority,
           count: p._count._all,
         })),
-        byChannel: [
-          { channel: 'IN_APP', count: total },
-        ],
+        byChannel: [{ channel: 'IN_APP', count: total }],
         recent,
         trend: {
           daily: dailyTrend,
@@ -1959,7 +2231,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Get daily trend
    */
-  private async getDailyTrend(where: any, now: Date): Promise<Array<{ date: string; count: number }>> {
+  private async getDailyTrend(
+    where: any,
+    now: Date,
+  ): Promise<Array<{ date: string; count: number }>> {
     const startDate = new Date(now);
     startDate.setDate(startDate.getDate() - 30);
 
@@ -1969,14 +2244,21 @@ export class NotificationService extends EventEmitter {
         FROM Notification
         WHERE createdAt >= ${startDate}
         ${where.userId ? `AND userId = '${where.userId}'` : ''}
-        ${where.businessUnitId ? `AND businessUnitId = '${where.businessUnitId}'` : ''}
+        ${
+          where.businessUnitId
+            ? `AND businessUnitId = '${where.businessUnitId}'`
+            : ''
+        }
         GROUP BY DATE(createdAt)
         ORDER BY date DESC
       `;
 
       if (Array.isArray(results)) {
         return results.map((r: any) => ({
-          date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date,
+          date:
+            r.date instanceof Date
+              ? r.date.toISOString().split('T')[0]
+              : r.date,
           count: Number(r.count),
         }));
       }
@@ -1990,7 +2272,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Get weekly trend
    */
-  private async getWeeklyTrend(where: any, now: Date): Promise<Array<{ week: string; count: number }>> {
+  private async getWeeklyTrend(
+    where: any,
+    now: Date,
+  ): Promise<Array<{ week: string; count: number }>> {
     const startDate = new Date(now);
     startDate.setDate(startDate.getDate() - 90);
 
@@ -2000,7 +2285,11 @@ export class NotificationService extends EventEmitter {
         FROM Notification
         WHERE createdAt >= ${startDate}
         ${where.userId ? `AND userId = '${where.userId}'` : ''}
-        ${where.businessUnitId ? `AND businessUnitId = '${where.businessUnitId}'` : ''}
+        ${
+          where.businessUnitId
+            ? `AND businessUnitId = '${where.businessUnitId}'`
+            : ''
+        }
         GROUP BY YEARWEEK(createdAt)
         ORDER BY week DESC
       `;
@@ -2021,7 +2310,10 @@ export class NotificationService extends EventEmitter {
   /**
    * Get monthly trend
    */
-  private async getMonthlyTrend(where: any, now: Date): Promise<Array<{ month: string; count: number }>> {
+  private async getMonthlyTrend(
+    where: any,
+    now: Date,
+  ): Promise<Array<{ month: string; count: number }>> {
     const startDate = new Date(now);
     startDate.setFullYear(startDate.getFullYear() - 1);
 
@@ -2031,7 +2323,11 @@ export class NotificationService extends EventEmitter {
         FROM Notification
         WHERE createdAt >= ${startDate}
         ${where.userId ? `AND userId = '${where.userId}'` : ''}
-        ${where.businessUnitId ? `AND businessUnitId = '${where.businessUnitId}'` : ''}
+        ${
+          where.businessUnitId
+            ? `AND businessUnitId = '${where.businessUnitId}'`
+            : ''
+        }
         GROUP BY DATE_FORMAT(createdAt, '%Y-%m')
         ORDER BY month DESC
       `;
@@ -2072,12 +2368,16 @@ export class NotificationService extends EventEmitter {
   }
 
   /**
-   * Clean expired notifications - FIXED: expiresAt doesn't exist on Notification model
+   * Clean expired notifications
+   *
+   * The Notification model has no `expiresAt` column, so there is
+   * nothing to clean. Kept for API compatibility.
    */
   async cleanExpiredNotifications(): Promise<{ count: number }> {
     try {
-      // Notification model doesn't have expiresAt, so just return 0
-      console.log('🧹 No expired notifications to clean (expiresAt field not available)');
+      console.log(
+        '🧹 No expired notifications to clean (expiresAt field not available)',
+      );
       return { count: 0 };
     } catch (error) {
       console.error('Clean expired notifications failed:', error);
@@ -2088,7 +2388,9 @@ export class NotificationService extends EventEmitter {
   /**
    * Archive old notifications
    */
-  async archiveOldNotifications(daysOld: number = 90): Promise<{ count: number }> {
+  async archiveOldNotifications(
+    daysOld: number = 90,
+  ): Promise<{ count: number }> {
     try {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysOld);
@@ -2102,7 +2404,9 @@ export class NotificationService extends EventEmitter {
         },
       });
 
-      console.log(`📦 Archived ${result.count} notifications older than ${daysOld} days`);
+      console.log(
+        `📦 Archived ${result.count} notifications older than ${daysOld} days`,
+      );
       return { count: result.count };
     } catch (error) {
       console.error('Archive old notifications failed:', error);

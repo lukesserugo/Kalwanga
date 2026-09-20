@@ -2,31 +2,55 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Package, TrendingUp, TrendingDown, AlertTriangle,
   DollarSign, Clock, RefreshCw, Plus, Search,
   Filter, Download, Eye, Edit, Trash2, Truck,
-  Upload, Settings, BarChart3, PieChart,
-  ShoppingCart, Users, Building, Tag,
-  Bell, ChevronRight, ChevronDown, X,
-  CheckCircle, AlertCircle, HelpCircle, Lock,
-  Grid, List, LayoutGrid, Barcode, QrCode, Scan,
-  Printer, Copy, ExternalLink, MoreVertical,
-  Archive, RefreshCcw, FileSpreadsheet, FileText,
+  Upload, Settings, PieChart,
+  Tag, ChevronDown, X,
+  CheckCircle, AlertCircle, Lock,
+  Barcode, Scan, Printer, RefreshCcw,
   Building2, ChevronUp, Database, Minus, Loader2,
-  Weight, Percent, Calendar, Hash, Globe,
-  Star, Image as ImageIcon, Link, AlertOctagon,
-  Activity, ClipboardList, FileCheck, ShoppingBag
+  Star, Globe, Building,
 } from 'lucide-react';
+import { useAuth } from '../../../../hooks/useAuth';
 import { usePermission } from '../../../../hooks/usePermission';
-import { inventoryService, type InventoryStats, InventoryListResponse } from '../../../../services/inventoryService';
-import { companyService } from '../../../../services/companyService';
+import { inventoryService } from '../../../../services/inventoryService';
 import { toast } from '../../../../utils/toast-manager';
-import { formatCurrency, formatDate, formatNumber } from '../../../../utils/formatters';
-import { PermissionResource } from '../../../../types/enums';
+import { formatCurrency, formatDate } from '../../../../utils/formatters';
+
+// ============================================
+// IMAGE HELPER
+// ============================================
+//
+// `Product.images` is now `ProductImage[]` on the backend. The
+// service flattens to `string[]`, but a raw payload (from
+// productService or a mixed response) can still arrive with the
+// un-flattened shape. Guard every read with this.
+
+function toImageUrls(input: unknown): string[] {
+  if (!input) return [];
+  if (typeof input === 'string') return [input];
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((v) => {
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof (v as any).url === 'string') {
+        return (v as any).url as string;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
+}
 
 // ============================================
 // TYPES
@@ -138,33 +162,63 @@ interface BusinessUnitOption {
 }
 
 // ============================================
+// CONSTANTS / HELPERS
+// ============================================
+
+const SENTINEL_BUSINESS_UNIT_IDS = new Set([
+  'default',
+  'default-business-unit',
+  'undefined',
+  'null',
+  '',
+]);
+
+function isValidBusinessUnitId(id: string | null | undefined): id is string {
+  if (!id) return false;
+  return !SENTINEL_BUSINESS_UNIT_IDS.has(id);
+}
+
+// ============================================
 // SUB-COMPONENTS
 // ============================================
 
-const InventoryStats: React.FC<{ stats: InventoryStatsData; loading?: boolean }> = ({ stats, loading }) => {
+const StatsCards: React.FC<{
+  stats: InventoryStatsData;
+  loading?: boolean;
+}> = ({ stats, loading }) => {
   if (loading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="animate-pulse">
-            <div className="bg-gray-200 dark:bg-gray-700 rounded-xl h-24"></div>
+            <div className="bg-gray-200 dark:bg-gray-700 rounded-xl h-24" />
           </div>
         ))}
       </div>
     );
   }
 
-  const statsCards = [
+  const cards: Array<{
+    label: string;
+    value: string | number;
+    icon: React.ComponentType<{ className?: string }>;
+    color: string;
+  }> = [
     { label: 'Total Items', value: stats.totalItems, icon: Package, color: 'blue' },
     { label: 'Total Value', value: formatCurrency(stats.totalValue || 0), icon: DollarSign, color: 'green' },
     { label: 'Total Cost', value: formatCurrency(stats.totalCost || 0), icon: TrendingDown, color: 'purple' },
     { label: 'Low Stock', value: stats.lowStock, icon: AlertTriangle, color: 'yellow' },
     { label: 'Out of Stock', value: stats.outOfStock, icon: AlertCircle, color: 'red' },
-    { label: 'In Stock', value: stats.inStock ?? (stats.totalItems - stats.outOfStock), icon: CheckCircle, color: 'teal' },
+    {
+      label: 'In Stock',
+      value: stats.inStock ?? stats.totalItems - stats.outOfStock,
+      icon: CheckCircle,
+      color: 'teal',
+    },
   ];
 
   if (stats.withBarcode !== undefined || stats.withoutBarcode !== undefined) {
-    statsCards.splice(3, 0, {
+    cards.splice(3, 0, {
       label: 'With Barcode',
       value: stats.withBarcode || 0,
       icon: Barcode,
@@ -184,7 +238,7 @@ const InventoryStats: React.FC<{ stats: InventoryStatsData; loading?: boolean }>
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-      {statsCards.map((card, index) => {
+      {cards.map((card, index) => {
         const Icon = card.icon;
         return (
           <motion.div
@@ -195,22 +249,26 @@ const InventoryStats: React.FC<{ stats: InventoryStatsData; loading?: boolean }>
             className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{card.label}</p>
-              <div className={`p-1.5 rounded-lg ${colorClasses[card.color] || colorClasses.blue}`}>
+              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                {card.label}
+              </p>
+              <div
+                className={`p-1.5 rounded-lg ${
+                  colorClasses[card.color] || colorClasses.blue
+                }`}
+              >
                 <Icon className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{card.value}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">
+              {card.value}
+            </p>
           </motion.div>
         );
       })}
     </div>
   );
 };
-
-// ============================================
-// BUSINESS UNIT SELECTOR COMPONENT
-// ============================================
 
 const BusinessUnitSelector: React.FC<{
   businessUnits: BusinessUnitOption[];
@@ -219,13 +277,13 @@ const BusinessUnitSelector: React.FC<{
   loading?: boolean;
 }> = ({ businessUnits, selectedId, onSelect, loading }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const selected = businessUnits.find(bu => bu.id === selectedId);
+  const selected = businessUnits.find((bu) => bu.id === selectedId);
 
   if (loading) {
     return (
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg animate-pulse">
-        <div className="w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded"></div>
-        <div className="w-24 h-4 bg-gray-300 dark:bg-gray-600 rounded"></div>
+        <div className="w-4 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
+        <div className="w-24 h-4 bg-gray-300 dark:bg-gray-600 rounded" />
       </div>
     );
   }
@@ -247,7 +305,9 @@ const BusinessUnitSelector: React.FC<{
           {businessUnits[0].name}
         </span>
         {businessUnits[0].code && (
-          <span className="text-xs text-gray-400">({businessUnits[0].code})</span>
+          <span className="text-xs text-gray-400">
+            ({businessUnits[0].code})
+          </span>
         )}
       </div>
     );
@@ -287,7 +347,7 @@ const BusinessUnitSelector: React.FC<{
               {businessUnits.map((bu) => {
                 const isSelected = selectedId === bu.id;
                 const isActive = bu.isActive !== false;
-                
+
                 return (
                   <button
                     key={bu.id}
@@ -300,24 +360,33 @@ const BusinessUnitSelector: React.FC<{
                     disabled={!isActive}
                     className={`
                       w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between
-                      ${isSelected 
-                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' 
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
                       }
-                      ${!isActive ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                      ${
+                        !isActive
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'cursor-pointer'
+                      }
                     `}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium">{bu.name}</span>
                         {bu.code && (
-                          <span className="text-xs text-gray-400 flex-shrink-0">({bu.code})</span>
+                          <span className="text-xs text-gray-400 flex-shrink-0">
+                            ({bu.code})
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                         {bu.type && <span>{bu.type}</span>}
                         {bu.companyName && (
-                          <span className="text-indigo-500">• {bu.companyName}</span>
+                          <span className="text-indigo-500">
+                            • {bu.companyName}
+                          </span>
                         )}
                         {!isActive && (
                           <span className="text-red-500">• Inactive</span>
@@ -338,13 +407,14 @@ const BusinessUnitSelector: React.FC<{
   );
 };
 
-// ============================================
-// QUICK ACTIONS COMPONENT
-// ============================================
-
 const QuickActions: React.FC<{
   onAction: (action: string) => void;
-  permissions: { canCreate: boolean; canTransfer: boolean; canAdjust: boolean; canExport: boolean };
+  permissions: {
+    canCreate: boolean;
+    canTransfer: boolean;
+    canAdjust: boolean;
+    canExport: boolean;
+  };
   loading?: boolean;
 }> = ({ onAction, permissions, loading }) => {
   const actions = [
@@ -357,7 +427,7 @@ const QuickActions: React.FC<{
     { id: 'settings', label: 'Settings', icon: Settings, visible: permissions.canAdjust, color: 'gray' },
   ];
 
-  const visibleActions = actions.filter(a => a.visible);
+  const visibleActions = actions.filter((a) => a.visible);
 
   if (visibleActions.length === 0) return null;
 
@@ -391,11 +461,7 @@ const QuickActions: React.FC<{
   );
 };
 
-// ============================================
-// INVENTORY FILTERS COMPONENT
-// ============================================
-
-const InventoryFilters: React.FC<{
+const InventoryFiltersBar: React.FC<{
   filters: InventoryFilters;
   onFilterChange: (key: string, value: any) => void;
   showFilters: boolean;
@@ -403,7 +469,15 @@ const InventoryFilters: React.FC<{
   categories?: Array<{ id: string; name: string }>;
   locations?: string[];
   loading?: boolean;
-}> = ({ filters, onFilterChange, showFilters, onToggleFilters, categories = [], locations = [], loading }) => {
+}> = ({
+  filters,
+  onFilterChange,
+  showFilters,
+  onToggleFilters,
+  categories = [],
+  locations = [],
+  loading,
+}) => {
   const statusOptions = [
     { value: 'all', label: 'All Status' },
     { value: 'active', label: 'Active' },
@@ -434,10 +508,14 @@ const InventoryFilters: React.FC<{
     { value: 'updatedAt', label: 'Last Updated' },
   ];
 
-  const defaultLocations = ['Warehouse', 'Storefront', 'Backroom', 'Supplier', 'In Transit', 'Distribution Center', 'Store A', 'Store B', 'Online Store'];
+  const defaultLocations = [
+    'Warehouse', 'Storefront', 'Backroom', 'Supplier',
+    'In Transit', 'Distribution Center',
+    'Store A', 'Store B', 'Online Store',
+  ];
 
   const allLocations = locations.length > 0 ? locations : defaultLocations;
-  const allCategories = categories.length > 0 ? categories : [];
+  const allCategories = categories;
 
   const activeFilterCount = [
     filters.search ? 1 : 0,
@@ -491,36 +569,23 @@ const InventoryFilters: React.FC<{
         </button>
 
         <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
-          <button
-            onClick={() => onFilterChange('sortBy', 'name')}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              filters.sortBy === 'name' 
-                ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}
-          >
-            Name
-          </button>
-          <button
-            onClick={() => onFilterChange('sortBy', 'stock')}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              filters.sortBy === 'stock' 
-                ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}
-          >
-            Stock
-          </button>
-          <button
-            onClick={() => onFilterChange('sortBy', 'price')}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              filters.sortBy === 'price' 
-                ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}
-          >
-            Price
-          </button>
+          {[
+            { id: 'name', label: 'Name' },
+            { id: 'stock', label: 'Stock' },
+            { id: 'price', label: 'Price' },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => onFilterChange('sortBy', opt.id)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                filters.sortBy === opt.id
+                  ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
 
         {activeFilterCount > 0 && (
@@ -571,7 +636,7 @@ const InventoryFilters: React.FC<{
                   value={filters.categoryId || filters.category}
                   onChange={(e) => {
                     const value = e.target.value;
-                    if (allCategories.some(c => c.id === value)) {
+                    if (allCategories.some((c) => c.id === value)) {
                       onFilterChange('categoryId', value);
                       onFilterChange('category', '');
                     } else {
@@ -584,7 +649,9 @@ const InventoryFilters: React.FC<{
                 >
                   <option value="">All Categories</option>
                   {allCategories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
                   ))}
                   <option value="__custom__">Custom Category</option>
                 </select>
@@ -598,6 +665,7 @@ const InventoryFilters: React.FC<{
                   />
                 )}
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Location
@@ -610,10 +678,13 @@ const InventoryFilters: React.FC<{
                 >
                   <option value="">All Locations</option>
                   {allLocations.map((loc) => (
-                    <option key={loc} value={loc}>{loc}</option>
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
                   ))}
                 </select>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Status
@@ -625,25 +696,36 @@ const InventoryFilters: React.FC<{
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   {statusOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Barcode
                 </label>
                 <select
                   value={filters.hasBarcode}
-                  onChange={(e) => onFilterChange('hasBarcode', e.target.value as 'all' | 'yes' | 'no')}
+                  onChange={(e) =>
+                    onFilterChange(
+                      'hasBarcode',
+                      e.target.value as 'all' | 'yes' | 'no'
+                    )
+                  }
                   disabled={loading}
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   {barcodeOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
               </div>
+
               <div className="space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -656,7 +738,9 @@ const InventoryFilters: React.FC<{
                     className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                   >
                     {sortOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -665,7 +749,9 @@ const InventoryFilters: React.FC<{
                     <input
                       type="checkbox"
                       checked={filters.lowStock}
-                      onChange={(e) => onFilterChange('lowStock', e.target.checked)}
+                      onChange={(e) =>
+                        onFilterChange('lowStock', e.target.checked)
+                      }
                       disabled={loading}
                       className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50"
                     />
@@ -674,8 +760,10 @@ const InventoryFilters: React.FC<{
                   <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={filters.inStock}
-                      onChange={(e) => onFilterChange('inStock', e.target.checked)}
+                      checked={!!filters.inStock}
+                      onChange={(e) =>
+                        onFilterChange('inStock', e.target.checked)
+                      }
                       disabled={loading}
                       className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 disabled:opacity-50"
                     />
@@ -693,7 +781,12 @@ const InventoryFilters: React.FC<{
                 <input
                   type="number"
                   value={filters.minPrice || ''}
-                  onChange={(e) => onFilterChange('minPrice', e.target.value ? parseFloat(e.target.value) : undefined)}
+                  onChange={(e) =>
+                    onFilterChange(
+                      'minPrice',
+                      e.target.value ? parseFloat(e.target.value) : undefined
+                    )
+                  }
                   placeholder="0.00"
                   disabled={loading}
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
@@ -706,7 +799,12 @@ const InventoryFilters: React.FC<{
                 <input
                   type="number"
                   value={filters.maxPrice || ''}
-                  onChange={(e) => onFilterChange('maxPrice', e.target.value ? parseFloat(e.target.value) : undefined)}
+                  onChange={(e) =>
+                    onFilterChange(
+                      'maxPrice',
+                      e.target.value ? parseFloat(e.target.value) : undefined
+                    )
+                  }
                   placeholder="0.00"
                   disabled={loading}
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
@@ -723,7 +821,9 @@ const InventoryFilters: React.FC<{
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   {booleanOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -738,7 +838,9 @@ const InventoryFilters: React.FC<{
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   {booleanOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -753,7 +855,9 @@ const InventoryFilters: React.FC<{
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   {booleanOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -768,7 +872,9 @@ const InventoryFilters: React.FC<{
                   className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   {booleanOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -780,14 +886,9 @@ const InventoryFilters: React.FC<{
   );
 };
 
-// ============================================
-// INVENTORY TABLE COMPONENT
-// ============================================
-
 const InventoryTable: React.FC<{
   data: InventoryItem[];
   loading: boolean;
-  viewMode: 'table' | 'grid' | 'compact';
   selectedItems: string[];
   onSelectItem: (id: string) => void;
   onSelectAll: () => void;
@@ -802,7 +903,6 @@ const InventoryTable: React.FC<{
 }> = ({
   data,
   loading,
-  viewMode,
   selectedItems,
   onSelectItem,
   onSelectAll,
@@ -820,12 +920,24 @@ const InventoryTable: React.FC<{
     const reorderPoint = item.reorderPoint || item.minStock || 5;
 
     if (stock === 0) {
-      return { label: 'Out of Stock', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
+      return {
+        label: 'Out of Stock',
+        color:
+          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+      };
     }
     if (stock <= reorderPoint) {
-      return { label: 'Low Stock', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' };
+      return {
+        label: 'Low Stock',
+        color:
+          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+      };
     }
-    return { label: 'In Stock', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' };
+    return {
+      label: 'In Stock',
+      color:
+        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    };
   };
 
   const getStockValue = (item: InventoryItem) => {
@@ -838,8 +950,10 @@ const InventoryTable: React.FC<{
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-gray-500 dark:text-gray-400">Loading inventory...</span>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          <span className="ml-3 text-gray-500 dark:text-gray-400">
+            Loading inventory...
+          </span>
         </div>
       </div>
     );
@@ -849,8 +963,12 @@ const InventoryTable: React.FC<{
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
         <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No inventory items found</h3>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">Try adjusting your filters or add a new item</p>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          No inventory items found
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          Try adjusting your filters or add a new item
+        </p>
       </div>
     );
   }
@@ -864,19 +982,37 @@ const InventoryTable: React.FC<{
               <th className="px-4 py-3 text-left w-10">
                 <input
                   type="checkbox"
-                  checked={selectedItems.length === data.length && data.length > 0}
+                  checked={
+                    selectedItems.length === data.length && data.length > 0
+                  }
                   onChange={onSelectAll}
                   className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Item</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">SKU</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Barcode</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Price</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stock</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">Value</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">Status</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Item
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                SKU
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">
+                Barcode
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Price
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Stock
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">
+                Value
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                Status
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -891,10 +1027,15 @@ const InventoryTable: React.FC<{
               return (
                 <tr
                   key={item.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''}`}
+                  className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer ${
+                    isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                  }`}
                   onClick={() => onView(item)}
                 >
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className="px-4 py-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -906,7 +1047,15 @@ const InventoryTable: React.FC<{
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                         {hasImages ? (
-                          <img src={item.images![0]} alt={item.name} className="w-full h-full object-cover" />
+                          <img
+                            src={item.images![0]}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src =
+                                '/placeholder-image.png';
+                            }}
+                          />
                         ) : (
                           <Package className="w-5 h-5 text-gray-400" />
                         )}
@@ -916,7 +1065,9 @@ const InventoryTable: React.FC<{
                           {item.name}
                         </p>
                         {item.variantName && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">{item.variantName}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {item.variantName}
+                          </span>
                         )}
                         <div className="flex flex-wrap items-center gap-1 mt-0.5">
                           {item.category && (
@@ -947,12 +1098,16 @@ const InventoryTable: React.FC<{
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono hidden md:table-cell">{item.sku}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 font-mono hidden md:table-cell">
+                    {item.sku}
+                  </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     {hasBarcode ? (
                       <div className="flex items-center gap-1">
                         <Barcode className="w-4 h-4 text-green-500" />
-                        <span className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate max-w-[100px]">{item.barcode}</span>
+                        <span className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate max-w-[100px]">
+                          {item.barcode}
+                        </span>
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400">No barcode</span>
@@ -962,14 +1117,20 @@ const InventoryTable: React.FC<{
                     {formatCurrency(item.price || item.unitPrice || 0)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <span className={`font-medium ${
-                      stock === 0 ? 'text-red-600 dark:text-red-400' :
-                      stock <= (item.reorderPoint || item.minStock || 5) ? 'text-yellow-600 dark:text-yellow-400' :
-                      'text-green-600 dark:text-green-400'
-                    }`}>
+                    <span
+                      className={`font-medium ${
+                        stock === 0
+                          ? 'text-red-600 dark:text-red-400'
+                          : stock <= (item.reorderPoint || item.minStock || 5)
+                          ? 'text-yellow-600 dark:text-yellow-400'
+                          : 'text-green-600 dark:text-green-400'
+                      }`}
+                    >
                       {stock}
                       {item.reserved !== undefined && item.reserved > 0 && (
-                        <span className="text-xs text-gray-400 ml-1">({item.reserved} reserved)</span>
+                        <span className="text-xs text-gray-400 ml-1">
+                          ({item.reserved} reserved)
+                        </span>
                       )}
                     </span>
                   </td>
@@ -977,11 +1138,16 @@ const InventoryTable: React.FC<{
                     {formatCurrency(stockValue)}
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}
+                    >
                       {status.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className="px-4 py-3 text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="flex items-center justify-end gap-1">
                       {hasBarcode && (
                         <button
@@ -1033,8 +1199,9 @@ const InventoryTable: React.FC<{
         <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+              Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
+              {pagination.total}
             </span>
             <select
               value={pagination.limit}
@@ -1072,43 +1239,47 @@ const InventoryTable: React.FC<{
   );
 };
 
-// ============================================
-// RECENT ACTIVITY COMPONENT
-// ============================================
-
-const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId }) => {
+const RecentActivity: React.FC<{ businessUnitId?: string }> = ({
+  businessUnitId,
+}) => {
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadActivities = async () => {
       if (!businessUnitId) {
         setLoading(false);
         return;
       }
-      
+
       try {
         const transactions = await inventoryService.getInventoryTransactions({
           businessUnitId,
           limit: 5,
         });
-        setActivities(transactions?.data || []);
+        if (!cancelled) setActivities(transactions?.data || []);
       } catch (error) {
         console.error('Failed to load recent activity:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     loadActivities();
+
+    return () => {
+      cancelled = true;
+    };
   }, [businessUnitId]);
 
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="animate-pulse space-y-3">
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded" />
           ))}
         </div>
       </div>
@@ -1122,7 +1293,9 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId 
           <Clock className="w-4 h-4 text-gray-400" />
           Recent Activity
         </h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No recent activity</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+          No recent activity
+        </p>
       </div>
     );
   }
@@ -1136,11 +1309,13 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId 
       <div className="space-y-3 max-h-[300px] overflow-y-auto">
         {activities.map((activity: any, index) => (
           <div key={index} className="flex items-start gap-3 text-sm">
-            <div className={`p-1.5 rounded-full ${
-              activity.quantity && activity.quantity > 0 
-                ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-            }`}>
+            <div
+              className={`p-1.5 rounded-full ${
+                activity.quantity && activity.quantity > 0
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                  : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+              }`}
+            >
               {activity.quantity && activity.quantity > 0 ? (
                 <TrendingUp className="w-3 h-3" />
               ) : (
@@ -1149,13 +1324,23 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId 
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-gray-700 dark:text-gray-300">
-                <span className="font-medium">{activity.product?.name || 'Unknown'}</span>
-                <span className={`ml-1 ${activity.quantity && activity.quantity > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                  {activity.quantity && activity.quantity > 0 ? '+' : ''}{activity.quantity || 0}
+                <span className="font-medium">
+                  {activity.product?.name || 'Unknown'}
+                </span>
+                <span
+                  className={`ml-1 ${
+                    activity.quantity && activity.quantity > 0
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-red-600 dark:text-red-400'
+                  }`}
+                >
+                  {activity.quantity && activity.quantity > 0 ? '+' : ''}
+                  {activity.quantity || 0}
                 </span>
               </p>
               <p className="text-xs text-gray-400">
-                {formatDate(activity.createdAt || activity.timestamp)} • {activity.transactionType || 'Adjustment'}
+                {formatDate(activity.createdAt || activity.timestamp)} •{' '}
+                {activity.transactionType || 'Adjustment'}
               </p>
             </div>
           </div>
@@ -1165,13 +1350,12 @@ const RecentActivity: React.FC<{ businessUnitId?: string }> = ({ businessUnitId 
   );
 };
 
-// ============================================
-// INVENTORY CHARTS COMPONENT
-// ============================================
-
-const InventoryCharts: React.FC<{ data: InventoryItem[]; stats: InventoryStatsData }> = ({ data, stats }) => {
+const InventoryCharts: React.FC<{
+  data: InventoryItem[];
+  stats: InventoryStatsData;
+}> = ({ data }) => {
   const categoryMap = new Map<string, { count: number; value: number }>();
-  data.forEach(item => {
+  data.forEach((item) => {
     const cat = item.category || 'Uncategorized';
     const stock = item.stock || item.quantity || 0;
     const price = item.price || item.unitPrice || 0;
@@ -1185,7 +1369,9 @@ const InventoryCharts: React.FC<{ data: InventoryItem[]; stats: InventoryStatsDa
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 5);
 
-  const total = data.reduce((sum, item) => sum + (item.stock || item.quantity || 0), 0) || 1;
+  const total =
+    data.reduce((sum, item) => sum + (item.stock || item.quantity || 0), 0) ||
+    1;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
@@ -1194,16 +1380,22 @@ const InventoryCharts: React.FC<{ data: InventoryItem[]; stats: InventoryStatsDa
         Stock by Category
       </h3>
       {categories.length === 0 ? (
-        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No category data</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+          No category data
+        </p>
       ) : (
         <div className="space-y-2">
-          {categories.map(([name, data]) => {
-            const percentage = (data.count / total) * 100;
+          {categories.map(([name, cat]) => {
+            const percentage = (cat.count / total) * 100;
             return (
               <div key={name}>
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-600 dark:text-gray-400 truncate flex-1 mr-2">{name}</span>
-                  <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">{data.count} units</span>
+                  <span className="text-gray-600 dark:text-gray-400 truncate flex-1 mr-2">
+                    {name}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    {cat.count} units
+                  </span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-0.5">
                   <div
@@ -1224,22 +1416,19 @@ const InventoryCharts: React.FC<{ data: InventoryItem[]; stats: InventoryStatsDa
   );
 };
 
-// ============================================
-// ADJUSTMENT MODAL COMPONENT
-// ============================================
-
 interface AdjustmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (data: { quantity: number; type: 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT'; notes: string }) => void;
+  onConfirm: (data: {
+    quantity: number;
+    type: 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT';
+    notes: string;
+  }) => void;
   currentStock: number;
   reserved: number;
   reorderPoint: number;
   itemName: string;
   loading: boolean;
-  quantity?: number;
-  type?: 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT';
-  notes?: string;
 }
 
 const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
@@ -1251,14 +1440,20 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
   reorderPoint,
   itemName,
   loading,
-  quantity = 0,
-  type = 'ADJUSTMENT_IN',
-  notes = '',
 }) => {
-  const [localQuantity, setLocalQuantity] = useState(quantity);
-  const [localType, setLocalType] = useState<'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT'>(type);
-  const [localNotes, setLocalNotes] = useState(notes);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localQuantity, setLocalQuantity] = useState(1);
+  const [localType, setLocalType] = useState<'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT'>(
+    'ADJUSTMENT_IN'
+  );
+  const [localNotes, setLocalNotes] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setLocalQuantity(1);
+      setLocalType('ADJUSTMENT_IN');
+      setLocalNotes('');
+    }
+  }, [isOpen]);
 
   const availableStock = currentStock - reserved;
   const isLowStock = currentStock <= reorderPoint && currentStock > 0;
@@ -1273,25 +1468,17 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
       toast.error('Cannot remove more than current stock');
       return;
     }
-    setIsSubmitting(true);
     onConfirm({
       quantity: localQuantity,
       type: localType,
       notes: localNotes,
     });
-    setTimeout(() => setIsSubmitting(false), 500);
   };
 
-  const handleClose = () => {
-    setLocalQuantity(0);
-    setLocalType('ADJUSTMENT_IN');
-    setLocalNotes('');
-    onClose();
-  };
-
-  const newStock = localType === 'ADJUSTMENT_IN' 
-    ? currentStock + localQuantity 
-    : currentStock - localQuantity;
+  const newStock =
+    localType === 'ADJUSTMENT_IN'
+      ? currentStock + localQuantity
+      : currentStock - localQuantity;
 
   const isNewStockLow = newStock <= reorderPoint && newStock > 0;
   const isNewStockOut = newStock === 0;
@@ -1300,20 +1487,20 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div 
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm dark:bg-black/70" 
-        onClick={handleClose}
+      <div
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm dark:bg-black/70"
+        onClick={onClose}
       />
-      
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-        animate={{ opacity: 1, scale: 1, y: 0 }} 
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ duration: 0.2 }}
         className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4 border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto"
       >
-        <button 
-          onClick={handleClose} 
+        <button
+          onClick={onClose}
           className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
           aria-label="Close modal"
         >
@@ -1325,7 +1512,9 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
             <RefreshCcw className="w-5 h-5 text-blue-600 dark:text-blue-400" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Adjust Stock</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+              Adjust Stock
+            </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px] sm:max-w-[300px]">
               {itemName}
             </p>
@@ -1335,30 +1524,62 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
         <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
-              <span className="text-gray-600 dark:text-gray-300">Current Stock</span>
-              <p className="font-semibold text-gray-900 dark:text-white">{currentStock} units</p>
+              <span className="text-gray-600 dark:text-gray-300">
+                Current Stock
+              </span>
+              <p className="font-semibold text-gray-900 dark:text-white">
+                {currentStock} units
+              </p>
             </div>
             {reserved > 0 && (
               <div>
-                <span className="text-gray-600 dark:text-gray-300">Reserved</span>
-                <p className="font-semibold text-yellow-600 dark:text-yellow-400">{reserved} units</p>
+                <span className="text-gray-600 dark:text-gray-300">
+                  Reserved
+                </span>
+                <p className="font-semibold text-yellow-600 dark:text-yellow-400">
+                  {reserved} units
+                </p>
               </div>
             )}
             <div>
-              <span className="text-gray-600 dark:text-gray-300">Available</span>
-              <p className={`font-semibold ${availableStock === 0 ? 'text-red-600 dark:text-red-400' : isLowStock ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+              <span className="text-gray-600 dark:text-gray-300">
+                Available
+              </span>
+              <p
+                className={`font-semibold ${
+                  availableStock === 0
+                    ? 'text-red-600 dark:text-red-400'
+                    : isLowStock
+                    ? 'text-yellow-600 dark:text-yellow-400'
+                    : 'text-green-600 dark:text-green-400'
+                }`}
+              >
                 {availableStock} units
               </p>
             </div>
             <div>
-              <span className="text-gray-600 dark:text-gray-300">Reorder Point</span>
-              <p className="font-semibold text-gray-700 dark:text-gray-300">{reorderPoint} units</p>
+              <span className="text-gray-600 dark:text-gray-300">
+                Reorder Point
+              </span>
+              <p className="font-semibold text-gray-700 dark:text-gray-300">
+                {reorderPoint} units
+              </p>
             </div>
           </div>
           {(isLowStock || isOutOfStock) && (
             <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
-              <p className={`text-sm flex items-center gap-1 ${isOutOfStock ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
-                {isOutOfStock ? <AlertCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+              <p
+                className={`text-sm flex items-center gap-1 ${
+                  isOutOfStock
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-yellow-600 dark:text-yellow-400'
+                }`}
+              >
+                {isOutOfStock ? (
+                  <AlertCircle className="w-4 h-4" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4" />
+                )}
                 {isOutOfStock ? 'Out of stock!' : 'Low stock alert!'}
               </p>
             </div>
@@ -1379,7 +1600,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                     ? 'bg-green-600 text-white shadow-md ring-2 ring-green-500 ring-offset-2 dark:ring-offset-gray-800'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
-                disabled={loading || isSubmitting}
+                disabled={loading}
               >
                 <div className="flex items-center justify-center gap-2">
                   <Plus className="w-4 h-4" />
@@ -1394,7 +1615,7 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                     ? 'bg-red-600 text-white shadow-md ring-2 ring-red-500 ring-offset-2 dark:ring-offset-gray-800'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
-                disabled={loading || isSubmitting}
+                disabled={loading}
               >
                 <div className="flex items-center justify-center gap-2">
                   <Minus className="w-4 h-4" />
@@ -1412,31 +1633,44 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               <input
                 type="number"
                 value={localQuantity}
-                onChange={(e) => setLocalQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(e) =>
+                  setLocalQuantity(Math.max(0, parseInt(e.target.value) || 0))
+                }
                 min="0"
                 step="1"
                 className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors"
                 placeholder="Enter quantity"
-                disabled={loading || isSubmitting}
+                disabled={loading}
                 autoFocus
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 dark:text-gray-500">
                 units
               </div>
             </div>
-            
-            {localType === 'ADJUSTMENT_OUT' && localQuantity > currentStock && (
-              <p className="mt-1.5 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
-                <AlertCircle className="w-4 h-4" />
-                Cannot remove more than current stock ({currentStock} units)
-              </p>
-            )}
-            
+
+            {localType === 'ADJUSTMENT_OUT' &&
+              localQuantity > currentStock && (
+                <p className="mt-1.5 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                  <AlertCircle className="w-4 h-4" />
+                  Cannot remove more than current stock ({currentStock} units)
+                </p>
+              )}
+
             {localQuantity > 0 && (
               <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-300">New stock:</span>
-                  <span className={`font-semibold ${isNewStockOut ? 'text-red-600 dark:text-red-400' : isNewStockLow ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'}`}>
+                  <span className="text-gray-600 dark:text-gray-300">
+                    New stock:
+                  </span>
+                  <span
+                    className={`font-semibold ${
+                      isNewStockOut
+                        ? 'text-red-600 dark:text-red-400'
+                        : isNewStockLow
+                        ? 'text-yellow-600 dark:text-yellow-400'
+                        : 'text-green-600 dark:text-green-400'
+                    }`}
+                  >
                     {newStock} units
                   </span>
                 </div>
@@ -1452,19 +1686,24 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
                     Will be out of stock
                   </p>
                 )}
-                {!isNewStockLow && !isNewStockOut && localType === 'ADJUSTMENT_IN' && (
-                  <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" />
-                    Stock level healthy
-                  </p>
-                )}
+                {!isNewStockLow &&
+                  !isNewStockOut &&
+                  localType === 'ADJUSTMENT_IN' && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      Stock level healthy
+                    </p>
+                  )}
               </div>
             )}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Notes <span className="text-gray-400 dark:text-gray-500 text-xs font-normal">(optional)</span>
+              Notes{' '}
+              <span className="text-gray-400 dark:text-gray-500 text-xs font-normal">
+                (optional)
+              </span>
             </label>
             <textarea
               value={localNotes}
@@ -1472,25 +1711,34 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
               rows={3}
               className="w-full px-4 py-2.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors resize-none"
               placeholder="Reason for adjustment (e.g., Restock, Damaged, Return, etc.)"
-              disabled={loading || isSubmitting}
+              disabled={loading}
             />
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
           <button
-            onClick={handleClose}
+            onClick={onClose}
             className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 text-sm font-medium w-full sm:w-auto"
-            disabled={loading || isSubmitting}
+            disabled={loading}
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
-            disabled={loading || isSubmitting || localQuantity <= 0 || (localType === 'ADJUSTMENT_OUT' && localQuantity > currentStock)}
-            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto ${localType === 'ADJUSTMENT_IN' ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'} disabled:opacity-50 disabled:cursor-not-allowed`}
+            disabled={
+              loading ||
+              localQuantity <= 0 ||
+              (localType === 'ADJUSTMENT_OUT' &&
+                localQuantity > currentStock)
+            }
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto ${
+              localType === 'ADJUSTMENT_IN'
+                ? 'bg-green-600 hover:bg-green-700 text-white'
+                : 'bg-red-600 hover:bg-red-700 text-white'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {isSubmitting ? (
+            {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Processing...
@@ -1514,35 +1762,50 @@ const AdjustmentModal: React.FC<AdjustmentModalProps> = ({
 
 export default function InventoryDashboardPage() {
   const router = useRouter();
-  const { 
-    canView, 
-    canCreate, 
-    canEdit, 
-    canDelete, 
-    canManage,
+
+  const {
     user,
-    isLoading: permissionsLoading
+    isAuthenticated,
+    isLoading: authLoading,
+  } = useAuth();
+
+  const {
+    canViewInventory,
+    canCreateInventory,
+    canDeleteInventory,
+    canAdjustInventory,
+    canTransferInventory,
+    canExportInventory,
+    isLoading: permLoading,
+    isSuperAdmin,
+    getBusinessUnits: getBusinessUnitsFromHook,
+    getCurrentBusinessUnit,
   } = usePermission();
-  
-  // Refs to prevent infinite loops
+
+  const canView     = isSuperAdmin || canViewInventory();
+  const canCreate   = isSuperAdmin || canCreateInventory();
+  const canDelete   = isSuperAdmin || canDeleteInventory();
+  const canAdjust   = isSuperAdmin || canAdjustInventory();
+  const canTransfer = isSuperAdmin || canTransferInventory();
+  const canExport   = isSuperAdmin || canExportInventory();
+
+  const booting = authLoading || permLoading;
+
   const initialLoadDoneRef = useRef(false);
   const loadDataRef = useRef(false);
   const businessUnitsLoadedRef = useRef(false);
-  
-  // Permission checks
-  const canViewInventory = canView(PermissionResource.INVENTORY) || canManage(PermissionResource.INVENTORY);
-  const canCreateInventory = canCreate(PermissionResource.INVENTORY) || canManage(PermissionResource.INVENTORY);
-  const canEditInventory = canEdit(PermissionResource.INVENTORY) || canManage(PermissionResource.INVENTORY);
-  const canDeleteInventory = canDelete(PermissionResource.INVENTORY) || canManage(PermissionResource.INVENTORY);
-  const canTransferInventory = canManage(PermissionResource.INVENTORY);
-  const canAdjustInventory = canManage(PermissionResource.INVENTORY);
-  const canExportInventory = canManage(PermissionResource.INVENTORY);
+  const mountedRef = useRef(true);
 
-  // State
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [filteredInventory, setFilteredInventory] = useState<InventoryItem[]>([]);
   const [stats, setStats] = useState<InventoryStatsData>({
     totalItems: 0,
     totalValue: 0,
@@ -1577,156 +1840,241 @@ export default function InventoryDashboardPage() {
     totalPages: 1,
   });
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [viewMode] = useState<'table' | 'grid' | 'compact'>('table');
   const [showFilters, setShowFilters] = useState(false);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
-  
-  // Business Unit State
+  const [categories, setCategories] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+
   const [businessUnits, setBusinessUnits] = useState<BusinessUnitOption[]>([]);
   const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(true);
-  const [selectedBusinessUnitId, setSelectedBusinessUnitId] = useState<string>('');
-  const [businessUnitError, setBusinessUnitError] = useState<string | null>(null);
+  const [selectedBusinessUnitId, setSelectedBusinessUnitId] =
+    useState<string>('');
+  const [businessUnitError, setBusinessUnitError] = useState<string | null>(
+    null
+  );
 
-  // Adjustment Modal State
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
-  const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null);
-  const [adjustmentData, setAdjustmentData] = useState<{
-    quantity: number;
-    type: 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT';
-    notes: string;
-  }>({
-    quantity: 0,
-    type: 'ADJUSTMENT_IN',
-    notes: '',
-  });
+  const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(
+    null
+  );
   const [adjustingLoading, setAdjustingLoading] = useState(false);
 
-  // ============================================
-  // NORMALIZE INVENTORY DATA
-  // ============================================
+  const fallbackBusinessUnitId = businessUnits[0]?.id ?? '';
 
-  const normalizeInventoryItem = useCallback((item: any): InventoryItem => {
-    return {
-      id: item.id || '',
-      name: item.name || item.product?.name || 'Unknown',
-      sku: item.sku || item.product?.sku || 'N/A',
-      stock: item.quantity || item.stock || 0,
-      quantity: item.quantity || item.stock || 0,
-      price: item.unitPrice || item.price || item.product?.unitPrice || 0,
-      unitPrice: item.unitPrice || item.price || item.product?.unitPrice || 0,
-      reorderPoint: item.reorderPoint || item.minStock || 5,
-      minStock: item.minStock || item.reorderPoint || 5,
-      maxStock: item.maxStock || item.reorderQuantity || 100,
-      category: item.category || item.product?.category?.name || undefined,
-      categoryId: item.categoryId || item.product?.categoryId || undefined,
-      location: item.location || 'Warehouse',
-      supplier: item.supplier || item.product?.supplier?.name || undefined,
-      supplierId: item.supplierId || item.product?.supplier?.id || undefined,
-      status: item.status || 'ACTIVE',
-      lastUpdated: item.updatedAt || new Date().toISOString(),
-      images: item.images || item.product?.images || [],
-      reserved: item.reserved || 0,
-      barcode: item.barcode || item.product?.barcode || null,
-      createdAt: item.createdAt || new Date().toISOString(),
-      updatedAt: item.updatedAt || new Date().toISOString(),
-      costPrice: item.costPrice || item.product?.costPrice || 0,
-      taxRate: item.taxRate || item.product?.taxRate || 0,
-      unit: item.unit || 'each',
-      isActive: item.isActive !== undefined ? item.isActive : true,
-      productId: item.productId || item.product?.id || undefined,
-      variantId: item.variantId || undefined,
-      variantName: item.variantName || item.variant?.name || undefined,
-      businessUnitId: item.businessUnitId || undefined,
-      businessUnit: item.businessUnit || undefined,
-      description: item.description || item.product?.description || null,
-      weight: item.weight || item.product?.weight || 0,
-      tags: item.tags || item.product?.tags || [],
-      isDigital: item.isDigital || item.product?.isDigital || false,
-      featured: item.featured || item.product?.featured || false,
-      expiryDate: item.expiryDate || null,
-      batchNumber: item.batchNumber || null,
-      available: (item.quantity || item.stock || 0) - (item.reserved || 0),
-    };
-  }, []);
+  const businessUnitLookup = useMemo(
+    () =>
+      Object.fromEntries(
+        businessUnits.map((bu) => [bu.id, bu])
+      ) as Record<string, BusinessUnitOption>,
+    [businessUnits]
+  );
 
   // ============================================
-  // FETCH BUSINESS UNITS
+  // NORMALIZE
+  // ============================================
+  //
+  // ⚠️ `images` is now `ProductImage[]` on the raw product shape.
+  //    Service flattens, but this guard makes the normaliser
+  //    resilient to both.
+
+  const normalizeInventoryItem = useCallback(
+    (item: any): InventoryItem => {
+      return {
+        id: item.id || '',
+        name: item.name || item.product?.name || 'Unknown',
+        sku: item.sku || item.product?.sku || 'N/A',
+        stock: item.quantity || item.stock || 0,
+        quantity: item.quantity || item.stock || 0,
+        price: item.unitPrice || item.price || item.product?.unitPrice || 0,
+        unitPrice: item.unitPrice || item.price || item.product?.unitPrice || 0,
+        reorderPoint: item.reorderPoint || item.minStock || 5,
+        minStock: item.minStock || item.reorderPoint || 5,
+        maxStock: item.maxStock || item.reorderQuantity || 100,
+        category: item.category || item.product?.category?.name || undefined,
+        categoryId: item.categoryId || item.product?.categoryId || undefined,
+        location: item.location || 'Warehouse',
+        supplier: item.supplier || item.product?.supplier?.name || undefined,
+        supplierId:
+          item.supplierId || item.product?.supplier?.id || undefined,
+        status: item.status || 'ACTIVE',
+        lastUpdated: item.updatedAt || new Date().toISOString(),
+        // ✅ Flatten ProductImage[] if it slipped through.
+        images:
+          item.images && item.images.length > 0
+            ? toImageUrls(item.images)
+            : toImageUrls(item.product?.images),
+        reserved: item.reserved || 0,
+        barcode: item.barcode || item.product?.barcode || null,
+        createdAt: item.createdAt || new Date().toISOString(),
+        updatedAt: item.updatedAt || new Date().toISOString(),
+        costPrice: item.costPrice || item.product?.costPrice || 0,
+        taxRate: item.taxRate || item.product?.taxRate || 0,
+        unit: item.unit || 'each',
+        isActive: item.isActive !== undefined ? item.isActive : true,
+        productId: item.productId || item.product?.id || undefined,
+        variantId: item.variantId || undefined,
+        variantName: item.variantName || item.variant?.name || undefined,
+        businessUnitId: item.businessUnitId || undefined,
+        businessUnit: item.businessUnit || undefined,
+        description: item.description || item.product?.description || null,
+        weight: item.weight || item.product?.weight || 0,
+        tags: item.tags || item.product?.tags || [],
+        isDigital: item.isDigital || item.product?.isDigital || false,
+        featured: item.featured || item.product?.featured || false,
+        expiryDate: item.expiryDate || null,
+        batchNumber: item.batchNumber || null,
+        available:
+          (item.quantity || item.stock || 0) - (item.reserved || 0),
+      };
+    },
+    []
+  );
+
+  // ============================================
+  // BUSINESS UNITS
   // ============================================
 
-  const fetchBusinessUnits = useCallback(async () => {
-    if (businessUnitsLoadedRef.current) {
-      console.log('⏭️ Business units already loaded');
-      return;
+  const loadBusinessUnitsFromHook = useCallback((): boolean => {
+    const hookUnits = getBusinessUnitsFromHook();
+    const hookCurrent = getCurrentBusinessUnit();
+
+    if (!Array.isArray(hookUnits) || hookUnits.length === 0) return false;
+
+    const mapped: BusinessUnitOption[] = hookUnits
+      .filter((bu: any) => isValidBusinessUnitId(bu?.id))
+      .map((bu: any) => ({
+        id: bu.id,
+        name: bu.name || 'Unnamed Business Unit',
+        code: bu.code || '',
+        type: bu.type || '',
+        isActive: bu.isActive !== false,
+        companyId: bu.companyId || undefined,
+        companyName: bu.companyName || undefined,
+      }));
+
+    if (mapped.length === 0) return false;
+
+    setBusinessUnits(mapped);
+
+    const storedId =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('selectedBusinessUnitId') ||
+          localStorage.getItem('businessUnitId')
+        : null;
+
+    const preferred =
+      (storedId && mapped.find((u) => u.id === storedId && u.isActive !== false)) ||
+      (hookCurrent && mapped.find((u) => u.id === hookCurrent.id)) ||
+      mapped.find((u) => u.isActive !== false) ||
+      mapped[0];
+
+    if (preferred) {
+      setSelectedBusinessUnitId(preferred.id);
+      setFilters((prev) => ({ ...prev, businessUnitId: preferred.id }));
+      try {
+        localStorage.setItem('selectedBusinessUnitId', preferred.id);
+        localStorage.setItem('businessUnitId', preferred.id);
+      } catch {
+        /* ignore */
+      }
     }
-    
+
+    businessUnitsLoadedRef.current = true;
+    return true;
+  }, [getBusinessUnitsFromHook, getCurrentBusinessUnit]);
+
+  const fetchBusinessUnitsLegacy = useCallback(async () => {
+    if (businessUnitsLoadedRef.current) return;
+
     setLoadingBusinessUnits(true);
     setBusinessUnitError(null);
-    
+
     try {
-      console.log('📤 Fetching business units...');
-      
       let units: BusinessUnitOption[] = [];
-      
-      // Try to get from localStorage first
+
       try {
-        const stored = localStorage.getItem('businessUnits');
+        const stored =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('businessUnits')
+            : null;
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            units = parsed.filter((bu: any) => {
-              const id = bu.id || bu.businessUnitId;
-              return id && id !== 'default' && id !== 'default-business-unit';
-            }).map((bu: any) => ({
-              id: bu.id || bu.businessUnitId,
-              name: bu.name || bu.businessUnit?.name || 'Unnamed',
-              code: bu.code || bu.businessUnit?.code || '',
-              type: bu.type || bu.businessUnit?.type || '',
-              isActive: bu.isActive !== false,
-              companyName: bu.companyName || bu.businessUnit?.company?.name || undefined,
-            }));
-            console.log(`✅ Found ${units.length} business units from localStorage`);
+            units = parsed
+              .filter((bu: any) => {
+                const id = bu.id || bu.businessUnitId;
+                return isValidBusinessUnitId(id);
+              })
+              .map((bu: any) => ({
+                id: bu.id || bu.businessUnitId,
+                name: bu.name || bu.businessUnit?.name || 'Unnamed',
+                code: bu.code || bu.businessUnit?.code || '',
+                type: bu.type || bu.businessUnit?.type || '',
+                isActive: bu.isActive !== false,
+                companyName:
+                  bu.companyName ||
+                  bu.businessUnit?.company?.name ||
+                  undefined,
+              }));
           }
         }
       } catch (storageError) {
-        console.warn('Failed to parse from localStorage:', storageError);
+        console.warn(
+          '[inventory] localStorage businessUnits parse failed:',
+          storageError
+        );
       }
-      
-      // If no localStorage, try from user context
+
       if (units.length === 0) {
         try {
           const userAny = user as any;
-          if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
+          if (
+            userAny?.businessUnits &&
+            Array.isArray(userAny.businessUnits)
+          ) {
             const mappedUnits = userAny.businessUnits
               .map((bu: any) => {
                 const id = bu.businessUnitId || bu.id;
-                if (!id || id === 'default' || id === 'default-business-unit') {
-                  return null;
-                }
+                if (!isValidBusinessUnitId(id)) return null;
                 return {
-                  id: id,
+                  id,
                   name: bu.businessUnit?.name || bu.name || 'Unnamed',
                   code: bu.businessUnit?.code || bu.code || '',
                   type: bu.businessUnit?.type || bu.type || '',
-                  isActive: bu.businessUnit?.isActive !== undefined ? bu.businessUnit.isActive : true,
-                  companyName: bu.businessUnit?.company?.name || bu.companyName || undefined,
-                };
+                  isActive:
+                    bu.businessUnit?.isActive !== undefined
+                      ? bu.businessUnit.isActive
+                      : true,
+                  companyName:
+                    bu.businessUnit?.company?.name ||
+                    bu.companyName ||
+                    undefined,
+                } as BusinessUnitOption;
               })
-              .filter((bu: BusinessUnitOption | null): bu is BusinessUnitOption => bu !== null);
-            
+              .filter(
+                (bu: BusinessUnitOption | null): bu is BusinessUnitOption =>
+                  bu !== null
+              );
+
             units = mappedUnits;
-            console.log(`✅ Found ${units.length} business units from user context`);
           }
         } catch (userError) {
-          console.warn('Failed to fetch from user context:', userError);
+          console.warn(
+            '[inventory] user-context businessUnits read failed:',
+            userError
+          );
         }
       }
-      
-      // Fallback to saved ID
+
       if (units.length === 0) {
-        const savedId = localStorage.getItem('selectedBusinessUnitId') || localStorage.getItem('businessUnitId');
-        if (savedId && savedId !== 'default' && savedId !== 'default-business-unit') {
+        const savedId =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('selectedBusinessUnitId') ||
+              localStorage.getItem('businessUnitId')
+            : null;
+        if (isValidBusinessUnitId(savedId)) {
           units.push({
             id: savedId,
             name: 'Default Business Unit',
@@ -1734,372 +2082,402 @@ export default function InventoryDashboardPage() {
             type: 'STORE',
             isActive: true,
           });
-          console.log(`✅ Using fallback business unit from localStorage: ${savedId}`);
         }
       }
-      
-      // Remove duplicates
-      const uniqueUnits = units.filter((unit, index, self) => 
-        index === self.findIndex((u) => u.id === unit.id)
+
+      const uniqueUnits = units.filter(
+        (unit, index, self) =>
+          index === self.findIndex((u) => u.id === unit.id)
       );
-      
+
+      if (!mountedRef.current) return;
+
       setBusinessUnits(uniqueUnits);
-      
-      // Auto-select business unit
+
       if (uniqueUnits.length > 0) {
-        const savedId = localStorage.getItem('selectedBusinessUnitId') || localStorage.getItem('businessUnitId');
-        if (savedId) {
-          const saved = uniqueUnits.find(bu => bu.id === savedId && bu.isActive !== false);
-          if (saved) {
-            setSelectedBusinessUnitId(saved.id);
-            setFilters(prev => ({ ...prev, businessUnitId: saved.id }));
-            console.log(`✅ Restored selected business unit: ${saved.name}`);
-            businessUnitsLoadedRef.current = true;
-            setLoadingBusinessUnits(false);
-            return;
+        const storedId =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('selectedBusinessUnitId') ||
+              localStorage.getItem('businessUnitId')
+            : null;
+
+        const saved =
+          storedId &&
+          uniqueUnits.find((bu) => bu.id === storedId && bu.isActive !== false);
+
+        const preferred =
+          saved ||
+          uniqueUnits.find((bu) => bu.isActive !== false) ||
+          uniqueUnits[0];
+
+        if (preferred) {
+          setSelectedBusinessUnitId(preferred.id);
+          setFilters((prev) => ({ ...prev, businessUnitId: preferred.id }));
+          try {
+            localStorage.setItem('selectedBusinessUnitId', preferred.id);
+            localStorage.setItem('businessUnitId', preferred.id);
+          } catch {
+            /* ignore */
           }
-        }
-        const active = uniqueUnits.find(bu => bu.isActive !== false);
-        if (active) {
-          setSelectedBusinessUnitId(active.id);
-          setFilters(prev => ({ ...prev, businessUnitId: active.id }));
-          localStorage.setItem('selectedBusinessUnitId', active.id);
-          localStorage.setItem('businessUnitId', active.id);
-          console.log(`✅ Auto-selected business unit: ${active.name}`);
         }
       } else {
         setBusinessUnitError('No business units available.');
         toast.warning('No business units available');
       }
-      
+
       businessUnitsLoadedRef.current = true;
-      
-    } catch (error) {
-      console.error('Error fetching business units:', error);
+    } catch (err) {
+      console.error('[inventory] fetchBusinessUnitsLegacy failed:', err);
       setBusinessUnitError('Failed to load business units.');
       toast.error('Failed to load business units');
     } finally {
-      setLoadingBusinessUnits(false);
+      if (mountedRef.current) setLoadingBusinessUnits(false);
     }
   }, [user]);
 
+  const ensureBusinessUnitsLoaded = useCallback(async () => {
+    if (businessUnitsLoadedRef.current) return;
+    if (loadBusinessUnitsFromHook()) {
+      setLoadingBusinessUnits(false);
+      return;
+    }
+    await fetchBusinessUnitsLegacy();
+  }, [loadBusinessUnitsFromHook, fetchBusinessUnitsLegacy]);
+
   // ============================================
-  // LOAD INVENTORY DATA - FIXED
+  // LOAD INVENTORY
   // ============================================
 
-  const loadInventoryData = useCallback(async (showLoading = true) => {
-    if (loadDataRef.current) {
-      console.log('⏭️ Skipping load - already loading');
-      return;
-    }
-    
-    if (!canViewInventory) {
-      setLoading(false);
-      return;
-    }
-    
-    // Use selected business unit ID or fallback
-    const effectiveBusinessUnitId = selectedBusinessUnitId || businessUnits[0]?.id;
-    
-    if (!effectiveBusinessUnitId) {
-      console.warn('No business unit ID available, skipping inventory load');
-      setLoading(false);
-      setInventory([]);
-      setFilteredInventory([]);
-      return;
-    }
-    
-    loadDataRef.current = true;
-    
-    try {
-      if (showLoading) setLoading(true);
-      
-      console.log(`📤 Fetching inventory for business unit: ${effectiveBusinessUnitId}`);
-      
-      // Try getAllInventory first
-      let allData: any[] = [];
+  const loadInventoryData = useCallback(
+    async (showLoading = true) => {
+      if (loadDataRef.current) return;
+      if (!canView) {
+        if (mountedRef.current) setLoading(false);
+        return;
+      }
+
+      const effectiveBusinessUnitId =
+        selectedBusinessUnitId || fallbackBusinessUnitId;
+
+      if (!isValidBusinessUnitId(effectiveBusinessUnitId)) {
+        if (mountedRef.current) {
+          setLoading(false);
+          setInventory([]);
+        }
+        return;
+      }
+
+      loadDataRef.current = true;
+
       try {
-        const allInventory = await inventoryService.getAllInventory(effectiveBusinessUnitId);
-        console.log('📥 getAllInventory response:', allInventory);
-        
-        if (allInventory && allInventory.items && Array.isArray(allInventory.items)) {
-          allData = allInventory.items;
-          console.log(`✅ Loaded ${allData.length} inventory items from getAllInventory`);
-        }
-      } catch (error) {
-        console.warn('getAllInventory failed, trying getInventory:', error);
-      }
-      
-      // Fallback to getInventory if getAllInventory failed or returned empty
-      if (allData.length === 0) {
+        if (showLoading && mountedRef.current) setLoading(true);
+
+        let allData: any[] = [];
+
         try {
-          const inventoryResponse = await inventoryService.getInventory({
-            businessUnitId: effectiveBusinessUnitId,
-            limit: 1000,
+          const allInventory =
+            await inventoryService.getAllInventory(effectiveBusinessUnitId);
+          if (allInventory && Array.isArray(allInventory.items)) {
+            allData = allInventory.items;
+          }
+        } catch (err) {
+          console.warn('[inventory] getAllInventory failed:', err);
+        }
+
+        if (allData.length === 0) {
+          try {
+            const inventoryResponse = await inventoryService.getInventory({
+              businessUnitId: effectiveBusinessUnitId,
+              limit: 1000,
+            });
+            if (
+              inventoryResponse &&
+              Array.isArray(inventoryResponse.inventory)
+            ) {
+              allData = inventoryResponse.inventory;
+            }
+          } catch (err) {
+            console.warn('[inventory] getInventory also failed:', err);
+          }
+        }
+
+        if (!mountedRef.current) return;
+
+        if (allData.length > 0) {
+          const normalizedData = allData.map(normalizeInventoryItem);
+
+          setInventory(normalizedData);
+
+          const withBarcode = normalizedData.filter(
+            (item: InventoryItem) => item.barcode
+          ).length;
+          const withoutBarcode = normalizedData.length - withBarcode;
+          const inStock = normalizedData.filter(
+            (item: InventoryItem) => (item.stock || 0) > 0
+          ).length;
+          const lowStockCount = normalizedData.filter(
+            (item: InventoryItem) =>
+              (item.stock || 0) <=
+                (item.reorderPoint || item.minStock || 5) &&
+              (item.stock || 0) > 0
+          ).length;
+          const outOfStockCount = normalizedData.filter(
+            (item: InventoryItem) => (item.stock || 0) === 0
+          ).length;
+          const totalValue = normalizedData.reduce(
+            (sum: number, item: InventoryItem) =>
+              sum + (item.stock || 0) * (item.price || 0),
+            0
+          );
+          const totalCost = normalizedData.reduce(
+            (sum: number, item: InventoryItem) =>
+              sum + (item.stock || 0) * (item.costPrice || 0),
+            0
+          );
+
+          const uniqueCategories = new Set(
+            normalizedData
+              .map((item: InventoryItem) => item.category)
+              .filter(Boolean)
+          );
+          const uniqueSuppliers = new Set(
+            normalizedData
+              .map((item: InventoryItem) => item.supplier)
+              .filter(Boolean)
+          );
+
+          setStats({
+            totalItems: normalizedData.length,
+            totalValue,
+            totalCost,
+            lowStock: lowStockCount,
+            outOfStock: outOfStockCount,
+            totalCategories: uniqueCategories.size,
+            totalSuppliers: uniqueSuppliers.size,
+            profitMargin:
+              totalCost > 0
+                ? ((totalValue - totalCost) / totalCost) * 100
+                : 0,
+            withBarcode,
+            withoutBarcode,
+            inStock,
           });
-          console.log('📥 getInventory response:', inventoryResponse);
-          
-          if (inventoryResponse && inventoryResponse.inventory && Array.isArray(inventoryResponse.inventory)) {
-            allData = inventoryResponse.inventory;
-            console.log(`✅ Loaded ${allData.length} inventory items from getInventory`);
+
+          setLastUpdated(new Date());
+
+          try {
+            const categoriesData = await inventoryService.getCategories(
+              effectiveBusinessUnitId
+            );
+            if (
+              Array.isArray(categoriesData) &&
+              categoriesData.length > 0 &&
+              mountedRef.current
+            ) {
+              setCategories(
+                categoriesData.map((cat: any) => ({
+                  id: cat.id,
+                  name: cat.name,
+                }))
+              );
+            }
+          } catch (err) {
+            console.warn('[inventory] load categories for filter failed:', err);
           }
-        } catch (error) {
-          console.warn('getInventory also failed:', error);
+        } else {
+          setInventory([]);
+          setStats({
+            totalItems: 0,
+            totalValue: 0,
+            totalCost: 0,
+            lowStock: 0,
+            outOfStock: 0,
+            totalCategories: 0,
+            totalSuppliers: 0,
+            withBarcode: 0,
+            withoutBarcode: 0,
+          });
+        }
+
+        initialLoadDoneRef.current = true;
+      } catch (err) {
+        console.error('[inventory] loadInventoryData failed:', err);
+        toast.error('Failed to load inventory data');
+        if (mountedRef.current) setInventory([]);
+      } finally {
+        loadDataRef.current = false;
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
         }
       }
-      
-      if (allData.length > 0) {
-        // Add business unit info to each item
-        const normalizedData = allData.map((item: any) => {
-          const normalized = normalizeInventoryItem(item);
-          const bu = businessUnits.find(b => b.id === effectiveBusinessUnitId);
-          if (bu) {
-            normalized.businessUnit = {
-              id: bu.id,
-              name: bu.name,
-              code: bu.code,
-            };
-          }
-          return normalized;
-        });
-        
-        setInventory(normalizedData);
-        setFilteredInventory(normalizedData);
-        setPagination(prev => ({ 
-          ...prev, 
-          total: normalizedData.length, 
-          totalPages: Math.ceil(normalizedData.length / prev.limit) || 1 
-        }));
-        
-        // Calculate stats from data
-        const withBarcode = normalizedData.filter((item: InventoryItem) => item.barcode).length;
-        const withoutBarcode = normalizedData.length - withBarcode;
-        const inStock = normalizedData.filter((item: InventoryItem) => (item.stock || 0) > 0).length;
-        const lowStockCount = normalizedData.filter((item: InventoryItem) => 
-          (item.stock || 0) <= (item.reorderPoint || item.minStock || 5) && (item.stock || 0) > 0
-        ).length;
-        const outOfStockCount = normalizedData.filter((item: InventoryItem) => 
-          (item.stock || 0) === 0
-        ).length;
-        const totalValue = normalizedData.reduce((sum: number, item: InventoryItem) => 
-          sum + (item.stock || 0) * (item.price || 0), 0
-        );
-        const totalCost = normalizedData.reduce((sum: number, item: InventoryItem) => 
-          sum + (item.stock || 0) * (item.costPrice || 0), 0
-        );
-        
-        // Get unique categories and suppliers
-        const uniqueCategories = new Set(normalizedData.map((item: InventoryItem) => item.category).filter(Boolean));
-        const uniqueSuppliers = new Set(normalizedData.map((item: InventoryItem) => item.supplier).filter(Boolean));
-        
-        setStats({
-          totalItems: normalizedData.length,
-          totalValue: totalValue,
-          totalCost: totalCost,
-          lowStock: lowStockCount,
-          outOfStock: outOfStockCount,
-          totalCategories: uniqueCategories.size,
-          totalSuppliers: uniqueSuppliers.size,
-          profitMargin: totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0,
-          withBarcode,
-          withoutBarcode,
-          inStock,
-        });
-        
-        setLastUpdated(new Date());
-        
-        // Load categories for filter
-        try {
-          const categoriesData = await inventoryService.getCategories(effectiveBusinessUnitId);
-          if (categoriesData && Array.isArray(categoriesData) && categoriesData.length > 0) {
-            setCategories(categoriesData.map((cat: any) => ({
-              id: cat.id,
-              name: cat.name,
-            })));
-          }
-        } catch (error) {
-          console.warn('Failed to load categories for filter:', error);
-        }
-      } else {
-        setInventory([]);
-        setFilteredInventory([]);
-        setStats({
-          totalItems: 0,
-          totalValue: 0,
-          totalCost: 0,
-          lowStock: 0,
-          outOfStock: 0,
-          totalCategories: 0,
-          totalSuppliers: 0,
-          withBarcode: 0,
-          withoutBarcode: 0,
-        });
-      }
-      
-      initialLoadDoneRef.current = true;
-      
-    } catch (error) {
-      console.error('Failed to load inventory:', error);
-      toast.error('Failed to load inventory data');
-      setInventory([]);
-      setFilteredInventory([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      loadDataRef.current = false;
-    }
-  }, [canViewInventory, selectedBusinessUnitId, businessUnits, normalizeInventoryItem]);
+    },
+    [
+      canView,
+      selectedBusinessUnitId,
+      fallbackBusinessUnitId,
+      normalizeInventoryItem,
+    ]
+  );
 
-  // ============================================
-  // EFFECTS - FIXED
-  // ============================================
-
-  // Fetch business units on mount
-  useEffect(() => {
-    if (!permissionsLoading && user && !businessUnitsLoadedRef.current) {
-      fetchBusinessUnits();
-    }
-  }, [permissionsLoading, user, fetchBusinessUnits]);
-
-  // Load data when business unit is selected and business units are loaded
-  useEffect(() => {
-    if (
-      businessUnitsLoadedRef.current &&
-      selectedBusinessUnitId &&
-      selectedBusinessUnitId !== 'default' &&
-      !loadDataRef.current &&
-      !initialLoadDoneRef.current
-    ) {
-      loadInventoryData();
-    }
-  }, [selectedBusinessUnitId, businessUnitsLoadedRef, loadInventoryData]);
-
-  // ============================================
-  // FILTER LOGIC - UPDATED
-  // ============================================
+  const enrichedInventory = useMemo(() => {
+    const bu = businessUnitLookup[selectedBusinessUnitId];
+    if (!bu) return inventory;
+    return inventory.map((item) => ({
+      ...item,
+      businessUnit: { id: bu.id, name: bu.name, code: bu.code },
+    }));
+  }, [inventory, businessUnitLookup, selectedBusinessUnitId]);
 
   useEffect(() => {
-    if (inventory.length === 0) {
-      setFilteredInventory([]);
-      return;
-    }
+    if (booting) return;
+    if (!isAuthenticated || !user) return;
+    ensureBusinessUnitsLoaded();
+  }, [booting, isAuthenticated, user, ensureBusinessUnitsLoaded]);
 
-    let filtered = [...inventory];
+  useEffect(() => {
+    if (booting) return;
+    if (!isAuthenticated) return;
+    if (!businessUnitsLoadedRef.current) return;
+    if (!isValidBusinessUnitId(selectedBusinessUnitId)) return;
+    if (loadDataRef.current) return;
+    if (initialLoadDoneRef.current) return;
 
-    // Search
+    loadInventoryData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    booting,
+    isAuthenticated,
+    selectedBusinessUnitId,
+    loadInventoryData,
+  ]);
+
+  // ============================================
+  // FILTERING
+  // ============================================
+
+  const filteredInventory = useMemo(() => {
+    let filtered = [...enrichedInventory];
+
     if (filters.search.trim()) {
-      const searchLower = filters.search.toLowerCase().trim();
-      filtered = filtered.filter(item =>
-        item.name.toLowerCase().includes(searchLower) ||
-        item.sku.toLowerCase().includes(searchLower) ||
-        (item.barcode && item.barcode.toLowerCase().includes(searchLower))
+      const q = filters.search.toLowerCase().trim();
+      filtered = filtered.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          item.sku.toLowerCase().includes(q) ||
+          (item.barcode && item.barcode.toLowerCase().includes(q))
       );
     }
 
-    // Category
     if (filters.categoryId) {
-      filtered = filtered.filter(item => item.categoryId === filters.categoryId);
+      filtered = filtered.filter(
+        (item) => item.categoryId === filters.categoryId
+      );
     } else if (filters.category) {
-      filtered = filtered.filter(item => 
-        item.category && item.category.toLowerCase().includes(filters.category.toLowerCase())
+      const q = filters.category.toLowerCase();
+      filtered = filtered.filter(
+        (item) => item.category && item.category.toLowerCase().includes(q)
       );
     }
 
-    // Location
     if (filters.location) {
-      filtered = filtered.filter(item => item.location === filters.location);
+      filtered = filtered.filter(
+        (item) => item.location === filters.location
+      );
     }
 
-    // Status
     if (filters.status !== 'all') {
       switch (filters.status) {
         case 'active':
-          filtered = filtered.filter(item => item.isActive !== false);
+          filtered = filtered.filter((item) => item.isActive !== false);
           break;
         case 'inactive':
-          filtered = filtered.filter(item => item.isActive === false);
+          filtered = filtered.filter((item) => item.isActive === false);
           break;
         case 'low_stock':
-          filtered = filtered.filter(item => {
+          filtered = filtered.filter((item) => {
             const stock = item.stock || 0;
-            const reorderPoint = item.reorderPoint || item.minStock || 5;
-            return stock <= reorderPoint && stock > 0;
+            const rp = item.reorderPoint || item.minStock || 5;
+            return stock <= rp && stock > 0;
           });
           break;
         case 'out_of_stock':
-          filtered = filtered.filter(item => (item.stock || 0) === 0);
+          filtered = filtered.filter((item) => (item.stock || 0) === 0);
           break;
         case 'discontinued':
-          filtered = filtered.filter(item => item.status === 'DISCONTINUED');
+          filtered = filtered.filter(
+            (item) => item.status === 'DISCONTINUED'
+          );
           break;
       }
     }
 
-    // Low Stock
     if (filters.lowStock) {
-      filtered = filtered.filter(item => {
+      filtered = filtered.filter((item) => {
         const stock = item.stock || 0;
-        const reorderPoint = item.reorderPoint || item.minStock || 5;
-        return stock <= reorderPoint && stock > 0;
+        const rp = item.reorderPoint || item.minStock || 5;
+        return stock <= rp && stock > 0;
       });
     }
 
-    // In Stock
     if (filters.inStock !== undefined) {
-      filtered = filtered.filter(item => {
+      filtered = filtered.filter((item) => {
         const stock = item.stock || 0;
         return filters.inStock ? stock > 0 : stock === 0;
       });
     }
 
-    // Barcode
     if (filters.hasBarcode !== 'all') {
       const hasBarcode = filters.hasBarcode === 'yes';
-      filtered = filtered.filter(item => hasBarcode ? !!item.barcode : !item.barcode);
-    }
-
-    // Has Images
-    if (filters.hasImages && filters.hasImages !== 'all') {
-      const hasImages = filters.hasImages === 'yes';
-      filtered = filtered.filter(item => hasImages ? (item.images && item.images.length > 0) : (!item.images || item.images.length === 0));
-    }
-
-    // Digital
-    if (filters.isDigital && filters.isDigital !== 'all') {
-      const isDigital = filters.isDigital === 'yes';
-      filtered = filtered.filter(item => item.isDigital === isDigital);
-    }
-
-    // Featured
-    if (filters.featured && filters.featured !== 'all') {
-      const isFeatured = filters.featured === 'yes';
-      filtered = filtered.filter(item => item.featured === isFeatured);
-    }
-
-    // Active
-    if (filters.isActive && filters.isActive !== 'all') {
-      const isActive = filters.isActive === 'yes';
-      filtered = filtered.filter(item => item.isActive === isActive);
-    }
-
-    // Price Range
-    if (filters.minPrice !== undefined) {
-      filtered = filtered.filter(item => (item.price || 0) >= filters.minPrice!);
-    }
-    if (filters.maxPrice !== undefined) {
-      filtered = filtered.filter(item => (item.price || 0) <= filters.maxPrice!);
-    }
-
-    // Supplier
-    if (filters.supplier) {
-      filtered = filtered.filter(item => 
-        item.supplier && item.supplier.toLowerCase().includes(filters.supplier!.toLowerCase())
+      filtered = filtered.filter((item) =>
+        hasBarcode ? !!item.barcode : !item.barcode
       );
     }
 
-    // Sort
+    if (filters.hasImages && filters.hasImages !== 'all') {
+      const hasImages = filters.hasImages === 'yes';
+      filtered = filtered.filter((item) =>
+        hasImages
+          ? !!(item.images && item.images.length > 0)
+          : !(item.images && item.images.length > 0)
+      );
+    }
+
+    if (filters.isDigital && filters.isDigital !== 'all') {
+      const want = filters.isDigital === 'yes';
+      filtered = filtered.filter((item) => item.isDigital === want);
+    }
+
+    if (filters.featured && filters.featured !== 'all') {
+      const want = filters.featured === 'yes';
+      filtered = filtered.filter((item) => item.featured === want);
+    }
+
+    if (filters.isActive && filters.isActive !== 'all') {
+      const want = filters.isActive === 'yes';
+      filtered = filtered.filter((item) => item.isActive === want);
+    }
+
+    if (filters.minPrice !== undefined) {
+      filtered = filtered.filter(
+        (item) => (item.price || 0) >= filters.minPrice!
+      );
+    }
+    if (filters.maxPrice !== undefined) {
+      filtered = filtered.filter(
+        (item) => (item.price || 0) <= filters.maxPrice!
+      );
+    }
+
+    if (filters.supplier) {
+      const q = filters.supplier.toLowerCase();
+      filtered = filtered.filter(
+        (item) => item.supplier && item.supplier.toLowerCase().includes(q)
+      );
+    }
+
     if (filters.sortBy) {
-      const sortOrder = filters.sortOrder || 'asc';
+      const order = filters.sortOrder || 'asc';
       filtered.sort((a, b) => {
         let aVal: any;
         let bVal: any;
@@ -2133,19 +2511,16 @@ export default function InventoryDashboardPage() {
             bVal = b.name;
         }
         if (typeof aVal === 'string' && typeof bVal === 'string') {
-          return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+          return order === 'asc'
+            ? aVal.localeCompare(bVal)
+            : bVal.localeCompare(aVal);
         }
-        return sortOrder === 'asc' ? (aVal - bVal) : (bVal - aVal);
+        return order === 'asc' ? aVal - bVal : bVal - aVal;
       });
     }
 
-    setFilteredInventory(filtered);
-    setPagination(prev => ({
-      ...prev,
-      total: filtered.length,
-      totalPages: Math.ceil(filtered.length / prev.limit) || 1,
-    }));
-  }, [inventory, filters]);
+    return filtered;
+  }, [enrichedInventory, filters]);
 
   // ============================================
   // HANDLERS
@@ -2153,14 +2528,17 @@ export default function InventoryDashboardPage() {
 
   const handleBusinessUnitSelect = (id: string) => {
     setSelectedBusinessUnitId(id);
-    setFilters(prev => ({ ...prev, businessUnitId: id }));
-    localStorage.setItem('selectedBusinessUnitId', id);
-    localStorage.setItem('businessUnitId', id);
-    setPagination(prev => ({ ...prev, page: 1 }));
-    // Reset load state to force reload
+    setFilters((prev) => ({ ...prev, businessUnitId: id }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    try {
+      localStorage.setItem('selectedBusinessUnitId', id);
+      localStorage.setItem('businessUnitId', id);
+    } catch {
+      /* ignore */
+    }
     initialLoadDoneRef.current = false;
     loadDataRef.current = false;
-    const bu = businessUnits.find(b => b.id === id);
+    const bu = businessUnits.find((b) => b.id === id);
     toast.success(`Switched to ${bu?.name || 'Business Unit'}`);
   };
 
@@ -2173,54 +2551,68 @@ export default function InventoryDashboardPage() {
   };
 
   const handleFilterChange = (key: string, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const handleSelectAll = () => {
-    if (selectedItems.length === filteredInventory.length && filteredInventory.length > 0) {
+    const pageItems = filteredInventory.slice(
+      (pagination.page - 1) * pagination.limit,
+      pagination.page * pagination.limit
+    );
+    if (
+      selectedItems.length === pageItems.length &&
+      pageItems.length > 0
+    ) {
       setSelectedItems([]);
       setShowBulkActions(false);
     } else {
-      setSelectedItems(filteredInventory.map(item => item.id));
+      setSelectedItems(pageItems.map((item) => item.id));
       setShowBulkActions(true);
     }
   };
 
   const handleSelectItem = (id: string) => {
-    setSelectedItems(prev => {
-      const newSelection = prev.includes(id) 
-        ? prev.filter(item => item !== id)
+    setSelectedItems((prev) => {
+      const next = prev.includes(id)
+        ? prev.filter((item) => item !== id)
         : [...prev, id];
-      setShowBulkActions(newSelection.length > 0);
-      return newSelection;
+      setShowBulkActions(next.length > 0);
+      return next;
     });
   };
 
   const handleBulkDelete = async () => {
-    if (!canDeleteInventory) {
+    if (!canDelete) {
       toast.error('You do not have permission to delete inventory items');
       return;
     }
-    if (!confirm(`Are you sure you want to delete ${selectedItems.length} items?`)) return;
-    
+    if (
+      !confirm(
+        `Are you sure you want to delete ${selectedItems.length} items?`
+      )
+    )
+      return;
+
     try {
       let successCount = 0;
       for (const id of selectedItems) {
         try {
           await inventoryService.deleteInventoryItem(id);
           successCount++;
-        } catch (e) {
-          console.error(`Failed to delete item ${id}:`, e);
+        } catch (err) {
+          console.error(`[inventory] delete ${id} failed:`, err);
         }
       }
-      toast.success(`${successCount} of ${selectedItems.length} items deleted successfully`);
+      toast.success(
+        `${successCount} of ${selectedItems.length} items deleted`
+      );
       setSelectedItems([]);
       setShowBulkActions(false);
       initialLoadDoneRef.current = false;
       await loadInventoryData(false);
-    } catch (error) {
-      console.error('Failed to delete items:', error);
+    } catch (err) {
+      console.error('[inventory] bulk delete failed:', err);
       toast.error('Failed to delete items');
     }
   };
@@ -2253,71 +2645,55 @@ export default function InventoryDashboardPage() {
     }
   };
 
-  const handlePageChange = (page: number) => {
-    setPagination(prev => ({ ...prev, page }));
-  };
+  const handlePageChange = (page: number) =>
+    setPagination((prev) => ({ ...prev, page }));
 
-  const handleLimitChange = (limit: number) => {
-    setPagination(prev => ({ ...prev, limit, page: 1 }));
-  };
+  const handleLimitChange = (limit: number) =>
+    setPagination((prev) => ({ ...prev, limit, page: 1 }));
 
-  const handleViewItem = (item: InventoryItem) => {
+  const handleViewItem = (item: InventoryItem) =>
     router.push(`/admin/inventory/${item.id}`);
-  };
 
-  const handleEditItem = (item: InventoryItem) => {
+  const handleEditItem = (item: InventoryItem) =>
     router.push(`/admin/inventory/${item.id}/edit`);
-  };
 
   const handleDeleteItem = async (id: string) => {
-    if (!canDeleteInventory) {
+    if (!canDelete) {
       toast.error('You do not have permission to delete inventory items');
       return;
     }
-    if (confirm('Are you sure you want to delete this item?')) {
-      try {
-        await inventoryService.deleteInventoryItem(id);
-        toast.success('Item deleted successfully');
-        initialLoadDoneRef.current = false;
-        await loadInventoryData(false);
-      } catch (error) {
-        console.error('Failed to delete item:', error);
-        toast.error('Failed to delete item');
-      }
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    try {
+      await inventoryService.deleteInventoryItem(id);
+      toast.success('Item deleted successfully');
+      initialLoadDoneRef.current = false;
+      await loadInventoryData(false);
+    } catch (err) {
+      console.error('[inventory] delete failed:', err);
+      toast.error('Failed to delete item');
     }
   };
 
-  const handlePrintBarcode = (item: InventoryItem) => {
+  const handlePrintBarcode = (item: InventoryItem) =>
     router.push(`/admin/inventory/${item.id}/barcode`);
-  };
 
   const handleAdjustItem = (item: InventoryItem) => {
     setAdjustingItem(item);
-    setAdjustmentData({
-      quantity: 1,
-      type: 'ADJUSTMENT_IN',
-      notes: '',
-    });
     setShowAdjustmentModal(true);
   };
-
-  // ============================================
-  // ADJUSTMENT MODAL HANDLERS
-  // ============================================
 
   const closeAdjustmentModal = () => {
     setShowAdjustmentModal(false);
     setAdjustingItem(null);
-    setAdjustmentData({
-      quantity: 0,
-      type: 'ADJUSTMENT_IN',
-      notes: '',
-    });
   };
 
-  const handleAdjustmentConfirm = async (data: { quantity: number; type: 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT'; notes: string }) => {
+  const handleAdjustmentConfirm = async (data: {
+    quantity: number;
+    type: 'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT';
+    notes: string;
+  }) => {
     if (!adjustingItem) return;
-    
+
     setAdjustingLoading(true);
     try {
       await inventoryService.updateStock(adjustingItem.id, {
@@ -2325,23 +2701,39 @@ export default function InventoryDashboardPage() {
         transactionType: data.type,
         notes: data.notes,
       });
-      
-      toast.success(`Stock ${data.type === 'ADJUSTMENT_IN' ? 'added' : 'removed'} successfully`);
+      toast.success(
+        `Stock ${
+          data.type === 'ADJUSTMENT_IN' ? 'added' : 'removed'
+        } successfully`
+      );
       closeAdjustmentModal();
       initialLoadDoneRef.current = false;
       await loadInventoryData(false);
-    } catch (error: any) {
-      toast.error(error?.message || 'Failed to adjust stock');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to adjust stock');
     } finally {
       setAdjustingLoading(false);
     }
   };
 
   // ============================================
-  // PERMISSION GUARD
+  // GATES
   // ============================================
 
-  if (!canViewInventory && !permissionsLoading) {
+  if (booting) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Checking your session...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <motion.div
@@ -2353,9 +2745,41 @@ export default function InventoryDashboardPage() {
           <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
             <Lock className="w-12 h-12 text-gray-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            Please Login
+          </h2>
           <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-            You don't have permission to view inventory. Please contact your administrator.
+            You need to be logged in to view inventory.
+          </p>
+          <button
+            onClick={() => router.push('/login')}
+            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go to Login
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="text-center"
+        >
+          <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-12 h-12 text-gray-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            Access Restricted
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
+            You don't have permission to view inventory. Please contact your
+            administrator.
           </p>
           <button
             onClick={() => router.push('/dashboard')}
@@ -2368,28 +2792,39 @@ export default function InventoryDashboardPage() {
     );
   }
 
-  // ============================================
-  // RENDER
-  // ============================================
-
-  const selectedBU = businessUnits.find(bu => bu.id === selectedBusinessUnitId);
-
-  if (loading && !refreshing && inventory.length === 0 && !initialLoadDoneRef.current) {
+  if (
+    loading &&
+    !refreshing &&
+    inventory.length === 0 &&
+    !initialLoadDoneRef.current
+  ) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading inventory...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading inventory...
+          </p>
         </div>
       </div>
     );
   }
 
-  // Paginate filtered inventory
+  // ============================================
+  // RENDER
+  // ============================================
+
+  const selectedBU = businessUnits.find(
+    (bu) => bu.id === selectedBusinessUnitId
+  );
+
   const paginatedItems = filteredInventory.slice(
     (pagination.page - 1) * pagination.limit,
     pagination.page * pagination.limit
   );
+
+  const computedTotalPages =
+    Math.ceil(filteredInventory.length / pagination.limit) || 1;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -2402,11 +2837,13 @@ export default function InventoryDashboardPage() {
           </h1>
           <div className="flex flex-wrap items-center gap-3 mt-1">
             <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">
-              {stats.totalItems} items • {formatCurrency(stats.totalValue || 0)} total value
+              {stats.totalItems} items •{' '}
+              {formatCurrency(stats.totalValue || 0)} total value
             </p>
             {stats.withBarcode !== undefined && (
               <span className="text-xs text-gray-400">
-                {stats.withBarcode} with barcode • {stats.withoutBarcode} without
+                {stats.withBarcode} with barcode • {stats.withoutBarcode}{' '}
+                without
               </span>
             )}
             {lastUpdated && (
@@ -2422,26 +2859,27 @@ export default function InventoryDashboardPage() {
             )}
           </div>
         </div>
-        
+
         <div className="flex flex-wrap items-center gap-2">
-          {/* Business Unit Selector */}
           <BusinessUnitSelector
             businessUnits={businessUnits}
             selectedId={selectedBusinessUnitId}
             onSelect={handleBusinessUnitSelect}
             loading={loadingBusinessUnits}
           />
-          
+
           <button
             onClick={handleRefresh}
             disabled={refreshing || loading}
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
             title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+            />
           </button>
-          
-          {canCreateInventory && (
+
+          {canCreate && (
             <button
               onClick={() => router.push('/admin/inventory/add')}
               className="px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1 sm:gap-2 transition-colors text-sm"
@@ -2453,19 +2891,20 @@ export default function InventoryDashboardPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <InventoryStats stats={stats} loading={loading} />
+      <StatsCards stats={stats} loading={loading} />
 
-      {/* Quick Actions */}
-      <QuickActions onAction={handleQuickAction} permissions={{
-        canCreate: canCreateInventory,
-        canTransfer: canTransferInventory,
-        canAdjust: canAdjustInventory,
-        canExport: canExportInventory,
-      }} loading={loading} />
+      <QuickActions
+        onAction={handleQuickAction}
+        permissions={{
+          canCreate,
+          canTransfer,
+          canAdjust,
+          canExport,
+        }}
+        loading={loading}
+      />
 
-      {/* Filters */}
-      <InventoryFilters
+      <InventoryFiltersBar
         filters={filters}
         onFilterChange={handleFilterChange}
         showFilters={showFilters}
@@ -2474,7 +2913,6 @@ export default function InventoryDashboardPage() {
         loading={loading}
       />
 
-      {/* Bulk Actions Bar */}
       <AnimatePresence>
         {showBulkActions && selectedItems.length > 0 && (
           <motion.div
@@ -2484,10 +2922,11 @@ export default function InventoryDashboardPage() {
             className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3"
           >
             <span className="text-sm text-blue-700 dark:text-blue-300">
-              {selectedItems.length} item{selectedItems.length > 1 ? 's' : ''} selected
+              {selectedItems.length} item
+              {selectedItems.length > 1 ? 's' : ''} selected
             </span>
             <div className="flex items-center gap-2 flex-wrap">
-              {canDeleteInventory && (
+              {canDelete && (
                 <button
                   onClick={handleBulkDelete}
                   className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors flex items-center gap-1"
@@ -2511,13 +2950,11 @@ export default function InventoryDashboardPage() {
         )}
       </AnimatePresence>
 
-      {/* MAIN CONTENT */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         <div className="xl:col-span-3">
           <InventoryTable
             data={paginatedItems}
             loading={loading}
-            viewMode={viewMode}
             selectedItems={selectedItems}
             onSelectItem={handleSelectItem}
             onSelectAll={handleSelectAll}
@@ -2529,7 +2966,7 @@ export default function InventoryDashboardPage() {
             pagination={{
               ...pagination,
               total: filteredInventory.length,
-              totalPages: Math.ceil(filteredInventory.length / pagination.limit) || 1,
+              totalPages: computedTotalPages,
             }}
             onPageChange={handlePageChange}
             onLimitChange={handleLimitChange}
@@ -2537,24 +2974,22 @@ export default function InventoryDashboardPage() {
         </div>
 
         <div className="space-y-6">
-          <InventoryCharts data={inventory} stats={stats} />
+          <InventoryCharts data={enrichedInventory} stats={stats} />
           <RecentActivity businessUnitId={selectedBusinessUnitId} />
         </div>
       </div>
 
-      {/* Adjustment Modal */}
       <AdjustmentModal
         isOpen={showAdjustmentModal}
         onClose={closeAdjustmentModal}
         onConfirm={handleAdjustmentConfirm}
         currentStock={adjustingItem?.stock || adjustingItem?.quantity || 0}
         reserved={adjustingItem?.reserved || 0}
-        reorderPoint={adjustingItem?.reorderPoint || adjustingItem?.minStock || 5}
+        reorderPoint={
+          adjustingItem?.reorderPoint || adjustingItem?.minStock || 5
+        }
         itemName={adjustingItem?.name || 'Item'}
         loading={adjustingLoading}
-        quantity={adjustmentData.quantity}
-        type={adjustmentData.type}
-        notes={adjustmentData.notes}
       />
     </div>
   );

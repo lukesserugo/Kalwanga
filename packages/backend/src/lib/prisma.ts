@@ -1,20 +1,20 @@
-﻿// Option 1: Import from index.js (recommended)
+﻿// packages/backend/src/lib/prisma.ts
+
+import 'dotenv/config';
 import { PrismaClient } from '../generated/prisma/index.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:Luke@localhost:5432/kalwanga?schema=public';
+const connectionString = process.env.DATABASE_URL;
 
-console.log('Database URL:', connectionString.replace(/:[^:@]*@/, ':****@'));
+if (!connectionString) {
+  throw new Error(
+    '❌ DATABASE_URL is not set. Ensure .env is loaded before importing prisma.',
+  );
+}
 
-const pool = new Pool({
-  connectionString: connectionString,
-});
-
+const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 
-export const prisma = new PrismaClient({
-  adapter,
-});
-
+export const prisma = new PrismaClient({ adapter });
 export default prisma;

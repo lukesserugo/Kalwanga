@@ -60,58 +60,34 @@ import {
 } from '@heroicons/react/24/outline';
 
 import { useThemeStore } from '../stores/themeStore';
-import { useNotification } from '../../hooks/useNotification';
+
+import { useOnboarding } from '../../hooks/useOnboarding';
+
+import {
+  buildPermissionsFromSet,
+  type UserPermissions,
+} from '../../types/permissions';
+
+// ============================================
+// NOTIFICATION BELL (shared component)
+// ============================================
+//
+// Replaces the previous in-house bell + dropdown. The shared
+// component owns:
+//   - SSE subscription (real-time updates)
+//   - Unread count fetch + 60s polling fallback
+//   - Preview list with mark-read-in-place
+//   - Link to /admin/notifications (full page) and
+//     /admin/notifications/settings
+//
+// Its own styles match the Header's light/dark theme and shadow
+// language. No extra wrapping needed.
+
+import { NotificationBell } from '../notifications/NotificationBell';
 
 // ============================================
 // TYPES
 // ============================================
-
-interface UserPermissions {
-  canViewDashboard: boolean;
-  canViewCategories: boolean;
-  canManageCategories: boolean;
-  canViewProducts: boolean;
-  canManageProducts: boolean;
-  canViewOrders: boolean;
-  canManageOrders: boolean;
-  canViewCustomers: boolean;
-  canManageCustomers: boolean;
-  canViewInventory: boolean;
-  canManageInventory: boolean;
-  canViewReports: boolean;
-  canManageUsers: boolean;
-  canManageSettings: boolean;
-  canExportProducts: boolean;
-  canImportProducts: boolean;
-  canViewSuppliers: boolean;
-  canManageSuppliers: boolean;
-  canViewUsers: boolean;
-  canCreateUsers: boolean;
-  canEditUsers: boolean;
-  canDeleteUsers: boolean;
-  canManageUserRoles: boolean;
-  canManageUserPermissions: boolean;
-  canViewUserActivity: boolean;
-  canExportUsers: boolean;
-  canImportUsers: boolean;
-  canInviteUsers: boolean;
-  canManageUserGroups: boolean;
-  canViewCompanies: boolean;
-  canManageCompanies: boolean;
-  canViewBusinessUnits: boolean;
-  canManageBusinessUnits: boolean;
-  canViewPayments: boolean;
-  canManagePayments: boolean;
-  canViewBookkeeping: boolean;
-  canManageBookkeeping: boolean;
-  canViewShifts: boolean;
-  canManageShifts: boolean;
-  canViewRegisters: boolean;
-  canManageRegisters: boolean;
-  canStartShift: boolean;
-  canEndShift: boolean;
-  canManageCash: boolean;
-}
 
 interface NavItem {
   name: string;
@@ -134,61 +110,9 @@ interface HeaderProps {
 }
 
 // ============================================
-// DEFAULT PERMISSIONS
-// ============================================
-
-const defaultPermissions: UserPermissions = {
-  canViewDashboard: true,
-  canViewCategories: true,
-  canManageCategories: false,
-  canViewProducts: true,
-  canManageProducts: false,
-  canViewOrders: true,
-  canManageOrders: false,
-  canViewCustomers: true,
-  canManageCustomers: false,
-  canViewInventory: true,
-  canManageInventory: false,
-  canViewReports: true,
-  canManageUsers: false,
-  canManageSettings: false,
-  canExportProducts: false,
-  canImportProducts: false,
-  canViewSuppliers: true,
-  canManageSuppliers: false,
-  canViewUsers: true,
-  canCreateUsers: false,
-  canEditUsers: false,
-  canDeleteUsers: false,
-  canManageUserRoles: false,
-  canManageUserPermissions: false,
-  canViewUserActivity: true,
-  canExportUsers: false,
-  canImportUsers: false,
-  canInviteUsers: false,
-  canManageUserGroups: false,
-  canViewCompanies: true,
-  canManageCompanies: false,
-  canViewBusinessUnits: true,
-  canManageBusinessUnits: false,
-  canViewPayments: true,
-  canManagePayments: false,
-  canViewBookkeeping: true,
-  canManageBookkeeping: false,
-  canViewShifts: true,
-  canManageShifts: false,
-  canViewRegisters: true,
-  canManageRegisters: false,
-  canStartShift: true,
-  canEndShift: true,
-  canManageCash: true,
-};
-
-// ============================================
 // NAVIGATION CONFIGURATION
 // ============================================
 
-// Quick-access nav items (shown directly in the header)
 const quickNavItems: NavItem[] = [
   {
     name: 'Dashboard',
@@ -241,7 +165,6 @@ const quickNavItems: NavItem[] = [
   },
 ];
 
-// Mega-menu navigation groups
 const navGroups: NavGroup[] = [
   {
     name: 'Sales & Operations',
@@ -259,7 +182,6 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    // ⬇️ NEW: Orders group
     name: 'Orders',
     icon: ClipboardDocumentListIcon,
     permission: 'canViewOrders',
@@ -353,7 +275,7 @@ const navGroups: NavGroup[] = [
       { name: 'Companies', href: '/admin/companies', icon: BuildingOfficeIcon, permission: 'canViewCompanies', description: 'Company management' },
       { name: 'Business Units', href: '/admin/business-units', icon: BuildingStorefrontIcon, permission: 'canViewCompanies', description: 'Business units' },
       { name: 'Payments', href: '/admin/payments', icon: CreditCardIcon, permission: 'canViewDashboard', description: 'Payment management' },
-      { name: 'Bookkeeping', href: '/admin/bookkeeping', icon: BookOpenIcon, permission: 'canViewReports', description: 'Accounting' },
+      { name: 'Bookkeeping', href: '/admin/bookkeeping/accounts', icon: BookOpenIcon, permission: 'canViewReports', description: 'Accounting' },
       { name: 'Reports', href: '/admin/reports', icon: ChartPieIcon, permission: 'canViewReports', description: 'Business reports' },
     ],
   },
@@ -363,7 +285,9 @@ const navGroups: NavGroup[] = [
     permission: 'canManageSettings',
     items: [
       { name: 'Settings', href: '/admin/settings', icon: Cog6ToothIcon, permission: 'canManageSettings', description: 'System settings' },
-      { name: 'Notifications', href: '/notifications', icon: BellIcon, permission: 'canViewDashboard', description: 'Notifications' },
+      { name: 'Notifications', href: '/admin/notifications', icon: BellIcon, permission: 'canViewDashboard', description: 'Notification inbox' },
+      { name: 'Templates', href: '/admin/notifications/templates', icon: DocumentDuplicateIcon, permission: 'canViewDashboard', description: 'Alert templates' },
+      { name: 'Alert Settings', href: '/admin/notifications/settings', icon: Cog6ToothIcon, permission: 'canViewDashboard', description: 'Channels & preferences' },
       { name: 'Help Center', href: '/help', icon: LifebuoyIcon, permission: 'canViewDashboard', description: 'Get help' },
     ],
   },
@@ -382,51 +306,74 @@ export default function Header({
   const pathname = usePathname();
   const router = useRouter();
   const { isDark, toggleTheme } = useThemeStore();
-  const { unreadCount, notifications } = useNotification();
+
+  const { isRouteBlocked } = useOnboarding();
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
   const megaMenuRef = useRef<HTMLDivElement>(null);
 
-  const permissions: UserPermissions = { ...defaultPermissions, ...userPermissions };
+  /**
+   * The permissive fallback is the resolved *wildcard* set, not a
+   * hardcoded constant. `buildPermissionsFromSet(['*'])` returns an
+   * object where every flag is `true`, which is exactly the shape
+   * `ALL_ACCESS_PERMISSIONS` used to be.
+   *
+   * Rationale: the backend's `/auth/permissions` endpoint decides who
+   * has what. The Header only reflects that decision. When
+   * `userPermissions` is `undefined` (component mounted before the
+   * fetch resolves), we show the full menu rather than an empty one —
+   * the same behaviour as before, but routed through the canonical
+   * builder so a new permission flag added to the backend
+   * automatically defaults to `true` here.
+   */
+  const permissions: UserPermissions = {
+    ...buildPermissionsFromSet(['*']),
+    ...userPermissions,
+  };
 
-  // Scroll listener for backdrop-blur effect
+  const isLinkVisible = (
+    href: string,
+    permission?: keyof UserPermissions
+  ): boolean => {
+    if (permission && permissions[permission] === false) return false;
+    if (isRouteBlocked(href)) return false;
+    return true;
+  };
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close all dropdowns on route change
+  // Close every dropdown when the route changes. The bell handles
+  // its own close-on-outside-click, so it's not in this list.
   useEffect(() => {
     setIsProfileOpen(false);
-    setIsNotificationsOpen(false);
     setIsSearchOpen(false);
     setIsMegaMenuOpen(false);
   }, [pathname]);
 
-  // Click outside to close dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(event.target as Node)
+      ) {
         setIsProfileOpen(false);
       }
       if (
-        notificationsRef.current &&
-        !notificationsRef.current.contains(event.target as Node)
+        megaMenuRef.current &&
+        !megaMenuRef.current.contains(event.target as Node)
       ) {
-        setIsNotificationsOpen(false);
-      }
-      if (megaMenuRef.current && !megaMenuRef.current.contains(event.target as Node)) {
         setIsMegaMenuOpen(false);
       }
     };
@@ -434,7 +381,6 @@ export default function Header({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -445,7 +391,6 @@ export default function Header({
       if (e.key === 'Escape') {
         setIsSearchOpen(false);
         setIsProfileOpen(false);
-        setIsNotificationsOpen(false);
         setIsMegaMenuOpen(false);
       }
     };
@@ -484,26 +429,29 @@ export default function Header({
   const getUserEmail = () => user?.emailAddresses?.[0]?.emailAddress || '';
 
   const isDashboardPage =
-    pathname?.startsWith('/dashboard') || pathname?.startsWith('/admin') || false;
+    pathname?.startsWith('/dashboard') ||
+    pathname?.startsWith('/admin') ||
+    false;
 
-  const filteredNavGroups = navGroups.filter((group) => {
-    if (!group.permission) return true;
-    return permissions[group.permission] !== false;
-  });
+  const filteredNavGroups = navGroups
+    .filter((group) => isLinkVisible('', group.permission))
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        isLinkVisible(item.href, item.permission)
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
 
-  const filteredQuickNavItems = quickNavItems.filter((item) => {
-    if (!item.permission) return true;
-    return permissions[item.permission] !== false;
-  });
+  const filteredQuickNavItems = quickNavItems.filter((item) =>
+    isLinkVisible(item.href, item.permission)
+  );
 
   const isGroupActive = (group: NavGroup) =>
     group.items.some((item) => pathname?.startsWith(item.href));
 
   const getFilteredItems = (group: NavGroup) =>
-    group.items.filter((item) => {
-      if (!item.permission) return true;
-      return permissions[item.permission] !== false;
-    });
+    group.items.filter((item) => isLinkVisible(item.href, item.permission));
 
   // ============================================
   // RENDER
@@ -530,6 +478,7 @@ export default function Header({
 
           <Link
             href={isDashboardPage ? '/dashboard' : '/'}
+            prefetch={false}
             className="flex items-center gap-2 px-2"
           >
             <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
@@ -586,7 +535,6 @@ export default function Header({
 
         {/* Right section */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          {/* Desktop nav links — dashboard only */}
           {isDashboardPage && (
             <nav className="hidden lg:flex items-center gap-1 mr-2">
               {filteredQuickNavItems.slice(0, 4).map((item) => {
@@ -596,6 +544,7 @@ export default function Header({
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     className={`flex items-center px-3 py-2 rounded-full text-sm font-medium transition-colors ${
                       isActive
                         ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
@@ -608,13 +557,11 @@ export default function Header({
                 );
               })}
 
-              {/* Mega Menu Button */}
               <div className="relative" ref={megaMenuRef}>
                 <button
                   onClick={() => {
                     setIsMegaMenuOpen(!isMegaMenuOpen);
                     setIsProfileOpen(false);
-                    setIsNotificationsOpen(false);
                   }}
                   className={`flex items-center px-3 py-2 rounded-full text-sm font-medium transition-colors ${
                     isMegaMenuOpen
@@ -653,7 +600,9 @@ export default function Header({
                               <div key={group.name} className="space-y-3">
                                 <div
                                   className={`flex items-center gap-2 px-2 py-1.5 rounded-lg ${
-                                    isActive ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                                    isActive
+                                      ? 'bg-blue-50 dark:bg-blue-900/20'
+                                      : ''
                                   }`}
                                 >
                                   <GroupIcon
@@ -676,13 +625,18 @@ export default function Header({
                                 <ul className="space-y-1">
                                   {filteredItems.map((item) => {
                                     const ItemIcon = item.icon;
-                                    const isItemActive = pathname?.startsWith(item.href);
+                                    const isItemActive = pathname?.startsWith(
+                                      item.href
+                                    );
 
                                     return (
                                       <li key={item.href}>
                                         <Link
                                           href={item.href}
-                                          onClick={() => setIsMegaMenuOpen(false)}
+                                          prefetch={false}
+                                          onClick={() =>
+                                            setIsMegaMenuOpen(false)
+                                          }
                                           className={`group flex items-start gap-2 px-2 py-2 rounded-lg transition-all duration-150 ${
                                             isItemActive
                                               ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
@@ -726,7 +680,6 @@ export default function Header({
                         </div>
                       </div>
 
-                      {/* Footer */}
                       <div className="border-t border-gray-200 dark:border-gray-700 px-6 py-3 bg-gray-50 dark:bg-gray-800/50">
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -738,6 +691,7 @@ export default function Header({
                           </p>
                           <Link
                             href="/admin/settings"
+                            prefetch={false}
                             onClick={() => setIsMegaMenuOpen(false)}
                             className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium flex items-center gap-1"
                           >
@@ -753,10 +707,8 @@ export default function Header({
             </nav>
           )}
 
-          {/* Divider */}
           <div className="hidden lg:block w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
 
-          {/* Theme toggle */}
           <button
             onClick={toggleTheme}
             className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -769,7 +721,6 @@ export default function Header({
             )}
           </button>
 
-          {/* Mobile search button */}
           <button
             onClick={() => setIsSearchOpen(true)}
             className="md:hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -778,7 +729,6 @@ export default function Header({
             <MagnifyingGlassIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           </button>
 
-          {/* Mobile mega menu button */}
           {isDashboardPage && (
             <button
               onClick={() => setIsMegaMenuOpen(!isMegaMenuOpen)}
@@ -789,95 +739,28 @@ export default function Header({
             </button>
           )}
 
-          {/* Notifications */}
-          <div className="relative" ref={notificationsRef}>
-            <button
-              onClick={() => {
-                setIsNotificationsOpen(!isNotificationsOpen);
-                setIsProfileOpen(false);
-                setIsMegaMenuOpen(false);
-              }}
-              className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-              aria-label="Notifications"
-            >
-              <BellIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
+          {/*
+            Notifications — powered by the shared NotificationBell.
 
-            <AnimatePresence>
-              {isNotificationsOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50"
-                >
-                  <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
-                      Notifications
-                    </h3>
-                    {unreadCount > 0 && (
-                      <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                        {unreadCount} unread
-                      </span>
-                    )}
-                  </div>
-                  <div className="p-1">
-                    {notifications && notifications.length > 0 ? (
-                      notifications.slice(0, 5).map((notification: any) => (
-                        <Link
-                          key={notification.id}
-                          href={`/notifications/${notification.id}`}
-                          className="block p-2.5 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                          onClick={() => setIsNotificationsOpen(false)}
-                        >
-                          <p
-                            className={`text-sm ${
-                              notification.isRead
-                                ? 'text-gray-500 dark:text-gray-400'
-                                : 'text-gray-900 dark:text-white font-medium'
-                            }`}
-                          >
-                            {notification.title}
-                          </p>
-                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                            {notification.message}
-                          </p>
-                        </Link>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">
-                        No notifications
-                      </p>
-                    )}
-                  </div>
-                  {notifications && notifications.length > 5 && (
-                    <div className="p-2 border-t border-gray-200 dark:border-gray-700">
-                      <Link
-                        href="/notifications"
-                        className="block text-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium py-1"
-                        onClick={() => setIsNotificationsOpen(false)}
-                      >
-                        View All
-                      </Link>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+            Replaces the previous in-house bell. The shared component
+            owns its own state, dropdown, SSE subscription, and API
+            calls, so the Header no longer needs:
+              - useNotification() (unreadCount, notifications)
+              - isNotificationsOpen state
+              - notificationsRef (outside-click target)
+              - the entire local <AnimatePresence> dropdown block
+              - the local "close notifications on outside click" branch
+
+            All of those are now the bell's concern. The Header only
+            renders the bell in the same slot where the old one lived.
+          */}
+          <NotificationBell />
 
           {/* User Profile */}
           <div className="relative" ref={profileRef}>
             <button
               onClick={() => {
                 setIsProfileOpen(!isProfileOpen);
-                setIsNotificationsOpen(false);
                 setIsMegaMenuOpen(false);
               }}
               className="flex items-center gap-1 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -919,6 +802,7 @@ export default function Header({
                         {permissions.canViewDashboard !== false && (
                           <Link
                             href="/dashboard"
+                            prefetch={false}
                             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
@@ -929,6 +813,7 @@ export default function Header({
                         {permissions.canViewShifts !== false && (
                           <Link
                             href="/admin/shifts"
+                            prefetch={false}
                             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
@@ -938,6 +823,7 @@ export default function Header({
                         )}
                         <Link
                           href="/admin/sales"
+                          prefetch={false}
                           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                           onClick={() => setIsProfileOpen(false)}
                         >
@@ -947,6 +833,7 @@ export default function Header({
                         {permissions.canViewOrders !== false && (
                           <Link
                             href="/admin/orders"
+                            prefetch={false}
                             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
@@ -956,6 +843,7 @@ export default function Header({
                         )}
                         <Link
                           href="/admin/catalog"
+                          prefetch={false}
                           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                           onClick={() => setIsProfileOpen(false)}
                         >
@@ -964,6 +852,7 @@ export default function Header({
                         </Link>
                         <Link
                           href="/admin/inventory"
+                          prefetch={false}
                           className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                           onClick={() => setIsProfileOpen(false)}
                         >
@@ -973,6 +862,7 @@ export default function Header({
                         {permissions.canViewUsers !== false && (
                           <Link
                             href="/admin/users"
+                            prefetch={false}
                             className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
@@ -986,6 +876,7 @@ export default function Header({
 
                     <Link
                       href="/shop"
+                      prefetch={false}
                       className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                       onClick={() => setIsProfileOpen(false)}
                     >
@@ -994,6 +885,7 @@ export default function Header({
                     </Link>
                     <Link
                       href="/settings"
+                      prefetch={false}
                       className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                       onClick={() => setIsProfileOpen(false)}
                     >
@@ -1054,19 +946,23 @@ export default function Header({
                 Popular searches
               </p>
               <div className="flex flex-wrap gap-2">
-                {['Electronics', 'Clothing', 'Books', 'Home', 'Sports'].map((item) => (
-                  <button
-                    key={item}
-                    onClick={() => {
-                      router.push(`/shop?search=${encodeURIComponent(item)}`);
-                      setIsSearchOpen(false);
-                      setSearchQuery('');
-                    }}
-                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    {item}
-                  </button>
-                ))}
+                {['Electronics', 'Clothing', 'Books', 'Home', 'Sports'].map(
+                  (item) => (
+                    <button
+                      key={item}
+                      onClick={() => {
+                        router.push(
+                          `/shop?search=${encodeURIComponent(item)}`
+                        );
+                        setIsSearchOpen(false);
+                        setSearchQuery('');
+                      }}
+                      className="px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      {item}
+                    </button>
+                  )
+                )}
               </div>
             </div>
           </motion.div>
@@ -1089,7 +985,9 @@ export default function Header({
               className="fixed inset-y-0 right-0 z-50 w-[320px] bg-white dark:bg-gray-900 shadow-2xl lg:hidden overflow-y-auto"
             >
               <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Menu</h2>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Menu
+                </h2>
                 <button
                   onClick={() => setIsMegaMenuOpen(false)}
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
@@ -1116,7 +1014,9 @@ export default function Header({
                         }`}
                       >
                         <GroupIcon className="w-5 h-5" />
-                        <h3 className="text-sm font-semibold">{group.name}</h3>
+                        <h3 className="text-sm font-semibold">
+                          {group.name}
+                        </h3>
                       </div>
                       <ul className="space-y-1">
                         {filteredItems.map((item) => {
@@ -1127,6 +1027,7 @@ export default function Header({
                             <li key={item.href}>
                               <Link
                                 href={item.href}
+                                prefetch={false}
                                 onClick={() => setIsMegaMenuOpen(false)}
                                 className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                                   isItemActive

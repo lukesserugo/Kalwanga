@@ -56,6 +56,7 @@ import { checkoutService } from '../../../services/checkoutService';
 import { shiftService } from '../../../services/shiftService';
 import { productService } from '../../../services/productService';
 import { customerService } from '../../../services/customerService';
+import { saleService } from '../../../services/saleService';
 import { useAuth } from '../../../hooks/useAuth';
 import { usePermission } from '../../../hooks/usePermission';
 import { PermissionResource } from '../../../types/enums';
@@ -207,7 +208,7 @@ function normalizeProduct(product: any): ProductType {
     id: product.id,
     name: product.name,
     sku: product.sku || 'N/A',
-    barcode: product.barcode || undefined,
+    barcode: product.barcode ?? undefined,
     unitPrice: product.unitPrice || product.price || 0,
     costPrice: product.costPrice,
     images: product.images || [],
@@ -240,6 +241,19 @@ function normalizeCustomer(customer: any): CustomerType {
   };
 }
 
+/**
+ * Normalizes whatever shape categoryService returns into CategoryType.
+ * Handles `description: null` (the source of the TS2345 error).
+ */
+function normalizeCategory(cat: any): CategoryType {
+  return {
+    id: cat.id,
+    name: cat.name,
+    description: cat.description ?? undefined,
+    icon: cat.icon ?? undefined,
+  };
+}
+
 function extractReceiptNumber(result: any): string | undefined {
   if (!result) return undefined;
   return (
@@ -251,6 +265,27 @@ function extractReceiptNumber(result: any): string | undefined {
   );
 }
 
+/**
+ * Generate a fresh idempotency key for a new logical checkout. Prefers
+ * the saleService helper (so the whole app uses one implementation);
+ * falls back to a local generator if the helper is somehow missing.
+ */
+function createIdempotencyKey(): string {
+  const svc = saleService as any;
+  if (typeof svc?.generateIdempotencyKey === 'function') {
+    return svc.generateIdempotencyKey();
+  }
+  const g: any = typeof globalThis !== 'undefined' ? (globalThis as any) : {};
+  if (g.crypto?.randomUUID) return g.crypto.randomUUID();
+  return `pos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// ============================================
+// MODULE-SCOPE CONSTANTS
+// ============================================
+// Hoisted out of the component so it isn't recreated on every render.
+const POS_FALLBACK_ROLES = new Set<string>(['ADMIN', 'MANAGER', 'CASHIER']);
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -258,26 +293,43 @@ function extractReceiptNumber(result: any): string | undefined {
 export function POS() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-  const { canView, canCreate, canEdit, canManage } = usePermission();
 
-  const canProcessSales =
-    canManage?.(`${PermissionResource.SALE}:manage`) ||
-    user?.role === 'SUPER_ADMIN' ||
-    user?.role === 'ADMIN' ||
-    user?.role === 'CASHIER' ||
-    false;
-  const canViewCustomers =
-    canView?.(`${PermissionResource.CUSTOMER}:view`) ||
-    user?.role === 'SUPER_ADMIN' ||
-    false;
-  const canCreateCustomers =
-    canCreate?.(`${PermissionResource.CUSTOMER}:create`) ||
-    user?.role === 'SUPER_ADMIN' ||
-    false;
-  const canViewInventory =
-    canView?.(`${PermissionResource.INVENTORY}:view`) ||
-    user?.role === 'SUPER_ADMIN' ||
-    false;
+  // `permissions` added to the destructure — used as a stable
+  // dependency for the permission memos below (instead of
+  // `hasPermissionExact`, whose identity flips when isClient flips).
+  const { hasPermissionExact, isSuperAdmin, permissions } = usePermission();
+
+  const canProcessSales = useMemo(() => {
+    if (isSuperAdmin) return true;
+    if (hasPermissionExact(`${PermissionResource.SALE}:manage`)) return true;
+    const role = (user as any)?.role;
+    return role ? POS_FALLBACK_ROLES.has(role) : false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin, user, permissions]);
+
+  const canViewCustomers = useMemo(
+    () =>
+      isSuperAdmin ||
+      hasPermissionExact(`${PermissionResource.CUSTOMER}:view`),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isSuperAdmin, permissions]
+  );
+
+  const canCreateCustomers = useMemo(
+    () =>
+      isSuperAdmin ||
+      hasPermissionExact(`${PermissionResource.CUSTOMER}:create`),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isSuperAdmin, permissions]
+  );
+
+  const canViewInventory = useMemo(
+    () =>
+      isSuperAdmin ||
+      hasPermissionExact(`${PermissionResource.INVENTORY}:view`),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isSuperAdmin, permissions]
+  );
 
   // ============================================
   // STATE
@@ -339,6 +391,38 @@ export function POS() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const initializedRef = useRef(false);
+
+  // ─────────────────────────────────────────
+  // IDEMPOTENCY
+  // ─────────────────────────────────────────
+  // One key per logical checkout. Created on first attempt, reused on
+  // every retry, cleared on success. Kept in a ref so that re-renders
+  // (including the ones triggered by `processing` toggling) never
+  // regenerate it.
+  const pendingIdempotencyKeyRef = useRef<string | null>(null);
+
+  /**
+   * Return the idempotency key for the current checkout attempt,
+   * generating one if this is the first try. Same value is returned on
+   * every retry of the same logical operation.
+   */
+  const getIdempotencyKey = useCallback((): string => {
+    if (!pendingIdempotencyKeyRef.current) {
+      pendingIdempotencyKeyRef.current = createIdempotencyKey();
+    }
+    return pendingIdempotencyKeyRef.current;
+  }, []);
+
+  /**
+   * Forget the current key so the next checkout gets a fresh one.
+   * Called after a successful checkout, and whenever the operator
+   * explicitly abandons the current attempt (e.g. the payment modal
+   * is dismissed without completing).
+   */
+  const clearIdempotencyKey = useCallback((): void => {
+    pendingIdempotencyKeyRef.current = null;
+  }, []);
 
   // ============================================
   // NAVIGATION HANDLERS
@@ -367,7 +451,8 @@ export function POS() {
   // ============================================
 
   useEffect(() => {
-    if (canProcessSales) {
+    if (canProcessSales && !initializedRef.current) {
+      initializedRef.current = true;
       initializePOS();
     }
     document.addEventListener('keydown', handleKeyboardShortcuts);
@@ -487,30 +572,31 @@ export function POS() {
     }
   };
 
-  /**
-   * Called by the standalone ShiftManagerModal after start/end.
-   * Re-syncs the current shift and register status with the server.
-   */
   const handleShiftChanged = useCallback(async () => {
     await Promise.all([checkShiftStatus(), loadRegisterStatus()]);
   }, []);
 
   // ============================================
-  // CATEGORIES
+  // CATEGORIES (FIXED)
   // ============================================
 
-const loadCategories = async () => {
-  try {
-    const data = await categoryService.getAllCategories({
-      limit: 100,
-      isActive: true,
-    });
-    setCategories(data || []);
-  } catch (error) {
-    console.error('Failed to load categories:', error);
-    setCategories([]);
-  }
-};
+  const loadCategories = async () => {
+    try {
+      const data = await categoryService.getAllCategories({
+        limit: 100,
+        isActive: true,
+      });
+
+      // Normalize Category → CategoryType so `description: null`
+      // becomes `undefined`. Fixes TS2345.
+      const normalized: CategoryType[] = (data ?? []).map(normalizeCategory);
+
+      setCategories(normalized);
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+      setCategories([]);
+    }
+  };
 
   // ============================================
   // KEYBOARD SHORTCUTS
@@ -663,10 +749,11 @@ const loadCategories = async () => {
   // ============================================
 
   const handleAddItem = async (
-    product: ProductType,
+    product: ProductType | null,
     quantity: number = 1,
     variantId?: string
   ) => {
+    if (!product) return;
     if (!currentShift) {
       toast.warning('Please open a shift first');
       return;
@@ -999,13 +1086,9 @@ const loadCategories = async () => {
   };
 
   // ============================================
-  // CHECKOUT OPERATIONS (using PaymentSection)
+  // CHECKOUT OPERATIONS
   // ============================================
 
-  /**
-   * Called by PaymentSection when the user completes payment.
-   * Signature: (paymentMethod: string, details: PaymentDetails) => void
-   */
   const handlePaymentComplete = async (paymentMethod: string, details: any) => {
     if (!currentShift) {
       toast.warning('Please open a shift first');
@@ -1016,7 +1099,6 @@ const loadCategories = async () => {
       throw new Error('Cart is empty');
     }
 
-    // For CASH payments, PaymentSection may not provide a paid amount — fall back to cart total.
     const paidAmount =
       paymentMethod === 'CASH'
         ? Number(details?.paidAmount) || cart.total || 0
@@ -1024,6 +1106,12 @@ const loadCategories = async () => {
 
     try {
       setProcessing(true);
+
+      // ✅ Resolve (or create) the idempotency key for this checkout.
+      //    On retry after a network failure, the SAME key is reused, so
+      //    the server returns the original sale instead of creating a
+      //    duplicate.
+      const idempotencyKey = getIdempotencyKey();
 
       const result = await checkoutService.processCheckout({
         cartId: cart.id,
@@ -1035,7 +1123,13 @@ const loadCategories = async () => {
         cashRegisterId: currentShift.cashRegisterId,
         cashRegisterSessionId: currentShift.id,
         applyLoyaltyPoints: paymentMethod === 'LOYALTY_POINTS',
+        // ✅ Forward the key so the sale layer persists / dedupes on it.
+        idempotencyKey,
       });
+
+      // ✅ Checkout succeeded — clear the key so the NEXT sale gets a
+      //    fresh one.
+      clearIdempotencyKey();
 
       setReceiptData(result);
       setShowPayment(false);
@@ -1051,16 +1145,31 @@ const loadCategories = async () => {
       setNotes('');
       setShowReceipt(true);
     } catch (error: any) {
+      // ✅ Keep the key on failure so a retry is idempotent. The next
+      //    click of "Checkout" will reuse the same value. The key is
+      //    discarded if the operator abandons (see handlePaymentCancel).
       console.error('Checkout failed:', error);
       toast.error(error.message || 'Checkout failed');
-      // Re-throw so PaymentSection can revert to the details step
       throw error;
     } finally {
       setProcessing(false);
     }
   };
 
+  /**
+   * Dismiss the payment modal without completing the sale.
+   *
+   * Two behaviors, both correct:
+   *   - If we're mid-flight (processing === true), we leave the key
+   *     alone — the in-flight request will either succeed (and clear
+   *     it) or fail (and the retry path keeps it).
+   *   - Otherwise (idle modal, user just changed their mind), clear the
+   *     key so the next checkout is a fresh logical operation.
+   */
   const handlePaymentCancel = () => {
+    if (!processing) {
+      clearIdempotencyKey();
+    }
     setShowPayment(false);
   };
 
@@ -1985,7 +2094,7 @@ const loadCategories = async () => {
           </div>
         </div>
 
-        {/* Quick Actions Sidebar */}
+        {/* Quick Actions Sidebar (FIXED: only supported props) */}
         <div
           className={`w-56 sm:w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0 transition-all duration-300 ${
             sidebarCollapsed ? 'hidden' : ''
@@ -1994,14 +2103,8 @@ const loadCategories = async () => {
           <QuickActions
             onRefresh={refreshCart}
             onViewSales={goToSalesList}
-            onAddCustomer={(customer: any) =>
-              handleSelectCustomer({
-                ...customer,
-                loyaltyPoints: customer?.loyaltyPoints ?? 0,
-                totalSpent: customer?.totalSpent ?? 0,
-              })
-            }
-            onAddProduct={(product: ProductType) => handleAddItem(product, 1)}
+            onOpenCustomerSearch={() => setShowCustomerSearch(true)}
+            onOpenHeldOrders={() => setShowHeldOrders(true)}
             heldOrdersCount={holdOrders.length}
           />
         </div>
@@ -2022,7 +2125,6 @@ const loadCategories = async () => {
       {showPayment && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700">
-            {/* Header */}
             <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between z-10">
               <div className="flex items-center gap-3">
                 <button
@@ -2052,7 +2154,6 @@ const loadCategories = async () => {
               </button>
             </div>
 
-            {/* Payment Section */}
             <div className="p-6">
               <PaymentSection
                 total={totals.total}

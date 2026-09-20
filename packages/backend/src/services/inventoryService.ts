@@ -87,6 +87,7 @@ interface CreateItemData {
   supplier?: string;
   supplierId?: string;
   unitPrice?: number;
+  costPrice?: number;
   purchaseDate?: string;
   expiryDate?: string;
   notes?: string;
@@ -148,6 +149,47 @@ interface InventoryReport {
   topMovers: Array<{ productId: string; name: string; movements: number }>;
 }
 
+export interface FlatInventoryItem {
+  id: string;
+  productId: string | null;
+  product: Record<string, unknown> | null;
+  variantId: string | null;
+  variant: Record<string, unknown> | null;
+  name: string;
+  description: string | null;
+  sku: string;
+  barcode: string | null;
+  quantity: number;
+  stock: number;
+  reserved: number;
+  available: number;
+  price: number;
+  unitPrice: number;
+  costPrice: number;
+  reorderPoint: number;
+  reorderQuantity: number;
+  category: string;
+  categoryId: string | null;
+  location: string;
+  shelfNumber: string | null;
+  supplier: string | null;
+  supplierId: string | null;
+  notes: string | null;
+  lastUpdated: string;
+  createdAt: string;
+  updatedAt: string;
+  status: string;
+  isActive: boolean;
+  images: string[];
+  tags: string[];
+  weight: number;
+  taxRate: number;
+  isDigital: boolean;
+  featured: boolean;
+  inventory: Array<{ quantity: number; reserved: number }>;
+  businessUnitId: string;
+}
+
 interface InventoryStats {
   totalProducts: number;
   lowStockCount: number;
@@ -169,135 +211,298 @@ interface CategoryOption {
 }
 
 // ============================================
-// ✅ FIX: CENTRALIZED NORMALIZATION HELPERS
+// RESOLVED ROW TYPE (for barcode/QR helpers)
+// ============================================
+//
+// `resolveInventoryRow` accepts a dynamic `include`, so the returned
+// row shape depends on what the caller passes. The two callers
+// (generateInventoryBarcode / generateInventoryQRCode) always pass
+// `{ product: { include: { images: true } } }`, so we narrow to the
+// shape they actually need. Declaring it explicitly lets TypeScript
+// see `.product.name`, `.product.sku`, etc. instead of collapsing to
+// a union of unrelated transaction types.
+
+type ResolvedInventoryRow = {
+  id: string;
+  quantity: number;
+  reserved: number;
+  reorderPoint: number;
+  reorderQuantity: number;
+  location: string | null;
+  description: string | null;
+  weight: number | null;
+  taxRate: number | null;
+  tags: string[];
+  businessUnitId: string;
+  product: {
+    id: string;
+    name: string;
+    sku: string;
+    barcode: string | null;
+    description: string | null;
+    weight: number | null;
+    taxRate: number | null;
+    tags: string[];
+    images: Array<{ url: string }>;
+  } | null;
+} | null;
+
+// ============================================
+// INTERNAL HELPERS
 // ============================================
 
-/**
- * Normalize inventory item to ensure product ID is available at top level
- * ✅ UNIFIED: Single source of truth for normalization
- * ✅ UPDATED: Properly handles images, description, weight, taxRate, tags
- */
-function normalizeInventoryItem(item: any): any {
-  if (!item) return item;
-  
-  // If item has a product object with an id, ensure top-level id exists
-  if (item.product && item.product.id) {
-    // If top-level id is missing or different, use product.id
-    if (!item.id || item.id !== item.product.id) {
-      return {
-        ...item,
-        id: item.product.id,
-        // Copy product fields to top level with fallback
-        name: item.name || item.product.name,
-        unitPrice: item.unitPrice || item.product.unitPrice,
-        // Use inventory images first, then product images
-        images: (item.images && item.images.length > 0) ? item.images : (item.product.images || []),
-        // Use inventory description first, then product description
-        description: item.description || item.product.description,
-        // Use inventory weight first, then product weight
-        weight: item.weight !== undefined ? item.weight : item.product.weight,
-        // Use inventory taxRate first, then product taxRate
-        taxRate: item.taxRate !== undefined ? item.taxRate : item.product.taxRate,
-        // Use inventory tags first, then product tags
-        tags: (item.tags && item.tags.length > 0) ? item.tags : (item.product.tags || []),
-        isActive: item.isActive !== undefined ? item.isActive : item.product?.isActive,
-        sku: item.sku || item.product.sku,
-        category: item.category || item.product.category,
-        categoryId: item.categoryId || item.product.categoryId,
-        supplier: item.supplier || item.product.supplier,
-        supplierId: item.supplierId || item.product.supplierId,
-        minStock: item.minStock || item.product.minStock,
-        maxStock: item.maxStock || item.product.maxStock,
-        featured: item.featured || item.product.featured,
-        isDigital: item.isDigital || item.product.isDigital,
-        attributes: item.attributes || item.product.attributes || {},
-        notes: item.notes || item.product.notes,
-        costPrice: item.costPrice || item.product.costPrice,
-        // Keep the original product reference for backward compatibility
-        _product: item.product,
-        // Ensure productId is set
-        productId: item.product.id,
-        // Ensure inventory array exists for stock status
-        inventory: item.inventory || [{
-          quantity: item.quantity || item.product?.stock || 0,
-          reserved: item.reserved || 0,
-        }],
-        // Ensure stock field exists for compatibility
-        stock: item.quantity || item.stock || 0,
-        // Ensure price field exists
-        price: item.price || item.unitPrice || item.product?.unitPrice || 0,
-        // Ensure available field exists
-        available: item.available !== undefined ? item.available : 
-          (item.quantity || 0) - (item.reserved || 0),
-        // Ensure status field exists
-        status: item.status || item.product?.status || 'ACTIVE',
-        // Ensure businessUnitId is set
-        businessUnitId: item.businessUnitId || item.product?.businessUnitId,
-        // Ensure createdAt and updatedAt
-        createdAt: item.createdAt || item.product?.createdAt,
-        updatedAt: item.updatedAt || item.product?.updatedAt,
-      };
-    }
-  }
-  
-  // If item has an inventoryId but no top-level id
-  if (!item.id && item.inventoryId) {
-    return {
-      ...item,
-      id: item.inventoryId,
-    };
-  }
-  
-  // If item has a productId but no top-level id
-  if (!item.id && item.productId) {
-    return {
-      ...item,
-      id: item.productId,
-    };
-  }
-  
-  // Ensure inventory array exists
-  if (item && !item.inventory) {
-    item.inventory = [{
-      quantity: item.quantity || item.stock || 0,
-      reserved: item.reserved || 0,
-    }];
-  }
-  
-  // Ensure stock field exists
-  if (item && item.quantity !== undefined && item.stock === undefined) {
-    item.stock = item.quantity;
-  }
-  
-  // Ensure available field exists
-  if (item && item.available === undefined) {
-    item.available = (item.quantity || 0) - (item.reserved || 0);
-  }
-  
-  // Ensure images is always an array
-  if (item && !item.images) {
-    item.images = [];
-  }
-  
-  // Ensure tags is always an array
-  if (item && !item.tags) {
-    item.tags = [];
-  }
-  
-  // Ensure price field exists
-  if (item && item.price === undefined) {
-    item.price = item.unitPrice || 0;
-  }
-  
-  return item;
+function toError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 /**
- * Normalize an array of inventory items
+ * ✅ NEW: slugify helper.
+ *
+ * `Category.slug` is required by Prisma (the model declares
+ * `slug String` with `@@unique([businessUnitId, slug])`). When the
+ * service lazily creates a category from a free-text name, it must
+ * produce a slug. This mirrors the pattern Prisma would enforce at
+ * the DB level: lowercase, non-alphanumerics → `-`, collapse runs,
+ * trim leading/trailing dashes.
  */
-function normalizeInventoryItems(items: any[]): any[] {
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'category';
+}
+
+// ============================================
+// IMAGE + LOCATION HELPERS
+// ============================================
+
+function toImageUrls(input: unknown): string[] {
+  if (!input) return [];
+  if (typeof input === 'string') return [input];
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((v) => {
+      if (typeof v === 'string') return v;
+      if (v && typeof v === 'object' && typeof (v as any).url === 'string') {
+        return (v as any).url as string;
+      }
+      return null;
+    })
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
+}
+
+function toImageCreateInput(urls: string[]) {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const url of urls) {
+    if (!seen.has(url)) {
+      seen.add(url);
+      unique.push(url);
+    }
+  }
+  return {
+    create: unique.map((url, index) => ({
+      url,
+      order: index,
+      isPrimary: index === 0,
+    })),
+  };
+}
+
+function toImageUpdateInput(urls: string[]) {
+  return {
+    deleteMany: {},
+    create: toImageCreateInput(urls).create,
+  };
+}
+
+async function resolveLocationId(
+  tx: any,
+  businessUnitId: string,
+  locationName: string | undefined | null
+): Promise<string | null> {
+  const name = (locationName || 'Warehouse').trim();
+  if (!name) return null;
+
+  let loc = await tx.location.findFirst({
+    where: { businessUnitId, name, deletedAt: null },
+    select: { id: true },
+  });
+
+  if (!loc) {
+    loc = await tx.location.create({
+      data: {
+        name,
+        businessUnitId,
+        type: 'OTHER',
+        isActive: true,
+        isDefault: false,
+      },
+      select: { id: true },
+    });
+  }
+
+  return loc.id;
+}
+
+// ============================================
+// PRODUCT SELECT SHAPES
+// ============================================
+//
+// ✅ These are shared between the read paths so every query includes
+//    the fields `normalizeInventoryItem` actually reads. Previously
+//    some paths omitted `weight`, `taxRate`, and `tags`, which made
+//    the normalizer silently fall back to 0 / [] even when the row
+//    had real values.
+
+const PRODUCT_SELECT = {
+  id: true,
+  name: true,
+  sku: true,
+  barcode: true,
+  unitPrice: true,
+  costPrice: true,
+  description: true,
+  weight: true,
+  taxRate: true,
+  tags: true,
+  isActive: true,
+  isDigital: true,
+  featured: true,
+  minStock: true,
+  maxStock: true,
+  createdAt: true,
+  updatedAt: true,
+  category: { select: { id: true, name: true } },
+  supplier: { select: { id: true, name: true } },
+  images: true,
+} as const;
+
+const PRODUCT_SELECT_MINIMAL = {
+  id: true,
+  name: true,
+  sku: true,
+  barcode: true,
+  unitPrice: true,
+  costPrice: true,
+  description: true,
+  weight: true,
+  taxRate: true,
+  tags: true,
+  isActive: true,
+  category: { select: { id: true, name: true } },
+  supplier: { select: { id: true, name: true } },
+  images: true,
+} as const;
+
+// ============================================
+// NORMALIZATION HELPERS
+// ============================================
+
+function normalizeInventoryItem(item: any): FlatInventoryItem | null {
+  if (!item) return null;
+
+  const product = item.product || null;
+  const variant = item.variant || null;
+
+  const quantity =
+    typeof item.quantity === 'number'
+      ? item.quantity
+      : typeof product?.stock === 'number'
+      ? product.stock
+      : 0;
+
+  const reserved = typeof item.reserved === 'number' ? item.reserved : 0;
+  const available =
+    typeof item.available === 'number' ? item.available : quantity - reserved;
+
+  const unitPrice =
+    product?.unitPrice ?? variant?.price ?? item.unitPrice ?? 0;
+  const costPrice = product?.costPrice ?? item.costPrice ?? 0;
+
+  const categoryName =
+    product?.category?.name ?? item.category ?? 'Uncategorized';
+  const categoryId =
+    product?.category?.id ?? product?.categoryId ?? item.categoryId ?? null;
+
+  const supplierName = item.supplier ?? product?.supplier?.name ?? null;
+  const supplierId =
+    product?.supplierId ?? product?.supplier?.id ?? item.supplierId ?? null;
+
+  const images =
+    item.images && Array.isArray(item.images) && item.images.length > 0
+      ? toImageUrls(item.images)
+      : toImageUrls(product?.images);
+
+  const tags =
+    item.tags && Array.isArray(item.tags) && item.tags.length > 0
+      ? item.tags
+      : product?.tags || [];
+
+  const status =
+    quantity === 0
+      ? 'out_of_stock'
+      : quantity <= (item.reorderPoint || 5)
+      ? 'low_stock'
+      : item.status === 'INACTIVE'
+      ? 'inactive'
+      : 'active';
+
+  const createdAt =
+    item.createdAt ?? product?.createdAt ?? new Date().toISOString();
+  const updatedAt =
+    item.updatedAt ?? product?.updatedAt ?? new Date().toISOString();
+
+  return {
+    id: item.id || product?.id,
+    productId: product?.id ?? item.productId ?? null,
+    product: product,
+    variantId: variant?.id ?? item.variantId ?? null,
+    variant: variant,
+    name: product?.name ?? variant?.name ?? item.name ?? 'Unknown Product',
+    description: item.description ?? product?.description ?? null,
+    sku: product?.sku ?? variant?.sku ?? item.sku ?? 'N/A',
+    barcode: product?.barcode ?? item.barcode ?? null,
+    quantity,
+    stock: quantity,
+    reserved,
+    available,
+    price: unitPrice,
+    unitPrice,
+    costPrice,
+    reorderPoint: item.reorderPoint ?? 5,
+    reorderQuantity: item.reorderQuantity ?? 10,
+    category: categoryName,
+    categoryId,
+    location: item.location ?? 'Warehouse',
+    shelfNumber: item.shelfNumber ?? null,
+    supplier: supplierName,
+    supplierId,
+    notes: item.notes ?? null,
+    lastUpdated: updatedAt,
+    createdAt,
+    updatedAt,
+    status,
+    isActive: product?.isActive ?? item.isActive ?? true,
+    images,
+    tags,
+    weight: item.weight ?? product?.weight ?? 0,
+    taxRate: item.taxRate ?? product?.taxRate ?? 0,
+    isDigital: product?.isDigital ?? item.isDigital ?? false,
+    featured: product?.featured ?? item.featured ?? false,
+    inventory: [{ quantity, reserved }],
+    businessUnitId: item.businessUnitId ?? product?.businessUnitId ?? '',
+  };
+}
+
+function normalizeInventoryItems(items: any[]): FlatInventoryItem[] {
   if (!items || !Array.isArray(items)) return [];
-  return items.map(normalizeInventoryItem);
+  return items
+    .map(normalizeInventoryItem)
+    .filter((item): item is FlatInventoryItem => item !== null);
 }
 
 // ============================================
@@ -305,75 +510,57 @@ function normalizeInventoryItems(items: any[]): any[] {
 // ============================================
 
 export class InventoryService extends BaseService {
-  /**
-   * Check if a string is a valid ID (CUID or UUID)
-   */
   private isValidID(id: string): boolean {
     if (!id || id === 'default') return false;
     const cuidRegex = /^c[a-z0-9]{24}$/i;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const simpleIdRegex = /^[a-zA-Z0-9_-]{10,50}$/;
     return cuidRegex.test(id) || uuidRegex.test(id) || simpleIdRegex.test(id);
   }
 
-  /**
-   * Get all active business units from database
-   */
-  private async getAllBusinessUnits(): Promise<Array<{ id: string; name: string }>> {
+  private async getAllBusinessUnits(): Promise<
+    Array<{ id: string; name: string }>
+  > {
     try {
       const businessUnits = await this.prisma.businessUnit.findMany({
         where: { isActive: true },
         orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-        },
+        select: { id: true, name: true },
       });
-
-      console.log(`📊 Found ${businessUnits.length} active business units in database`);
       return businessUnits;
-    } catch (error) {
+    } catch (err) {
+      const error = toError(err);
       console.error('❌ Failed to fetch business units:', error);
       return [];
     }
   }
 
-  /**
-   * Get a specific business unit by ID, or return all if no ID provided
-   */
-  private async getBusinessUnits(businessUnitId?: string): Promise<Array<{ id: string; name: string }>> {
-    if (businessUnitId && businessUnitId !== 'default' && businessUnitId !== 'default-business-unit') {
+  private async getBusinessUnits(
+    businessUnitId?: string
+  ): Promise<Array<{ id: string; name: string }>> {
+    if (
+      businessUnitId &&
+      businessUnitId !== 'default' &&
+      businessUnitId !== 'default-business-unit'
+    ) {
       const existing = await this.prisma.businessUnit.findUnique({
         where: { id: businessUnitId },
         select: { id: true, name: true, isActive: true },
       });
 
       if (existing && existing.isActive) {
-        console.log(`✅ Found business unit: ${existing.id} (${existing.name})`);
         return [{ id: existing.id, name: existing.name }];
       }
 
-      if (existing && !existing.isActive) {
-        console.warn(`⚠️ Business unit ${businessUnitId} is inactive, returning all active units`);
-        return this.getAllBusinessUnits();
-      }
-
-      console.warn(`⚠️ Business unit ${businessUnitId} not found, returning all active units`);
       return this.getAllBusinessUnits();
     }
-
-    console.log('📤 No specific business unit ID provided, returning all active business units');
     return this.getAllBusinessUnits();
   }
 
-  /**
-   * Ensure business unit exists and return it
-   */
   private async ensureBusinessUnit(
     businessUnitId?: string
   ): Promise<{ id: string; name: string }> {
-    console.log('🔍 Ensuring business unit for ID:', businessUnitId);
-
     const isSentinel =
       !businessUnitId ||
       businessUnitId === 'default' ||
@@ -386,13 +573,9 @@ export class InventoryService extends BaseService {
       const allUnits = await this.getAllBusinessUnits();
 
       if (allUnits.length > 0) {
-        console.log(
-          `✅ Using first active business unit: ${allUnits[0].id} (${allUnits[0].name})`
-        );
         return allUnits[0];
       }
 
-      console.log('⚠️ No active business units found, creating default');
       let company = await this.prisma.company.findFirst({
         where: { isActive: true },
         orderBy: { createdAt: 'asc' },
@@ -419,11 +602,6 @@ export class InventoryService extends BaseService {
         },
       });
 
-      console.log(
-        '✅ Created default business unit:',
-        newBusinessUnit.id,
-        newBusinessUnit.name
-      );
       return { id: newBusinessUnit.id, name: newBusinessUnit.name };
     }
 
@@ -433,52 +611,36 @@ export class InventoryService extends BaseService {
     });
 
     if (existing && existing.isActive) {
-      console.log('✅ Found existing business unit:', existing.id, existing.name);
       return { id: existing.id, name: existing.name };
     }
 
-    console.warn(
-      `⚠️ Business unit ${businessUnitId} not found or inactive, falling back to first active`
-    );
-    const fallback = await this.prisma.businessUnit.findFirst({
-      where: { isActive: true },
-      orderBy: { createdAt: 'desc' }, // ✅ most recent first
-      select: { id: true, name: true },
-    });
-
-    if (fallback) {
-      console.log('✅ Using fallback business unit:', fallback.id, fallback.name);
-      return fallback;
+    if (existing && !existing.isActive) {
+      throw new AppError(`Business unit ${businessUnitId} is inactive`, 400);
     }
 
-    return this.ensureBusinessUnit('default');
+    throw new AppError(`Business unit ${businessUnitId} not found`, 404);
   }
 
-  /**
-   * Safely emit inventory update (internal method)
-   */
   private safeEmitInventoryUpdate(data: any, businessUnitId: string): void {
+    const fn = (realtimeService as any)?.emitInventoryUpdated;
+    if (typeof fn !== 'function') return;
     try {
-      (realtimeService as any).emitInventoryUpdated?.(data, businessUnitId);
-    } catch (error) {
-      console.warn('Failed to emit inventory update:', error);
+      fn.call(realtimeService, data, businessUnitId);
+    } catch (err) {
+      console.error('[inventory] realtime emit failed:', toError(err));
     }
   }
 
-  /**
-   * Safely emit low stock alert (internal method)
-   */
   private safeEmitLowStockAlert(data: any, businessUnitId: string): void {
+    const fn = (realtimeService as any)?.emitLowStockAlert;
+    if (typeof fn !== 'function') return;
     try {
-      (realtimeService as any).emitLowStockAlert?.(data, businessUnitId);
-    } catch (error) {
-      console.warn('Failed to emit low stock alert:', error);
+      fn.call(realtimeService, data, businessUnitId);
+    } catch (err) {
+      console.error('[inventory] realtime low-stock emit failed:', toError(err));
     }
   }
 
-  /**
-   * Generate unique barcode
-   */
   private async generateUniqueBarcode(tx: any): Promise<string> {
     let barcode: string;
     let counter = 0;
@@ -493,56 +655,85 @@ export class InventoryService extends BaseService {
   }
 
   /**
-   * Calculate comprehensive inventory statistics
+   * ✅ FIX #1: The Map's value type now allows `id: string | null`
+   *    so it matches what `categoryId` actually is. Previously the
+   *    type inferred from the initial literal was `id?: string |
+   *    undefined`, and passing `string | null` failed.
    */
-  private async calculateInventoryStats(businessUnitId: string): Promise<InventoryStats> {
+  private async calculateInventoryStats(
+    businessUnitId: string
+  ): Promise<InventoryStats> {
     try {
-      const [totalProducts, lowStockCount, outOfStockCount, inventoryItems] = await Promise.all([
-        this.prisma.inventory.count({ where: { businessUnitId } }),
-        this.prisma.inventory.count({
-          where: { businessUnitId, quantity: { lte: 10, gt: 0 } },
-        }),
-        this.prisma.inventory.count({ where: { businessUnitId, quantity: 0 } }),
-        this.prisma.inventory.findMany({
-          where: { businessUnitId },
-          include: {
-            product: {
-              select: { costPrice: true, unitPrice: true, category: { select: { name: true, id: true } } },
+      const inventoryItems = await this.prisma.inventory.findMany({
+        where: { businessUnitId },
+        include: {
+          product: {
+            select: {
+              costPrice: true,
+              unitPrice: true,
+              category: { select: { name: true, id: true } },
             },
           },
-        }),
-      ]);
-
-      const totalValueAmount = inventoryItems.reduce((sum: number, item: any) => sum + (item.quantity * (item.product?.unitPrice || 0)), 0);
-      const totalCostAmount = inventoryItems.reduce((sum: number, item: any) => sum + (item.quantity * (item.product?.costPrice || 0)), 0);
-      const totalUnits = inventoryItems.reduce((sum: number, item: any) => sum + item.quantity, 0);
-      const totalReserved = inventoryItems.reduce((sum: number, item: any) => sum + (item.reserved || 0), 0);
-
-      const categoryStats = new Map<string, { count: number; value: number; id?: string }>();
-      inventoryItems.forEach((item: any) => {
-        const categoryName = item.product?.category?.name || 'Uncategorized';
-        const categoryId = item.product?.category?.id || null;
-        const current = categoryStats.get(categoryName) || { count: 0, value: 0, id: categoryId };
-        current.count += item.quantity;
-        current.value += item.quantity * (item.product?.unitPrice || 0);
-        categoryStats.set(categoryName, current);
+        },
       });
 
+      let lowStockCount = 0;
+      let outOfStockCount = 0;
+      let totalValueAmount = 0;
+      let totalCostAmount = 0;
+      let totalUnits = 0;
+      let totalReserved = 0;
+
+      // ✅ `id` is now `string | null` — matches `categoryId` exactly.
+      const categoryStats = new Map<
+        string,
+        { count: number; value: number; id: string | null }
+      >();
+
+      for (const item of inventoryItems) {
+        const quantity = item.quantity ?? 0;
+        const reorderPoint = item.reorderPoint ?? 5;
+
+        if (quantity === 0) outOfStockCount++;
+        else if (quantity <= reorderPoint) lowStockCount++;
+
+        totalValueAmount += quantity * (item.product?.unitPrice || 0);
+        totalCostAmount += quantity * (item.product?.costPrice || 0);
+        totalUnits += quantity;
+        totalReserved += item.reserved || 0;
+
+        const categoryName = item.product?.category?.name || 'Uncategorized';
+        const categoryId = item.product?.category?.id ?? null;
+        const current = categoryStats.get(categoryName) || {
+          count: 0,
+          value: 0,
+          id: categoryId,
+        };
+        current.count += quantity;
+        current.value += quantity * (item.product?.unitPrice || 0);
+        categoryStats.set(categoryName, current);
+      }
+
       return {
-        totalProducts,
+        totalProducts: inventoryItems.length,
         lowStockCount,
         outOfStockCount,
         totalValue: totalValueAmount,
         totalCost: totalCostAmount,
         potentialProfit: totalValueAmount - totalCostAmount,
-        profitMargin: totalCostAmount > 0 ? ((totalValueAmount - totalCostAmount) / totalCostAmount) * 100 : 0,
+        profitMargin:
+          totalCostAmount > 0
+            ? ((totalValueAmount - totalCostAmount) / totalCostAmount) * 100
+            : 0,
         totalUnits,
         totalReserved,
         availableUnits: totalUnits - totalReserved,
-        byCategory: Array.from(categoryStats.entries()).map(([category, data]) => ({ category, ...data })),
+        byCategory: Array.from(categoryStats.entries()).map(
+          ([category, data]) => ({ category, ...data })
+        ),
       };
-    } catch (error) {
-      console.warn('Failed to calculate inventory stats:', error);
+    } catch (err) {
+      console.warn('Failed to calculate inventory stats:', toError(err));
       return {
         totalProducts: 0,
         lowStockCount: 0,
@@ -559,228 +750,108 @@ export class InventoryService extends BaseService {
     }
   }
 
-  /**
-   * Format inventory item for consistent response
-   * ✅ UPDATED: Unified formatting with normalization
-   */
-  private formatInventoryItem(item: any): any {
-    if (!item) return null;
-    
-    // First normalize the item
-    const normalized = normalizeInventoryItem(item);
-    
-    const availableStock = normalized.available !== undefined && normalized.available !== null
-      ? normalized.available
-      : Math.max(0, (normalized.quantity || 0) - (normalized.reserved || 0));
-    
-    const status = normalized.quantity === 0 
-      ? 'out_of_stock' 
-      : normalized.quantity <= (normalized.reorderPoint || 5) 
-        ? 'low_stock' 
-        : normalized.status === 'INACTIVE' 
-          ? 'inactive' 
-          : 'active';
-
-    // Get product info from the relation
-    const product = normalized.product;
-    const variant = normalized.variant;
-
-    // Return unified formatted item
-    return {
-      id: normalized.id || item.id,
-      productId: product?.id || normalized.productId || null,
-      product: product || null,
-      variantId: variant?.id || normalized.variantId || null,
-      variant: variant || null,
-      name: product?.name || variant?.name || normalized.name || 'Unknown Product',
-      description: normalized.description || product?.description || null,
-      sku: product?.sku || variant?.sku || normalized.sku || 'N/A',
-      barcode: product?.barcode || normalized.barcode || null,
-      quantity: normalized.quantity || 0,
-      stock: normalized.quantity || 0,
-      reserved: normalized.reserved || 0,
-      available: availableStock,
-      price: product?.unitPrice || variant?.price || normalized.unitPrice || 0,
-      unitPrice: product?.unitPrice || variant?.price || normalized.unitPrice || 0,
-      costPrice: product?.costPrice || normalized.costPrice || 0,
-      reorderPoint: normalized.reorderPoint || 5,
-      reorderQuantity: normalized.reorderQuantity || 10,
-      category: product?.category?.name || normalized.category || 'Uncategorized',
-      categoryId: product?.category?.id || normalized.categoryId || null,
-      location: normalized.location || 'Warehouse',
-      shelfNumber: normalized.shelfNumber || null,
-      supplier: normalized.supplier || product?.supplier?.name || null,
-      supplierId: product?.supplierId || normalized.supplierId || null,
-      notes: normalized.notes || null,
-      lastUpdated: normalized.updatedAt || item.updatedAt,
-      createdAt: normalized.createdAt || item.createdAt,
-      updatedAt: normalized.updatedAt || item.updatedAt,
-      status,
-      isActive: product?.isActive ?? normalized.isActive ?? true,
-      // Use inventory images first, then product images
-      images: (normalized.images && normalized.images.length > 0) ? normalized.images : (product?.images || []),
-      // Use inventory tags first, then product tags
-      tags: (normalized.tags && normalized.tags.length > 0) ? normalized.tags : (product?.tags || []),
-      // Use inventory weight first, then product weight
-      weight: normalized.weight ?? product?.weight ?? 0,
-      // Use inventory taxRate first, then product taxRate
-      taxRate: normalized.taxRate ?? product?.taxRate ?? 0,
-      isDigital: product?.isDigital || normalized.isDigital || false,
-      featured: product?.featured || normalized.featured || false,
-      inventory: normalized.inventory || [{
-        quantity: normalized.quantity || 0,
-        reserved: normalized.reserved || 0,
-      }],
-      businessUnitId: normalized.businessUnitId || item.businessUnitId,
-      // ✅ FIXED: Removed duplicate productId property
-      // The productId is already defined at the top of this object
-    };
+  private formatInventoryItem(item: any): FlatInventoryItem | null {
+    return normalizeInventoryItem(item);
   }
 
   // ============================================
-  // FIXED: getCategories()
+  // REFERENCE DATA
   // ============================================
 
   async getCategories(businessUnitId?: string): Promise<CategoryOption[]> {
     try {
-      console.log(`📤 getCategories called with businessUnitId: ${businessUnitId || 'undefined'}`);
-      
       let actualBusinessUnitId: string | undefined;
-      
-      if (businessUnitId && businessUnitId !== 'default' && businessUnitId !== 'default-business-unit') {
+
+      if (
+        businessUnitId &&
+        businessUnitId !== 'default' &&
+        businessUnitId !== 'default-business-unit'
+      ) {
         const existing = await this.prisma.businessUnit.findUnique({
           where: { id: businessUnitId },
-          select: { id: true, isActive: true }
+          select: { id: true, isActive: true },
         });
-        
         if (existing && existing.isActive) {
           actualBusinessUnitId = existing.id;
-          console.log(`✅ Using provided business unit: ${actualBusinessUnitId}`);
-        } else {
-          console.warn(`⚠️ Business unit ${businessUnitId} not found or inactive`);
         }
       }
-      
+
       if (!actualBusinessUnitId) {
         const firstBU = await this.prisma.businessUnit.findFirst({
           where: { isActive: true },
           select: { id: true, name: true },
-          orderBy: { createdAt: 'asc' }
+          orderBy: { createdAt: 'asc' },
         });
-        
-        if (firstBU) {
-          actualBusinessUnitId = firstBU.id;
-          console.log(`✅ Using first active business unit: ${actualBusinessUnitId}`);
-        } else {
-          console.warn('⚠️ No active business unit found - returning empty categories');
-          return [];
-        }
+        if (firstBU) actualBusinessUnitId = firstBU.id;
+        else return [];
       }
 
-      const whereClause: any = {
-        isActive: true
-      };
-      
-      if (actualBusinessUnitId) {
-        whereClause.businessUnitId = actualBusinessUnitId;
-      }
-      
-      console.log(`📊 Querying categories with where:`, JSON.stringify(whereClause, null, 2));
-      
       const categories = await this.prisma.category.findMany({
-        where: whereClause,
+        where: { isActive: true, businessUnitId: actualBusinessUnitId },
         include: {
           _count: {
-            select: {
-              products: { 
-                where: { isActive: true }
-              },
-            },
+            select: { products: { where: { isActive: true } } },
           },
           children: {
             where: { isActive: true },
-            select: { id: true, name: true }
-          }
+            select: { id: true, name: true },
+          },
         },
         orderBy: { name: 'asc' },
       });
 
-      console.log(`✅ Found ${categories.length} categories for business unit ${actualBusinessUnitId}`);
-
-      const result = categories.map((cat: any) => ({
+      return categories.map((cat: any) => ({
         id: cat.id,
         name: cat.name,
         productCount: cat._count?.products || 0,
-        childrenCount: cat.children?.length || 0,
-        hasChildren: (cat.children?.length || 0) > 0,
       }));
-
-      return result;
-      
-    } catch (error) {
-      console.error('❌ Failed to fetch categories:', error);
+    } catch (err) {
+      console.error('❌ Failed to fetch categories:', toError(err));
       return [];
     }
   }
 
-  async getSuppliers(businessUnitId?: string): Promise<Array<{ id: string; name: string; email?: string | null; phone?: string | null }>> {
+  async getSuppliers(businessUnitId?: string): Promise<
+    Array<{ id: string; name: string; email?: string | null; phone?: string | null }>
+  > {
     try {
-      console.log('📤 Fetching suppliers');
-      
-      const suppliers = await this.prisma.supplier.findMany({
-        where: {
-          isActive: true,
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-        },
+      return await this.prisma.supplier.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, email: true, phone: true },
         orderBy: { name: 'asc' },
       });
-
-      console.log(`✅ Found ${suppliers.length} suppliers`);
-      return suppliers;
-    } catch (error) {
-      console.error('❌ Failed to fetch suppliers:', error);
+    } catch (err) {
+      console.error('❌ Failed to fetch suppliers:', toError(err));
       return [];
     }
   }
 
-  async getCategorySummary(businessUnitId: string): Promise<Array<{ id: string; name: string; categoryId?: string; count: number; value: number }>> {
+  async getCategorySummary(businessUnitId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      categoryId?: string;
+      count: number;
+      value: number;
+    }>
+  > {
     try {
-      console.log('📤 Fetching category summary for businessUnitId:', businessUnitId);
-      
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-      console.log('✅ Resolved business unit:', resolvedBU.id, resolvedBU.name);
-      
+
       const categories = await this.prisma.category.findMany({
-        where: {
-          businessUnitId: resolvedBU.id,
-          isActive: true,
-        },
+        where: { businessUnitId: resolvedBU.id, isActive: true },
         include: {
           products: {
-            where: { 
+            where: {
               isActive: true,
-              inventory: {
-                some: {
-                  businessUnitId: resolvedBU.id
-                }
-              }
+              inventory: { some: { businessUnitId: resolvedBU.id } },
             },
             select: {
               id: true,
-              name: true,
               unitPrice: true,
               inventory: {
                 where: { businessUnitId: resolvedBU.id },
-                select: { 
-                  quantity: true,
-                  available: true,
-                  reserved: true,
-                },
+                select: { quantity: true },
               },
             },
           },
@@ -788,22 +859,17 @@ export class InventoryService extends BaseService {
         orderBy: { name: 'asc' },
       });
 
-      console.log(`✅ Found ${categories.length} categories in database`);
-
-      const result = categories.map((cat: any) => {
+      return categories.map((cat: any) => {
         let totalCount = 0;
         let totalValue = 0;
-        
         cat.products.forEach((product: any) => {
           const inventory = product.inventory?.[0];
           if (inventory) {
             const quantity = inventory.quantity || 0;
-            const price = product.unitPrice || 0;
             totalCount += quantity;
-            totalValue += quantity * price;
+            totalValue += quantity * (product.unitPrice || 0);
           }
         });
-
         return {
           id: cat.id,
           name: cat.name,
@@ -812,11 +878,8 @@ export class InventoryService extends BaseService {
           value: totalValue,
         };
       });
-
-      console.log('✅ Category summary prepared:', result.length);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to fetch category summary:', error);
+    } catch (err) {
+      console.error('❌ Failed to fetch category summary:', toError(err));
       return [];
     }
   }
@@ -845,263 +908,48 @@ export class InventoryService extends BaseService {
     inStock?: boolean;
   }) {
     try {
-      console.log('🔍 InventoryService.getInventory called with params:', JSON.stringify(params, null, 2));
-      
-      const { 
-        page = 1, 
-        limit = 10, 
-        search, 
-        businessUnitId, 
-        lowStock, 
-        productId, 
+      const {
+        page = 1,
+        limit = 10,
+        search,
+        businessUnitId,
+        lowStock,
+        productId,
         category,
         location,
         status,
         sortBy = 'updatedAt',
         sortOrder = 'desc',
-        includeInactive = false,
         hasBarcode,
-        minPrice,
-        maxPrice,
         supplier,
         inStock,
       } = params;
-      
+
       const validatedPage = Math.max(1, page);
       const validatedLimit = Math.min(200, Math.max(1, limit));
       const skip = (validatedPage - 1) * validatedLimit;
 
-      // Valid sort fields on Inventory model
       const validSortFields = [
-        'id', 'quantity', 'reserved', 'available', 'reorderPoint', 
-        'reorderQuantity', 'location', 'shelfNumber', 'supplier', 
-        'notes', 'status', 'createdAt', 'updatedAt'
+        'id','quantity','reserved','available','reorderPoint',
+        'reorderQuantity','location','shelfNumber','supplier','notes',
+        'status','createdAt','updatedAt',
       ];
-      
-      const sortFieldMap: Record<string, string> = {
-        'name': 'productName',
-        'productName': 'productName',
-        'product.name': 'productName',
-        'sku': 'productSku',
-        'productSku': 'productSku',
-        'product.sku': 'productSku',
-        'unitPrice': 'productUnitPrice',
-        'productUnitPrice': 'productUnitPrice',
-        'product.unitPrice': 'productUnitPrice',
-        'price': 'productUnitPrice',
-        'costPrice': 'productCostPrice',
-        'productCostPrice': 'productCostPrice',
-        'product.costPrice': 'productCostPrice',
-        'category': 'productCategory',
-        'productCategory': 'productCategory',
-        'product.category': 'productCategory',
-        'supplierName': 'productSupplier',
-        'productSupplier': 'productSupplier',
-        'product.supplier': 'productSupplier',
-      };
 
-      let actualSortField = sortBy;
-      let isNestedSort = false;
-      let nestedSortPath: string[] = [];
+      const orderBy = validSortFields.includes(sortBy)
+        ? { [sortBy]: sortOrder }
+        : { createdAt: sortOrder };
 
-      if (sortFieldMap[sortBy]) {
-        const mappedField = sortFieldMap[sortBy];
-        if (mappedField.startsWith('product')) {
-          isNestedSort = true;
-          if (mappedField === 'productName') {
-            nestedSortPath = ['product', 'name'];
-          } else if (mappedField === 'productSku') {
-            nestedSortPath = ['product', 'sku'];
-          } else if (mappedField === 'productUnitPrice') {
-            nestedSortPath = ['product', 'unitPrice'];
-          } else if (mappedField === 'productCostPrice') {
-            nestedSortPath = ['product', 'costPrice'];
-          } else if (mappedField === 'productCategory') {
-            nestedSortPath = ['product', 'category', 'name'];
-          } else if (mappedField === 'productSupplier') {
-            nestedSortPath = ['product', 'supplier', 'name'];
-          }
-        } else {
-          actualSortField = mappedField;
-        }
-      }
+      const where: any = {};
 
-      const isValidDirectField = validSortFields.includes(actualSortField);
-      const isValidNestedField = isNestedSort && nestedSortPath.length > 0;
-
-      let orderBy: any = {};
-
-      if (isValidNestedField) {
-        let current = orderBy;
-        for (let i = 0; i < nestedSortPath.length - 1; i++) {
-          current[nestedSortPath[i]] = {};
-          current = current[nestedSortPath[i]];
-        }
-        const lastKey = nestedSortPath[nestedSortPath.length - 1];
-        current[lastKey] = sortOrder;
-        console.log(`📊 Using nested sorting: ${nestedSortPath.join('.')} ${sortOrder}`);
-      } else if (isValidDirectField) {
-        orderBy = { [actualSortField]: sortOrder };
-        console.log(`📊 Using direct sorting: ${actualSortField} ${sortOrder}`);
-      } else {
-        orderBy = { createdAt: sortOrder };
-        console.log(`📊 Falling back to createdAt sorting: ${sortOrder}`);
-      }
-
-      if (!businessUnitId || businessUnitId === 'default' || businessUnitId === 'default-business-unit') {
-        console.log('📤 No specific business unit, fetching inventory across ALL business units');
-        
-        const where: any = {};
-
-        if (location) where.location = { contains: location, mode: 'insensitive' as const };
-        if (status === 'inactive') where.status = 'INACTIVE';
-        if (lowStock) where.quantity = { lte: 10, gt: 0 };
-        
-        if (inStock === true) where.quantity = { gt: 0 };
-        else if (inStock === false) where.quantity = { equals: 0 };
-        
-        if (search) {
-          where.OR = [
-            { product: { is: { name: { contains: search, mode: 'insensitive' as const } } } },
-            { product: { is: { sku: { contains: search, mode: 'insensitive' as const } } } },
-            { product: { is: { barcode: { contains: search, mode: 'insensitive' as const } } } },
-          ];
-        }
-
-        if (category) {
-          where.product = {
-            is: {
-              category: {
-                is: {
-                  name: { contains: category, mode: 'insensitive' as const }
-                }
-              }
-            }
-          };
-        }
-
-        console.log('📊 Where clause (all business units):', JSON.stringify(where, null, 2));
-        console.log(`📊 Pagination: page=${validatedPage}, limit=${validatedLimit}, skip=${skip}`);
-
-        const [inventory, total] = await Promise.all([
-          this.prisma.inventory.findMany({
-            where,
-            skip,
-            take: validatedLimit,
-            orderBy: orderBy,
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  barcode: true,
-                  unitPrice: true,
-                  costPrice: true,
-                  category: { select: { id: true, name: true } },
-                  supplier: { select: { id: true, name: true } },
-                  images: true,
-                  isActive: true,
-                  description: true,
-                  createdAt: true,
-                  updatedAt: true,
-                },
-              },
-              variant: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  price: true,
-                  attributes: true,
-                  isActive: true,
-                },
-              },
-              businessUnit: {
-                select: {
-                  id: true,
-                  name: true,
-                  code: true,
-                },
-              },
-            },
-          }),
-          this.prisma.inventory.count({ where }),
-        ]);
-
-        console.log(`📊 Found ${inventory.length} inventory items across all business units, total: ${total}`);
-
-        const formattedInventory = inventory.map((item: any) => this.formatInventoryItem(item));
-        
-        const totalUnits = formattedInventory.reduce((sum: number, item: any) => sum + (item.stock || 0), 0);
-        const totalReserved = formattedInventory.reduce((sum: number, item: any) => sum + (item.reserved || 0), 0);
-
-        const allBusinessUnits = await this.getAllBusinessUnits();
-        let combinedStats: InventoryStats = {
-          totalProducts: 0,
-          lowStockCount: 0,
-          outOfStockCount: 0,
-          totalValue: 0,
-          totalCost: 0,
-          potentialProfit: 0,
-          profitMargin: 0,
-          totalUnits: 0,
-          totalReserved: 0,
-          availableUnits: 0,
-          byCategory: [],
-        };
-
-        for (const bu of allBusinessUnits) {
-          const stats = await this.calculateInventoryStats(bu.id);
-          combinedStats.totalProducts += stats.totalProducts;
-          combinedStats.lowStockCount += stats.lowStockCount;
-          combinedStats.outOfStockCount += stats.outOfStockCount;
-          combinedStats.totalValue += stats.totalValue;
-          combinedStats.totalCost += stats.totalCost;
-          combinedStats.potentialProfit += stats.potentialProfit;
-          combinedStats.totalUnits += stats.totalUnits;
-          combinedStats.totalReserved += stats.totalReserved;
-          combinedStats.availableUnits += stats.availableUnits;
-          combinedStats.byCategory = [...combinedStats.byCategory, ...stats.byCategory];
-        }
-
-        return {
-          inventory: formattedInventory,
-          total,
-          page: validatedPage,
-          limit: validatedLimit,
-          totalPages: Math.ceil(total / validatedLimit),
-          stats: {
-            ...combinedStats,
-            totalUnits,
-            totalReserved,
-            availableUnits: totalUnits - totalReserved,
-          },
-          appliedFilters: {
-            search: search || null,
-            category: category || null,
-            location: location || null,
-            status: status || null,
-            lowStock: lowStock || false,
-          },
-        };
-      }
-
-      // Specific business unit
-      const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-      console.log('✅ Resolved business unit for getInventory:', resolvedBU.id, resolvedBU.name);
-
-      const where: any = {
-        businessUnitId: resolvedBU.id,
-      };
-
-      if (location) where.location = { contains: location, mode: 'insensitive' as const };
+      if (productId) where.productId = productId;
+      if (location)
+        where.location = { contains: location, mode: 'insensitive' as const };
       if (status === 'inactive') where.status = 'INACTIVE';
       if (lowStock) where.quantity = { lte: 10, gt: 0 };
-      
+
       if (inStock === true) where.quantity = { gt: 0 };
       else if (inStock === false) where.quantity = { equals: 0 };
-      
+
       if (search) {
         where.OR = [
           { product: { is: { name: { contains: search, mode: 'insensitive' as const } } } },
@@ -1110,113 +958,68 @@ export class InventoryService extends BaseService {
         ];
       }
 
+      const productFilter: any = {};
       if (category) {
-        where.product = {
-          is: {
-            category: {
-              is: {
-                name: { contains: category, mode: 'insensitive' as const }
-              }
-            }
-          }
+        productFilter.category = {
+          is: { name: { contains: category, mode: 'insensitive' as const } },
         };
       }
+      if (hasBarcode === true) {
+        productFilter.barcode = { not: null };
+      } else if (hasBarcode === false) {
+        productFilter.barcode = null;
+      }
+      if (Object.keys(productFilter).length > 0) {
+        where.product = { is: productFilter };
+      }
 
-      console.log('📊 Where clause:', JSON.stringify(where, null, 2));
-      console.log(`📊 Pagination: page=${validatedPage}, limit=${validatedLimit}, skip=${skip}`);
-      console.log(`📊 OrderBy:`, JSON.stringify(orderBy, null, 2));
+      if (supplier) {
+        where.supplier = { contains: supplier, mode: 'insensitive' as const };
+      }
+
+      const include = {
+        product: { select: PRODUCT_SELECT },
+        variant: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            price: true,
+            attributes: true,
+            isActive: true,
+            images: true,
+          },
+        },
+        businessUnit: { select: { id: true, name: true, code: true } },
+      };
+
+      const isAllBusinessUnits =
+        !businessUnitId ||
+        businessUnitId === 'default' ||
+        businessUnitId === 'default-business-unit';
+
+      if (!isAllBusinessUnits) {
+        const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
+        where.businessUnitId = resolvedBU.id;
+      }
 
       const [inventory, total, stats] = await Promise.all([
         this.prisma.inventory.findMany({
           where,
           skip,
           take: validatedLimit,
-          orderBy: orderBy,
-          include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true,
-                barcode: true,
-                unitPrice: true,
-                costPrice: true,
-                category: { select: { id: true, name: true } },
-                supplier: { select: { id: true, name: true } },
-                images: true,
-                isActive: true,
-                description: true,
-                createdAt: true,
-                updatedAt: true,
-              },
-            },
-            variant: {
-              select: {
-                id: true,
-                name: true,
-                sku: true,
-                price: true,
-                attributes: true,
-                isActive: true,
-              },
-            },
-          },
+          orderBy: orderBy as any,
+          include,
         }),
         this.prisma.inventory.count({ where }),
-        this.calculateInventoryStats(resolvedBU.id),
+        isAllBusinessUnits
+          ? this.calculateCombinedStats()
+          : this.calculateInventoryStats(
+              (await this.ensureBusinessUnit(businessUnitId)).id
+            ),
       ]);
 
-      console.log(`📊 Found ${inventory.length} inventory items, total: ${total}`);
-
-      let formattedInventory = inventory.map((item: any) => this.formatInventoryItem(item));
-
-      // Apply in-memory sorting for nested fields
-      const isNestedSortBy = ['name', 'productName', 'sku', 'productSku', 'unitPrice', 'productUnitPrice', 'costPrice', 'productCostPrice', 'category', 'productCategory', 'supplier', 'productSupplier'].includes(sortBy);
-      
-      if (isNestedSortBy) {
-        console.log(`📊 Applying in-memory sorting for nested field: ${sortBy}`);
-        
-        if (sortBy === 'name' || sortBy === 'productName') {
-          formattedInventory.sort((a, b) => {
-            const nameA = a.name || '';
-            const nameB = b.name || '';
-            return sortOrder === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
-          });
-        } else if (sortBy === 'sku' || sortBy === 'productSku') {
-          formattedInventory.sort((a, b) => {
-            const skuA = a.sku || '';
-            const skuB = b.sku || '';
-            return sortOrder === 'asc' ? skuA.localeCompare(skuB) : skuB.localeCompare(skuA);
-          });
-        } else if (sortBy === 'unitPrice' || sortBy === 'productUnitPrice' || sortBy === 'price') {
-          formattedInventory.sort((a, b) => {
-            const priceA = a.price || 0;
-            const priceB = b.price || 0;
-            return sortOrder === 'asc' ? priceA - priceB : priceB - priceA;
-          });
-        } else if (sortBy === 'costPrice' || sortBy === 'productCostPrice') {
-          formattedInventory.sort((a, b) => {
-            const costA = a.costPrice || 0;
-            const costB = b.costPrice || 0;
-            return sortOrder === 'asc' ? costA - costB : costB - costA;
-          });
-        } else if (sortBy === 'category' || sortBy === 'productCategory') {
-          formattedInventory.sort((a, b) => {
-            const catA = a.category || '';
-            const catB = b.category || '';
-            return sortOrder === 'asc' ? catA.localeCompare(catB) : catB.localeCompare(catA);
-          });
-        } else if (sortBy === 'supplier' || sortBy === 'productSupplier') {
-          formattedInventory.sort((a, b) => {
-            const supA = a.supplier || '';
-            const supB = b.supplier || '';
-            return sortOrder === 'asc' ? supA.localeCompare(supB) : supB.localeCompare(supA);
-          });
-        }
-      }
-
-      const totalUnits = formattedInventory.reduce((sum: number, item: any) => sum + (item.stock || 0), 0);
-      const totalReservedVal = formattedInventory.reduce((sum: number, item: any) => sum + (item.reserved || 0), 0);
+      const formattedInventory = normalizeInventoryItems(inventory);
 
       return {
         inventory: formattedInventory,
@@ -1224,12 +1027,7 @@ export class InventoryService extends BaseService {
         page: validatedPage,
         limit: validatedLimit,
         totalPages: Math.ceil(total / validatedLimit),
-        stats: {
-          ...stats,
-          totalUnits,
-          totalReserved: totalReservedVal,
-          availableUnits: totalUnits - totalReservedVal,
-        },
+        stats,
         appliedFilters: {
           search: search || null,
           category: category || null,
@@ -1238,109 +1036,79 @@ export class InventoryService extends BaseService {
           lowStock: lowStock || false,
         },
       };
-    } catch (error) {
-      console.error('❌ Error in InventoryService.getInventory:', error);
-      throw error;
+    } catch (err) {
+      console.error('❌ Error in InventoryService.getInventory:', toError(err));
+      throw err;
     }
   }
 
-  // ============================================
-  // GET ALL INVENTORY - UPDATED
-  // ============================================
+  private async calculateCombinedStats(): Promise<InventoryStats> {
+    const allBusinessUnits = await this.getAllBusinessUnits();
+    const combined: InventoryStats = {
+      totalProducts: 0, lowStockCount: 0, outOfStockCount: 0,
+      totalValue: 0, totalCost: 0, potentialProfit: 0, profitMargin: 0,
+      totalUnits: 0, totalReserved: 0, availableUnits: 0, byCategory: [],
+    };
 
-  async getAllInventory(businessUnitId: string): Promise<{ items: any[]; stats: InventoryStats }> {
+    for (const bu of allBusinessUnits) {
+      const stats = await this.calculateInventoryStats(bu.id);
+      combined.totalProducts += stats.totalProducts;
+      combined.lowStockCount += stats.lowStockCount;
+      combined.outOfStockCount += stats.outOfStockCount;
+      combined.totalValue += stats.totalValue;
+      combined.totalCost += stats.totalCost;
+      combined.potentialProfit += stats.potentialProfit;
+      combined.totalUnits += stats.totalUnits;
+      combined.totalReserved += stats.totalReserved;
+      combined.availableUnits += stats.availableUnits;
+      combined.byCategory = [...combined.byCategory, ...stats.byCategory];
+    }
+
+    combined.profitMargin =
+      combined.totalCost > 0
+        ? ((combined.totalValue - combined.totalCost) / combined.totalCost) * 100
+        : 0;
+
+    return combined;
+  }
+
+  async getAllInventory(
+    businessUnitId: string
+  ): Promise<{ items: FlatInventoryItem[]; stats: InventoryStats }> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const items = await this.prisma.inventory.findMany({
         where: { businessUnitId: resolvedBU.id },
         include: {
-          product: {
-            select: {
-              id: true,
-              name: true,
-              sku: true,
-              unitPrice: true,
-              costPrice: true,
-              barcode: true,
-              category: { select: { id: true, name: true } },
-              supplier: { select: { id: true, name: true } },
-              images: true,
-              isActive: true,
-              description: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          },
+          product: { select: PRODUCT_SELECT },
           variant: {
-            select: { id: true, name: true, sku: true, price: true, attributes: true, isActive: true },
+            select: {
+              id: true, name: true, sku: true, price: true,
+              attributes: true, isActive: true, images: true,
+            },
           },
         },
         orderBy: { updatedAt: 'desc' },
       });
 
-      // Format items properly with all new fields
-      const formattedItems = items.map((item: any) => {
-        const product = item.product;
-        const variant = item.variant;
-        
-        const baseItem = {
-          id: item.id,
-          productId: product?.id || null,
-          product: product || null,
-          variantId: variant?.id || null,
-          variant: variant || null,
-          name: product?.name || variant?.name || 'Unknown Product',
-          sku: product?.sku || variant?.sku || 'N/A',
-          barcode: product?.barcode || null,
-          quantity: item.quantity,
-          stock: item.quantity,
-          reserved: item.reserved || 0,
-          available: item.quantity - (item.reserved || 0),
-          unitPrice: product?.unitPrice || variant?.price || 0,
-          price: product?.unitPrice || variant?.price || 0,
-          costPrice: product?.costPrice || 0,
-          category: product?.category?.name || 'Uncategorized',
-          categoryId: product?.category?.id || null,
-          supplier: item.supplier || product?.supplier?.name || null,
-          supplierId: product?.supplierId || null,
-          reorderPoint: item.reorderPoint || 5,
-          location: item.location || 'Warehouse',
-          notes: item.notes || null,
-          hasProduct: !!product,
-          isActive: product?.isActive ?? true,
-          // Use inventory fields first, then product fields
-          images: (item.images && item.images.length > 0) ? item.images : (product?.images || []),
-          description: item.description || product?.description || null,
-          weight: item.weight ?? product?.weight ?? 0,
-          taxRate: item.taxRate ?? product?.taxRate ?? 0,
-          tags: (item.tags && item.tags.length > 0) ? item.tags : (product?.tags || []),
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
-          status: item.status || 'ACTIVE',
-          businessUnitId: item.businessUnitId,
-        };
-        
-        // Apply normalization to ensure product ID is at top level
-        return normalizeInventoryItem(baseItem);
-      });
-
-      const stats = await this.calculateInventoryStats(resolvedBU.id);
-
-      return { items: formattedItems, stats };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getAllInventory');
-      throw error;
+      return {
+        items: normalizeInventoryItems(items),
+        stats: await this.calculateInventoryStats(resolvedBU.id),
+      };
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getAllInventory');
+      throw err;
     }
   }
 
-  // ============================================
-  // GET INVENTORY BY PRODUCT - UPDATED
-  // ============================================
-
-  async getInventoryByProduct(productId: string, businessUnitId: string) {
+  async getInventoryByProduct(
+    productId: string,
+    businessUnitId: string
+  ): Promise<FlatInventoryItem | null> {
     try {
       if (!productId || !businessUnitId) {
         throw new AppError('Product ID and business unit ID are required', 400);
@@ -1348,216 +1116,166 @@ export class InventoryService extends BaseService {
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      const product = await this.prisma.product.findUnique({
-        where: { id: productId },
-        include: {
-          inventory: {
-            include: {
-              product: {
-                include: {
-                  category: { select: { id: true, name: true } },
-                  supplier: { select: { id: true, name: true } },
-                  variants: { where: { isActive: true } },
-                },
-              },
-              variant: true,
-              transactions: { orderBy: { createdAt: 'desc' }, take: 20 },
-            },
-          },
-          category: { select: { id: true, name: true } },
-          supplier: { select: { id: true, name: true } },
-          variants: { where: { isActive: true } },
-        },
-      });
-
-      if (!product) {
-        throw new AppError('Product not found', 404);
-      }
-
-      if (!product.inventory) {
-        throw new AppError('Product not found in inventory', 404);
-      }
-
-      // Apply normalization
-      return normalizeInventoryItem(this.formatInventoryItem(product.inventory));
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryByProduct');
-    }
-  }
-
-  async getInventoryByProductLegacy(productId: string, businessUnitId: string) {
-    return this.getInventoryByProduct(productId, businessUnitId);
-  }
-
-  // ============================================
-  // GET INVENTORY ITEM BY ID - UPDATED
-  // ============================================
-
-  async getInventoryItemById(id: string, businessUnitId?: string) {
-    try {
-      if (!id) {
-        throw new AppError('Inventory ID is required', 400);
-      }
-
-      let item = await this.prisma.inventory.findUnique({
-        where: { id },
+      const inventory = await this.prisma.inventory.findFirst({
+        where: { businessUnitId: resolvedBU.id, productId },
         include: {
           product: {
             include: {
               category: { select: { id: true, name: true } },
               supplier: { select: { id: true, name: true } },
-              creator: { select: { id: true, firstName: true, lastName: true } },
+              images: true,
+              variants: { where: { isActive: true }, include: { images: true } },
             },
           },
-          variant: true,
-          transactions: {
-            orderBy: { createdAt: 'desc' },
-            take: 50,
-            include: { user: { select: { id: true, firstName: true, lastName: true } } },
-          },
-          issues: { where: { status: 'ISSUED' }, orderBy: { createdAt: 'desc' }, take: 10 },
-        },
-      });
-
-      if (!item && businessUnitId) {
-        const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-        item = await this.prisma.inventory.findFirst({
-          where: { id, businessUnitId: resolvedBU.id },
-          include: {
-            product: {
-              include: {
-                category: { select: { id: true, name: true } },
-                supplier: { select: { id: true, name: true } },
-                creator: { select: { id: true, firstName: true, lastName: true } },
-              },
-            },
-            variant: true,
-            transactions: {
-              orderBy: { createdAt: 'desc' },
-              take: 50,
-              include: { user: { select: { id: true, firstName: true, lastName: true } } },
-            },
-            issues: { where: { status: 'ISSUED' }, orderBy: { createdAt: 'desc' }, take: 10 },
-          },
-        });
-      }
-
-      if (!item) {
-        throw new AppError('Inventory item not found', 404);
-      }
-
-      // Apply normalization
-      return normalizeInventoryItem(this.formatInventoryItem(item));
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryItemById');
-    }
-  }
-
-  // ============================================
-  // GET INVENTORY ITEM - UPDATED
-  // ============================================
-
-  async getInventoryItem(id: string) {
-    try {
-      const inventory = await this.prisma.inventory.findUnique({
-        where: { id },
-        include: {
-          product: {
-            include: {
-              category: { select: { id: true, name: true } },
-              supplier: { select: { id: true, name: true } },
-              variants: {
-                where: { isActive: true },
-              },
-            },
-          },
-          variant: true,
-          transactions: {
-            orderBy: { createdAt: 'desc' },
-            take: 20,
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-            },
-          },
+          variant: { include: { images: true } },
+          transactions: { orderBy: { createdAt: 'desc' }, take: 20 },
         },
       });
 
       if (!inventory) {
-        throw new AppError('Inventory item not found', 404);
+        throw new AppError('Product not found in inventory', 404);
       }
 
-      // Apply normalization
-      return normalizeInventoryItem(this.formatInventoryItem(inventory));
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryItem');
+      return normalizeInventoryItem(inventory);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryByProduct');
+      throw err;
     }
   }
 
-  // ============================================
-  // LOW STOCK ITEMS - UPDATED
-  // ============================================
-
-  async getLowStockItems(businessUnitId: string) {
+  async getInventoryItemById(
+    id: string,
+    businessUnitId?: string
+  ): Promise<FlatInventoryItem | null> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!id) throw new AppError('Inventory ID is required', 400);
+
+      const include = {
+        product: {
+          include: {
+            category: { select: { id: true, name: true } },
+            supplier: { select: { id: true, name: true } },
+            images: true,
+            creator: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+        variant: { include: { images: true } },
+        transactions: {
+          orderBy: { createdAt: 'desc' as const },
+          take: 50,
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+        issues: {
+          where: { status: 'ISSUED' as const },
+          orderBy: { createdAt: 'desc' as const },
+          take: 10,
+        },
+      };
+
+      let resolvedBuId: string | undefined;
+      if (businessUnitId) {
+        const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
+        resolvedBuId = resolvedBU.id;
+      }
+
+      const primaryWhere: any = { id };
+      if (resolvedBuId) primaryWhere.businessUnitId = resolvedBuId;
+
+      let item = await this.prisma.inventory.findFirst({
+        where: primaryWhere,
+        include,
+      });
+
+      if (!item) {
+        const productWhere: any = {
+          product: { is: { id } },
+        };
+        if (resolvedBuId) productWhere.businessUnitId = resolvedBuId;
+
+        item = await this.prisma.inventory.findFirst({
+          where: productWhere,
+          include,
+        });
+      }
+
+      if (!item) return null;
+      return normalizeInventoryItem(item);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryItemById');
+
+      const error = toError(err);
+
+      if (error instanceof AppError) {
+        const status = (error as AppError & { status?: number }).status;
+        if (status === 404) return null;
+      }
+
+      throw error;
+    }
+  }
+
+  async getInventoryItem(id: string): Promise<FlatInventoryItem | null> {
+    return this.getInventoryItemById(id);
+  }
+
+  async getLowStockItems(businessUnitId: string): Promise<FlatInventoryItem[]> {
+    try {
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      const items = await this.prisma.inventory.findMany({
-        where: { businessUnitId: resolvedBU.id, quantity: { lte: 10, gt: 0 } },
+      const all = await this.prisma.inventory.findMany({
+        where: { businessUnitId: resolvedBU.id, quantity: { gt: 0 } },
         include: {
-          product: { select: { id: true, name: true, sku: true, unitPrice: true, category: { select: { name: true } } } },
-          variant: { select: { id: true, name: true, sku: true } },
+          product: { select: PRODUCT_SELECT_MINIMAL },
+          variant: { select: { id: true, name: true, sku: true, images: true } },
         },
         orderBy: { quantity: 'asc' },
       });
 
-      // Apply normalization
-      return normalizeInventoryItems(items);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getLowStockItems');
+      const lowStock = all.filter(
+        (row) => row.quantity <= (row.reorderPoint ?? 5)
+      );
+
+      return normalizeInventoryItems(lowStock);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getLowStockItems');
+      return [];
     }
   }
 
-  // ============================================
-  // OUT OF STOCK ITEMS - UPDATED
-  // ============================================
-
-  async getOutOfStockItems(businessUnitId: string) {
+  async getOutOfStockItems(
+    businessUnitId: string
+  ): Promise<FlatInventoryItem[]> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const items = await this.prisma.inventory.findMany({
         where: { businessUnitId: resolvedBU.id, quantity: 0 },
         include: {
-          product: { select: { id: true, name: true, sku: true, unitPrice: true } },
-          variant: { select: { id: true, name: true, sku: true } },
+          product: { select: PRODUCT_SELECT_MINIMAL },
+          variant: { select: { id: true, name: true, sku: true, images: true } },
         },
         orderBy: { updatedAt: 'desc' },
       });
 
-      // Apply normalization
       return normalizeInventoryItems(items);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getOutOfStockItems');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getOutOfStockItems');
+      return [];
     }
   }
 
-  // ============================================
-  // GET INVENTORY VALUE - UPDATED
-  // ============================================
-
   async getInventoryValue(businessUnitId: string) {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
@@ -1566,8 +1284,12 @@ export class InventoryService extends BaseService {
         include: { product: { select: { costPrice: true, unitPrice: true } } },
       });
 
-      const totalCost = items.reduce((sum: number, item: any) => sum + (item.quantity * (item.product?.costPrice || 0)), 0);
-      const totalValue = items.reduce((sum: number, item: any) => sum + (item.quantity * (item.product?.unitPrice || 0)), 0);
+      const totalCost = items.reduce(
+        (sum: number, item: any) => sum + item.quantity * (item.product?.costPrice || 0), 0
+      );
+      const totalValue = items.reduce(
+        (sum: number, item: any) => sum + item.quantity * (item.product?.unitPrice || 0), 0
+      );
 
       return {
         totalCost,
@@ -1576,14 +1298,11 @@ export class InventoryService extends BaseService {
         itemCount: items.length,
         totalUnits: items.reduce((sum: number, item: any) => sum + item.quantity, 0),
       };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryValue');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryValue');
+      throw err;
     }
   }
-
-  // ============================================
-  // GET INVENTORY TRANSACTIONS - UPDATED
-  // ============================================
 
   async getInventoryTransactions(params: {
     page?: number;
@@ -1594,14 +1313,24 @@ export class InventoryService extends BaseService {
     startDate?: Date;
     endDate?: Date;
     variantId?: string;
-  }) {
+  }): Promise<{
+    transactions: any[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    summary: { totalIn: number; totalOut: number; netChange: number };
+  }> {
     try {
-      const { page = 1, limit = 20, productId, businessUnitId, transactionType, startDate, endDate, variantId } = params;
+      const {
+        page = 1, limit = 20, productId, businessUnitId,
+        transactionType, startDate, endDate, variantId,
+      } = params;
 
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-
       const validatedPage = Math.max(1, page);
       const validatedLimit = Math.min(100, Math.max(1, limit));
       const skip = (validatedPage - 1) * validatedLimit;
@@ -1618,89 +1347,91 @@ export class InventoryService extends BaseService {
 
       const [transactions, total] = await Promise.all([
         this.prisma.inventoryTransaction.findMany({
-          where,
-          skip,
-          take: validatedLimit,
+          where, skip, take: validatedLimit,
           orderBy: { createdAt: 'desc' },
           include: {
-            product: { select: { id: true, name: true, sku: true } },
-            variant: { select: { id: true, name: true, sku: true } },
+            product: { select: { id: true, name: true, sku: true, images: true } },
+            variant: { select: { id: true, name: true, sku: true, images: true } },
             user: { select: { id: true, firstName: true, lastName: true } },
           },
         }),
         this.prisma.inventoryTransaction.count({ where }),
       ]);
 
-      const totalIn = transactions.filter((t: any) => t.quantity > 0).reduce((sum: number, t: any) => sum + t.quantity, 0);
-      const totalOut = transactions.filter((t: any) => t.quantity < 0).reduce((sum: number, t: any) => sum + Math.abs(t.quantity), 0);
+      const totalIn = transactions
+        .filter((t: any) => t.quantity > 0)
+        .reduce((sum: number, t: any) => sum + t.quantity, 0);
+      const totalOut = transactions
+        .filter((t: any) => t.quantity < 0)
+        .reduce((sum: number, t: any) => sum + Math.abs(t.quantity), 0);
 
-      return { 
-        transactions, 
-        total, 
-        page: validatedPage, 
-        limit: validatedLimit, 
-        totalPages: Math.ceil(total / validatedLimit), 
-        summary: { totalIn, totalOut, netChange: totalIn - totalOut } 
+      return {
+        transactions, total,
+        page: validatedPage, limit: validatedLimit,
+        totalPages: Math.ceil(total / validatedLimit),
+        summary: { totalIn, totalOut, netChange: totalIn - totalOut },
       };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryTransactions');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryTransactions');
+      throw err;
     }
   }
 
-  // ============================================
-  // GET INVENTORY BY LOCATION - UPDATED
-  // ============================================
-
-  async getInventoryByLocation(location: string, businessUnitId: string) {
+  async getInventoryByLocation(
+    location: string,
+    businessUnitId: string
+  ): Promise<FlatInventoryItem[]> {
     try {
-      if (!location || !businessUnitId) throw new AppError('Location and business unit ID are required', 400);
-
-      const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-
-      const items = await this.prisma.inventory.findMany({
-        where: { businessUnitId: resolvedBU.id, location: { contains: location, mode: 'insensitive' } },
-        include: {
-          product: { select: { id: true, name: true, sku: true, unitPrice: true, category: { select: { name: true } } } },
-        },
-      });
-
-      // Apply normalization
-      return normalizeInventoryItems(items);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryByLocation');
-    }
-  }
-
-  // ============================================
-  // GET INVENTORY BY CATEGORY - UPDATED
-  // ============================================
-
-  async getInventoryByCategory(category: string, businessUnitId: string) {
-    try {
-      if (!category || !businessUnitId) throw new AppError('Category and business unit ID are required', 400);
+      if (!location || !businessUnitId)
+        throw new AppError('Location and business unit ID are required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const items = await this.prisma.inventory.findMany({
         where: {
           businessUnitId: resolvedBU.id,
-          product: { is: { category: { is: { name: { contains: category, mode: 'insensitive' } } } } },
+          location: { contains: location, mode: 'insensitive' },
         },
         include: {
-          product: { select: { id: true, name: true, sku: true, unitPrice: true, category: { select: { name: true } } } },
+          product: { select: PRODUCT_SELECT_MINIMAL },
         },
       });
 
-      // Apply normalization
       return normalizeInventoryItems(items);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryByCategory');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryByLocation');
+      return [];
     }
   }
 
-  // ============================================
-  // SEARCH PRODUCTS - UPDATED
-  // ============================================
+  async getInventoryByCategory(
+    category: string,
+    businessUnitId: string
+  ): Promise<FlatInventoryItem[]> {
+    try {
+      if (!category || !businessUnitId)
+        throw new AppError('Category and business unit ID are required', 400);
+
+      const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
+
+      const items = await this.prisma.inventory.findMany({
+        where: {
+          businessUnitId: resolvedBU.id,
+          product: {
+            is: { category: { is: { name: { contains: category, mode: 'insensitive' } } } },
+          },
+        },
+        include: {
+          product: { select: PRODUCT_SELECT_MINIMAL },
+        },
+      });
+
+      return normalizeInventoryItems(items);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryByCategory');
+      return [];
+    }
+  }
 
   async searchProducts(params: {
     query: string;
@@ -1709,11 +1440,12 @@ export class InventoryService extends BaseService {
     maxPrice?: number;
     status?: string;
     businessUnitId: string;
-  }) {
+  }): Promise<FlatInventoryItem[]> {
     try {
-      const { query, category, minPrice, maxPrice, status, businessUnitId } = params;
+      const { query, category, minPrice, maxPrice, businessUnitId } = params;
 
-      if (!query || !businessUnitId) throw new AppError('Query and business unit ID are required', 400);
+      if (!query || !businessUnitId)
+        throw new AppError('Query and business unit ID are required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
@@ -1726,7 +1458,8 @@ export class InventoryService extends BaseService {
         ],
       };
 
-      if (category) where.category = { is: { name: { contains: category, mode: 'insensitive' } } };
+      if (category)
+        where.category = { is: { name: { contains: category, mode: 'insensitive' } } };
       if (minPrice !== undefined || maxPrice !== undefined) {
         where.unitPrice = {};
         if (minPrice !== undefined) where.unitPrice.gte = minPrice;
@@ -1738,54 +1471,48 @@ export class InventoryService extends BaseService {
         include: {
           category: { select: { id: true, name: true } },
           supplier: { select: { id: true, name: true } },
-          inventory: { 
-            where: { businessUnitId: resolvedBU.id }, 
-            select: { 
-              id: true, 
-              quantity: true, 
-              reserved: true, 
-              reorderPoint: true, 
-              location: true,
-              images: true,
-              description: true,
-              weight: true,
-              taxRate: true,
-              tags: true,
-            } 
+          images: true,
+          inventory: {
+            where: { businessUnitId: resolvedBU.id },
+            select: {
+              id: true, quantity: true, reserved: true, reorderPoint: true,
+              location: true, images: true, description: true,
+              weight: true, taxRate: true, tags: true,
+            },
           },
-          variants: { where: { isActive: true } },
+          variants: { where: { isActive: true }, include: { images: true } },
         },
         orderBy: { name: 'asc' },
         take: 50,
       });
 
-      // Apply normalization to inventory items
-      return products.map((product: any) => ({
-        ...product,
-        inventory: product.inventory ? normalizeInventoryItem(product.inventory[0]) : null,
-      }));
-    } catch (error) {
-      this.handleError(error, 'InventoryService.searchProducts');
+      return products
+        .map((product: any) => {
+          if (product.inventory && product.inventory[0]) {
+            return normalizeInventoryItem({ ...product.inventory[0], product });
+          }
+          return null;
+        })
+        .filter((item): item is FlatInventoryItem => item !== null);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.searchProducts');
+      throw err;
     }
   }
 
-  // ============================================
-  // GET TOTAL ITEMS
-  // ============================================
-
-  async getTotalItems(businessUnitId: string) {
+  async getTotalItems(businessUnitId: string): Promise<number> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-      return await this.prisma.inventory.count({ where: { businessUnitId: resolvedBU.id } });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getTotalItems');
+      return await this.prisma.inventory.count({
+        where: { businessUnitId: resolvedBU.id },
+      });
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getTotalItems');
+      return 0;
     }
   }
-
-  // ============================================
-  // GET STOCK MOVEMENTS
-  // ============================================
 
   async getStockMovements(params: {
     productId?: string;
@@ -1797,11 +1524,10 @@ export class InventoryService extends BaseService {
   }) {
     try {
       const { productId, variantId, businessUnitId, startDate, endDate, limit = 100 } = params;
-
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-
       const where: any = { businessUnitId: resolvedBU.id };
       if (productId) where.productId = productId;
       if (variantId) where.variantId = variantId;
@@ -1812,37 +1538,34 @@ export class InventoryService extends BaseService {
       }
 
       return await this.prisma.inventoryTransaction.findMany({
-        where,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
+        where, take: limit, orderBy: { createdAt: 'desc' },
         include: {
           product: { select: { name: true, sku: true } },
           user: { select: { firstName: true, lastName: true } },
         },
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getStockMovements');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getStockMovements');
+      return [];
     }
   }
 
-  // ============================================
-  // GET INVENTORY STATS - UPDATED
-  // ============================================
-
   async getInventoryStats(businessUnitId: string) {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      const [totalItems, lowStockItems, outOfStockItems, totalValue, categories, stats] = await Promise.all([
-        this.getTotalItems(resolvedBU.id),
-        this.getLowStockItems(resolvedBU.id),
-        this.getOutOfStockItems(resolvedBU.id),
-        this.getInventoryValue(resolvedBU.id),
-        this.getCategorySummary(resolvedBU.id),
-        this.calculateInventoryStats(resolvedBU.id),
-      ]);
+      const [totalItems, lowStockItems, outOfStockItems, totalValue, categories, stats] =
+        await Promise.all([
+          this.getTotalItems(resolvedBU.id),
+          this.getLowStockItems(resolvedBU.id),
+          this.getOutOfStockItems(resolvedBU.id),
+          this.getInventoryValue(resolvedBU.id),
+          this.getCategorySummary(resolvedBU.id),
+          this.calculateInventoryStats(resolvedBU.id),
+        ]);
 
       return {
         ...stats,
@@ -1855,56 +1578,54 @@ export class InventoryService extends BaseService {
         categories,
         timestamp: new Date(),
       };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryStats');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryStats');
+      throw err;
     }
   }
 
-  // ============================================
-  // GET INVENTORY REPORT - UPDATED
-  // ============================================
-
-  async getInventoryReport(businessUnitId: string, params?: {
-    includeInactive?: boolean;
-    categoryId?: string;
-    location?: string;
-    dateRange?: { start: Date; end: Date };
-  }): Promise<InventoryReport> {
+  async getInventoryReport(
+    businessUnitId: string,
+    params?: {
+      includeInactive?: boolean;
+      categoryId?: string;
+      location?: string;
+      dateRange?: { start: Date; end: Date };
+    }
+  ): Promise<InventoryReport> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
-
       const where: any = { businessUnitId: resolvedBU.id };
-
-      if (params?.location) {
-        where.location = params.location;
-      }
+      if (params?.location) where.location = params.location;
 
       const [items, transactions] = await Promise.all([
         this.prisma.inventory.findMany({
           where,
-          include: { 
-            product: { 
-              include: { 
-                category: true, 
-                supplier: true 
-              } 
-            } 
-          },
+          include: { product: { include: { category: true, supplier: true } } },
         }),
         this.prisma.inventoryTransaction.findMany({
           where: {
             businessUnitId: resolvedBU.id,
-            ...(params?.dateRange && { createdAt: { gte: params.dateRange.start, lte: params.dateRange.end } }),
+            ...(params?.dateRange && {
+              createdAt: { gte: params.dateRange.start, lte: params.dateRange.end },
+            }),
           },
           include: { product: { select: { id: true, name: true } } },
         }),
       ]);
 
-      const totalValue = items.reduce((sum: number, item: any) => sum + (item.quantity * (item.product?.unitPrice || 0)), 0);
-      const totalCost = items.reduce((sum: number, item: any) => sum + (item.quantity * (item.product?.costPrice || 0)), 0);
-      const lowStock = items.filter((i: any) => i.quantity <= (i.reorderPoint || 5) && i.quantity > 0).length;
+      const totalValue = items.reduce(
+        (sum: number, item: any) => sum + item.quantity * (item.product?.unitPrice || 0), 0
+      );
+      const totalCost = items.reduce(
+        (sum: number, item: any) => sum + item.quantity * (item.product?.costPrice || 0), 0
+      );
+      const lowStock = items.filter(
+        (i: any) => i.quantity <= (i.reorderPoint || 5) && i.quantity > 0
+      ).length;
       const outOfStock = items.filter((i: any) => i.quantity === 0).length;
 
       const categoryMap = new Map<string, { count: number; value: number }>();
@@ -1928,63 +1649,82 @@ export class InventoryService extends BaseService {
       const movementMap = new Map<string, { productId: string; name: string; movements: number }>();
       transactions.forEach((tx: any) => {
         const productId = tx.productId;
-        const current = movementMap.get(productId) || { 
-          productId: productId, 
-          name: tx.product?.name || 'Unknown', 
-          movements: 0 
+        const current = movementMap.get(productId) || {
+          productId, name: tx.product?.name || 'Unknown', movements: 0,
         };
         current.movements += Math.abs(tx.quantity);
         movementMap.set(productId, current);
       });
 
-      const topMovers = Array.from(movementMap.values()).sort((a, b) => b.movements - a.movements).slice(0, 10);
+      const topMovers = Array.from(movementMap.values())
+        .sort((a, b) => b.movements - a.movements)
+        .slice(0, 10);
 
       return {
-        totalItems: items.length,
-        totalValue,
-        totalCost,
+        totalItems: items.length, totalValue, totalCost,
         potentialProfit: totalValue - totalCost,
-        lowStockItems: lowStock,
-        outOfStockItems: outOfStock,
+        lowStockItems: lowStock, outOfStockItems: outOfStock,
         byCategory: Array.from(categoryMap.entries()).map(([category, data]) => ({ category, ...data })),
         byLocation: Array.from(locationMap.entries()).map(([location, data]) => ({ location, ...data })),
         topMovers,
       };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryReport');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryReport');
+      throw err;
     }
   }
 
   // ============================================
-  // CREATE ITEM - UPDATED
+  // WRITE OPERATIONS
   // ============================================
 
-  async createItem(data: CreateItemData): Promise<{ product: any; inventory: any }> {
+  async createItem(data: CreateItemData): Promise<FlatInventoryItem> {
     try {
-      console.log('📦 Service: Creating item with data:', data);
-      
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
       const businessUnitId = resolvedBU.id;
-      console.log('✅ Using business unit:', businessUnitId, resolvedBU.name);
 
-      const sku = data.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      const sku =
+        data.sku ||
+        `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
       let categoryId = data.categoryId;
       if (data.category && !categoryId) {
         const existingCategory = await this.prisma.category.findFirst({
-          where: {
-            name: { equals: data.category, mode: 'insensitive' },
-            businessUnitId: businessUnitId,
-          },
+          where: { name: { equals: data.category, mode: 'insensitive' }, businessUnitId },
         });
-        
-        if (existingCategory) {
-          categoryId = existingCategory.id;
-        } else {
+        if (existingCategory) categoryId = existingCategory.id;
+        else {
+          // ✅ FIX #2: `Category.slug` is required by Prisma.
+          // Generate one from the name, then resolve collisions by
+          // appending a numeric suffix — same uniqueness rule the
+          // DB's `@@unique([businessUnitId, slug])` enforces.
+          const baseSlug = slugify(data.category);
+          let slug = baseSlug;
+          let suffix = 1;
+
+          // Bounded loop: in practice we never go past 1 or 2
+          // iterations because the base slug is derived from a
+          // free-text name that just failed a find-first lookup.
+          while (
+            await this.prisma.category.findFirst({
+              where: { businessUnitId, slug },
+              select: { id: true },
+            })
+          ) {
+            slug = `${baseSlug}-${suffix++}`;
+            if (suffix > 100) {
+              throw new AppError(
+                `Could not generate a unique slug for category "${data.category}"`,
+                500
+              );
+            }
+          }
+
           const newCategory = await this.prisma.category.create({
             data: {
               name: data.category,
-              businessUnitId: businessUnitId,
+              slug,
+              businessUnitId,
               isActive: true,
             },
           });
@@ -1995,14 +1735,10 @@ export class InventoryService extends BaseService {
       let supplierId = data.supplierId;
       if (data.supplier && !supplierId) {
         const existingSupplier = await this.prisma.supplier.findFirst({
-          where: {
-            name: { equals: data.supplier, mode: 'insensitive' },
-          },
+          where: { name: { equals: data.supplier, mode: 'insensitive' } },
         });
-        
-        if (existingSupplier) {
-          supplierId = existingSupplier.id;
-        } else {
+        if (existingSupplier) supplierId = existingSupplier.id;
+        else {
           const company = await this.prisma.company.findFirst();
           if (company) {
             const newSupplier = await this.prisma.supplier.create({
@@ -2019,25 +1755,26 @@ export class InventoryService extends BaseService {
         }
       }
 
-      return await this.prisma.$transaction(async (tx: any) => {
-        // 1. Create the product
+      return await this.prisma.$transaction(async (tx) => {
+        const locationId = await resolveLocationId(tx, businessUnitId, data.location);
+
         const product = await tx.product.create({
           data: {
             name: data.name,
             sku: sku.toUpperCase(),
             description: data.description || '',
             unitPrice: data.unitPrice || 0,
-            costPrice: data.unitPrice || 0,
+            costPrice: data.costPrice ?? 0,
             minStock: data.minStock || 5,
             maxStock: data.maxStock || 100,
             barcode: data.barcode || null,
             taxRate: data.taxRate || null,
             weight: data.weight || null,
             tags: data.tags || [],
-            images: data.images || [],
+            images: toImageCreateInput(toImageUrls(data.images)),
             categoryId: categoryId || null,
             supplierId: supplierId || null,
-            businessUnitId: businessUnitId,
+            businessUnitId,
             createdBy: data.userId,
             updatedBy: data.userId,
             isActive: data.isActive !== undefined ? data.isActive : true,
@@ -2047,28 +1784,22 @@ export class InventoryService extends BaseService {
             reviewCount: 0,
             inventoryId: null,
           },
-          include: {
-            category: { select: { id: true, name: true } },
-            supplier: { select: { id: true, name: true } },
-          },
         });
 
-        // 2. Create the inventory linked to the product
-        // Copy product fields to inventory
         const inventory = await tx.inventory.create({
           data: {
-            businessUnitId: businessUnitId,
+            businessUnitId,
             quantity: data.quantity || 0,
             reserved: 0,
             available: data.quantity || 0,
             reorderPoint: data.minStock || 5,
             reorderQuantity: data.maxStock || 100,
             location: data.location || 'Warehouse',
+            locationId,
             supplier: data.supplier || null,
             notes: data.notes || null,
             status: 'ACTIVE',
-            // Copy product fields to inventory
-            images: data.images || [],
+            images: toImageUrls(data.images),
             description: data.description || '',
             weight: data.weight || 0,
             taxRate: data.taxRate || 0,
@@ -2076,17 +1807,11 @@ export class InventoryService extends BaseService {
           },
         });
 
-        // 3. Update product with inventoryId
-        const updatedProduct = await tx.product.update({
+        await tx.product.update({
           where: { id: product.id },
           data: { inventoryId: inventory.id },
-          include: {
-            category: true,
-            supplier: true,
-          },
         });
 
-        // 4. Create initial inventory transaction
         if (data.quantity && data.quantity > 0) {
           await tx.inventoryTransaction.create({
             data: {
@@ -2095,139 +1820,72 @@ export class InventoryService extends BaseService {
               notes: 'Initial stock entry',
               productId: product.id,
               inventoryId: inventory.id,
-              businessUnitId: businessUnitId,
+              businessUnitId,
               userId: data.userId,
             },
           });
         }
 
-        console.log('✅ Service: Item created successfully:', { productId: product.id, inventoryId: inventory.id });
+        const fullProduct = await tx.product.findUnique({
+          where: { id: product.id },
+          include: {
+            category: { select: { id: true, name: true } },
+            supplier: { select: { id: true, name: true } },
+            images: true,
+          },
+        });
 
-        // Return normalized item with all fields
-        const result = {
-          id: inventory.id,
-          productId: product.id,
-          product: updatedProduct,
-          inventory: inventory,
-          name: product.name,
-          sku: product.sku,
-          quantity: inventory.quantity,
-          unitPrice: product.unitPrice,
-          costPrice: product.costPrice || 0,
-          stock: inventory.quantity,
-          available: inventory.quantity,
-          reserved: 0,
-          reorderPoint: inventory.reorderPoint,
-          reorderQuantity: inventory.reorderQuantity,
-          location: inventory.location,
-          supplier: inventory.supplier,
-          notes: inventory.notes,
-          status: inventory.status,
-          category: updatedProduct.category?.name || null,
-          categoryId: updatedProduct.categoryId || null,
-          supplierId: updatedProduct.supplierId || null,
-          description: updatedProduct.description || inventory.description || '',
-          barcode: updatedProduct.barcode,
-          // Use inventory images
-          images: inventory.images || updatedProduct.images || [],
-          // Use inventory tags
-          tags: inventory.tags || updatedProduct.tags || [],
-          // Use inventory weight
-          weight: inventory.weight ?? updatedProduct.weight ?? 0,
-          // Use inventory taxRate
-          taxRate: inventory.taxRate ?? updatedProduct.taxRate ?? 0,
-          isActive: updatedProduct.isActive,
-          isDigital: updatedProduct.isDigital,
-          featured: updatedProduct.featured,
-          createdAt: inventory.createdAt,
-          updatedAt: inventory.updatedAt,
-          businessUnitId: inventory.businessUnitId,
-        };
-
-        return normalizeInventoryItem(result);
+        const formatted = normalizeInventoryItem({ ...inventory, product: fullProduct });
+        if (!formatted) throw new AppError('Failed to create inventory item', 500);
+        return formatted;
       });
-    } catch (error: any) {
-      console.error('❌ Error in createItem service:', error);
-      console.error('❌ Error details:', {
-        message: error?.message || 'Unknown error',
-        code: error?.code || null,
-        meta: error?.meta || null,
-      });
-      throw error;
+    } catch (err) {
+      this.handleError(err, 'InventoryService.createItem');
+      throw err;
     }
   }
-
-  // ============================================
-  // CREATE INVENTORY - UPDATED
-  // ============================================
 
   async createInventory(data: {
-    name: string;
-    sku?: string;
-    description?: string;
-    categoryId?: string;
-    category?: string;
-    supplierId?: string;
-    supplier?: string;
-    quantity?: number;
-    minStock?: number;
-    maxStock?: number;
-    unitPrice?: number;
-    costPrice?: number;
-    location?: string;
-    barcode?: string;
-    notes?: string;
-    businessUnitId: string;
-    userId: string;
-    weight?: number;
-    taxRate?: number;
-    tags?: string[];
-    images?: string[];
-    isActive?: boolean;
-    isDigital?: boolean;
-    featured?: boolean;
-  }) {
-    try {
-      console.log('📦 Creating inventory item:', data);
-      
-      const result = await this.createItem({
-        name: data.name,
-        sku: data.sku,
-        category: data.category || '',
-        categoryId: data.categoryId,
-        quantity: data.quantity || 0,
-        unit: 'each',
-        minStock: data.minStock,
-        maxStock: data.maxStock,
-        location: data.location,
-        supplier: data.supplier,
-        supplierId: data.supplierId,
-        unitPrice: data.unitPrice,
-        notes: data.notes,
-        businessUnitId: data.businessUnitId,
-        userId: data.userId,
-        description: data.description,
-        barcode: data.barcode,
-        weight: data.weight,
-        taxRate: data.taxRate,
-        tags: data.tags,
-        images: data.images,
-        isActive: data.isActive,
-        isDigital: data.isDigital,
-        featured: data.featured,
-      });
-      
-      return result;
-    } catch (error) {
-      this.handleError(error, 'InventoryService.createInventory');
-    }
+    name: string; sku?: string; description?: string;
+    categoryId?: string; category?: string;
+    supplierId?: string; supplier?: string;
+    quantity?: number; minStock?: number; maxStock?: number;
+    unitPrice?: number; costPrice?: number; location?: string;
+    barcode?: string; notes?: string;
+    businessUnitId: string; userId: string;
+    weight?: number; taxRate?: number; tags?: string[];
+    images?: string[]; isActive?: boolean; isDigital?: boolean; featured?: boolean;
+  }): Promise<FlatInventoryItem> {
+    return this.createItem({
+      name: data.name,
+      sku: data.sku,
+      category: data.category || '',
+      categoryId: data.categoryId,
+      quantity: data.quantity || 0,
+      unit: 'each',
+      minStock: data.minStock,
+      maxStock: data.maxStock,
+      location: data.location,
+      supplier: data.supplier,
+      supplierId: data.supplierId,
+      unitPrice: data.unitPrice,
+      costPrice: data.costPrice,
+      notes: data.notes,
+      businessUnitId: data.businessUnitId,
+      userId: data.userId,
+      description: data.description,
+      barcode: data.barcode,
+      weight: data.weight,
+      taxRate: data.taxRate,
+      tags: data.tags,
+      images: data.images,
+      isActive: data.isActive,
+      isDigital: data.isDigital,
+      featured: data.featured,
+    });
   }
 
-  // ============================================
-  // CREATE PRODUCT WITH INVENTORY - UPDATED
-  // ============================================
-
-  async createProductWithInventory(data: CreateProductData) {
+  async createProductWithInventory(data: CreateProductData): Promise<FlatInventoryItem> {
     try {
       if (!data.name || !data.sku || !data.businessUnitId || !data.userId) {
         throw new AppError('Name, SKU, business unit ID, and user ID are required', 400);
@@ -2235,16 +1893,15 @@ export class InventoryService extends BaseService {
 
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx) => {
         const existingProduct = await tx.product.findFirst({
           where: { sku: data.sku.toUpperCase(), businessUnitId: resolvedBU.id },
         });
-
-        if (existingProduct) {
+        if (existingProduct)
           throw new AppError('Product with this SKU already exists', 400);
-        }
 
-        // Create inventory with product fields
+        const locationId = await resolveLocationId(tx, resolvedBU.id, data.location);
+
         const inventory = await tx.inventory.create({
           data: {
             businessUnitId: resolvedBU.id,
@@ -2254,14 +1911,12 @@ export class InventoryService extends BaseService {
             reorderPoint: data.reorderPoint || 5,
             reorderQuantity: Math.max(data.reorderPoint || 5, 10),
             location: data.location || 'Warehouse',
+            locationId,
             supplier: data.supplier || null,
             status: 'ACTIVE',
-            // Copy product fields to inventory
-            images: data.images || [],
+            images: toImageUrls(data.images),
             description: data.description || '',
-            weight: 0,
-            taxRate: 0,
-            tags: [],
+            weight: 0, taxRate: 0, tags: [],
           },
         });
 
@@ -2271,9 +1926,9 @@ export class InventoryService extends BaseService {
             sku: data.sku.toUpperCase(),
             unitPrice: data.price || data.unitPrice || 0,
             costPrice: data.costPrice || 0,
-            barcode: data.barcode || await this.generateUniqueBarcode(tx),
+            barcode: data.barcode || (await this.generateUniqueBarcode(tx)),
             description: data.description,
-            images: data.images || [],
+            images: toImageCreateInput(toImageUrls(data.images)),
             businessUnitId: resolvedBU.id,
             createdBy: data.userId,
             isActive: true,
@@ -2283,17 +1938,12 @@ export class InventoryService extends BaseService {
             minStock: data.reorderPoint || 5,
             maxStock: Math.max(data.reorderPoint || 5, 10),
           },
-          include: {
-            inventory: true,
-            category: true,
-            supplier: true,
-          },
         });
 
         if (data.stock > 0) {
           await tx.inventoryTransaction.create({
             data: {
-              transactionType: 'INITIAL' as any,
+              transactionType: 'INITIAL',
               quantity: data.stock,
               notes: `Initial stock setup: ${data.stock} units`,
               productId: product.id,
@@ -2304,27 +1954,32 @@ export class InventoryService extends BaseService {
           });
         }
 
-        this.safeEmitInventoryUpdate({ productId: product.id, quantity: data.stock || 0 }, resolvedBU.id);
+        this.safeEmitInventoryUpdate(
+          { productId: product.id, quantity: data.stock || 0 },
+          resolvedBU.id
+        );
 
-        // Return normalized item
-        const result = { 
-          product, 
-          inventory: { ...inventory, product },
-          formattedItem: normalizeInventoryItem(this.formatInventoryItem({ ...inventory, product })),
-        };
-        
-        return result;
+        const fullProduct = await tx.product.findUnique({
+          where: { id: product.id },
+          include: {
+            category: { select: { id: true, name: true } },
+            supplier: { select: { id: true, name: true } },
+            images: true,
+          },
+        });
+
+        const formatted = normalizeInventoryItem({ ...inventory, product: fullProduct });
+        if (!formatted)
+          throw new AppError('Failed to create product with inventory', 500);
+        return formatted;
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.createProductWithInventory');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.createProductWithInventory');
+      throw err;
     }
   }
 
-  // ============================================
-  // UPDATE ITEM - UPDATED
-  // ============================================
-
-  async updateItem(id: string, data: any) {
+  async updateItem(id: string, data: any): Promise<FlatInventoryItem> {
     try {
       if (!id || !data.businessUnitId) {
         throw new AppError('Inventory ID and business unit ID are required', 400);
@@ -2332,45 +1987,68 @@ export class InventoryService extends BaseService {
 
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
-        const inventoryItem = await tx.inventory.findFirst({
+      const result = await this.prisma.$transaction(async (tx) => {
+        let inventoryItem = await tx.inventory.findFirst({
           where: { id, businessUnitId: resolvedBU.id },
           include: { product: true },
         });
 
-        if (!inventoryItem) throw new AppError('Inventory item not found', 404);
+        if (!inventoryItem) {
+          inventoryItem = await tx.inventory.findFirst({
+            where: {
+              businessUnitId: resolvedBU.id,
+              product: { is: { id } },
+            },
+            include: { product: true },
+          });
+        }
 
-        // Update product
+        if (!inventoryItem) {
+          throw new AppError('Inventory item not found', 404);
+        }
+
+        const inventoryRowId = inventoryItem.id;
+
         const productUpdateData: any = {};
         if (data.name !== undefined) productUpdateData.name = data.name;
-        if (data.unitPrice !== undefined) { 
-          productUpdateData.unitPrice = data.unitPrice; 
-          productUpdateData.costPrice = data.unitPrice; 
-        }
+        if (data.sku !== undefined)
+          productUpdateData.sku = String(data.sku).toUpperCase();
+        if (data.unitPrice !== undefined) productUpdateData.unitPrice = data.unitPrice;
+        if (data.costPrice !== undefined) productUpdateData.costPrice = data.costPrice;
         if (data.description !== undefined) productUpdateData.description = data.description;
         if (data.notes !== undefined) productUpdateData.notes = data.notes;
         if (data.barcode !== undefined) productUpdateData.barcode = data.barcode;
         if (data.tags !== undefined) productUpdateData.tags = data.tags;
-        if (data.images !== undefined) productUpdateData.images = data.images;
+        if (data.images !== undefined)
+          productUpdateData.images = toImageUpdateInput(toImageUrls(data.images));
         if (data.weight !== undefined) productUpdateData.weight = data.weight;
         if (data.taxRate !== undefined) productUpdateData.taxRate = data.taxRate;
+        if (data.categoryId !== undefined) productUpdateData.categoryId = data.categoryId;
+        if (data.supplierId !== undefined) productUpdateData.supplierId = data.supplierId;
+        if (data.isActive !== undefined) productUpdateData.isActive = data.isActive;
+        if (data.featured !== undefined) productUpdateData.featured = data.featured;
+        if (data.isDigital !== undefined) productUpdateData.isDigital = data.isDigital;
 
         let product = inventoryItem.product;
         if (Object.keys(productUpdateData).length > 0 && product) {
-          product = await tx.product.update({ 
-            where: { id: product.id }, 
-            data: productUpdateData 
+          product = await tx.product.update({
+            where: { id: product.id },
+            data: productUpdateData,
           });
         }
 
-        // Update inventory with new fields
         const inventoryUpdateData: any = {};
-        if (data.location !== undefined) inventoryUpdateData.location = data.location;
+        if (data.location !== undefined) {
+          inventoryUpdateData.location = data.location;
+          inventoryUpdateData.locationId = await resolveLocationId(
+            tx, resolvedBU.id, data.location
+          );
+        }
         if (data.minStock !== undefined) inventoryUpdateData.reorderPoint = data.minStock;
+        if (data.maxStock !== undefined) inventoryUpdateData.reorderQuantity = data.maxStock;
         if (data.supplier !== undefined) inventoryUpdateData.supplier = data.supplier;
         if (data.notes !== undefined) inventoryUpdateData.notes = data.notes;
-        // Copy product fields to inventory
-        if (data.images !== undefined) inventoryUpdateData.images = data.images;
+        if (data.images !== undefined) inventoryUpdateData.images = toImageUrls(data.images);
         if (data.description !== undefined) inventoryUpdateData.description = data.description;
         if (data.weight !== undefined) inventoryUpdateData.weight = data.weight;
         if (data.taxRate !== undefined) inventoryUpdateData.taxRate = data.taxRate;
@@ -2378,49 +2056,69 @@ export class InventoryService extends BaseService {
 
         let inventory: any = inventoryItem;
         if (Object.keys(inventoryUpdateData).length > 0) {
-          inventory = await tx.inventory.update({ 
-            where: { id }, 
-            data: inventoryUpdateData 
+          inventory = await tx.inventory.update({
+            where: { id: inventoryRowId },
+            data: inventoryUpdateData,
           });
         }
 
-        if (data.quantity !== undefined && data.quantity !== inventoryItem.quantity) {
-          await this.updateStock({
-            productId: product?.id || inventoryItem.product?.id || '',
-            quantity: Math.abs(data.quantity - inventoryItem.quantity),
-            transactionType: data.quantity > inventoryItem.quantity ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
-            userId: 'system',
-            businessUnitId: resolvedBU.id,
-            notes: `Quantity adjusted from ${inventoryItem.quantity} to ${data.quantity}`,
-            inventoryId: id,
+        if (
+          data.quantity !== undefined &&
+          Number(data.quantity) !== inventoryItem.quantity
+        ) {
+          const newQty = Number(data.quantity);
+          const delta = Math.abs(newQty - inventoryItem.quantity);
+          const isIncrease = newQty > inventoryItem.quantity;
+          const currentReserved = inventoryItem.reserved || 0;
+          const newAvailable = Math.max(0, newQty - currentReserved);
+
+          if (newQty < 0) {
+            throw new AppError('Quantity cannot be negative', 400);
+          }
+
+          inventory = await tx.inventory.update({
+            where: { id: inventoryRowId },
+            data: { quantity: newQty, available: newAvailable },
           });
-          const refreshedInventory = await tx.inventory.findUnique({ where: { id } });
-          if (refreshedInventory) {
-            inventory = refreshedInventory;
+
+          if (delta > 0 && product?.id) {
+            await tx.inventoryTransaction.create({
+              data: {
+                transactionType: isIncrease ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
+                quantity: isIncrease ? delta : -delta,
+                notes: `Quantity adjusted from ${inventoryItem.quantity} to ${newQty}`,
+                productId: product.id,
+                inventoryId: inventoryRowId,
+                businessUnitId: resolvedBU.id,
+                userId: data.userId || 'system',
+              },
+            });
           }
         }
 
-        const inventoryWithProduct = { ...inventory, product };
+        const finalProduct = product
+          ? await tx.product.findUnique({
+              where: { id: product.id },
+              include: {
+                category: { select: { id: true, name: true } },
+                supplier: { select: { id: true, name: true } },
+                images: true,
+              },
+            })
+          : product;
 
-        // Return normalized item
-        const result = { 
-          product, 
-          inventory: inventoryWithProduct,
-          formattedItem: normalizeInventoryItem(this.formatInventoryItem(inventoryWithProduct)),
-        };
-        
-        return result;
+        return normalizeInventoryItem({ ...inventory, product: finalProduct });
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.updateItem');
+
+      if (!result) throw new AppError('Failed to update inventory item', 500);
+      return result;
+    } catch (err) {
+      this.handleError(err, 'InventoryService.updateItem');
+      throw err;
     }
   }
 
-  // ============================================
-  // UPDATE PRODUCT - UPDATED
-  // ============================================
-
-  async updateProduct(id: string, data: UpdateProductData) {
+  async updateProduct(id: string, data: UpdateProductData): Promise<FlatInventoryItem> {
     try {
       if (!id || !data.businessUnitId) {
         throw new AppError('Inventory ID and business unit ID are required', 400);
@@ -2428,98 +2126,86 @@ export class InventoryService extends BaseService {
 
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const inventoryItem = await tx.inventory.findFirst({
           where: { id, businessUnitId: resolvedBU.id },
           include: { product: true },
         });
-
         if (!inventoryItem) throw new AppError('Inventory item not found', 404);
 
         const productUpdateData: any = {};
         if (data.name !== undefined) productUpdateData.name = data.name;
         if (data.sku !== undefined) productUpdateData.sku = data.sku.toUpperCase();
-        if (data.price !== undefined || data.unitPrice !== undefined) productUpdateData.unitPrice = data.price || data.unitPrice;
+        if (data.price !== undefined || data.unitPrice !== undefined)
+          productUpdateData.unitPrice = data.price || data.unitPrice;
         if (data.costPrice !== undefined) productUpdateData.costPrice = data.costPrice;
         if (data.description !== undefined) productUpdateData.description = data.description;
-        if (data.images !== undefined) productUpdateData.images = data.images;
+        if (data.images !== undefined)
+          productUpdateData.images = toImageUpdateInput(toImageUrls(data.images));
 
         let product = inventoryItem.product;
         if (Object.keys(productUpdateData).length > 0 && product) {
-          product = await tx.product.update({ 
-            where: { id: product.id }, 
-            data: productUpdateData 
+          product = await tx.product.update({
+            where: { id: product.id }, data: productUpdateData,
           });
         }
 
-        // Update inventory with product field changes
         const inventoryUpdateData: any = {};
-        if (data.location !== undefined) inventoryUpdateData.location = data.location;
+        if (data.location !== undefined) {
+          inventoryUpdateData.location = data.location;
+          inventoryUpdateData.locationId = await resolveLocationId(
+            tx, resolvedBU.id, data.location
+          );
+        }
         if (data.status !== undefined) inventoryUpdateData.status = data.status;
-        // Sync product fields to inventory
         if (data.description !== undefined) inventoryUpdateData.description = data.description;
-        if (data.images !== undefined) inventoryUpdateData.images = data.images;
+        if (data.images !== undefined) inventoryUpdateData.images = toImageUrls(data.images);
 
         let inventory: any = inventoryItem;
         if (Object.keys(inventoryUpdateData).length > 0) {
           inventory = await tx.inventory.update({ where: { id }, data: inventoryUpdateData });
         }
 
-        // Return normalized item
-        const result = { 
-          product, 
-          inventory: { ...inventory, product },
-          formattedItem: normalizeInventoryItem(this.formatInventoryItem({ ...inventory, product })),
-        };
-        
-        return result;
+        const finalProduct = product
+          ? await tx.product.findUnique({
+              where: { id: product.id },
+              include: {
+                category: { select: { id: true, name: true } },
+                supplier: { select: { id: true, name: true } },
+                images: true,
+              },
+            })
+          : product;
+
+        return normalizeInventoryItem({ ...inventory, product: finalProduct });
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.updateProduct');
+
+      if (!result) throw new AppError('Failed to update product', 500);
+      return result;
+    } catch (err) {
+      this.handleError(err, 'InventoryService.updateProduct');
+      throw err;
     }
   }
 
-  // ============================================
-  // UPDATE INVENTORY - UPDATED
-  // ============================================
-
-  async updateInventory(id: string, data: {
-    name?: string;
-    sku?: string;
-    description?: string;
-    categoryId?: string;
-    supplierId?: string;
-    quantity?: number;
-    minStock?: number;
-    maxStock?: number;
-    unitPrice?: number;
-    costPrice?: number;
-    location?: string;
-    barcode?: string;
-    notes?: string;
-    isActive?: boolean;
-    images?: string[];
-    tags?: string[];
-    weight?: number;
-    taxRate?: number;
-  }) {
+  async updateInventory(
+    id: string,
+    data: {
+      name?: string; sku?: string; description?: string;
+      categoryId?: string; supplierId?: string;
+      quantity?: number; minStock?: number; maxStock?: number;
+      unitPrice?: number; costPrice?: number; location?: string;
+      barcode?: string; notes?: string; isActive?: boolean;
+      images?: string[]; tags?: string[]; weight?: number; taxRate?: number;
+    }
+  ): Promise<FlatInventoryItem> {
     try {
-      console.log('📦 Updating inventory item:', id, data);
-
       const inventory = await this.prisma.inventory.findUnique({
-        where: { id },
-        include: { product: true },
+        where: { id }, include: { product: true },
       });
+      if (!inventory) throw new AppError('Inventory item not found', 404);
+      if (!inventory.product) throw new AppError('Associated product not found', 404);
 
-      if (!inventory) {
-        throw new AppError('Inventory item not found', 404);
-      }
-
-      if (!inventory.product) {
-        throw new AppError('Associated product not found for this inventory item', 404);
-      }
-
-      // Update product
       const productData: any = {};
       if (data.name !== undefined) productData.name = data.name;
       if (data.sku !== undefined) productData.sku = data.sku.toUpperCase();
@@ -2532,56 +2218,58 @@ export class InventoryService extends BaseService {
       if (data.categoryId !== undefined) productData.categoryId = data.categoryId;
       if (data.supplierId !== undefined) productData.supplierId = data.supplierId;
       if (data.isActive !== undefined) productData.isActive = data.isActive;
-      if (data.images !== undefined) productData.images = data.images;
+      if (data.images !== undefined)
+        productData.images = toImageUpdateInput(toImageUrls(data.images));
       if (data.tags !== undefined) productData.tags = data.tags;
       if (data.weight !== undefined) productData.weight = data.weight;
       if (data.taxRate !== undefined) productData.taxRate = data.taxRate;
 
-      const updatedProduct = await this.prisma.product.update({
-        where: { id: inventory.product.id },
-        data: productData,
+      await this.prisma.product.update({
+        where: { id: inventory.product.id }, data: productData,
       });
 
-      // Update inventory with new fields
       const inventoryData: any = {};
       if (data.quantity !== undefined) inventoryData.quantity = data.quantity;
       if (data.minStock !== undefined) inventoryData.reorderPoint = data.minStock;
       if (data.maxStock !== undefined) inventoryData.reorderQuantity = data.maxStock;
-      if (data.location !== undefined) inventoryData.location = data.location;
+      if (data.location !== undefined) {
+        inventoryData.location = data.location;
+        inventoryData.locationId = await resolveLocationId(
+          this.prisma, inventory.businessUnitId, data.location
+        );
+      }
       if (data.notes !== undefined) inventoryData.notes = data.notes;
-      // Sync product fields to inventory
-      if (data.images !== undefined) inventoryData.images = data.images;
+      if (data.images !== undefined) inventoryData.images = toImageUrls(data.images);
       if (data.description !== undefined) inventoryData.description = data.description;
       if (data.weight !== undefined) inventoryData.weight = data.weight;
       if (data.taxRate !== undefined) inventoryData.taxRate = data.taxRate;
       if (data.tags !== undefined) inventoryData.tags = data.tags;
 
       const updatedInventory = await this.prisma.inventory.update({
-        where: { id },
-        data: inventoryData,
+        where: { id }, data: inventoryData,
         include: {
-          product: true,
+          product: {
+            include: {
+              category: { select: { id: true, name: true } },
+              supplier: { select: { id: true, name: true } },
+              images: true,
+            },
+          },
         },
       });
 
-      // Return normalized item
-      const result = {
-        product: updatedProduct,
-        inventory: updatedInventory,
-        formattedItem: normalizeInventoryItem(this.formatInventoryItem(updatedInventory)),
-      };
-      
+      const result = normalizeInventoryItem(updatedInventory);
+      if (!result) throw new AppError('Failed to update inventory', 500);
       return result;
-    } catch (error) {
-      this.handleError(error, 'InventoryService.updateInventory');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.updateInventory');
+      throw err;
     }
   }
 
-  // ============================================
-  // DELETE PRODUCT - UPDATED
-  // ============================================
-
-  async deleteProduct(id: string, businessUnitId: string, userId: string) {
+  async deleteProduct(
+    id: string, businessUnitId: string, userId: string
+  ): Promise<{ message: string; softDeleted: boolean }> {
     try {
       if (!id || !businessUnitId || !userId) {
         throw new AppError('Inventory ID, business unit ID, and user ID are required', 400);
@@ -2589,77 +2277,87 @@ export class InventoryService extends BaseService {
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx) => {
         const inventoryItem = await tx.inventory.findFirst({
           where: { id, businessUnitId: resolvedBU.id },
           include: {
-            product: {
-              include: { _count: { select: { saleItems: true, orderItems: true } } },
-            },
+            product: { include: { _count: { select: { saleItems: true, orderItems: true } } } },
           },
         });
-
         if (!inventoryItem) throw new AppError('Inventory item not found', 404);
 
         const product = inventoryItem.product;
-        const hasSales = product?._count?.saleItems > 0 || false;
-        const hasOrders = product?._count?.orderItems > 0 || false;
+        const hasSales = (product?._count?.saleItems || 0) > 0;
+        const hasOrders = (product?._count?.orderItems || 0) > 0;
 
         if (hasSales || hasOrders) {
           if (product) {
-            await tx.product.update({ 
-              where: { id: product.id }, 
-              data: { isActive: false, deletedAt: new Date(), deletedBy: userId } 
+            await tx.product.update({
+              where: { id: product.id },
+              data: { isActive: false, deletedAt: new Date(), deletedBy: userId },
             });
           }
-          await tx.inventory.update({ where: { id }, data: { status: 'INACTIVE' } });
-          return { message: 'Product marked as inactive due to existing sales or orders', softDeleted: true };
+          await tx.inventory.update({
+            where: { id }, data: { status: 'INACTIVE' },
+          });
+          return {
+            message: 'Product marked as inactive due to existing sales or orders',
+            softDeleted: true,
+          };
         }
 
         await tx.inventoryTransaction.deleteMany({ where: { inventoryId: id } });
         await tx.inventoryIssue.deleteMany({ where: { inventoryId: id } });
-        
         await tx.inventory.delete({ where: { id } });
-        
-        if (product) {
-          await tx.product.delete({ where: { id: product.id } });
-        }
+        if (product) await tx.product.delete({ where: { id: product.id } });
 
         return { message: 'Product deleted successfully', softDeleted: false };
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.deleteProduct');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.deleteProduct');
+      throw err;
     }
   }
 
-  // ============================================
-  // UPDATE STOCK - UPDATED
-  // ============================================
-
-  async updateStock(data: UpdateStockData) {
+  async updateStock(data: UpdateStockData): Promise<FlatInventoryItem> {
     try {
-      const { productId, quantity, transactionType, userId, businessUnitId, notes, reference, variantId, inventoryId } = data;
+      const {
+        productId, quantity, transactionType, userId, businessUnitId,
+        notes, reference, variantId, inventoryId,
+      } = data;
 
       if (!productId || !businessUnitId || !userId) {
         throw new AppError('Product ID, business unit ID, and user ID are required', 400);
       }
-
-      if (quantity <= 0) {
-        throw new AppError('Quantity must be positive', 400);
-      }
+      if (quantity <= 0) throw new AppError('Quantity must be positive', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      let inventory = await this.prisma.inventory.findFirst({
-        where: {
-          businessUnitId: resolvedBU.id,
-          product: { id: productId },
-        },
-      });
+      let inventory = inventoryId
+        ? await this.prisma.inventory.findFirst({
+            where: { id: inventoryId, businessUnitId: resolvedBU.id },
+          })
+        : null;
 
       if (!inventory) {
-        const product = await this.prisma.product.findUnique({ where: { id: productId } });
+        inventory = await this.prisma.inventory.findFirst({
+          where: {
+            businessUnitId: resolvedBU.id,
+            product: { is: { id: productId } },
+          },
+        });
+      }
+
+      if (!inventory) {
+        const product = await this.prisma.product.findUnique({
+          where: { id: productId },
+          include: { images: true },
+        });
         if (!product) throw new AppError('Product not found', 404);
+
+        const locationId = await resolveLocationId(
+          this.prisma, resolvedBU.id, 'Warehouse'
+        );
 
         inventory = await this.prisma.inventory.create({
           data: {
@@ -2670,9 +2368,9 @@ export class InventoryService extends BaseService {
             reorderPoint: product.minStock || 5,
             reorderQuantity: 10,
             location: 'Warehouse',
+            locationId,
             status: 'ACTIVE',
-            // Copy product fields to inventory
-            images: product.images || [],
+            images: toImageUrls(product.images),
             description: product.description || '',
             weight: product.weight || 0,
             taxRate: product.taxRate || 0,
@@ -2692,29 +2390,32 @@ export class InventoryService extends BaseService {
       const isDecrease = decreasingTypes.includes(transactionType);
       const isIncrease = increasingTypes.includes(transactionType);
 
+      const currentQuantity = inventory.quantity;
+      const currentReserved = inventory.reserved || 0;
+      const currentAvailable = currentQuantity - currentReserved;
+
       let newQuantity: number;
       if (isDecrease) {
-        const availableStock = inventory.available !== undefined && inventory.available !== null
-          ? inventory.available
-          : inventory.quantity - inventory.reserved;
-        if (availableStock < quantity) throw new AppError(`Insufficient stock. Available: ${availableStock}`, 400);
-        newQuantity = inventory.quantity - quantity;
+        if (currentAvailable < quantity) {
+          throw new AppError(
+            `Insufficient stock. Available: ${currentAvailable}`,
+            400
+          );
+        }
+        newQuantity = currentQuantity - quantity;
       } else if (isIncrease) {
-        newQuantity = inventory.quantity + quantity;
+        newQuantity = currentQuantity + quantity;
       } else {
         newQuantity = quantity;
       }
 
       if (newQuantity < 0) throw new AppError('Insufficient stock', 400);
 
-      const newAvailable = Math.max(0, newQuantity - (inventory.reserved || 0));
+      const newAvailable = Math.max(0, newQuantity - currentReserved);
 
       const updatedInventory = await this.prisma.inventory.update({
         where: { id: inventory.id },
-        data: { 
-          quantity: newQuantity,
-          available: newAvailable,
-        },
+        data: { quantity: newQuantity, available: newAvailable },
       });
 
       await this.prisma.inventoryTransaction.create({
@@ -2723,7 +2424,7 @@ export class InventoryService extends BaseService {
           quantity: isDecrease ? -quantity : quantity,
           notes: notes || null,
           reference: reference || null,
-          productId: productId,
+          productId,
           variantId: variantId || null,
           inventoryId: inventory.id,
           businessUnitId: resolvedBU.id,
@@ -2732,7 +2433,10 @@ export class InventoryService extends BaseService {
       });
 
       if (newQuantity <= (updatedInventory.reorderPoint || 5)) {
-        const product = await this.prisma.product.findUnique({ where: { id: productId } });
+        const product = await this.prisma.product.findUnique({
+          where: { id: productId },
+          select: { name: true },
+        });
         await this.prisma.notification.create({
           data: {
             title: 'Low Stock Alert',
@@ -2745,152 +2449,176 @@ export class InventoryService extends BaseService {
         });
       }
 
-      // Return normalized item
-      return normalizeInventoryItem(updatedInventory);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.updateStock');
+      const fullInventory = await this.prisma.inventory.findUnique({
+        where: { id: updatedInventory.id },
+        include: {
+          product: {
+            include: {
+              category: { select: { id: true, name: true } },
+              supplier: { select: { id: true, name: true } },
+              images: true,
+            },
+          },
+        },
+      });
+
+      const result = normalizeInventoryItem(fullInventory);
+      if (!result) throw new AppError('Failed to update stock', 500);
+      return result;
+    } catch (err) {
+      this.handleError(err, 'InventoryService.updateStock');
+      throw err;
     }
   }
 
-  // ============================================
-  // RESERVE STOCK - UPDATED
-  // ============================================
-
-  async reserveStock(productId: string, quantity: number, businessUnitId: string, variantId?: string) {
+  async reserveStock(
+    productId: string, quantity: number, businessUnitId: string, variantId?: string
+  ): Promise<FlatInventoryItem> {
     try {
-      if (!productId || !businessUnitId) throw new AppError('Product ID and business unit ID are required', 400);
+      if (!productId || !businessUnitId)
+        throw new AppError('Product ID and business unit ID are required', 400);
       if (quantity <= 0) throw new AppError('Quantity must be positive', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const inventory = await this.prisma.inventory.findFirst({
-        where: {
-          businessUnitId: resolvedBU.id,
-          product: { id: productId },
-        },
+        where: { businessUnitId: resolvedBU.id, productId },
       });
-
       if (!inventory) throw new AppError('Product not found in inventory', 404);
 
-      const availableStock = inventory.available !== undefined && inventory.available !== null
-        ? inventory.available
-        : inventory.quantity - inventory.reserved;
-      if (availableStock < quantity) throw new AppError('Insufficient available stock', 400);
+      const currentQuantity = inventory.quantity;
+      const currentReserved = inventory.reserved || 0;
+      const currentAvailable = currentQuantity - currentReserved;
+      if (currentAvailable < quantity)
+        throw new AppError('Insufficient available stock', 400);
 
-      const newReserved = (inventory.reserved || 0) + quantity;
-      const newAvailable = Math.max(0, inventory.quantity - newReserved);
+      const newReserved = currentReserved + quantity;
+      const newAvailable = Math.max(0, currentQuantity - newReserved);
 
-      const result = await this.prisma.inventory.update({
+      const updated = await this.prisma.inventory.update({
         where: { id: inventory.id },
-        data: { 
-          reserved: newReserved,
-          available: newAvailable,
+        data: { reserved: newReserved, available: newAvailable },
+        include: {
+          product: {
+            include: {
+              category: { select: { id: true, name: true } },
+              supplier: { select: { id: true, name: true } },
+              images: true,
+            },
+          },
         },
       });
 
-      // Return normalized item
-      return normalizeInventoryItem(result);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.reserveStock');
+      const result = normalizeInventoryItem(updated);
+      if (!result) throw new AppError('Failed to reserve stock', 500);
+      return result;
+    } catch (err) {
+      this.handleError(err, 'InventoryService.reserveStock');
+      throw err;
     }
   }
 
-  // ============================================
-  // RELEASE RESERVED STOCK - UPDATED
-  // ============================================
-
-  async releaseReservedStock(productId: string, quantity: number, businessUnitId: string, variantId?: string) {
+  async releaseReservedStock(
+    productId: string, quantity: number, businessUnitId: string, variantId?: string
+  ): Promise<FlatInventoryItem> {
     try {
-      if (!productId || !businessUnitId) throw new AppError('Product ID and business unit ID are required', 400);
+      if (!productId || !businessUnitId)
+        throw new AppError('Product ID and business unit ID are required', 400);
       if (quantity <= 0) throw new AppError('Quantity must be positive', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const inventory = await this.prisma.inventory.findFirst({
-        where: {
-          businessUnitId: resolvedBU.id,
-          product: { id: productId },
-        },
+        where: { businessUnitId: resolvedBU.id, productId },
       });
-
       if (!inventory) throw new AppError('Product not found in inventory', 404);
-      if ((inventory.reserved || 0) < quantity) throw new AppError('Cannot release more reserved stock than reserved', 400);
+      if ((inventory.reserved || 0) < quantity)
+        throw new AppError('Cannot release more reserved stock than reserved', 400);
 
+      const currentQuantity = inventory.quantity;
       const newReserved = (inventory.reserved || 0) - quantity;
-      const newAvailable = Math.max(0, inventory.quantity - newReserved);
+      const newAvailable = Math.max(0, currentQuantity - newReserved);
 
-      const result = await this.prisma.inventory.update({
+      const updated = await this.prisma.inventory.update({
         where: { id: inventory.id },
-        data: { 
-          reserved: newReserved,
-          available: newAvailable,
+        data: { reserved: newReserved, available: newAvailable },
+        include: {
+          product: {
+            include: {
+              category: { select: { id: true, name: true } },
+              supplier: { select: { id: true, name: true } },
+              images: true,
+            },
+          },
         },
       });
 
-      // Return normalized item
-      return normalizeInventoryItem(result);
-    } catch (error) {
-      this.handleError(error, 'InventoryService.releaseReservedStock');
+      const result = normalizeInventoryItem(updated);
+      if (!result) throw new AppError('Failed to release reserved stock', 500);
+      return result;
+    } catch (err) {
+      this.handleError(err, 'InventoryService.releaseReservedStock');
+      throw err;
     }
   }
 
-  // ============================================
-  // TRANSFER STOCK - UPDATED
-  // ============================================
-
-  async transferStock(data: TransferStockData) {
+  async transferStock(data: TransferStockData): Promise<{
+    transferred: number; fromLocation: string; toLocation: string; reference: string;
+  }> {
     try {
-      const { productId, fromLocation, toLocation, quantity, notes, businessUnitId, userId, variantId } = data;
+      const {
+        productId, fromLocation, toLocation, quantity, notes,
+        businessUnitId, userId, variantId,
+      } = data;
 
       if (!productId || !fromLocation || !toLocation || !businessUnitId || !userId) {
-        throw new AppError('Product ID, locations, business unit ID, and user ID are required', 400);
+        throw new AppError(
+          'Product ID, locations, business unit ID, and user ID are required', 400
+        );
       }
-
       if (quantity <= 0) throw new AppError('Quantity must be positive', 400);
-      if (fromLocation === toLocation) throw new AppError('Source and destination locations must be different', 400);
+      if (fromLocation === toLocation)
+        throw new AppError('Source and destination locations must be different', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx) => {
         const sourceInventory = await tx.inventory.findFirst({
-          where: { 
-            businessUnitId: resolvedBU.id,
-            product: { id: productId },
-            location: fromLocation,
-          },
+          where: { businessUnitId: resolvedBU.id, productId, location: fromLocation },
         });
+        if (!sourceInventory)
+          throw new AppError(`Product not found in source location: ${fromLocation}`, 404);
 
-        if (!sourceInventory) throw new AppError(`Product not found in source location: ${fromLocation}`, 404);
-
-        const availableStock = sourceInventory.available !== undefined && sourceInventory.available !== null
-          ? sourceInventory.available
-          : sourceInventory.quantity - sourceInventory.reserved;
-        if (availableStock < quantity) throw new AppError(`Insufficient stock in ${fromLocation}. Available: ${availableStock}`, 400);
+        const sourceQuantity = sourceInventory.quantity;
+        const sourceReserved = sourceInventory.reserved || 0;
+        const sourceAvailable = sourceQuantity - sourceReserved;
+        if (sourceAvailable < quantity)
+          throw new AppError(
+            `Insufficient stock in ${fromLocation}. Available: ${sourceAvailable}`, 400
+          );
 
         let destInventory = await tx.inventory.findFirst({
-          where: { 
-            businessUnitId: resolvedBU.id,
-            product: { id: productId },
-            location: toLocation,
-          },
+          where: { businessUnitId: resolvedBU.id, productId, location: toLocation },
         });
 
         if (!destInventory) {
-          const product = await tx.product.findUnique({ where: { id: productId } });
+          const product = await tx.product.findUnique({
+            where: { id: productId }, include: { images: true },
+          });
           if (!product) throw new AppError('Product not found', 404);
+
+          const destLocationId = await resolveLocationId(tx, resolvedBU.id, toLocation);
 
           destInventory = await tx.inventory.create({
             data: {
               businessUnitId: resolvedBU.id,
               location: toLocation,
-              quantity: 0,
-              reserved: 0,
-              available: 0,
+              locationId: destLocationId,
+              quantity: 0, reserved: 0, available: 0,
               reorderPoint: product.minStock || 5,
               reorderQuantity: 10,
               status: 'ACTIVE',
-              // Copy product fields to inventory
-              images: product.images || [],
+              images: toImageUrls(product.images),
               description: product.description || '',
               weight: product.weight || 0,
               taxRate: product.taxRate || 0,
@@ -2901,24 +2629,20 @@ export class InventoryService extends BaseService {
 
         const transferReference = `TRANSFER_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-        const newSourceQuantity = sourceInventory.quantity - quantity;
-        const newSourceAvailable = Math.max(0, newSourceQuantity - (sourceInventory.reserved || 0));
-        await tx.inventory.update({ 
-          where: { id: sourceInventory.id }, 
-          data: { 
-            quantity: newSourceQuantity,
-            available: newSourceAvailable,
-          } 
+        const newSourceQuantity = sourceQuantity - quantity;
+        const newSourceAvailable = Math.max(0, newSourceQuantity - sourceReserved);
+        await tx.inventory.update({
+          where: { id: sourceInventory.id },
+          data: { quantity: newSourceQuantity, available: newSourceAvailable },
         });
 
-        const newDestQuantity = destInventory.quantity + quantity;
-        const newDestAvailable = Math.max(0, newDestQuantity - (destInventory.reserved || 0));
-        await tx.inventory.update({ 
-          where: { id: destInventory.id }, 
-          data: { 
-            quantity: newDestQuantity,
-            available: newDestAvailable,
-          } 
+        const destQuantity = destInventory.quantity;
+        const destReserved = destInventory.reserved || 0;
+        const newDestQuantity = destQuantity + quantity;
+        const newDestAvailable = Math.max(0, newDestQuantity - destReserved);
+        await tx.inventory.update({
+          where: { id: destInventory.id },
+          data: { quantity: newDestQuantity, available: newDestAvailable },
         });
 
         await tx.inventoryTransaction.create({
@@ -2927,87 +2651,72 @@ export class InventoryService extends BaseService {
             quantity: -quantity,
             notes: notes || `Transfer from ${fromLocation} to ${toLocation}`,
             reference: transferReference,
-            productId,
-            variantId: variantId || null,
+            productId, variantId: variantId || null,
             inventoryId: sourceInventory.id,
-            businessUnitId: resolvedBU.id,
-            userId,
+            businessUnitId: resolvedBU.id, userId,
           },
         });
 
         await tx.inventoryTransaction.create({
           data: {
             transactionType: 'TRANSFER_IN' as any,
-            quantity: quantity,
+            quantity,
             notes: notes || `Transfer from ${fromLocation} to ${toLocation}`,
             reference: transferReference,
-            productId,
-            variantId: variantId || null,
+            productId, variantId: variantId || null,
             inventoryId: destInventory.id,
-            businessUnitId: resolvedBU.id,
-            userId,
+            businessUnitId: resolvedBU.id, userId,
           },
         });
 
         return { transferred: quantity, fromLocation, toLocation, reference: transferReference };
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.transferStock');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.transferStock');
+      throw err;
     }
   }
 
-  // ============================================
-  // ISSUE ITEM - UPDATED
-  // ============================================
-
-  async issueItem(data: IssueItemData) {
+  async issueItem(data: IssueItemData): Promise<{ issue: any; inventory: FlatInventoryItem }> {
     try {
       if (!data.inventoryId || !data.issuedTo || !data.businessUnitId || !data.userId) {
-        throw new AppError('Inventory ID, issuedTo, business unit ID, and user ID are required', 400);
+        throw new AppError(
+          'Inventory ID, issuedTo, business unit ID, and user ID are required', 400
+        );
       }
-
-      if (data.quantity <= 0) {
-        throw new AppError('Quantity must be positive', 400);
-      }
+      if (data.quantity <= 0) throw new AppError('Quantity must be positive', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx) => {
         const inventory = await tx.inventory.findFirst({
           where: { id: data.inventoryId, businessUnitId: resolvedBU.id },
         });
-
         if (!inventory) throw new AppError('Inventory item not found', 404);
 
-        const availableStock = inventory.available !== undefined && inventory.available !== null
-          ? inventory.available
-          : inventory.quantity - inventory.reserved;
-        if (availableStock < data.quantity) {
-          throw new AppError(`Insufficient stock. Available: ${availableStock}`, 400);
-        }
+        const currentQuantity = inventory.quantity;
+        const currentReserved = inventory.reserved || 0;
+        const currentAvailable = currentQuantity - currentReserved;
+        if (currentAvailable < data.quantity)
+          throw new AppError(`Insufficient stock. Available: ${currentAvailable}`, 400);
 
-        const newQuantity = inventory.quantity - data.quantity;
-        const newAvailable = Math.max(0, newQuantity - (inventory.reserved || 0));
+        const newQuantity = currentQuantity - data.quantity;
+        const newAvailable = Math.max(0, newQuantity - currentReserved);
 
         const updatedInventory = await tx.inventory.update({
           where: { id: data.inventoryId },
-          data: { 
-            quantity: newQuantity,
-            available: newAvailable,
-          },
+          data: { quantity: newQuantity, available: newAvailable },
         });
 
         const product = await tx.product.findFirst({
-          where: { inventoryId: data.inventoryId },
-          select: { id: true },
+          where: { inventoryId: data.inventoryId }, select: { id: true },
         });
-
         const productId = product?.id || '';
 
         const issue = await tx.inventoryIssue.create({
           data: {
             inventoryId: data.inventoryId,
-            productId: productId,
+            productId,
             issuedTo: data.issuedTo,
             quantity: data.quantity,
             purpose: data.purpose || null,
@@ -3024,8 +2733,7 @@ export class InventoryService extends BaseService {
             transactionType: 'ISSUE' as any,
             quantity: -data.quantity,
             notes: `Issued to ${data.issuedTo}: ${data.purpose || 'No purpose specified'}`,
-            productId: productId,
-            inventoryId: inventory.id,
+            productId, inventoryId: inventory.id,
             businessUnitId: resolvedBU.id,
             userId: data.userId,
             reference: `ISSUE_${issue.id}`,
@@ -3033,40 +2741,48 @@ export class InventoryService extends BaseService {
         });
 
         if (newQuantity <= (updatedInventory.reorderPoint || 5)) {
-          const productName = await tx.product.findUnique({ where: { id: productId }, select: { name: true } });
+          const productName = await tx.product.findUnique({
+            where: { id: productId }, select: { name: true },
+          });
           await tx.notification.create({
             data: {
               title: 'Low Stock Alert',
               message: `Product ${productName?.name || inventory.id} is below reorder point. Current stock: ${newQuantity}`,
               type: 'WARNING',
-              userId: data.userId,
-              businessUnitId: resolvedBU.id,
-              isRead: false,
+              userId: data.userId, businessUnitId: resolvedBU.id, isRead: false,
             },
           });
-          this.safeEmitLowStockAlert({ productId: productId, quantity: newQuantity }, resolvedBU.id);
+          this.safeEmitLowStockAlert({ productId, quantity: newQuantity }, resolvedBU.id);
         }
 
-        this.safeEmitInventoryUpdate({ productId: productId, quantity: newQuantity }, resolvedBU.id);
+        this.safeEmitInventoryUpdate({ productId, quantity: newQuantity }, resolvedBU.id);
 
-        // Return normalized item
-        const result = { 
-          issue, 
-          inventory: normalizeInventoryItem(updatedInventory),
-        };
-        
-        return result;
+        const fullInventory = await tx.inventory.findUnique({
+          where: { id: updatedInventory.id },
+          include: {
+            product: {
+              include: {
+                category: { select: { id: true, name: true } },
+                supplier: { select: { id: true, name: true } },
+                images: true,
+              },
+            },
+          },
+        });
+
+        const normalized = normalizeInventoryItem(fullInventory);
+        if (!normalized) throw new AppError('Failed to issue item', 500);
+        return { issue, inventory: normalized };
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.issueItem');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.issueItem');
+      throw err;
     }
   }
 
-  // ============================================
-  // RETURN ITEM - UPDATED
-  // ============================================
-
-  async returnItem(data: ReturnItemData) {
+  async returnItem(data: ReturnItemData): Promise<{
+    issue: any; inventory: FlatInventoryItem; returnedQuantity: number;
+  }> {
     try {
       if (!data.inventoryId || !data.businessUnitId || !data.userId) {
         throw new AppError('Inventory ID, business unit ID, and user ID are required', 400);
@@ -3074,34 +2790,33 @@ export class InventoryService extends BaseService {
 
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx) => {
         const issue = await tx.inventoryIssue.findFirst({
           where: { inventoryId: data.inventoryId, status: 'ISSUED' },
           orderBy: { createdAt: 'desc' },
         });
-
-        if (!issue) throw new AppError('No active issue record found for this item', 404);
+        if (!issue)
+          throw new AppError('No active issue record found for this item', 404);
 
         const quantityToReturn = data.quantity || issue.quantity;
-
-        if (quantityToReturn <= 0) {
+        if (quantityToReturn <= 0)
           throw new AppError('Return quantity must be positive', 400);
-        }
+        if (quantityToReturn > issue.quantity)
+          throw new AppError(
+            `Cannot return more than issued quantity. Issued: ${issue.quantity}`, 400
+          );
 
-        if (quantityToReturn > issue.quantity) {
-          throw new AppError(`Cannot return more than issued quantity. Issued: ${issue.quantity}`, 400);
-        }
-
-        const currentInventory = await tx.inventory.findUnique({ where: { id: data.inventoryId } });
-        const newQuantity = (currentInventory?.quantity || 0) + quantityToReturn;
-        const newAvailable = Math.max(0, newQuantity - (currentInventory?.reserved || 0));
+        const currentInventory = await tx.inventory.findUnique({
+          where: { id: data.inventoryId },
+        });
+        const currentQuantity = currentInventory?.quantity || 0;
+        const currentReserved = currentInventory?.reserved || 0;
+        const newQuantity = currentQuantity + quantityToReturn;
+        const newAvailable = Math.max(0, newQuantity - currentReserved);
 
         const inventory = await tx.inventory.update({
           where: { id: data.inventoryId },
-          data: { 
-            quantity: newQuantity,
-            available: newAvailable,
-          },
+          data: { quantity: newQuantity, available: newAvailable },
         });
 
         const updatedIssue = await tx.inventoryIssue.update({
@@ -3114,10 +2829,8 @@ export class InventoryService extends BaseService {
         });
 
         const product = await tx.product.findFirst({
-          where: { inventoryId: data.inventoryId },
-          select: { id: true },
+          where: { inventoryId: data.inventoryId }, select: { id: true },
         });
-
         const productId = product?.id || '';
 
         await tx.inventoryTransaction.create({
@@ -3125,70 +2838,72 @@ export class InventoryService extends BaseService {
             transactionType: 'RETURN' as any,
             quantity: quantityToReturn,
             notes: `Returned from ${issue.issuedTo}: ${data.remarks || 'Returned'}`,
-            productId: productId,
-            inventoryId: data.inventoryId,
+            productId, inventoryId: data.inventoryId,
             businessUnitId: resolvedBU.id,
             userId: data.userId,
             reference: `RETURN_${updatedIssue.id}`,
           },
         });
 
-        this.safeEmitInventoryUpdate({ productId: productId, quantity: newQuantity }, resolvedBU.id);
+        this.safeEmitInventoryUpdate({ productId, quantity: newQuantity }, resolvedBU.id);
 
-        // Return normalized item
-        const result = { 
-          issue: updatedIssue, 
-          inventory: normalizeInventoryItem(inventory), 
-          returnedQuantity: quantityToReturn 
-        };
-        
-        return result;
+        const fullInventory = await tx.inventory.findUnique({
+          where: { id: inventory.id },
+          include: {
+            product: {
+              include: {
+                category: { select: { id: true, name: true } },
+                supplier: { select: { id: true, name: true } },
+                images: true,
+              },
+            },
+          },
+        });
+
+        const normalized = normalizeInventoryItem(fullInventory);
+        if (!normalized) throw new AppError('Failed to return item', 500);
+        return { issue: updatedIssue, inventory: normalized, returnedQuantity: quantityToReturn };
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.returnItem');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.returnItem');
+      throw err;
     }
   }
 
-  // ============================================
-  // RESTOCK ITEM - UPDATED
-  // ============================================
-
-  async restockItem(data: RestockItemData) {
+  async restockItem(data: RestockItemData): Promise<{
+    inventory: FlatInventoryItem; message: string;
+  }> {
     try {
       if (!data.inventoryId || !data.businessUnitId || !data.userId) {
         throw new AppError('Inventory ID, business unit ID, and user ID are required', 400);
       }
-
-      if (data.quantity <= 0) {
+      if (data.quantity <= 0)
         throw new AppError('Restock quantity must be positive', 400);
-      }
 
       const resolvedBU = await this.ensureBusinessUnit(data.businessUnitId);
 
-      return await this.prisma.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx) => {
         const inventory = await tx.inventory.findFirst({
           where: { id: data.inventoryId, businessUnitId: resolvedBU.id },
         });
-
         if (!inventory) throw new AppError('Inventory item not found', 404);
 
-        const newQuantity = inventory.quantity + data.quantity;
-        const newAvailable = Math.max(0, newQuantity - (inventory.reserved || 0));
+        const currentQuantity = inventory.quantity;
+        const currentReserved = inventory.reserved || 0;
+        const newQuantity = currentQuantity + data.quantity;
+        const newAvailable = Math.max(0, newQuantity - currentReserved);
 
         const updatedInventory = await tx.inventory.update({
           where: { id: data.inventoryId },
           data: {
-            quantity: newQuantity,
-            available: newAvailable,
+            quantity: newQuantity, available: newAvailable,
             supplier: data.supplier || inventory.supplier,
           },
         });
 
         const product = await tx.product.findFirst({
-          where: { inventoryId: data.inventoryId },
-          select: { id: true },
+          where: { inventoryId: data.inventoryId }, select: { id: true },
         });
-
         const productId = product?.id || '';
 
         if (data.unitPrice && data.unitPrice > 0 && productId) {
@@ -3203,44 +2918,65 @@ export class InventoryService extends BaseService {
             transactionType: 'PURCHASE' as any,
             quantity: data.quantity,
             notes: `Restocked ${data.quantity} units from ${data.supplier || 'Unknown supplier'}`,
-            productId: productId,
-            inventoryId: inventory.id,
+            productId, inventoryId: inventory.id,
             businessUnitId: resolvedBU.id,
             userId: data.userId,
             reference: data.invoiceNumber || `RESTOCK_${Date.now()}`,
           },
         });
 
-        this.safeEmitInventoryUpdate({ productId: productId, quantity: newQuantity }, resolvedBU.id);
+        this.safeEmitInventoryUpdate({ productId, quantity: newQuantity }, resolvedBU.id);
 
-        // Return normalized item
-        const result = { 
-          inventory: normalizeInventoryItem(updatedInventory), 
-          message: 'Item restocked successfully' 
-        };
-        
-        return result;
+        const fullInventory = await tx.inventory.findUnique({
+          where: { id: updatedInventory.id },
+          include: {
+            product: {
+              include: {
+                category: { select: { id: true, name: true } },
+                supplier: { select: { id: true, name: true } },
+                images: true,
+              },
+            },
+          },
+        });
+
+        const normalized = normalizeInventoryItem(fullInventory);
+        if (!normalized) throw new AppError('Failed to restock item', 500);
+        return { inventory: normalized, message: 'Item restocked successfully' };
       });
-    } catch (error) {
-      this.handleError(error, 'InventoryService.restockItem');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.restockItem');
+      throw err;
     }
   }
 
   // ============================================
-  // EXPORT INVENTORY - UPDATED
+  // EXPORT
   // ============================================
 
-  async exportInventory(businessUnitId: string, format: string = 'json') {
+  async exportInventory(
+    businessUnitId: string,
+    format: string = 'json'
+  ): Promise<{ data: any[]; format: string; total: number; exportedAt: string }> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const items = await this.prisma.inventory.findMany({
         where: { businessUnitId: resolvedBU.id },
         include: {
-          product: { select: { name: true, sku: true, barcode: true, unitPrice: true, costPrice: true, category: { select: { name: true } } } },
-          variant: true,
+          product: {
+            select: {
+              name: true, sku: true, barcode: true,
+              unitPrice: true, costPrice: true,
+              category: { select: { name: true } },
+              images: true,
+              tags: true, description: true, weight: true, taxRate: true,
+            },
+          },
+          variant: { include: { images: true } },
         },
       });
 
@@ -3256,35 +2992,39 @@ export class InventoryService extends BaseService {
         location: item.location || 'Warehouse',
         price: item.product?.unitPrice || 0,
         costPrice: item.product?.costPrice || 0,
-        // Include new fields
         description: item.description || item.product?.description || '',
         weight: item.weight ?? item.product?.weight ?? 0,
         taxRate: item.taxRate ?? item.product?.taxRate ?? 0,
-        tags: (item.tags && item.tags.length > 0) ? item.tags.join(', ') : (item.product?.tags || []).join(', '),
-        images: (item.images && item.images.length > 0) ? item.images.join(', ') : (item.product?.images || []).join(', '),
+        tags:
+          item.tags && item.tags.length > 0
+            ? item.tags.join(', ')
+            : (item.product?.tags || []).join(', '),
+        images:
+          item.images && item.images.length > 0
+            ? toImageUrls(item.images).join(', ')
+            : toImageUrls(item.product?.images).join(', '),
         lastUpdated: item.updatedAt.toISOString(),
       }));
 
       return { data: exportData, format, total: exportData.length, exportedAt: new Date().toISOString() };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.exportInventory');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.exportInventory');
+      throw err;
     }
   }
 
-  // ============================================
-  // EXPORT INVENTORY TO FILE - UPDATED
-  // ============================================
-
-  async exportInventoryToFile(businessUnitId: string, format: 'csv' | 'excel' | 'json' = 'json') {
+  async exportInventoryToFile(
+    businessUnitId: string,
+    format: 'csv' | 'excel' | 'json' = 'json'
+  ): Promise<{ filePath: string; fileName: string; format: string; totalRecords: number }> {
     try {
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
 
       const result = await this.exportInventory(businessUnitId, format);
       const exportDir = path.join(process.cwd(), 'exports', 'inventory');
 
-      if (!fs.existsSync(exportDir)) {
-        fs.mkdirSync(exportDir, { recursive: true });
-      }
+      if (!fs.existsSync(exportDir)) fs.mkdirSync(exportDir, { recursive: true });
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const fileName = `inventory_${timestamp}.${format === 'excel' ? 'xlsx' : format}`;
@@ -3299,43 +3039,38 @@ export class InventoryService extends BaseService {
       }
 
       return { filePath, fileName, format, totalRecords: result.total };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.exportInventoryToFile');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.exportInventoryToFile');
+      throw err;
     }
   }
 
   // ============================================
-  // BARCODE / QR CODE METHODS - UPDATED
+  // BARCODE / QR CODE
   // ============================================
 
-  async getInventoryByBarcode(barcode: string, businessUnitId: string): Promise<any> {
+  async getInventoryByBarcode(
+    barcode: string, businessUnitId: string
+  ): Promise<FlatInventoryItem | null> {
     try {
-      if (!barcode || !businessUnitId) {
+      if (!barcode || !businessUnitId)
         throw new AppError('Barcode and business unit ID are required', 400);
-      }
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       let inventory = await this.prisma.inventory.findFirst({
-        where: {
-          businessUnitId: resolvedBU.id,
-          product: {
-            is: { barcode: barcode }
-          }
-        },
+        where: { businessUnitId: resolvedBU.id, product: { is: { barcode } } },
         include: {
           product: {
             include: {
-              category: true,
-              supplier: true,
-              variants: { where: { isActive: true } },
-            }
+              category: { select: { id: true, name: true } },
+              supplier: { select: { id: true, name: true } },
+              images: true,
+              variants: { where: { isActive: true }, include: { images: true } },
+            },
           },
-          variant: true,
-          transactions: {
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-          },
+          variant: { include: { images: true } },
+          transactions: { orderBy: { createdAt: 'desc' }, take: 10 },
         },
       });
 
@@ -3343,96 +3078,117 @@ export class InventoryService extends BaseService {
         inventory = await this.prisma.inventory.findFirst({
           where: {
             businessUnitId: resolvedBU.id,
-            product: {
-              is: { sku: { equals: barcode, mode: 'insensitive' } }
-            }
+            product: { is: { sku: { equals: barcode, mode: 'insensitive' } } },
           },
           include: {
             product: {
               include: {
-                category: true,
-                supplier: true,
-                variants: { where: { isActive: true } },
-              }
+                category: { select: { id: true, name: true } },
+                supplier: { select: { id: true, name: true } },
+                images: true,
+                variants: { where: { isActive: true }, include: { images: true } },
+              },
             },
-            variant: true,
-            transactions: {
-              orderBy: { createdAt: 'desc' },
-              take: 10,
-            },
+            variant: { include: { images: true } },
+            transactions: { orderBy: { createdAt: 'desc' }, take: 10 },
           },
         });
       }
 
-      if (!inventory) {
-        return null;
-      }
-
-      // Apply normalization
-      return normalizeInventoryItem(this.formatInventoryItem(inventory));
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryByBarcode');
+      if (!inventory) return null;
+      return normalizeInventoryItem(inventory);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryByBarcode');
+      return null;
     }
   }
 
-  async getInventoryBySku(sku: string, businessUnitId: string): Promise<any> {
+  async getInventoryBySku(sku: string, businessUnitId: string): Promise<FlatInventoryItem | null> {
     try {
-      if (!sku || !businessUnitId) {
+      if (!sku || !businessUnitId)
         throw new AppError('SKU and business unit ID are required', 400);
-      }
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const inventory = await this.prisma.inventory.findFirst({
         where: {
           businessUnitId: resolvedBU.id,
-          product: {
-            is: { sku: { equals: sku, mode: 'insensitive' } }
-          }
+          product: { is: { sku: { equals: sku, mode: 'insensitive' } } },
         },
         include: {
           product: {
             include: {
-              category: true,
-              supplier: true,
-              variants: { where: { isActive: true } },
-            }
+              category: { select: { id: true, name: true } },
+              supplier: { select: { id: true, name: true } },
+              images: true,
+              variants: { where: { isActive: true }, include: { images: true } },
+            },
           },
-          variant: true,
-          transactions: {
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-          },
+          variant: { include: { images: true } },
+          transactions: { orderBy: { createdAt: 'desc' }, take: 10 },
         },
       });
 
-      if (!inventory) {
-        return null;
-      }
-
-      // Apply normalization
-      return normalizeInventoryItem(this.formatInventoryItem(inventory));
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryBySku');
+      if (!inventory) return null;
+      return normalizeInventoryItem(inventory);
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryBySku');
+      return null;
     }
   }
 
-  async generateInventoryBarcode(inventoryId: string, businessUnitId: string): Promise<{ barcode: string; barcodeUrl: string; qrCodeUrl: string }> {
+  /**
+   * ✅ FIX #3: The return type is now `ResolvedInventoryRow` instead
+   *    of an implicit union. Previously the `include` parameter was
+   *    typed `any`, so TypeScript widened the return type into a
+   *    union that lost `.product.name`, `.product.sku`, etc. The
+   *    callers below (`generateInventoryBarcode`,
+   *    `generateInventoryQRCode`) then failed with dozens of TS2339
+   *    "Property 'name' does not exist" errors.
+   *
+   *    The cast at the return site is safe because every caller
+   *    passes `{ product: { include: { images: true } } }`, which is
+   *    exactly the shape this type describes.
+   */
+  private async resolveInventoryRow(
+    id: string,
+    businessUnitId: string,
+    include: any = {}
+  ): Promise<ResolvedInventoryRow> {
+    let row: any = await this.prisma.inventory.findFirst({
+      where: { id, businessUnitId },
+      include,
+    });
+
+    if (!row) {
+      row = await this.prisma.inventory.findFirst({
+        where: {
+          businessUnitId,
+          product: { is: { id } },
+        },
+        include,
+      });
+    }
+
+    return (row ?? null) as ResolvedInventoryRow;
+  }
+
+  async generateInventoryBarcode(
+    inventoryId: string, businessUnitId: string
+  ): Promise<{ barcode: string; barcodeUrl: string; qrCodeUrl: string }> {
     try {
-      if (!inventoryId || !businessUnitId) {
+      if (!inventoryId || !businessUnitId)
         throw new AppError('Inventory ID and business unit ID are required', 400);
-      }
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      const inventory = await this.prisma.inventory.findFirst({
-        where: { id: inventoryId, businessUnitId: resolvedBU.id },
-        include: { product: true },
-      });
+      const inventory = await this.resolveInventoryRow(
+        inventoryId,
+        resolvedBU.id,
+        { product: { include: { images: true } } }
+      );
 
-      if (!inventory) {
-        throw new AppError('Inventory item not found', 404);
-      }
+      if (!inventory) throw new AppError('Inventory item not found', 404);
 
       const barcode = await this.generateUniqueBarcode(this.prisma);
 
@@ -3444,17 +3200,15 @@ export class InventoryService extends BaseService {
       }
 
       const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=EAN-13&dpi=96`;
-      
       const qrData = {
         type: 'INVENTORY_ITEM',
         id: inventory.id,
         productId: inventory.product?.id || '',
         name: inventory.product?.name || 'Unknown',
         sku: inventory.product?.sku || 'N/A',
-        barcode: barcode,
+        barcode,
         location: inventory.location || 'Warehouse',
         quantity: inventory.quantity,
-        // Include new fields in QR data
         description: inventory.description || inventory.product?.description || '',
         weight: inventory.weight ?? inventory.product?.weight ?? 0,
         taxRate: inventory.taxRate ?? inventory.product?.taxRate ?? 0,
@@ -3462,34 +3216,33 @@ export class InventoryService extends BaseService {
       };
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
-      return {
-        barcode,
-        barcodeUrl,
-        qrCodeUrl,
-      };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.generateInventoryBarcode');
+      return { barcode, barcodeUrl, qrCodeUrl };
+    } catch (err) {
+      this.handleError(err, 'InventoryService.generateInventoryBarcode');
+      throw err;
     }
   }
 
-  async generateInventoryQRCode(inventoryId: string, businessUnitId: string): Promise<{ qrCodeUrl: string; qrData: any }> {
+  async generateInventoryQRCode(
+    inventoryId: string, businessUnitId: string
+  ): Promise<{ qrCodeUrl: string; qrData: any }> {
     try {
-      if (!inventoryId || !businessUnitId) {
+      if (!inventoryId || !businessUnitId)
         throw new AppError('Inventory ID and business unit ID are required', 400);
-      }
 
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
-      const inventory = await this.prisma.inventory.findFirst({
-        where: { id: inventoryId, businessUnitId: resolvedBU.id },
-        include: { product: true },
-      });
+      const inventory = await this.resolveInventoryRow(
+        inventoryId,
+        resolvedBU.id,
+        { product: { include: { images: true } } }
+      );
 
-      if (!inventory) {
-        throw new AppError('Inventory item not found', 404);
-      }
+      if (!inventory) throw new AppError('Inventory item not found', 404);
 
-      const barcode = inventory.product?.barcode || await this.generateUniqueBarcode(this.prisma);
+      const barcode =
+        inventory.product?.barcode ||
+        (await this.generateUniqueBarcode(this.prisma));
 
       const qrData = {
         type: 'INVENTORY_ITEM',
@@ -3497,34 +3250,34 @@ export class InventoryService extends BaseService {
         productId: inventory.product?.id || '',
         name: inventory.product?.name || 'Unknown',
         sku: inventory.product?.sku || 'N/A',
-        barcode: barcode,
+        barcode,
         location: inventory.location || 'Warehouse',
         quantity: inventory.quantity,
         minStock: inventory.reorderPoint || 5,
-        // Include new fields in QR data
         description: inventory.description || inventory.product?.description || '',
         weight: inventory.weight ?? inventory.product?.weight ?? 0,
         taxRate: inventory.taxRate ?? inventory.product?.taxRate ?? 0,
-        tags: (inventory.tags && inventory.tags.length > 0) ? inventory.tags : (inventory.product?.tags || []),
+        tags:
+          inventory.tags && inventory.tags.length > 0
+            ? inventory.tags
+            : inventory.product?.tags || [],
         timestamp: new Date().toISOString(),
       };
 
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
-
-      return {
-        qrCodeUrl,
-        qrData,
-      };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.generateInventoryQRCode');
+      return { qrCodeUrl, qrData };
+    } catch (err) {
+      this.handleError(err, 'InventoryService.generateInventoryQRCode');
+      throw err;
     }
   }
 
-  async bulkGenerateInventoryBarcodes(inventoryIds: string[], businessUnitId: string): Promise<{ results: any[]; errors: any[] }> {
+  async bulkGenerateInventoryBarcodes(
+    inventoryIds: string[], businessUnitId: string
+  ): Promise<{ results: any[]; errors: any[] }> {
     try {
-      if (!inventoryIds || inventoryIds.length === 0 || !businessUnitId) {
+      if (!inventoryIds || inventoryIds.length === 0 || !businessUnitId)
         throw new AppError('Inventory IDs and business unit ID are required', 400);
-      }
 
       const results: any[] = [];
       const errors: any[] = [];
@@ -3533,49 +3286,42 @@ export class InventoryService extends BaseService {
         try {
           const result = await this.generateInventoryBarcode(id, businessUnitId);
           results.push({ id, ...result });
-        } catch (error) {
-          errors.push({
-            id,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
+        } catch (err) {
+          errors.push({ id, error: toError(err).message });
         }
       }
 
       return { results, errors };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.bulkGenerateInventoryBarcodes');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.bulkGenerateInventoryBarcodes');
+      throw err;
     }
   }
 
-  private async syncInventoryFromProduct(productId: string, businessUnitId: string): Promise<void> {
+  private async syncInventoryFromProduct(
+    productId: string, businessUnitId: string
+  ): Promise<void> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       select: {
-        minStock: true,
-        maxStock: true,
-        supplierId: true,
+        minStock: true, maxStock: true, supplierId: true,
         supplier: { select: { name: true } },
         categoryId: true,
         category: { select: { name: true } },
-        // Include new fields for sync
         images: true,
-        description: true,
-        weight: true,
-        taxRate: true,
-        tags: true,
+        description: true, weight: true, taxRate: true, tags: true,
       },
     });
 
     if (!product) return;
 
     await this.prisma.inventory.updateMany({
-      where: { businessUnitId },
+      where: { businessUnitId, productId },
       data: {
         reorderPoint: product.minStock || 5,
         reorderQuantity: product.maxStock || 100,
         supplier: product.supplier?.name || null,
-        // Sync new fields
-        images: product.images || [],
+        images: toImageUrls(product.images),
         description: product.description || '',
         weight: product.weight || 0,
         taxRate: product.taxRate || 0,
@@ -3588,18 +3334,9 @@ export class InventoryService extends BaseService {
     const inventory = await this.prisma.inventory.findUnique({
       where: { id: inventoryId },
       select: {
-        product: {
-          select: { id: true }
-        },
-        reorderPoint: true,
-        reorderQuantity: true,
-        location: true,
-        // Include new fields for sync
-        images: true,
-        description: true,
-        weight: true,
-        taxRate: true,
-        tags: true,
+        product: { select: { id: true } },
+        reorderPoint: true, reorderQuantity: true, location: true,
+        images: true, description: true, weight: true, taxRate: true, tags: true,
       },
     });
 
@@ -3610,8 +3347,7 @@ export class InventoryService extends BaseService {
       data: {
         minStock: inventory.reorderPoint,
         maxStock: inventory.reorderQuantity,
-        // Sync new fields
-        images: inventory.images || [],
+        images: toImageUpdateInput(toImageUrls(inventory.images)),
         description: inventory.description || '',
         weight: inventory.weight || 0,
         taxRate: inventory.taxRate || 0,
@@ -3621,36 +3357,26 @@ export class InventoryService extends BaseService {
   }
 
   // ============================================
-  // GET INVENTORY ITEMS (for web service)
+  // GET INVENTORY ITEMS
   // ============================================
 
-  /**
-   * Get inventory items with optional filtering
-   * ✅ UPDATED: Returns normalized items with all new fields
-   */
   async getInventoryItems(params: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    businessUnitId?: string;
-    withoutProduct?: boolean;
-  }) {
+    page?: number; limit?: number; search?: string;
+    businessUnitId?: string; withoutProduct?: boolean;
+  }): Promise<{
+    items: FlatInventoryItem[]; total: number;
+    page: number; limit: number; totalPages: number;
+  }> {
     try {
       const { page = 1, limit = 20, search, businessUnitId, withoutProduct } = params;
-      
+
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
       const validatedPage = Math.max(1, page);
       const validatedLimit = Math.min(200, Math.max(1, limit));
       const skip = (validatedPage - 1) * validatedLimit;
 
-      const where: any = {
-        businessUnitId: resolvedBU.id,
-        status: 'ACTIVE',
-      };
-
-      if (withoutProduct) {
-        where.product = { is: null };
-      }
+      const where: any = { businessUnitId: resolvedBU.id, status: 'ACTIVE' };
+      if (withoutProduct) where.product = { is: null };
 
       if (search) {
         where.OR = [
@@ -3662,33 +3388,14 @@ export class InventoryService extends BaseService {
 
       const [items, total] = await Promise.all([
         this.prisma.inventory.findMany({
-          where,
-          skip,
-          take: validatedLimit,
+          where, skip, take: validatedLimit,
           orderBy: { updatedAt: 'desc' },
           include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true,
-                barcode: true,
-                unitPrice: true,
-                costPrice: true,
-                category: { select: { id: true, name: true } },
-                supplier: { select: { id: true, name: true } },
-                images: true,
-                isActive: true,
-              },
-            },
+            product: { select: PRODUCT_SELECT },
             variant: {
               select: {
-                id: true,
-                name: true,
-                sku: true,
-                price: true,
-                attributes: true,
-                isActive: true,
+                id: true, name: true, sku: true, price: true,
+                attributes: true, isActive: true, images: true,
               },
             },
           },
@@ -3696,56 +3403,14 @@ export class InventoryService extends BaseService {
         this.prisma.inventory.count({ where }),
       ]);
 
-      // Format and normalize items with all fields
-      const formattedItems = items.map((item: any) => {
-        const baseItem = {
-          id: item.id,
-          productId: item.product?.id || null,
-          product: item.product,
-          variantId: item.variant?.id || null,
-          variant: item.variant,
-          name: item.product?.name || item.variant?.name || 'Unknown',
-          sku: item.product?.sku || item.variant?.sku || 'N/A',
-          barcode: item.product?.barcode || null,
-          quantity: item.quantity,
-          reserved: item.reserved || 0,
-          available: item.quantity - (item.reserved || 0),
-          unitPrice: item.product?.unitPrice || item.variant?.price || 0,
-          costPrice: item.product?.costPrice || 0,
-          category: item.product?.category?.name || 'Uncategorized',
-          categoryId: item.product?.category?.id || null,
-          supplier: item.product?.supplier?.name || null,
-          supplierId: item.product?.supplier?.id || null,
-          reorderPoint: item.reorderPoint || 5,
-          location: item.location || 'Warehouse',
-          notes: item.notes || null,
-          hasProduct: !!item.product,
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
-          stock: item.quantity,
-          price: item.product?.unitPrice || item.variant?.price || 0,
-          // Include all new fields
-          images: (item.images && item.images.length > 0) ? item.images : (item.product?.images || []),
-          isActive: item.product?.isActive ?? true,
-          description: item.description || item.product?.description || null,
-          weight: item.weight ?? item.product?.weight ?? 0,
-          taxRate: item.taxRate ?? item.product?.taxRate ?? 0,
-          tags: (item.tags && item.tags.length > 0) ? item.tags : (item.product?.tags || []),
-        };
-        
-        // Apply normalization
-        return normalizeInventoryItem(baseItem);
-      });
-
       return {
-        items: formattedItems,
-        total,
-        page: validatedPage,
-        limit: validatedLimit,
+        items: normalizeInventoryItems(items),
+        total, page: validatedPage, limit: validatedLimit,
         totalPages: Math.ceil(total / validatedLimit),
       };
-    } catch (error) {
-      this.handleError(error, 'InventoryService.getInventoryItems');
+    } catch (err) {
+      this.handleError(err, 'InventoryService.getInventoryItems');
+      throw err;
     }
   }
 }

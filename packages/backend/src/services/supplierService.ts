@@ -6,6 +6,51 @@ import { Prisma } from '../generated/prisma/index.js';
 import { logger } from '../lib/logger.js';
 
 // ============================================
+// CONSTANTS
+// ============================================
+
+/**
+ * Placeholder IDs that indicate the frontend failed to resolve a real
+ * database entity. These must NEVER be passed to Prisma as foreign keys.
+ */
+const PLACEHOLDER_COMPANY_IDS = new Set([
+  'default',
+  'default-company',
+  'default-company-id',
+  'null',
+  'undefined',
+  '',
+]);
+
+const PLACEHOLDER_USER_IDS = new Set([
+  'default',
+  'default-user',
+  'default-user-id',
+  'null',
+  'undefined',
+  '',
+]);
+
+/**
+ * UUID v4 pattern — used to short-circuit obviously-invalid IDs before
+ * we hit the database.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * CUID pattern — Prisma's default `@default(cuid())` format.
+ * e.g. "cmu4l93cr00045kc90tx9rzdj"
+ */
+const CUID_PATTERN = /^c[a-z0-9]{20,30}$/i;
+
+/**
+ * Clerk user ID pattern.
+ * e.g. "user_3HxSsg839NHqUGCeoZH5MgdlvUw"
+ */
+const CLERK_USER_ID_PATTERN = /^user_[A-Za-z0-9]+$/;
+
+// ============================================
 // INTERFACES
 // ============================================
 
@@ -49,31 +94,201 @@ interface UpdateSupplierData {
 
 export class SupplierService extends BaseService {
   /**
-   * Handle errors properly
+   * Centralised error handling.
    */
   private handleServiceError(error: any, methodName: string): never {
     console.error(`❌ Error in ${methodName}:`, error);
+
     if (error instanceof AppError) {
       throw error;
     }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === 'P2002') {
-        throw new AppError(`Duplicate entry: ${error.meta?.target || 'field'} already exists`, 400);
+        const target = Array.isArray(error.meta?.target)
+          ? (error.meta?.target as string[]).join(', ')
+          : String(error.meta?.target ?? 'field');
+        throw new AppError(`Duplicate entry: ${target} already exists`, 400);
       }
       if (error.code === 'P2003') {
-        throw new AppError('Foreign key constraint failed', 400);
+        const field = String(error.meta?.field_name ?? 'relation');
+        throw new AppError(
+          `Foreign key constraint failed on "${field}". ` +
+            `The referenced record does not exist.`,
+          400
+        );
       }
       if (error.code === 'P2025') {
         throw new AppError('Record not found', 404);
       }
     }
-    throw new AppError(`Failed to ${methodName.replace('SupplierService.', '')}: ${error.message || 'Unknown error'}`, 500);
+
+    const shortName = methodName.replace('SupplierService.', '');
+    throw new AppError(
+      `Failed to ${shortName}: ${error?.message || 'Unknown error'}`,
+      500
+    );
+  }
+
+  // ==========================================
+  // FOREIGN KEY VALIDATION HELPERS
+  // ==========================================
+
+  /**
+   * Ensure a companyId is a real database ID and not a placeholder.
+   * Throws a descriptive AppError if it is invalid.
+   */
+  private assertValidCompanyId(
+    companyId: string | undefined | null
+  ): asserts companyId is string {
+    if (!companyId) {
+      throw new AppError('Company ID is required', 400);
+    }
+
+    const normalised = companyId.trim().toLowerCase();
+    if (PLACEHOLDER_COMPANY_IDS.has(normalised)) {
+      throw new AppError(
+        `Invalid company ID "${companyId}". ` +
+          `Please select a real company before creating a supplier.`,
+        400
+      );
+    }
   }
 
   /**
-   * Get all suppliers with pagination and filtering
-   * GET /suppliers
+   * Ensure a userId is a real database ID and not a placeholder.
+   * Accepts both Prisma CUIDs and Clerk user IDs.
    */
+  private assertValidUserId(
+    userId: string | undefined | null
+  ): asserts userId is string {
+    if (!userId) {
+      throw new AppError('User ID is required', 400);
+    }
+
+    const normalised = userId.trim().toLowerCase();
+    if (PLACEHOLDER_USER_IDS.has(normalised)) {
+      throw new AppError(
+        `Invalid user ID "${userId}". Please log in again.`,
+        400
+      );
+    }
+  }
+
+  /**
+   * Verify that the company actually exists in the database.
+   * Throws a descriptive AppError if not.
+   */
+  private async assertCompanyExists(companyId: string): Promise<void> {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
+    });
+
+    if (!company) {
+      throw new AppError(
+        `Company with ID "${companyId}" does not exist. ` +
+          `Please create a company first.`,
+        400
+      );
+    }
+  }
+
+  /**
+   * Resolve a user identifier to the canonical Prisma `User.id`.
+   *
+   * Accepts EITHER:
+   *   1. A Prisma User.id CUID             e.g. "cmu4l93cr00045kc90tx9rzdj"
+   *   2. A Clerk user ID                   e.g. "user_3HxSsg839NHqUGCeoZH5MgdlvUw"
+   *
+   * Returns the CUID that uniquely identifies the row.
+   *
+   * Throws a descriptive AppError if neither form resolves to an
+   * existing user — including a clear hint when the account exists in
+   * Clerk but hasn't been synced to the local `users` table yet.
+   */
+  private async resolveUserId(
+    userId: string | undefined | null
+  ): Promise<string> {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      throw new AppError('User ID is required. Please log in again.', 400);
+    }
+
+    const trimmed = userId.trim();
+
+    // ---- 1. Fast path: lookup by Prisma primary key (CUID) -----------
+    // Only attempt this if the string looks like a CUID, otherwise skip
+    // straight to the Clerk branch — saves an unnecessary DB round-trip.
+    if (CUID_PATTERN.test(trimmed) || UUID_PATTERN.test(trimmed)) {
+      const byId = await this.prisma.user.findUnique({
+        where: { id: trimmed },
+        select: { id: true },
+      });
+      if (byId) {
+        return byId.id;
+      }
+    }
+
+    // ---- 2. Clerk ID lookup ------------------------------------------
+    if (CLERK_USER_ID_PATTERN.test(trimmed)) {
+      const byClerk = await this.prisma.user.findUnique({
+        where: { clerkId: trimmed },
+        select: { id: true },
+      });
+      if (byClerk) {
+        return byClerk.id;
+      }
+
+      // The Clerk ID is well-formed but has no matching row. This is
+      // the classic "first login before sync" scenario.
+      throw new AppError(
+        `Your account (${trimmed}) has not been synced to the database yet. ` +
+          `Please refresh the page and try again, or contact support if the ` +
+          `problem persists.`,
+        400,
+        'USER_NOT_SYNCED'
+      );
+    }
+
+    // ---- 3. Neither pattern matched — try both lookups anyway --------
+    // Some environments use non-standard ID formats. Rather than give
+    // up, fall through and try both columns.
+    const [byIdFallback, byClerkFallback] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: trimmed },
+        select: { id: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { clerkId: trimmed },
+        select: { id: true },
+      }),
+    ]);
+
+    if (byIdFallback) return byIdFallback.id;
+    if (byClerkFallback) return byClerkFallback.id;
+
+    throw new AppError(
+      `User "${trimmed}" does not exist. Please log in again.`,
+      400,
+      'USER_NOT_FOUND'
+    );
+  }
+
+  /**
+   * Verify the user exists. Accepts both CUIDs and Clerk IDs.
+   * Returns the resolved Prisma User.id CUID.
+   *
+   * Kept for backwards compatibility with the previous private helper
+   * name. New code should call `resolveUserId()` directly.
+   */
+  private async assertUserExists(userId: string): Promise<string> {
+    return this.resolveUserId(userId);
+  }
+
+  // ==========================================
+  // GET /suppliers
+  // ==========================================
+
   async getAllSuppliers(params: {
     page?: number;
     limit?: number;
@@ -99,10 +314,10 @@ export class SupplierService extends BaseService {
       const skip = (validatedPage - 1) * validatedLimit;
 
       const where: any = {};
-      
+
       if (companyId) where.companyId = companyId;
       if (isActive !== undefined) where.isActive = isActive;
-      
+
       if (search) {
         where.OR = [
           { name: { contains: search, mode: 'insensitive' } },
@@ -158,7 +373,11 @@ export class SupplierService extends BaseService {
         ...supplier,
         productCount: supplier._count?.products || 0,
         purchaseOrderCount: supplier._count?.purchaseOrders || 0,
-        totalPurchases: supplier.purchaseOrders?.reduce((sum: number, po: any) => sum + po.total, 0) || 0,
+        totalPurchases:
+          supplier.purchaseOrders?.reduce(
+            (sum: number, po: any) => sum + po.total,
+            0
+          ) || 0,
       }));
 
       return {
@@ -173,10 +392,10 @@ export class SupplierService extends BaseService {
     }
   }
 
-  /**
-   * Get supplier by ID
-   * GET /suppliers/:id
-   */
+  // ==========================================
+  // GET /suppliers/:id
+  // ==========================================
+
   async getSupplierById(id: string, companyId?: string) {
     try {
       if (!id) {
@@ -238,9 +457,17 @@ export class SupplierService extends BaseService {
         throw new AppError('Supplier does not belong to this company', 403);
       }
 
-      const totalPurchases = supplier.purchaseOrders?.reduce((sum: number, po: any) => sum + po.total, 0) || 0;
-      const completedOrders = supplier.purchaseOrders?.filter((po: any) => po.status === 'RECEIVED').length || 0;
-      const pendingOrders = supplier.purchaseOrders?.filter((po: any) => po.status === 'PENDING').length || 0;
+      const totalPurchases =
+        supplier.purchaseOrders?.reduce(
+          (sum: number, po: any) => sum + po.total,
+          0
+        ) || 0;
+      const completedOrders =
+        supplier.purchaseOrders?.filter((po: any) => po.status === 'RECEIVED')
+          .length || 0;
+      const pendingOrders =
+        supplier.purchaseOrders?.filter((po: any) => po.status === 'PENDING')
+          .length || 0;
 
       return {
         ...supplier,
@@ -249,42 +476,49 @@ export class SupplierService extends BaseService {
         totalPurchases,
         completedOrders,
         pendingOrders,
-        averageOrderValue: supplier.purchaseOrders?.length > 0 
-          ? totalPurchases / supplier.purchaseOrders.length 
-          : 0,
+        averageOrderValue:
+          supplier.purchaseOrders?.length > 0
+            ? totalPurchases / supplier.purchaseOrders.length
+            : 0,
       };
     } catch (error) {
       return this.handleServiceError(error, 'SupplierService.getSupplierById');
     }
   }
 
-  /**
-   * Create a new supplier - FIXED
-   * POST /suppliers
-   */
+  // ==========================================
+  // POST /suppliers  (FIXED)
+  // ==========================================
+
   async createSupplier(data: CreateSupplierData) {
     try {
       console.log('📦 Creating supplier with data:', data);
-      
-      // Required fields validation
+
+      // ---- 1. Basic required field validation -------------------------
       if (!data.name?.trim()) {
         throw new AppError('Supplier name is required', 400);
       }
-      if (!data.companyId) {
-        throw new AppError('Company ID is required', 400);
-      }
-      if (!data.userId) {
-        throw new AppError('User ID is required', 400);
-      }
 
-      // Build the data object - ONLY include fields that have values
+      // ---- 2. Placeholder / format validation -------------------------
+      // These throw friendly errors BEFORE Prisma tries to hit the DB.
+      this.assertValidCompanyId(data.companyId);
+      this.assertValidUserId(data.userId);
+
+      // ---- 3. Existence validation ------------------------------------
+      // Verify the referenced rows actually exist. This turns a cryptic
+      // P2003 "Foreign key constraint failed" into an actionable message.
+      await this.assertCompanyExists(data.companyId);
+      // resolveUserId accepts BOTH Prisma CUIDs and Clerk IDs.
+      await this.resolveUserId(data.userId);
+
+      // ---- 4. Build the create payload --------------------------------
       const createData: any = {
         name: data.name.trim(),
         companyId: data.companyId,
         isActive: data.isActive !== undefined ? data.isActive : true,
       };
 
-      // Only add fields if they have values (not null, not undefined, not empty)
+      // Only attach optional fields when they have a real value.
       if (data.contactPerson && data.contactPerson.trim()) {
         createData.contactPerson = data.contactPerson.trim();
       }
@@ -321,7 +555,7 @@ export class SupplierService extends BaseService {
 
       console.log('🧹 Final createData:', createData);
 
-      // Check for existing supplier
+      // ---- 5. Duplicate-name guard (scoped to company) ----------------
       const existing = await this.prisma.supplier.findFirst({
         where: {
           name: { equals: createData.name, mode: 'insensitive' },
@@ -330,10 +564,13 @@ export class SupplierService extends BaseService {
       });
 
       if (existing) {
-        throw new AppError('Supplier with this name already exists', 400);
+        throw new AppError(
+          `Supplier "${createData.name}" already exists for this company`,
+          400
+        );
       }
 
-      // Create the supplier
+      // ---- 6. Create ---------------------------------------------------
       const supplier = await this.prisma.supplier.create({
         data: createData,
       });
@@ -346,10 +583,10 @@ export class SupplierService extends BaseService {
     }
   }
 
-  /**
-   * Update supplier - FIXED
-   * PUT /suppliers/:id
-   */
+  // ==========================================
+  // PUT /suppliers/:id
+  // ==========================================
+
   async updateSupplier(id: string, data: UpdateSupplierData) {
     try {
       if (!id) {
@@ -364,7 +601,6 @@ export class SupplierService extends BaseService {
         throw new AppError('Supplier not found', 404);
       }
 
-      // Build update data - only include fields that have values
       const updateData: any = {};
 
       if (data.name !== undefined) {
@@ -412,8 +648,11 @@ export class SupplierService extends BaseService {
         updateData.isActive = data.isActive;
       }
 
-      // Check name uniqueness
-      if (updateData.name && updateData.name.toLowerCase() !== supplier.name.toLowerCase()) {
+      // Name uniqueness within company
+      if (
+        updateData.name &&
+        updateData.name.toLowerCase() !== supplier.name.toLowerCase()
+      ) {
         const existing = await this.prisma.supplier.findFirst({
           where: {
             name: { equals: updateData.name, mode: 'insensitive' },
@@ -427,8 +666,12 @@ export class SupplierService extends BaseService {
         }
       }
 
-      // Check email uniqueness (only if email is provided and different)
-      if (updateData.email && updateData.email.toLowerCase() !== (supplier.email || '').toLowerCase()) {
+      // Email uniqueness within company
+      if (
+        updateData.email &&
+        updateData.email.toLowerCase() !==
+          (supplier.email || '').toLowerCase()
+      ) {
         const existingEmail = await this.prisma.supplier.findFirst({
           where: {
             email: { equals: updateData.email, mode: 'insensitive' },
@@ -455,10 +698,10 @@ export class SupplierService extends BaseService {
     }
   }
 
-  /**
-   * Delete supplier (soft delete if has associations)
-   * DELETE /suppliers/:id
-   */
+  // ==========================================
+  // DELETE /suppliers/:id
+  // ==========================================
+
   async deleteSupplier(id: string, companyId?: string) {
     try {
       if (!id) {
@@ -481,13 +724,11 @@ export class SupplierService extends BaseService {
         throw new AppError('Supplier does not belong to this company', 403);
       }
 
-      // Soft delete if has associations
+      // Soft delete when there are associations
       if (supplier.products.length > 0 || supplier.purchaseOrders.length > 0) {
         const archivedSupplier = await this.prisma.supplier.update({
           where: { id },
-          data: {
-            isActive: false,
-          },
+          data: { isActive: false },
         });
 
         return {
@@ -498,9 +739,7 @@ export class SupplierService extends BaseService {
       }
 
       // Hard delete
-      await this.prisma.supplier.delete({
-        where: { id },
-      });
+      await this.prisma.supplier.delete({ where: { id } });
 
       return {
         message: 'Supplier deleted successfully',
@@ -511,10 +750,10 @@ export class SupplierService extends BaseService {
     }
   }
 
-  /**
-   * Toggle supplier status
-   * PATCH /suppliers/:id/status
-   */
+  // ==========================================
+  // PATCH /suppliers/:id/status
+  // ==========================================
+
   async toggleSupplierStatus(id: string, isActive: boolean) {
     try {
       if (!id) {
@@ -539,14 +778,17 @@ export class SupplierService extends BaseService {
 
       return updatedSupplier;
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.toggleSupplierStatus');
+      return this.handleServiceError(
+        error,
+        'SupplierService.toggleSupplierStatus'
+      );
     }
   }
 
-  /**
-   * Search suppliers
-   * GET /suppliers/search
-   */
+  // ==========================================
+  // GET /suppliers/search
+  // ==========================================
+
   async searchSuppliers(query: string, companyId?: string, limit: number = 10) {
     try {
       if (!query || query.trim().length === 0) {
@@ -590,22 +832,25 @@ export class SupplierService extends BaseService {
 
       return suppliers;
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.searchSuppliers');
+      return this.handleServiceError(
+        error,
+        'SupplierService.searchSuppliers'
+      );
     }
   }
 
-  /**
-   * Bulk delete suppliers
-   * POST /suppliers/bulk/delete
-   */
+  // ==========================================
+  // POST /suppliers/bulk/delete
+  // ==========================================
+
   async bulkDeleteSuppliers(ids: string[], companyId?: string) {
     try {
       if (!ids || ids.length === 0) {
         throw new AppError('Supplier IDs array is required', 400);
       }
 
-      const results = [];
-      const errors = [];
+      const results: any[] = [];
+      const errors: any[] = [];
       let deletedCount = 0;
 
       for (const id of ids) {
@@ -627,15 +872,21 @@ export class SupplierService extends BaseService {
         errors,
       };
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.bulkDeleteSuppliers');
+      return this.handleServiceError(
+        error,
+        'SupplierService.bulkDeleteSuppliers'
+      );
     }
   }
 
-  /**
-   * Get supplier products
-   * GET /suppliers/:id/products
-   */
-  async getSupplierProducts(supplierId: string, params?: { page?: number; limit?: number }) {
+  // ==========================================
+  // GET /suppliers/:id/products
+  // ==========================================
+
+  async getSupplierProducts(
+    supplierId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       if (!supplierId) {
         throw new AppError('Supplier ID is required', 400);
@@ -702,15 +953,21 @@ export class SupplierService extends BaseService {
         limit,
       };
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.getSupplierProducts');
+      return this.handleServiceError(
+        error,
+        'SupplierService.getSupplierProducts'
+      );
     }
   }
 
-  /**
-   * Get supplier purchase orders
-   * GET /suppliers/:id/purchase-orders
-   */
-  async getSupplierPurchaseOrders(supplierId: string, params?: { page?: number; limit?: number }) {
+  // ==========================================
+  // GET /suppliers/:id/purchase-orders
+  // ==========================================
+
+  async getSupplierPurchaseOrders(
+    supplierId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       if (!supplierId) {
         throw new AppError('Supplier ID is required', 400);
@@ -770,15 +1027,21 @@ export class SupplierService extends BaseService {
         limit,
       };
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.getSupplierPurchaseOrders');
+      return this.handleServiceError(
+        error,
+        'SupplierService.getSupplierPurchaseOrders'
+      );
     }
   }
 
-  /**
-   * Get supplier order history
-   * GET /suppliers/:id/orders
-   */
-  async getSupplierOrderHistory(supplierId: string, params?: { page?: number; limit?: number }) {
+  // ==========================================
+  // GET /suppliers/:id/orders
+  // ==========================================
+
+  async getSupplierOrderHistory(
+    supplierId: string,
+    params?: { page?: number; limit?: number }
+  ) {
     try {
       if (!supplierId) {
         throw new AppError('Supplier ID is required', 400);
@@ -818,14 +1081,17 @@ export class SupplierService extends BaseService {
         limit,
       };
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.getSupplierOrderHistory');
+      return this.handleServiceError(
+        error,
+        'SupplierService.getSupplierOrderHistory'
+      );
     }
   }
 
-  /**
-   * Get supplier statistics
-   * GET /suppliers/:id/statistics
-   */
+  // ==========================================
+  // GET /suppliers/:id/statistics
+  // ==========================================
+
   async getSupplierStatistics(supplierId: string) {
     try {
       if (!supplierId) {
@@ -856,13 +1122,26 @@ export class SupplierService extends BaseService {
       }
 
       const totalProducts = supplier.products.length;
-      const totalProductsValue = supplier.products.reduce((sum: number, p: any) => sum + (p.unitPrice || 0), 0);
-      const totalCost = supplier.products.reduce((sum: number, p: any) => sum + (p.costPrice || 0), 0);
-      
+      const totalProductsValue = supplier.products.reduce(
+        (sum: number, p: any) => sum + (p.unitPrice || 0),
+        0
+      );
+      const totalCost = supplier.products.reduce(
+        (sum: number, p: any) => sum + (p.costPrice || 0),
+        0
+      );
+
       const totalPurchaseOrders = supplier.purchaseOrders.length;
-      const totalPurchaseValue = supplier.purchaseOrders.reduce((sum: number, po: any) => sum + po.total, 0);
-      const completedOrders = supplier.purchaseOrders.filter((po: any) => po.status === 'RECEIVED').length;
-      const pendingOrders = supplier.purchaseOrders.filter((po: any) => po.status === 'PENDING').length;
+      const totalPurchaseValue = supplier.purchaseOrders.reduce(
+        (sum: number, po: any) => sum + po.total,
+        0
+      );
+      const completedOrders = supplier.purchaseOrders.filter(
+        (po: any) => po.status === 'RECEIVED'
+      ).length;
+      const pendingOrders = supplier.purchaseOrders.filter(
+        (po: any) => po.status === 'PENDING'
+      ).length;
 
       return {
         supplierId: supplier.id,
@@ -874,11 +1153,20 @@ export class SupplierService extends BaseService {
         totalPurchaseValue,
         completedOrders,
         pendingOrders,
-        averageOrderValue: totalPurchaseOrders > 0 ? totalPurchaseValue / totalPurchaseOrders : 0,
-        completionRate: totalPurchaseOrders > 0 ? (completedOrders / totalPurchaseOrders) * 100 : 0,
+        averageOrderValue:
+          totalPurchaseOrders > 0
+            ? totalPurchaseValue / totalPurchaseOrders
+            : 0,
+        completionRate:
+          totalPurchaseOrders > 0
+            ? (completedOrders / totalPurchaseOrders) * 100
+            : 0,
       };
     } catch (error) {
-      return this.handleServiceError(error, 'SupplierService.getSupplierStatistics');
+      return this.handleServiceError(
+        error,
+        'SupplierService.getSupplierStatistics'
+      );
     }
   }
 }

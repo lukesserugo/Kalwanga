@@ -2,8 +2,16 @@
 
 import { api } from './api';
 import type { Sale } from '../types/sale';
+import type { PaymentMethod } from './saleService';
 import { paymentService } from './paymentService';
 import type { Payment } from '../types/payment';
+
+export type { PaymentMethod } from './saleService';
+
+// Re-export the idempotency helper so callers can `import {
+// newIdempotencyKey } from '@/services/checkoutService'` without
+// pulling in the whole cart service.
+export { newIdempotencyKey } from './cartService';
 
 // ============================================
 // TYPES FOR CHECKOUT OPERATIONS
@@ -13,6 +21,10 @@ export interface CheckoutItem {
   productId: string;
   variantId?: string | null;
   quantity: number;
+  /**
+   * Read-only. The server computes this from the product's price at
+   * checkout time. Never send it in requests.
+   */
   unitPrice: number;
   total: number;
 }
@@ -20,7 +32,14 @@ export interface CheckoutItem {
 export interface CheckoutData {
   cartId: string;
   customerId?: string;
-  paymentMethod: string;
+  /**
+   * Narrowed to the shared canonical set. Mirrors what the backend's
+   * `checkoutController.checkoutSchema` accepts.
+   */
+  paymentMethod: PaymentMethod;
+  /**
+   * `0` is valid — loyalty-only and fully-discounted checkouts.
+   */
   paidAmount: number;
   discount?: number;
   notes?: string;
@@ -32,7 +51,14 @@ export interface CheckoutData {
   customerPhone?: string;
   customerName?: string;
   customerAddress?: string;
-  savePaymentMethod?: boolean; // ✅ ADDED
+  savePaymentMethod?: boolean;
+  /**
+   * Idempotency key. When supplied, the same value sent twice results
+   * in the same sale being returned — no duplicate. Generate one with
+   * `newIdempotencyKey()` and reuse it across retries. Do NOT
+   * regenerate on retry.
+   */
+  idempotencyKey?: string;
 }
 
 export interface CheckoutResponse {
@@ -89,10 +115,25 @@ export interface CheckoutStats {
     weekly: Array<{ week: string; revenue: number; orders: number }>;
     monthly: Array<{ month: string; revenue: number; orders: number }>;
   };
-  topProducts: Array<{ id: string; name: string; quantity: number; revenue: number }>;
-  topCustomers: Array<{ id: string; name: string; email: string; totalSpent: number; orderCount: number }>;
+  topProducts: Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  topCustomers: Array<{
+    id: string;
+    name: string;
+    email: string;
+    totalSpent: number;
+    orderCount: number;
+  }>;
   paymentMethods: Array<{ method: string; count: number; total: number }>;
-  checkoutSteps: Array<{ step: string; completed: number; dropped: number }>;
+  checkoutSteps: Array<{
+    step: string;
+    completed: number;
+    dropped: number;
+  }>;
   performance: {
     averageCheckoutTime: number;
     pageLoadTime: number;
@@ -101,7 +142,7 @@ export interface CheckoutStats {
   };
 }
 
-export interface PaymentMethod {
+export interface PaymentMethodOption {
   id: string;
   name: string;
   code: string;
@@ -116,7 +157,7 @@ export interface CheckoutSettings {
   requireSignature: boolean;
   maxDiscount: number;
   taxInclusive: boolean;
-  defaultPaymentMethod: string;
+  defaultPaymentMethod: PaymentMethod;
   receiptFooter: string;
   loyaltyPointsEnabled: boolean;
   pointsPerDollar: number;
@@ -149,7 +190,12 @@ export interface CheckoutHistoryResponse {
 }
 
 export interface CalculateTotalsRequest {
-  items: Array<{ productId: string; variantId?: string; quantity: number; unitPrice: number }>;
+  items: Array<{
+    productId: string;
+    variantId?: string;
+    quantity: number;
+    unitPrice: number;
+  }>;
   discount?: number;
   taxRate?: number;
 }
@@ -169,7 +215,7 @@ export interface CalculateTotalsResponse {
 
 export interface ValidateCheckoutRequest {
   cartId: string;
-  paymentMethod: string;
+  paymentMethod: PaymentMethod;
   paidAmount: number;
 }
 
@@ -180,7 +226,7 @@ export interface ValidateCheckoutResponse {
 }
 
 export interface ProcessPaymentRequest {
-  paymentMethod: string;
+  paymentMethod: PaymentMethod;
   amount: number;
   paymentDetails?: Record<string, any>;
 }
@@ -224,7 +270,7 @@ export interface CheckoutSettingsUpdate {
   requireSignature?: boolean;
   maxDiscount?: number;
   taxInclusive?: boolean;
-  defaultPaymentMethod?: string;
+  defaultPaymentMethod?: PaymentMethod;
   receiptFooter?: string;
   loyaltyPointsEnabled?: boolean;
   pointsPerDollar?: number;
@@ -258,76 +304,73 @@ export const checkoutService = {
   // ============================================
 
   /**
-   * Create a new checkout from cart
+   * Create a new checkout from a cart.
    * POST /checkout
+   *
+   * Pass `idempotencyKey` to make the call safe against retries and
+   * double-submits.
    */
-  async createCheckout(data: CheckoutData): Promise<CheckoutResponse> {
-    const response = await api.post<CheckoutResponse>('/checkout', data);
+  async createCheckout(
+    data: CheckoutData,
+  ): Promise<CheckoutResponse> {
+    const response = await api.post<CheckoutResponse>(
+      '/checkout',
+      data,
+    );
     return response;
   },
 
   /**
-   * Process checkout (legacy alias for createCheckout)
+   * Process checkout (alias for createCheckout).
    * POST /checkout
    */
-  async processCheckout(data: CheckoutData): Promise<CheckoutResponse> {
-    const response = await api.post<CheckoutResponse>('/checkout', data);
+  async processCheckout(
+    data: CheckoutData,
+  ): Promise<CheckoutResponse> {
+    const response = await api.post<CheckoutResponse>(
+      '/checkout',
+      data,
+    );
     return response;
   },
 
   /**
-   * Process checkout with integrated payment
-   * POST /checkout/process-with-payment
+   * Process checkout with integrated payment.
+   *
+   * ⚠ IMPORTANT: The backend's `/checkout` endpoint ALREADY creates a
+   * `Payment` row inside the same transaction as the sale. Calling
+   * `paymentService.processPayment` on top of it produces a duplicate
+   * payment for the same sale.
+   *
+   * This method therefore calls `/checkout` only, and adapts its
+   * response into the `CheckoutWithPaymentResponse` shape by
+   * extracting the payment the backend already created.
+   *
+   * Kept under this name for backward compatibility. New callers
+   * should use `processCheckout` directly.
    */
-  async processCheckoutWithPayment(data: CheckoutData): Promise<CheckoutWithPaymentResponse> {
-    try {
-      // 1. Process the checkout
-      const checkoutResult = await this.processCheckout({
-        cartId: data.cartId,
-        customerId: data.customerId,
-        paymentMethod: data.paymentMethod,
-        paidAmount: data.paidAmount,
-        discount: data.discount,
-        notes: data.notes,
-        cashRegisterId: data.cashRegisterId,
-        cashRegisterSessionId: data.cashRegisterSessionId,
-        applyLoyaltyPoints: data.applyLoyaltyPoints,
-        businessUnitId: data.businessUnitId,
-        customerEmail: data.customerEmail,
-        customerPhone: data.customerPhone,
-        customerName: data.customerName,
-        customerAddress: data.customerAddress,
-      });
+  async processCheckoutWithPayment(
+    data: CheckoutData,
+  ): Promise<CheckoutWithPaymentResponse> {
+    const checkout = await this.processCheckout(data);
 
-      // 2. Process the payment
-      const payment = await paymentService.processPayment({
-        amount: checkoutResult.receipt.total,
-        paymentMethod: data.paymentMethod,
-        saleId: checkoutResult.sale.id,
-        businessUnitId: data.businessUnitId,
-        cashRegisterId: data.cashRegisterId,
-        cashRegisterSessionId: data.cashRegisterSessionId,
-        customerId: data.customerId,
-        savePaymentMethod: data.savePaymentMethod,
-        metadata: {
-          receiptNumber: checkoutResult.receipt.receiptNumber,
-          cartId: data.cartId,
-        },
-        description: `Payment for order ${checkoutResult.receipt.receiptNumber}`,
-      });
+    // The backend returns the payment it created inside
+    // `processCheckout`. It is not always present (idempotent replays
+    // may omit it), so fall back to a receipt-derived stub.
+    const payment =
+      (checkout as any).payment ??
+      ({
+        saleId: checkout.sale.id,
+        amount: checkout.receipt.total,
+        paymentMethod: checkout.receipt.paymentMethod,
+        status: 'PAID',
+      } as unknown as Payment);
 
-      return {
-        checkout: checkoutResult,
-        payment,
-      };
-    } catch (error) {
-      console.error('Checkout with payment failed:', error);
-      throw error;
-    }
+    return { checkout, payment };
   },
 
   /**
-   * Get all checkouts with pagination (Admin/SuperAdmin only)
+   * Get all checkouts with pagination (Admin/SuperAdmin only).
    * GET /checkout
    */
   async getCheckouts(params?: {
@@ -359,7 +402,7 @@ export const checkoutService = {
   },
 
   /**
-   * Get checkout by ID
+   * Get checkout by ID.
    * GET /checkout/:id
    */
   async getCheckoutById(id: string): Promise<Sale> {
@@ -368,75 +411,105 @@ export const checkoutService = {
   },
 
   /**
-   * Get checkout by receipt number
+   * Get checkout by receipt number.
    * GET /checkout/receipt/:receiptNumber
    */
-  async getCheckoutByReceiptNumber(receiptNumber: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/checkout/receipt/${receiptNumber}`);
+  async getCheckoutByReceiptNumber(
+    receiptNumber: string,
+  ): Promise<Sale> {
+    const response = await api.get<Sale>(
+      `/checkout/receipt/${receiptNumber}`,
+    );
     return response;
   },
 
   /**
-   * Update checkout (Admin/SuperAdmin only)
+   * Update checkout (Admin/SuperAdmin only).
    * PUT /checkout/:id
    */
   async updateCheckout(
     id: string,
     data: {
-      status?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED' | 'VOIDED';
-      paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'PARTIAL';
+      status?:
+        | 'PENDING'
+        | 'PROCESSING'
+        | 'COMPLETED'
+        | 'CANCELLED'
+        | 'VOIDED';
+      paymentStatus?:
+        | 'PENDING'
+        | 'PAID'
+        | 'FAILED'
+        | 'REFUNDED'
+        | 'PARTIAL';
       notes?: string;
-    }
+    },
   ): Promise<Sale> {
     const response = await api.put<Sale>(`/checkout/${id}`, data);
     return response;
   },
 
   /**
-   * Delete checkout (Admin/SuperAdmin only)
+   * Delete checkout (Admin/SuperAdmin only).
    * DELETE /checkout/:id
    */
-  async deleteCheckout(id: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.delete<{ success: boolean; message: string }>(`/checkout/${id}`);
+  async deleteCheckout(
+    id: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await api.delete<{
+      success: boolean;
+      message: string;
+    }>(`/checkout/${id}`);
     return response;
   },
 
   /**
-   * Void checkout (Admin/SuperAdmin only)
+   * Void checkout (Admin/SuperAdmin only).
    * POST /checkout/:saleId/void
    */
   async voidCheckout(
     saleId: string,
-    data?: CancelCheckoutRequest
+    data?: CancelCheckoutRequest,
   ): Promise<Sale> {
-    const response = await api.post<Sale>(`/checkout/${saleId}/void`, data || {});
+    const response = await api.post<Sale>(
+      `/checkout/${saleId}/void`,
+      data || {},
+    );
     return response;
   },
 
   /**
-   * Cancel checkout
+   * Cancel checkout.
    * POST /checkout/:id/cancel
    */
-  async cancelCheckout(id: string, data?: CancelCheckoutRequest): Promise<Sale> {
-    const response = await api.post<Sale>(`/checkout/${id}/cancel`, data || {});
+  async cancelCheckout(
+    id: string,
+    data?: CancelCheckoutRequest,
+  ): Promise<Sale> {
+    const response = await api.post<Sale>(
+      `/checkout/${id}/cancel`,
+      data || {},
+    );
     return response;
   },
 
   /**
-   * Complete checkout
+   * Complete checkout.
    * POST /checkout/:id/complete
    */
   async completeCheckout(id: string): Promise<Sale> {
-    const response = await api.post<Sale>(`/checkout/${id}/complete`);
+    const response = await api.post<Sale>(
+      `/checkout/${id}/complete`,
+    );
     return response;
   },
 
   // ============================================
-  // CHECKOUT ITEMS OPERATIONS
+  // CHECKOUT ITEM OPERATIONS
   // ============================================
 
   /**
-   * Get checkout items
+   * Get checkout items.
    * GET /checkout/:id/items
    */
   async getCheckoutItems(id: string): Promise<any[]> {
@@ -445,8 +518,13 @@ export const checkoutService = {
   },
 
   /**
-   * Add item to checkout
+   * Add item to checkout.
    * POST /checkout/:id/items
+   *
+   * ⚠ `unitPrice` is NOT accepted. The server looks up the
+   * authoritative price from `Product.unitPrice` or
+   * `ProductVariant.price`. Sending it in the body is a no-op — the
+   * server ignores it.
    */
   async addCheckoutItem(
     id: string,
@@ -454,114 +532,141 @@ export const checkoutService = {
       productId: string;
       variantId?: string;
       quantity: number;
-      unitPrice: number;
-    }
+    },
   ): Promise<any> {
-    const response = await api.post<any>(`/checkout/${id}/items`, data);
+    const response = await api.post<any>(
+      `/checkout/${id}/items`,
+      data,
+    );
     return response;
   },
 
   /**
-   * Update checkout item quantity
+   * Update checkout item quantity.
    * PUT /checkout/:id/items/:itemId
    */
   async updateCheckoutItem(
     id: string,
     itemId: string,
-    data: { quantity: number }
+    data: { quantity: number },
   ): Promise<any> {
-    const response = await api.put<any>(`/checkout/${id}/items/${itemId}`, data);
-    return response;
-  },
-
-  /**
-   * Remove item from checkout
-   * DELETE /checkout/:id/items/:itemId
-   */
-  async removeCheckoutItem(id: string, itemId: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.delete<{ success: boolean; message: string }>(
-      `/checkout/${id}/items/${itemId}`
+    const response = await api.put<any>(
+      `/checkout/${id}/items/${itemId}`,
+      data,
     );
     return response;
   },
 
+  /**
+   * Remove item from checkout.
+   * DELETE /checkout/:id/items/:itemId
+   */
+  async removeCheckoutItem(
+    id: string,
+    itemId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await api.delete<{
+      success: boolean;
+      message: string;
+    }>(`/checkout/${id}/items/${itemId}`);
+    return response;
+  },
+
   // ============================================
-  // CHECKOUT PAYMENT OPERATIONS
+  // PAYMENT OPERATIONS
   // ============================================
 
   /**
-   * Process payment for checkout
+   * Process an additional payment for a checkout.
    * POST /checkout/:id/pay
+   *
+   * Used for split payments or partial payments AFTER the initial
+   * checkout. The initial checkout already creates its own payment.
    */
   async processPayment(
     id: string,
-    data: ProcessPaymentRequest
+    data: ProcessPaymentRequest,
   ): Promise<any> {
-    const response = await api.post<any>(`/checkout/${id}/pay`, data);
+    const response = await api.post<any>(
+      `/checkout/${id}/pay`,
+      data,
+    );
     return response;
   },
 
   /**
-   * Get payment methods
+   * Get payment methods.
    * GET /checkout/payment-methods
    */
   async getPaymentMethods(): Promise<{
     success: boolean;
-    data: PaymentMethod[];
+    data: PaymentMethodOption[];
   }> {
     const response = await api.get<{
       success: boolean;
-      data: PaymentMethod[];
+      data: PaymentMethodOption[];
     }>('/checkout/payment-methods');
     return response;
   },
 
   // ============================================
-  // CHECKOUT DISCOUNT OPERATIONS
+  // DISCOUNT OPERATIONS
   // ============================================
 
   /**
-   * Apply discount to checkout
+   * Apply discount to checkout.
    * POST /checkout/:id/discount
    */
-  async applyDiscount(id: string, data: { code: string }): Promise<Sale> {
-    const response = await api.post<Sale>(`/checkout/${id}/discount`, data);
+  async applyDiscount(
+    id: string,
+    data: { code: string },
+  ): Promise<Sale> {
+    const response = await api.post<Sale>(
+      `/checkout/${id}/discount`,
+      data,
+    );
     return response;
   },
 
   /**
-   * Remove discount from checkout
+   * Remove discount from checkout.
    * DELETE /checkout/:id/discount
    */
   async removeDiscount(id: string): Promise<Sale> {
-    const response = await api.delete<Sale>(`/checkout/${id}/discount`);
+    const response = await api.delete<Sale>(
+      `/checkout/${id}/discount`,
+    );
     return response;
   },
 
   // ============================================
-  // CHECKOUT RECEIPT OPERATIONS
+  // RECEIPT OPERATIONS
   // ============================================
 
   /**
-   * Get checkout receipt
+   * Get checkout receipt.
    * GET /checkout/:id/receipt
    */
   async getCheckoutReceipt(id: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/checkout/${id}/receipt`);
+    const response = await api.get<Sale>(
+      `/checkout/${id}/receipt`,
+    );
     return response;
   },
 
   /**
-   * Get checkout summary
+   * Get checkout summary.
    * GET /checkout/:id/summary
    */
   async getCheckoutSummary(id: string): Promise<CheckoutSummary> {
-    const response = await api.get<CheckoutSummary>(`/checkout/${id}/summary`);
+    const response = await api.get<CheckoutSummary>(
+      `/checkout/${id}/summary`,
+    );
     return response;
   },
 
   /**
-   * Get checkout summary by cart ID
+   * Get checkout summary by cart ID.
    * GET /checkout/summary/:cartId
    */
   async getCheckoutSummaryByCart(cartId: string): Promise<{
@@ -586,12 +691,12 @@ export const checkoutService = {
   },
 
   /**
-   * Send checkout receipt via email
+   * Send checkout receipt via email.
    * POST /checkout/:id/email-receipt
    */
   async sendReceiptEmail(
     id: string,
-    data?: EmailReceiptRequest
+    data?: EmailReceiptRequest,
   ): Promise<{ success: boolean; message: string; email: string }> {
     const response = await api.post<{
       success: boolean;
@@ -602,14 +707,16 @@ export const checkoutService = {
   },
 
   // ============================================
-  // CHECKOUT HISTORY OPERATIONS
+  // HISTORY OPERATIONS
   // ============================================
 
   /**
-   * Get checkout history with filters
+   * Get checkout history with filters.
    * GET /checkout/history
    */
-  async getCheckoutHistory(params?: CheckoutHistoryParams): Promise<{
+  async getCheckoutHistory(
+    params?: CheckoutHistoryParams,
+  ): Promise<{
     data: Sale[];
     total: number;
     page: number;
@@ -627,12 +734,12 @@ export const checkoutService = {
   },
 
   /**
-   * Get customer checkout history
+   * Get customer checkout history.
    * GET /checkout/customer/:customerId/history
    */
   async getCustomerCheckoutHistory(
     customerId: string,
-    params?: { page?: number; limit?: number }
+    params?: { page?: number; limit?: number },
   ): Promise<{
     history: Sale[];
     total: number;
@@ -649,11 +756,11 @@ export const checkoutService = {
   },
 
   // ============================================
-  // CHECKOUT STATISTICS OPERATIONS
+  // STATISTICS OPERATIONS
   // ============================================
 
   /**
-   * Get checkout statistics (Admin/SuperAdmin only)
+   * Get checkout statistics (Admin/SuperAdmin only).
    * GET /checkout/stats/summary
    */
   async getCheckoutStats(params?: {
@@ -661,12 +768,15 @@ export const checkoutService = {
     dateTo?: string;
     businessUnitId?: string;
   }): Promise<CheckoutStats> {
-    const response = await api.get<CheckoutStats>('/checkout/stats/summary', { params });
+    const response = await api.get<CheckoutStats>(
+      '/checkout/stats/summary',
+      { params },
+    );
     return response;
   },
 
   /**
-   * Get checkout statistics with filters
+   * Get checkout statistics with filters.
    * GET /checkout/stats
    */
   async getStats(params?: CheckoutStatsParams): Promise<{
@@ -674,47 +784,46 @@ export const checkoutService = {
     data: CheckoutStats;
     message?: string;
   }> {
-    try {
-      const response = await api.get<{
-        success: boolean;
-        data: CheckoutStats;
-        message?: string;
-      }>('/checkout/stats', { params });
-      return response;
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-      throw error;
-    }
+    const response = await api.get<{
+      success: boolean;
+      data: CheckoutStats;
+      message?: string;
+    }>('/checkout/stats', { params });
+    return response;
   },
 
   /**
-   * Export statistics
+   * Export statistics.
    * GET /checkout/stats/export
    */
   async exportStats(params?: {
-    range?: 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+    range?:
+      | 'today'
+      | 'week'
+      | 'month'
+      | 'quarter'
+      | 'year'
+      | 'custom';
     startDate?: string;
     endDate?: string;
     format?: 'csv' | 'pdf' | 'excel';
   }): Promise<{ data: string }> {
-    try {
-      const response = await api.get<{ data: string }>('/checkout/stats/export', {
+    const response = await api.get<{ data: string }>(
+      '/checkout/stats/export',
+      {
         params,
         responseType: 'blob',
-      });
-      return response;
-    } catch (error) {
-      console.error('Failed to export stats:', error);
-      throw error;
-    }
+      },
+    );
+    return response;
   },
 
   // ============================================
-  // CHECKOUT SETTINGS OPERATIONS
+  // SETTINGS OPERATIONS
   // ============================================
 
   /**
-   * Get checkout settings
+   * Get checkout settings.
    * GET /checkout/settings
    */
   async getCheckoutSettings(): Promise<{
@@ -729,10 +838,12 @@ export const checkoutService = {
   },
 
   /**
-   * Update checkout settings
+   * Update checkout settings.
    * PUT /checkout/settings
    */
-  async updateCheckoutSettings(settings: CheckoutSettingsUpdate): Promise<{
+  async updateCheckoutSettings(
+    settings: CheckoutSettingsUpdate,
+  ): Promise<{
     success: boolean;
     data: CheckoutSettings;
     message: string;
@@ -746,15 +857,15 @@ export const checkoutService = {
   },
 
   // ============================================
-  // CHECKOUT EXPORT OPERATIONS
+  // EXPORT OPERATIONS
   // ============================================
 
   /**
-   * Export checkouts (Admin/SuperAdmin only)
+   * Export checkouts (Admin/SuperAdmin only).
    * GET /checkout/export/all
    */
   async exportCheckouts(params?: ExportCheckoutsParams): Promise<any> {
-    const response = await api.get('/checkout/export/all', { 
+    const response = await api.get('/checkout/export/all', {
       params,
       responseType: 'blob',
     });
@@ -762,7 +873,7 @@ export const checkoutService = {
   },
 
   /**
-   * Export checkout data
+   * Export checkout data.
    * GET /checkout/export
    */
   async exportCheckoutData(params?: {
@@ -773,7 +884,7 @@ export const checkoutService = {
     includeItems?: boolean;
     includeCustomer?: boolean;
   }): Promise<any> {
-    const response = await api.get('/checkout/export', { 
+    const response = await api.get('/checkout/export', {
       params,
       responseType: 'blob',
     });
@@ -781,33 +892,43 @@ export const checkoutService = {
   },
 
   // ============================================
-  // CHECKOUT VALIDATION OPERATIONS
+  // VALIDATION OPERATIONS
   // ============================================
 
   /**
-   * Validate checkout
+   * Validate checkout.
    * POST /checkout/validate
    */
-  async validateCheckout(data: ValidateCheckoutRequest): Promise<ValidateCheckoutResponse> {
-    const response = await api.post<ValidateCheckoutResponse>('/checkout/validate', data);
+  async validateCheckout(
+    data: ValidateCheckoutRequest,
+  ): Promise<ValidateCheckoutResponse> {
+    const response = await api.post<ValidateCheckoutResponse>(
+      '/checkout/validate',
+      data,
+    );
     return response;
   },
 
   /**
-   * Calculate checkout totals
+   * Calculate checkout totals.
    * POST /checkout/calculate
    */
-  async calculateTotals(data: CalculateTotalsRequest): Promise<CalculateTotalsResponse> {
-    const response = await api.post<CalculateTotalsResponse>('/checkout/calculate', data);
+  async calculateTotals(
+    data: CalculateTotalsRequest,
+  ): Promise<CalculateTotalsResponse> {
+    const response = await api.post<CalculateTotalsResponse>(
+      '/checkout/calculate',
+      data,
+    );
     return response;
   },
 
   // ============================================
-  // PAYMENT INTEGRATION METHODS ✅ NEW
+  // PAYMENT INTEGRATION
   // ============================================
 
   /**
-   * Get payment status for a checkout
+   * Get payment status for a checkout.
    * GET /checkout/:id/payment-status
    */
   async getCheckoutPaymentStatus(checkoutId: string): Promise<{
@@ -832,7 +953,7 @@ export const checkoutService = {
   },
 
   /**
-   * Get all payments for a checkout
+   * Get all payments for a checkout.
    * GET /checkout/:id/payments
    */
   async getCheckoutPayments(checkoutId: string): Promise<{
@@ -847,7 +968,7 @@ export const checkoutService = {
   },
 
   /**
-   * Process refund for a checkout payment
+   * Refund a specific payment on a checkout.
    * POST /checkout/:id/refund
    */
   async refundCheckoutPayment(
@@ -856,7 +977,7 @@ export const checkoutService = {
       paymentId: string;
       amount?: number;
       reason?: string;
-    }
+    },
   ): Promise<{
     success: boolean;
     data: any;
@@ -871,104 +992,108 @@ export const checkoutService = {
   },
 
   // ============================================
-  // LEGACY/COMPATIBILITY METHODS
+  // LEGACY / COMPATIBILITY
   // ============================================
 
   /**
-   * Get receipt by sale ID (legacy)
-   * GET /checkout/receipt/:saleId
-   * @deprecated Use getCheckoutReceipt with checkout ID instead
+   * @deprecated Use `getCheckoutReceipt` with the checkout ID.
    */
   async getReceipt(saleId: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/checkout/receipt/${saleId}`);
+    const response = await api.get<Sale>(
+      `/checkout/receipt/${saleId}`,
+    );
     return response;
   },
 
   /**
-   * Get receipt by receipt number (legacy)
-   * GET /checkout/receipt/number/:receiptNumber
-   * @deprecated Use getCheckoutByReceiptNumber instead
+   * @deprecated Use `getCheckoutByReceiptNumber`.
    */
   async getReceiptByNumber(receiptNumber: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/checkout/receipt/number/${receiptNumber}`);
-    return response;
-  },
-
-  /**
-   * Get all checkouts (admin) (legacy)
-   * GET /checkout/admin/all
-   * @deprecated Use getCheckouts with pagination params instead
-   */
-  async getAllCheckouts(params?: { limit?: number; offset?: number }): Promise<Sale[]> {
-    const response = await api.get<Sale[]>('/checkout/admin/all', { params });
-    return response;
-  },
-
-  /**
-   * Send receipt email (legacy)
-   * POST /checkout/receipt/email
-   * @deprecated Use sendReceiptEmail with checkout ID instead
-   */
-  async sendReceiptEmailLegacy(saleId: string, email: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{ success: boolean; message: string }>(
-      '/checkout/receipt/email',
-      { saleId, email }
+    const response = await api.get<Sale>(
+      `/checkout/receipt/number/${receiptNumber}`,
     );
     return response;
   },
 
   /**
-   * Print receipt (legacy)
-   * GET /checkout/receipt/print/:saleId
-   * @deprecated Use getCheckoutReceipt with checkout ID instead
+   * @deprecated Use `getCheckouts` with pagination params.
    */
-  async printReceipt(saleId: string): Promise<{ printUrl: string; receiptData: Sale }> {
-    const response = await api.get<{ printUrl: string; receiptData: Sale }>(
-      `/checkout/receipt/print/${saleId}`
-    );
+  async getAllCheckouts(params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<Sale[]> {
+    const response = await api.get<Sale[]>('/checkout/admin/all', {
+      params,
+    });
     return response;
   },
 
   /**
-   * Get receipt PDF (legacy)
-   * GET /checkout/receipt/pdf/:saleId
-   * @deprecated Use getCheckoutReceipt with checkout ID instead
+   * @deprecated Use `sendReceiptEmail` with the checkout ID.
+   */
+  async sendReceiptEmailLegacy(
+    saleId: string,
+    email: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await api.post<{
+      success: boolean;
+      message: string;
+    }>('/checkout/receipt/email', { saleId, email });
+    return response;
+  },
+
+  /**
+   * @deprecated Use `getCheckoutReceipt` with the checkout ID.
+   */
+  async printReceipt(
+    saleId: string,
+  ): Promise<{ printUrl: string; receiptData: Sale }> {
+    const response = await api.get<{
+      printUrl: string;
+      receiptData: Sale;
+    }>(`/checkout/receipt/print/${saleId}`);
+    return response;
+  },
+
+  /**
+   * @deprecated Use `getCheckoutReceipt` with the checkout ID.
    */
   async getReceiptPdf(saleId: string): Promise<Blob> {
-    const response = await api.download(`/checkout/receipt/pdf/${saleId}`);
-    return response;
-  },
-
-  /**
-   * Resend receipt email (legacy)
-   * POST /checkout/receipt/resend
-   * @deprecated Use sendReceiptEmail with checkout ID instead
-   */
-  async resendReceiptEmail(saleId: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{ success: boolean; message: string }>(
-      '/checkout/receipt/resend',
-      { saleId }
+    const response = await api.download(
+      `/checkout/receipt/pdf/${saleId}`,
     );
     return response;
   },
 
   /**
-   * Cancel checkout (legacy)
-   * POST /checkout/cancel/:saleId
-   * @deprecated Use cancelCheckout with checkout ID instead
+   * @deprecated Use `sendReceiptEmail` with the checkout ID.
    */
-  async cancelCheckoutLegacy(saleId: string, reason?: string): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{ success: boolean; message: string }>(
-      `/checkout/cancel/${saleId}`,
-      { reason }
-    );
+  async resendReceiptEmail(
+    saleId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await api.post<{
+      success: boolean;
+      message: string;
+    }>('/checkout/receipt/resend', { saleId });
     return response;
   },
 
   /**
-   * Get checkout by cart ID (legacy)
-   * GET /checkout/cart/:cartId
-   * @deprecated Use getCheckoutByCart instead
+   * @deprecated Use `cancelCheckout` with the checkout ID.
+   */
+  async cancelCheckoutLegacy(
+    saleId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await api.post<{
+      success: boolean;
+      message: string;
+    }>(`/checkout/cancel/${saleId}`, { reason });
+    return response;
+  },
+
+  /**
+   * @deprecated Use `getCheckoutById` or `getCheckoutByReceiptNumber`.
    */
   async getCheckoutByCart(cartId: string): Promise<{
     id: string;

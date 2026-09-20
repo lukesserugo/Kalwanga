@@ -1,70 +1,179 @@
-// D:\Projects\Kalwanga\packages\web\components\products\ProductCard.tsx
-
 'use client';
 
-import React, { useState } from 'react';
+// D:\Projects\Kalwanga\packages\web\components\products\ProductCard.tsx
+
+import React, { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
-  Package, Star, Heart, ShoppingCart, Eye,
-  Edit, Trash2, Clock, TrendingUp, Check,
-  X, AlertCircle, Loader2, Layers, ImageIcon, Link2
+  Package, Star, ShoppingCart, Eye,
+  Edit, Trash2, AlertCircle, Loader2, Layers, ImageIcon, Link2,
 } from 'lucide-react';
+
 import { formatCurrency } from '../../utils/formatters';
 import { toast } from '../../utils/toast-manager';
 import { WishlistButton } from './WishlistButton';
 import { usePermission } from '../../hooks/usePermission';
+import { useAuth } from '../../hooks/useAuth';
 import { PermissionResource } from '../../types/enums';
-import { useThemeStore } from '../../app/stores/themeStore';
 import { cartService } from '../../services/cartService';
+import { guestCartService } from '../../services/guestCartService';
+
+// ============================================
+// TYPES
+// ============================================
+
+interface ProductVariantShape {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  stock: number;
+  isActive: boolean;
+  images?: string[];
+  attributes?: Record<string, any>;
+  barcode?: string | null;
+  inventoryId?: string | null;
+  inventory?:
+    | { quantity?: number; reserved?: number }
+    | null;
+}
+
+/**
+ * The inventory relation is singular on the canonical `Product` type
+ * (`Inventory | null`). Older callers occasionally pass an array.
+ * Accept both shapes so the stock math is always right.
+ */
+type InventoryLike =
+  | { quantity?: number; reserved?: number }
+  | Array<{ quantity?: number; reserved?: number }>
+  | null
+  | undefined;
+
+interface ProductCardProduct {
+  id: string;
+  name: string;
+  sku: string;
+  unitPrice: number;
+  costPrice?: number | null;
+  images?: string[];
+  description?: string;
+  category?: { id: string; name: string };
+  inventory?: InventoryLike;
+  minStock?: number;
+  rating?: number;
+  reviewCount?: number;
+  isActive: boolean;
+  featured?: boolean;
+  isDigital?: boolean;
+  tags?: string[];
+  createdAt?: string;
+  variants?: ProductVariantShape[];
+  inventoryId?: string | null;
+}
 
 interface ProductCardProps {
-  product: {
-    id: string;
-    name: string;
-    sku: string;
-    unitPrice: number;
-    costPrice?: number;
-    images?: string[];
-    description?: string;
-    category?: { id: string; name: string };
-    inventory?: Array<{ quantity: number; reserved: number }>;
-    minStock?: number;
-    rating?: number;
-    reviewCount?: number;
-    isActive: boolean;
-    featured?: boolean;
-    isDigital?: boolean;
-    tags?: string[];
-    createdAt?: string;
-    variants?: Array<{
-      id: string;
-      name: string;
-      sku: string;
-      price: number;
-      stock: number;
-      isActive: boolean;
-      images?: string[];
-      attributes?: Record<string, any>;
-      barcode?: string | null;
-      inventoryId?: string | null;
-    }>;
-    inventoryId?: string | null;
-  };
+  product: ProductCardProduct;
   variant?: 'default' | 'compact' | 'featured' | 'minimal';
   orientation?: 'vertical' | 'horizontal';
   showWishlist?: boolean;
   showAddToCart?: boolean;
   showQuickView?: boolean;
   showAdminActions?: boolean;
-  onAddToCart?: (productId: string, variantId?: string, quantity?: number) => Promise<void> | void;
-  onQuickView?: (product: any) => void;
+  onAddToCart?: (
+    productId: string,
+    variantId?: string,
+    quantity?: number
+  ) => Promise<void> | void;
+  onQuickView?: (product: ProductCardProduct) => void;
   onEdit?: (productId: string) => void;
   onDelete?: (productId: string) => void;
   className?: string;
   index?: number;
 }
+
+// ============================================
+// HELPERS
+// ============================================
+
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * Read the primary inventory quantity regardless of whether the
+ * caller passed a singular object or a legacy array.
+ */
+function readInventoryTotals(inventory: InventoryLike): {
+  quantity: number;
+  reserved: number;
+} {
+  if (!inventory) return { quantity: 0, reserved: 0 };
+
+  if (Array.isArray(inventory)) {
+    const initial: { quantity: number; reserved: number } = {
+      quantity: 0,
+      reserved: 0,
+    };
+
+    return inventory.reduce<{ quantity: number; reserved: number }>(
+      (acc, inv) => ({
+        quantity: acc.quantity + (inv.quantity ?? 0),
+        reserved: acc.reserved + (inv.reserved ?? 0),
+      }),
+      initial
+    );
+  }
+
+  return {
+    quantity: inventory.quantity ?? 0,
+    reserved: inventory.reserved ?? 0,
+  };
+}
+
+/**
+ * Sum variant available stock, preferring each variant's linked
+ * Inventory row (`quantity - reserved`) over the denormalized `stock`.
+ */
+function readVariantStock(variants: ProductVariantShape[] | undefined): number {
+  if (!variants || variants.length === 0) return 0;
+  let total = 0;
+  for (const v of variants) {
+    if (v.inventory) {
+      total += Math.max(
+        0,
+        (v.inventory.quantity ?? 0) - (v.inventory.reserved ?? 0)
+      );
+    } else {
+      total += v.stock ?? 0;
+    }
+  }
+  return total;
+}
+
+function stopEvent(e: React.MouseEvent): void {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function extractErrorMessage(error: any, fallback: string): string {
+  if (!error) return fallback;
+  if (error?.response?.data?.message) return error.response.data.message;
+  if (error?.response?.data?.errors) {
+    const errors = error.response.data.errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      return errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+  if (error?.message) return error.message;
+  return fallback;
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function ProductCard({
   product,
@@ -82,54 +191,196 @@ export function ProductCard({
   index = 0,
 }: ProductCardProps) {
   const router = useRouter();
-  let isDark = false;
-  try {
-    const themeStore = useThemeStore();
-    isDark = themeStore?.isDark ?? false;
-  } catch {
-    isDark = false;
-  }
-  
   const { canEdit, canDelete, canManage } = usePermission();
+  const { isAuthenticated } = useAuth();
+
   const [isHovered, setIsHovered] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    null
+  );
 
-  const canEditProduct = canEdit(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
-  const canDeleteProduct = canDelete(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
+  const canEditProduct =
+    canEdit(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
+  const canDeleteProduct =
+    canDelete(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
 
-  // ✅ Validate product has an ID
   const productId = product?.id;
-  const hasValidProductId = productId && typeof productId === 'string' && productId.trim().length > 0;
+  const hasValidProductId =
+    !!productId &&
+    typeof productId === 'string' &&
+    productId.trim().length > 0;
 
-  // Calculate stock status with variant support
-  const inventory = product.inventory?.[0];
-  const mainStock = inventory ? inventory.quantity - (inventory.reserved || 0) : 0;
-  const variantStock = (product.variants || []).reduce((sum: number, v: any) => sum + (v.stock || 0), 0);
+  // ============================================
+  // DERIVED STOCK / VARIANTS
+  // ============================================
+
+  const { quantity, reserved } = readInventoryTotals(product?.inventory);
+  const mainStock = Math.max(0, quantity - reserved);
+
+  const variants = product?.variants ?? [];
+  const variantStock = readVariantStock(variants);
   const available = mainStock + variantStock;
+
   const isOutOfStock = available <= 0;
-  const isLowStock = available > 0 && available <= (product.minStock || 5);
-  const hasVariants = (product.variants?.length || 0) > 0;
-  const totalVariantCount = product.variants?.length || 0;
-  const hasVariantImages = (product.variants || []).some((v: any) => v.images && v.images.length > 0);
-  const isInventoryLinked = !!product.inventoryId;
+  const isLowStock =
+    available > 0 && available <= (product?.minStock || 5);
+  const hasVariants = variants.length > 0;
+  const totalVariantCount = variants.length;
+  const hasVariantImages = variants.some(
+    (v) => Array.isArray(v.images) && v.images.length > 0
+  );
+  const isInventoryLinked = !!product?.inventoryId;
 
-  // Get selected variant price
-  const selectedVariant = selectedVariantId 
-    ? (product.variants || []).find((v: any) => v.id === selectedVariantId)
+  const selectedVariant = selectedVariantId
+    ? variants.find((v) => v.id === selectedVariantId) ?? null
     : null;
-  const displayPrice = selectedVariant ? selectedVariant.price : product.unitPrice;
+  const displayPrice = selectedVariant?.price ?? product?.unitPrice ?? 0;
 
-  const getStockStatus = () => {
+  const stockStatus = (() => {
     if (isOutOfStock) return { label: 'Out of Stock', color: 'bg-red-500' };
-    if (isLowStock) return { label: `Only ${available} left`, color: 'bg-yellow-500' };
+    if (isLowStock)
+      return { label: `Only ${available} left`, color: 'bg-yellow-500' };
     return { label: 'In Stock', color: 'bg-green-500' };
-  };
+  })();
 
-  const stockStatus = getStockStatus();
+  // ============================================
+  // IMAGE HELPERS
+  // ============================================
 
-  const renderStars = (rating: number = 0) => {
+  const getValidImage = useCallback(
+    (url: string | undefined): string => {
+      if (!url) return PLACEHOLDER_IMAGE;
+      if (imageErrors[url]) return PLACEHOLDER_IMAGE;
+      return url;
+    },
+    [imageErrors]
+  );
+
+  const handleImageError = useCallback((url: string) => {
+    setImageErrors((prev) => ({ ...prev, [url]: true }));
+  }, []);
+
+  const primaryImage =
+    product?.images && product.images.length > 0
+      ? product.images[0]
+      : null;
+  const primaryImageValid =
+    primaryImage && !imageErrors[primaryImage];
+
+  // ============================================
+  // HANDLERS
+  // ============================================
+
+  const handleAddToCart = useCallback(
+    async (e: React.MouseEvent) => {
+      stopEvent(e);
+
+      if (!hasValidProductId) {
+        console.error('❌ ProductCard: invalid product id', { productId });
+        toast.error('Product ID is invalid');
+        return;
+      }
+      if (isOutOfStock) {
+        toast.warning('This product is out of stock');
+        return;
+      }
+      if (addingToCart) return;
+
+      setAddingToCart(true);
+      try {
+        const cleanProductId = String(productId).trim();
+        const variantId = selectedVariantId || undefined;
+
+        if (onAddToCart) {
+          await onAddToCart(cleanProductId, variantId, 1);
+        } else {
+          // ✅ Authenticated → authenticated cart route.
+          //    Anonymous → guest cart route, backed by the
+          //    `guest_session_id` cookie set by
+          //    `guestSessionMiddleware`.
+          const cart = isAuthenticated
+            ? cartService
+            : guestCartService;
+
+          await cart.addItem({
+            productId: cleanProductId,
+            variantId,
+            quantity: 1,
+          });
+
+          toast.success(`${product.name} added to cart`);
+          window.dispatchEvent(new CustomEvent('cart:updated'));
+        }
+      } catch (err: any) {
+        console.error('❌ Failed to add to cart:', err);
+        toast.error(extractErrorMessage(err, 'Failed to add to cart'));
+      } finally {
+        setAddingToCart(false);
+      }
+    },
+    [
+      hasValidProductId,
+      productId,
+      isOutOfStock,
+      addingToCart,
+      selectedVariantId,
+      onAddToCart,
+      product?.name,
+      isAuthenticated,
+    ]
+  );
+
+  const handleVariantSelect = useCallback(
+    (variantId: string, e: React.MouseEvent) => {
+      stopEvent(e);
+      setSelectedVariantId((prev) =>
+        prev === variantId ? null : variantId
+      );
+    },
+    []
+  );
+
+  const handleQuickView = useCallback(
+    (e: React.MouseEvent) => {
+      stopEvent(e);
+      if (onQuickView) {
+        onQuickView(product);
+      } else if (hasValidProductId) {
+        router.push(`/shop/${product.id}`);
+      }
+    },
+    [onQuickView, product, router, hasValidProductId]
+  );
+
+  const handleEdit = useCallback(
+    (e: React.MouseEvent) => {
+      stopEvent(e);
+      if (onEdit) {
+        onEdit(product.id);
+      } else if (hasValidProductId) {
+        router.push(`/admin/catalog/edit/${product.id}`);
+      }
+    },
+    [onEdit, product?.id, router, hasValidProductId]
+  );
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      stopEvent(e);
+      if (onDelete) {
+        onDelete(product.id);
+      } else {
+        toast.warning('No delete handler provided');
+      }
+    },
+    [onDelete, product?.id]
+  );
+
+  const renderStars = useCallback((rating: number = 0) => {
     return (
       <div className="flex items-center gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
@@ -149,129 +400,30 @@ export function ProductCard({
         )}
       </div>
     );
-  };
+  }, []);
 
-  // ✅ FIXED: Enhanced add to cart handler with proper validation
-  const handleAddToCart = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // ✅ Validate product has an ID
-    if (!hasValidProductId) {
-      console.error('❌ ProductCard: Invalid product ID', { productId });
-      toast.error('Product ID is invalid');
-      return;
-    }
+  // ============================================
+  // INVALID PRODUCT FALLBACK
+  // ============================================
 
-    if (isOutOfStock) {
-      toast.warning('This product is out of stock');
-      return;
-    }
-
-    // ✅ Prevent duplicate requests
-    if (addingToCart) {
-      return;
-    }
-
-    setAddingToCart(true);
-    try {
-      // Get the variant ID if selected, otherwise undefined
-      const variantId = selectedVariantId || undefined;
-      
-      // ✅ Ensure product ID is a clean string
-      const cleanProductId = String(productId).trim();
-      
-      console.log('🛒 ProductCard adding to cart:', { 
-        productId: cleanProductId, 
-        variantId, 
-        quantity: 1 
-      });
-
-      // If onAddToCart is provided by parent, use it with all parameters
-      if (onAddToCart) {
-        await onAddToCart(cleanProductId, variantId, 1);
-      } else {
-        // Otherwise use the cartService directly
-        await cartService.addItem({ 
-          productId: cleanProductId, 
-          variantId, 
-          quantity: 1 
-        });
-        toast.success(`${product.name} added to cart`);
-        // Dispatch cart update event
-        window.dispatchEvent(new CustomEvent('cart:updated'));
-      }
-    } catch (error: any) {
-      console.error('❌ Failed to add to cart:', error);
-      // ✅ Better error message extraction
-      let errorMessage = 'Failed to add to cart';
-      if (error?.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error?.message) {
-        errorMessage = error.message;
-      } else if (error?.response?.data?.errors) {
-        const errors = error.response.data.errors;
-        if (Array.isArray(errors) && errors.length > 0) {
-          errorMessage = errors.map((e: any) => `${e.field}: ${e.message}`).join(', ');
-        }
-      }
-      toast.error(errorMessage);
-    } finally {
-      setAddingToCart(false);
-    }
-  };
-
-  // Handle variant selection
-  const handleVariantSelect = (variantId: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedVariantId(selectedVariantId === variantId ? null : variantId);
-  };
-
-  const handleQuickView = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (onQuickView) {
-      onQuickView(product);
-    } else {
-      router.push(`/shop/${product.id}`);
-    }
-  };
-
-  const handleEdit = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (onEdit) {
-      onEdit(product.id);
-    } else {
-      router.push(`/admin/catalog/edit/${product.id}`);
-    }
-  };
-
-  const handleDelete = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (onDelete) {
-      onDelete(product.id);
-    } else {
-      if (confirm(`Are you sure you want to delete "${product.name}"?`)) {
-        toast.success('Product deleted');
-      }
-    }
-  };
-
-  // If product has no ID, render a fallback
   if (!hasValidProductId) {
     return (
-      <div className={`bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 p-4 text-center ${className}`}>
+      <div
+        className={`bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-800 p-4 text-center ${className}`}
+      >
         <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-        <p className="text-sm text-gray-600 dark:text-gray-400">Invalid product data</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Invalid product data
+        </p>
         <p className="text-xs text-gray-400">Product ID is missing</p>
       </div>
     );
   }
 
-  // Horizontal variant
+  // ============================================
+  // HORIZONTAL VARIANT
+  // ============================================
+
   if (orientation === 'horizontal') {
     return (
       <motion.div
@@ -283,15 +435,18 @@ export function ProductCard({
         onMouseLeave={() => setIsHovered(false)}
       >
         <div className="flex flex-col sm:flex-row">
-          <Link href={`/shop/${product.id}`} className="sm:w-48 flex-shrink-0">
+          <Link
+            href={`/shop/${product.id}`}
+            className="sm:w-48 flex-shrink-0"
+          >
             <div className="aspect-square sm:aspect-auto sm:h-full bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
-              {product.images?.[0] && !imageError ? (
+              {primaryImageValid ? (
                 <img
-                  src={product.images[0]}
+                  src={getValidImage(primaryImage!)}
                   alt={product.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
-                  onError={() => setImageError(true)}
+                  onError={() => handleImageError(primaryImage!)}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
@@ -337,7 +492,9 @@ export function ProductCard({
                 </h3>
               </Link>
               {product.category && (
-                <p className="text-sm text-gray-500 dark:text-gray-400">{product.category.name}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {product.category.name}
+                </p>
               )}
               {product.rating && product.rating > 0 && (
                 <div className="mt-1">{renderStars(product.rating)}</div>
@@ -347,11 +504,13 @@ export function ProductCard({
                   {product.description}
                 </p>
               )}
+
               {hasVariants && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {(product.variants || []).slice(0, 3).map((v: any) => (
+                  {variants.slice(0, 3).map((v) => (
                     <button
                       key={v.id}
+                      type="button"
                       onClick={(e) => handleVariantSelect(v.id, e)}
                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-colors ${
                         selectedVariantId === v.id
@@ -359,8 +518,13 @@ export function ProductCard({
                           : 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40'
                       }`}
                     >
-                      {v.images?.[0] && (
-                        <img src={v.images[0]} alt={v.name} className="w-3 h-3 rounded-full object-cover" />
+                      {v.images?.[0] && !imageErrors[v.images[0]] && (
+                        <img
+                          src={getValidImage(v.images[0])}
+                          alt={v.name}
+                          className="w-3 h-3 rounded-full object-cover"
+                          onError={() => handleImageError(v.images![0])}
+                        />
                       )}
                       {v.name}
                       <span className="text-purple-400">•</span>
@@ -368,10 +532,13 @@ export function ProductCard({
                     </button>
                   ))}
                   {totalVariantCount > 3 && (
-                    <span className="text-xs text-gray-400">+{totalVariantCount - 3} more</span>
+                    <span className="text-xs text-gray-400">
+                      +{totalVariantCount - 3} more
+                    </span>
                   )}
                 </div>
               )}
+
               <div className="mt-2 flex flex-wrap gap-1">
                 {product.tags?.slice(0, 3).map((tag) => (
                   <span
@@ -390,20 +557,17 @@ export function ProductCard({
                   <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
                     {formatCurrency(displayPrice)}
                   </span>
-                  {product.costPrice && product.costPrice > displayPrice && (
-                    <span className="text-sm text-gray-400 line-through ml-2">
-                      {formatCurrency(product.costPrice)}
-                    </span>
-                  )}
-                  {selectedVariant && selectedVariant.price !== product.unitPrice && (
-                    <span className="text-xs text-gray-400 line-through ml-1">
-                      {formatCurrency(product.unitPrice)}
-                    </span>
-                  )}
+                  {selectedVariant &&
+                    selectedVariant.price !== product.unitPrice && (
+                      <span className="text-xs text-gray-400 line-through ml-1">
+                        {formatCurrency(product.unitPrice)}
+                      </span>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                   {showAddToCart && (
                     <button
+                      type="button"
                       onClick={handleAddToCart}
                       disabled={isOutOfStock || addingToCart}
                       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
@@ -422,30 +586,38 @@ export function ProductCard({
                   )}
                   {showAdminActions && canEditProduct && (
                     <button
+                      type="button"
                       onClick={handleEdit}
                       className="p-1.5 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-lg transition-colors"
                       title="Edit"
+                      aria-label={`Edit ${product.name}`}
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                   )}
                   {showAdminActions && canDeleteProduct && (
                     <button
+                      type="button"
                       onClick={handleDelete}
                       className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                       title="Delete"
+                      aria-label={`Delete ${product.name}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
                 </div>
               </div>
-              <div className="mt-1 flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${stockStatus.color}`}>
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${stockStatus.color}`}
+                >
                   {stockStatus.label}
                 </span>
                 {variantStock > 0 && (
-                  <span className="text-xs text-gray-400">+{variantStock} variant stock</span>
+                  <span className="text-xs text-gray-400">
+                    +{variantStock} variant stock
+                  </span>
                 )}
                 {product.isDigital && (
                   <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full text-xs">
@@ -460,7 +632,10 @@ export function ProductCard({
     );
   }
 
-  // Compact variant
+  // ============================================
+  // COMPACT VARIANT
+  // ============================================
+
   if (variant === 'compact') {
     return (
       <motion.div
@@ -471,13 +646,13 @@ export function ProductCard({
       >
         <Link href={`/shop/${product.id}`} className="block">
           <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
-            {product.images?.[0] && !imageError ? (
+            {primaryImageValid ? (
               <img
-                src={product.images[0]}
+                src={getValidImage(primaryImage!)}
                 alt={product.name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"
-                onError={() => setImageError(true)}
+                onError={() => handleImageError(primaryImage!)}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -516,6 +691,7 @@ export function ProductCard({
           )}
           {showAddToCart && !isOutOfStock && (
             <button
+              type="button"
               onClick={handleAddToCart}
               disabled={addingToCart}
               className="mt-2 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
@@ -533,7 +709,10 @@ export function ProductCard({
     );
   }
 
-  // Minimal variant
+  // ============================================
+  // MINIMAL VARIANT
+  // ============================================
+
   if (variant === 'minimal') {
     return (
       <motion.div
@@ -544,13 +723,13 @@ export function ProductCard({
       >
         <Link href={`/shop/${product.id}`} className="flex-shrink-0">
           <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 overflow-hidden">
-            {product.images?.[0] && !imageError ? (
+            {primaryImageValid ? (
               <img
-                src={product.images[0]}
+                src={getValidImage(primaryImage!)}
                 alt={product.name}
                 className="w-full h-full object-cover"
                 loading="lazy"
-                onError={() => setImageError(true)}
+                onError={() => handleImageError(primaryImage!)}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -580,10 +759,12 @@ export function ProductCard({
         )}
         {showAddToCart && !isOutOfStock && (
           <button
+            type="button"
             onClick={handleAddToCart}
             disabled={addingToCart}
             className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
             title="Add to cart"
+            aria-label={`Add ${product.name} to cart`}
           >
             {addingToCart ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -596,7 +777,10 @@ export function ProductCard({
     );
   }
 
-  // Featured variant
+  // ============================================
+  // FEATURED VARIANT
+  // ============================================
+
   if (variant === 'featured') {
     return (
       <motion.div
@@ -609,13 +793,13 @@ export function ProductCard({
       >
         <Link href={`/shop/${product.id}`} className="block">
           <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
-            {product.images?.[0] && !imageError ? (
+            {primaryImageValid ? (
               <img
-                src={product.images[0]}
+                src={getValidImage(primaryImage!)}
                 alt={product.name}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 loading="lazy"
-                onError={() => setImageError(true)}
+                onError={() => handleImageError(primaryImage!)}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -623,10 +807,12 @@ export function ProductCard({
               </div>
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            
+
             <div className="absolute bottom-0 left-0 right-0 p-4 text-white transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
               <h3 className="font-bold text-lg">{product.name}</h3>
-              <p className="text-white/80 text-sm">{formatCurrency(displayPrice)}</p>
+              <p className="text-white/80 text-sm">
+                {formatCurrency(displayPrice)}
+              </p>
               {hasVariants && (
                 <p className="text-white/60 text-xs flex items-center gap-1">
                   <Layers className="w-3 h-3" />
@@ -636,6 +822,7 @@ export function ProductCard({
               <div className="flex items-center gap-2 mt-2">
                 {showAddToCart && (
                   <button
+                    type="button"
                     onClick={handleAddToCart}
                     disabled={isOutOfStock || addingToCart}
                     className="px-4 py-1.5 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition-colors text-sm font-medium disabled:opacity-50"
@@ -645,6 +832,7 @@ export function ProductCard({
                 )}
                 {showQuickView && (
                   <button
+                    type="button"
                     onClick={handleQuickView}
                     className="px-4 py-1.5 bg-white/20 backdrop-blur-sm text-white rounded-lg hover:bg-white/30 transition-colors text-sm font-medium"
                   >
@@ -663,7 +851,11 @@ export function ProductCard({
         )}
         {showWishlist && (
           <div className="absolute top-3 right-3">
-            <WishlistButton productId={product.id} size="sm" className="shadow-lg" />
+            <WishlistButton
+              productId={product.id}
+              size="sm"
+              className="shadow-lg"
+            />
           </div>
         )}
         {isOutOfStock && (
@@ -675,7 +867,10 @@ export function ProductCard({
     );
   }
 
-  // Default variant (grid)
+  // ============================================
+  // DEFAULT VARIANT (grid)
+  // ============================================
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -688,20 +883,20 @@ export function ProductCard({
       {/* Image */}
       <Link href={`/shop/${product.id}`} className="block">
         <div className="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
-          {product.images?.[0] && !imageError ? (
+          {primaryImageValid ? (
             <img
-              src={product.images[0]}
+              src={getValidImage(primaryImage!)}
               alt={product.name}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               loading="lazy"
-              onError={() => setImageError(true)}
+              onError={() => handleImageError(primaryImage!)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <Package className="w-16 h-16 text-gray-300 dark:text-gray-600" />
             </div>
           )}
-          
+
           {/* Badges */}
           {product.featured && (
             <div className="absolute top-2 left-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded flex items-center gap-1">
@@ -736,33 +931,38 @@ export function ProductCard({
               <Link2 className="w-3 h-3" />
             </div>
           )}
-          
-          {/* Wishlist */}
+
           {showWishlist && (
             <div className="absolute top-2 right-2">
               <WishlistButton productId={product.id} size="sm" />
             </div>
           )}
 
-          {/* Quick Actions Overlay */}
-          <div className={`absolute inset-0 bg-black/40 flex items-center justify-center gap-2 transition-opacity duration-300 ${
-            isHovered ? 'opacity-100' : 'opacity-0'
-          }`}>
+          {/* Hover actions */}
+          <div
+            className={`absolute inset-0 bg-black/40 flex items-center justify-center gap-2 transition-opacity duration-300 ${
+              isHovered ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
             {showQuickView && (
               <button
+                type="button"
                 onClick={handleQuickView}
                 className="p-2 bg-white/90 hover:bg-white text-gray-800 rounded-full transition-colors"
                 title="Quick View"
+                aria-label={`Quick view ${product.name}`}
               >
                 <Eye className="w-5 h-5" />
               </button>
             )}
             {showAddToCart && !isOutOfStock && (
               <button
+                type="button"
                 onClick={handleAddToCart}
                 disabled={addingToCart}
                 className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-colors disabled:opacity-50"
                 title="Add to Cart"
+                aria-label={`Add ${product.name} to cart`}
               >
                 {addingToCart ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -783,28 +983,33 @@ export function ProductCard({
           </h3>
         </Link>
         {product.category && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">{product.category.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {product.category.name}
+          </p>
         )}
         {product.rating && product.rating > 0 && (
           <div className="mt-1">{renderStars(product.rating)}</div>
         )}
-        
-        {/* Variant Quick Select */}
+
+        {/* Variant quick-select */}
         {hasVariants && totalVariantCount <= 3 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {(product.variants || []).filter((v: any) => v.isActive).map((v: any) => (
-              <button
-                key={v.id}
-                onClick={(e) => handleVariantSelect(v.id, e)}
-                className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
-                  selectedVariantId === v.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                {v.name}
-              </button>
-            ))}
+            {variants
+              .filter((v) => v.isActive)
+              .map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={(e) => handleVariantSelect(v.id, e)}
+                  className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
+                    selectedVariantId === v.id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {v.name}
+                </button>
+              ))}
           </div>
         )}
 
@@ -813,47 +1018,52 @@ export function ProductCard({
             <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
               {formatCurrency(displayPrice)}
             </span>
-            {product.costPrice && product.costPrice > displayPrice && (
-              <span className="text-xs text-gray-400 line-through ml-1.5">
-                {formatCurrency(product.costPrice)}
-              </span>
-            )}
-            {selectedVariant && selectedVariant.price !== product.unitPrice && (
-              <span className="text-xs text-gray-400 line-through ml-1">
-                {formatCurrency(product.unitPrice)}
-              </span>
-            )}
+            {selectedVariant &&
+              selectedVariant.price !== product.unitPrice && (
+                <span className="text-xs text-gray-400 line-through ml-1">
+                  {formatCurrency(product.unitPrice)}
+                </span>
+              )}
           </div>
           <div className="flex items-center gap-1">
             {showAdminActions && canEditProduct && (
               <button
+                type="button"
                 onClick={handleEdit}
                 className="p-1 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded transition-colors"
                 title="Edit"
+                aria-label={`Edit ${product.name}`}
               >
                 <Edit className="w-4 h-4" />
               </button>
             )}
             {showAdminActions && canDeleteProduct && (
               <button
+                type="button"
                 onClick={handleDelete}
                 className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
                 title="Delete"
+                aria-label={`Delete ${product.name}`}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
           </div>
         </div>
+
         <div className="mt-1 flex items-center gap-2 flex-wrap">
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${stockStatus.color}`}>
+          <span
+            className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${stockStatus.color}`}
+          >
             {stockStatus.label}
           </span>
           {variantStock > 0 && (
-            <span className="text-xs text-gray-400">+{variantStock} variant stock</span>
+            <span className="text-xs text-gray-400">
+              +{variantStock} variant stock
+            </span>
           )}
         </div>
-        
+
         {/* Tags */}
         {product.tags && product.tags.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
@@ -866,7 +1076,9 @@ export function ProductCard({
               </span>
             ))}
             {product.tags.length > 2 && (
-              <span className="text-[10px] text-gray-400">+{product.tags.length - 2}</span>
+              <span className="text-[10px] text-gray-400">
+                +{product.tags.length - 2}
+              </span>
             )}
           </div>
         )}

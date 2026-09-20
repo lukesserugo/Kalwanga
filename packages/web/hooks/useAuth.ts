@@ -1,17 +1,42 @@
 // D:\Projects\Kalwanga\packages\web\hooks\useAuth.ts
-// PART 1 of 2
 
 'use client';
 
-import React, { useState, useEffect, useContext, createContext, ReactNode, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useContext,
+  createContext,
+  ReactNode,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useUser, useClerk } from '@clerk/nextjs';
 import { authService, User as AuthUser } from '../services/authService';
+
+// ============================================
+// CANONICAL PERMISSION UTILITIES
+// ============================================
+
+import {
+  isSuperAdminRole,
+  WILDCARD,
+} from '../types/permissions';
 
 // ============================================
 // PERMISSION TYPES
 // ============================================
 
-export type UserRole = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'EDITOR' | 'VIEWER' | 'EMPLOYEE' | 'CASHIER' | 'USER';
+export type UserRole =
+  | 'SUPER_ADMIN'
+  | 'ADMIN'
+  | 'MANAGER'
+  | 'EDITOR'
+  | 'VIEWER'
+  | 'EMPLOYEE'
+  | 'CASHIER'
+  | 'USER';
 
 export interface Permission {
   id: string;
@@ -70,7 +95,7 @@ export const PERMISSIONS = {
   INVENTORY_ADJUST: 'inventory:adjust',
   INVENTORY_TRANSFER: 'inventory:transfer',
 
-  // User Permissions (Full set)
+  // User Permissions
   USER_VIEW: 'user:view',
   USER_CREATE: 'user:create',
   USER_EDIT: 'user:edit',
@@ -209,400 +234,148 @@ export type PermissionKey = keyof typeof PERMISSIONS;
 // ============================================
 
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  SUPER_ADMIN: [
-    PERMISSIONS.USER_VIEW,
-    PERMISSIONS.USER_CREATE,
-    PERMISSIONS.USER_EDIT,
-    PERMISSIONS.USER_DELETE,
-    PERMISSIONS.USER_MANAGE,
-    PERMISSIONS.USER_ACTIVATE,
-    PERMISSIONS.USER_DEACTIVATE,
-    PERMISSIONS.USER_ROLE_UPDATE,
-    PERMISSIONS.USER_PERMISSION_UPDATE,
-    PERMISSIONS.USER_BULK_ACTIVATE,
-    PERMISSIONS.USER_BULK_DEACTIVATE,
-    PERMISSIONS.USER_BULK_DELETE,
-    PERMISSIONS.USER_EXPORT,
-    PERMISSIONS.CATEGORY_VIEW,
-    PERMISSIONS.CATEGORY_CREATE,
-    PERMISSIONS.CATEGORY_EDIT,
-    PERMISSIONS.CATEGORY_DELETE,
-    PERMISSIONS.CATEGORY_MANAGE,
-    PERMISSIONS.PRODUCT_VIEW,
-    PERMISSIONS.PRODUCT_CREATE,
-    PERMISSIONS.PRODUCT_EDIT,
-    PERMISSIONS.PRODUCT_DELETE,
-    PERMISSIONS.PRODUCT_MANAGE,
-    PERMISSIONS.PRODUCT_EXPORT,
-    PERMISSIONS.PRODUCT_IMPORT,
-    PERMISSIONS.SUPPLIER_VIEW,
-    PERMISSIONS.SUPPLIER_CREATE,
-    PERMISSIONS.SUPPLIER_EDIT,
-    PERMISSIONS.SUPPLIER_DELETE,
-    PERMISSIONS.SUPPLIER_MANAGE,
-    PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.ORDER_CREATE,
-    PERMISSIONS.ORDER_EDIT,
-    PERMISSIONS.ORDER_DELETE,
-    PERMISSIONS.ORDER_MANAGE,
-    PERMISSIONS.ORDER_PROCESS,
-    PERMISSIONS.ORDER_CANCEL,
-    PERMISSIONS.CUSTOMER_VIEW,
-    PERMISSIONS.CUSTOMER_CREATE,
-    PERMISSIONS.CUSTOMER_EDIT,
-    PERMISSIONS.CUSTOMER_DELETE,
-    PERMISSIONS.CUSTOMER_MANAGE,
-    PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.INVENTORY_CREATE,
-    PERMISSIONS.INVENTORY_EDIT,
-    PERMISSIONS.INVENTORY_DELETE,
-    PERMISSIONS.INVENTORY_MANAGE,
-    PERMISSIONS.INVENTORY_ADJUST,
-    PERMISSIONS.INVENTORY_TRANSFER,
-    PERMISSIONS.REPORT_VIEW,
-    PERMISSIONS.REPORT_CREATE,
-    PERMISSIONS.REPORT_EXPORT,
-    PERMISSIONS.REPORT_MANAGE,
-    PERMISSIONS.ANALYTICS_VIEW,
-    PERMISSIONS.ANALYTICS_EXPORT,
-    PERMISSIONS.SETTINGS_VIEW,
-    PERMISSIONS.SETTINGS_EDIT,
-    PERMISSIONS.SETTINGS_MANAGE,
-    PERMISSIONS.SYSTEM_LOGS,
-    PERMISSIONS.SYSTEM_BACKUP,
-    PERMISSIONS.SYSTEM_RESTORE,
-    PERMISSIONS.SYSTEM_SETTINGS,
-    PERMISSIONS.BUSINESS_UNIT_VIEW,
-    PERMISSIONS.BUSINESS_UNIT_CREATE,
-    PERMISSIONS.BUSINESS_UNIT_EDIT,
-    PERMISSIONS.BUSINESS_UNIT_DELETE,
-    PERMISSIONS.BUSINESS_UNIT_MANAGE,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
-    PERMISSIONS.SALE_EDIT,
-    PERMISSIONS.SALE_DELETE,
-    PERMISSIONS.SALE_MANAGE,
-    PERMISSIONS.SALE_EXPORT,
-    PERMISSIONS.SALE_PRINT,
-    PERMISSIONS.SALE_EMAIL,
-    PERMISSIONS.POS_VIEW,
-    PERMISSIONS.POS_CREATE,
-    PERMISSIONS.POS_MANAGE,
-    PERMISSIONS.POS_PRINT,
-    PERMISSIONS.CASH_REGISTER_VIEW,
-    PERMISSIONS.CASH_REGISTER_MANAGE,
-    PERMISSIONS.CASH_REGISTER_OPEN,
-    PERMISSIONS.CASH_REGISTER_CLOSE,
-    PERMISSIONS.SHIFT_VIEW,
-    PERMISSIONS.SHIFT_MANAGE,
-    PERMISSIONS.SHIFT_START,
-    PERMISSIONS.SHIFT_END,
-    PERMISSIONS.RETURN_VIEW,
-    PERMISSIONS.RETURN_CREATE,
-    PERMISSIONS.RETURN_EDIT,
-    PERMISSIONS.RETURN_DELETE,
-    PERMISSIONS.RETURN_MANAGE,
-    PERMISSIONS.RETURN_APPROVE,
-    PERMISSIONS.RETURN_REJECT,
-    PERMISSIONS.RETURN_PROCESS,
-    PERMISSIONS.REFUND_VIEW,
-    PERMISSIONS.REFUND_CREATE,
-    PERMISSIONS.REFUND_EDIT,
-    PERMISSIONS.REFUND_DELETE,
-    PERMISSIONS.REFUND_MANAGE,
-    PERMISSIONS.REFUND_APPROVE,
-    PERMISSIONS.REFUND_REJECT,
-    PERMISSIONS.REFUND_COMPLETE,
-    PERMISSIONS.INVOICE_VIEW,
-    PERMISSIONS.INVOICE_CREATE,
-    PERMISSIONS.INVOICE_EDIT,
-    PERMISSIONS.INVOICE_DELETE,
-    PERMISSIONS.INVOICE_MANAGE,
-    PERMISSIONS.INVOICE_SEND,
-    PERMISSIONS.INVOICE_PRINT,
-    PERMISSIONS.INVOICE_PAID,
-    PERMISSIONS.INVOICE_VOID,
-    PERMISSIONS.INVOICE_CANCEL,
-    PERMISSIONS.RECEIPT_VIEW,
-    PERMISSIONS.RECEIPT_CREATE,
-    PERMISSIONS.RECEIPT_EDIT,
-    PERMISSIONS.RECEIPT_DELETE,
-    PERMISSIONS.RECEIPT_MANAGE,
-    PERMISSIONS.RECEIPT_PRINT,
-    PERMISSIONS.RECEIPT_EMAIL,
-    PERMISSIONS.RECEIPT_VOID,
-    PERMISSIONS.PAYMENT_VIEW,
-    PERMISSIONS.PAYMENT_CREATE,
-    PERMISSIONS.PAYMENT_MANAGE,
-    PERMISSIONS.PAYMENT_REFUND,
-    PERMISSIONS.DASHBOARD_VIEW,
-    PERMISSIONS.DASHBOARD_MANAGE,
-    PERMISSIONS.INTEGRATION_VIEW,
-    PERMISSIONS.INTEGRATION_MANAGE,
-    PERMISSIONS.API_VIEW,
-    PERMISSIONS.API_MANAGE,
-    PERMISSIONS.WEBHOOK_VIEW,
-    PERMISSIONS.WEBHOOK_MANAGE,
-  ],
+  SUPER_ADMIN: [WILDCARD],
   ADMIN: [
-    PERMISSIONS.USER_VIEW,
-    PERMISSIONS.USER_CREATE,
-    PERMISSIONS.USER_EDIT,
-    PERMISSIONS.USER_DELETE,
-    PERMISSIONS.USER_MANAGE,
-    PERMISSIONS.USER_ACTIVATE,
-    PERMISSIONS.USER_DEACTIVATE,
-    PERMISSIONS.USER_ROLE_UPDATE,
-    PERMISSIONS.USER_PERMISSION_UPDATE,
-    PERMISSIONS.USER_BULK_ACTIVATE,
-    PERMISSIONS.USER_BULK_DEACTIVATE,
-    PERMISSIONS.USER_BULK_DELETE,
+    PERMISSIONS.USER_VIEW, PERMISSIONS.USER_CREATE, PERMISSIONS.USER_EDIT,
+    PERMISSIONS.USER_DELETE, PERMISSIONS.USER_MANAGE, PERMISSIONS.USER_ACTIVATE,
+    PERMISSIONS.USER_DEACTIVATE, PERMISSIONS.USER_ROLE_UPDATE,
+    PERMISSIONS.USER_PERMISSION_UPDATE, PERMISSIONS.USER_BULK_ACTIVATE,
+    PERMISSIONS.USER_BULK_DEACTIVATE, PERMISSIONS.USER_BULK_DELETE,
     PERMISSIONS.USER_EXPORT,
-    PERMISSIONS.CATEGORY_VIEW,
-    PERMISSIONS.CATEGORY_CREATE,
-    PERMISSIONS.CATEGORY_EDIT,
-    PERMISSIONS.CATEGORY_DELETE,
+    PERMISSIONS.CATEGORY_VIEW, PERMISSIONS.CATEGORY_CREATE,
+    PERMISSIONS.CATEGORY_EDIT, PERMISSIONS.CATEGORY_DELETE,
     PERMISSIONS.CATEGORY_MANAGE,
-    PERMISSIONS.PRODUCT_VIEW,
-    PERMISSIONS.PRODUCT_CREATE,
-    PERMISSIONS.PRODUCT_EDIT,
-    PERMISSIONS.PRODUCT_DELETE,
-    PERMISSIONS.PRODUCT_MANAGE,
-    PERMISSIONS.PRODUCT_EXPORT,
+    PERMISSIONS.PRODUCT_VIEW, PERMISSIONS.PRODUCT_CREATE,
+    PERMISSIONS.PRODUCT_EDIT, PERMISSIONS.PRODUCT_DELETE,
+    PERMISSIONS.PRODUCT_MANAGE, PERMISSIONS.PRODUCT_EXPORT,
     PERMISSIONS.PRODUCT_IMPORT,
-    PERMISSIONS.SUPPLIER_VIEW,
-    PERMISSIONS.SUPPLIER_CREATE,
-    PERMISSIONS.SUPPLIER_EDIT,
-    PERMISSIONS.SUPPLIER_DELETE,
+    PERMISSIONS.SUPPLIER_VIEW, PERMISSIONS.SUPPLIER_CREATE,
+    PERMISSIONS.SUPPLIER_EDIT, PERMISSIONS.SUPPLIER_DELETE,
     PERMISSIONS.SUPPLIER_MANAGE,
-    PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.ORDER_CREATE,
-    PERMISSIONS.ORDER_EDIT,
-    PERMISSIONS.ORDER_DELETE,
-    PERMISSIONS.ORDER_MANAGE,
-    PERMISSIONS.ORDER_PROCESS,
-    PERMISSIONS.ORDER_CANCEL,
-    PERMISSIONS.CUSTOMER_VIEW,
-    PERMISSIONS.CUSTOMER_CREATE,
-    PERMISSIONS.CUSTOMER_EDIT,
-    PERMISSIONS.CUSTOMER_DELETE,
+    PERMISSIONS.ORDER_VIEW, PERMISSIONS.ORDER_CREATE, PERMISSIONS.ORDER_EDIT,
+    PERMISSIONS.ORDER_DELETE, PERMISSIONS.ORDER_MANAGE,
+    PERMISSIONS.ORDER_PROCESS, PERMISSIONS.ORDER_CANCEL,
+    PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_CREATE,
+    PERMISSIONS.CUSTOMER_EDIT, PERMISSIONS.CUSTOMER_DELETE,
     PERMISSIONS.CUSTOMER_MANAGE,
-    PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.INVENTORY_CREATE,
-    PERMISSIONS.INVENTORY_EDIT,
-    PERMISSIONS.INVENTORY_DELETE,
-    PERMISSIONS.INVENTORY_MANAGE,
-    PERMISSIONS.INVENTORY_ADJUST,
+    PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.INVENTORY_CREATE,
+    PERMISSIONS.INVENTORY_EDIT, PERMISSIONS.INVENTORY_DELETE,
+    PERMISSIONS.INVENTORY_MANAGE, PERMISSIONS.INVENTORY_ADJUST,
     PERMISSIONS.INVENTORY_TRANSFER,
-    PERMISSIONS.REPORT_VIEW,
-    PERMISSIONS.REPORT_CREATE,
-    PERMISSIONS.REPORT_EXPORT,
-    PERMISSIONS.REPORT_MANAGE,
-    PERMISSIONS.ANALYTICS_VIEW,
-    PERMISSIONS.ANALYTICS_EXPORT,
-    PERMISSIONS.SETTINGS_VIEW,
-    PERMISSIONS.SETTINGS_EDIT,
+    PERMISSIONS.REPORT_VIEW, PERMISSIONS.REPORT_CREATE,
+    PERMISSIONS.REPORT_EXPORT, PERMISSIONS.REPORT_MANAGE,
+    PERMISSIONS.ANALYTICS_VIEW, PERMISSIONS.ANALYTICS_EXPORT,
+    PERMISSIONS.SETTINGS_VIEW, PERMISSIONS.SETTINGS_EDIT,
     PERMISSIONS.SETTINGS_MANAGE,
-    PERMISSIONS.BUSINESS_UNIT_VIEW,
-    PERMISSIONS.BUSINESS_UNIT_CREATE,
-    PERMISSIONS.BUSINESS_UNIT_EDIT,
-    PERMISSIONS.BUSINESS_UNIT_DELETE,
+    PERMISSIONS.BUSINESS_UNIT_VIEW, PERMISSIONS.BUSINESS_UNIT_CREATE,
+    PERMISSIONS.BUSINESS_UNIT_EDIT, PERMISSIONS.BUSINESS_UNIT_DELETE,
     PERMISSIONS.BUSINESS_UNIT_MANAGE,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
-    PERMISSIONS.SALE_EDIT,
-    PERMISSIONS.SALE_DELETE,
-    PERMISSIONS.SALE_MANAGE,
-    PERMISSIONS.SALE_EXPORT,
-    PERMISSIONS.SALE_PRINT,
-    PERMISSIONS.SALE_EMAIL,
-    PERMISSIONS.POS_VIEW,
-    PERMISSIONS.POS_CREATE,
-    PERMISSIONS.POS_MANAGE,
+    PERMISSIONS.SALE_VIEW, PERMISSIONS.SALE_CREATE, PERMISSIONS.SALE_EDIT,
+    PERMISSIONS.SALE_DELETE, PERMISSIONS.SALE_MANAGE, PERMISSIONS.SALE_EXPORT,
+    PERMISSIONS.SALE_PRINT, PERMISSIONS.SALE_EMAIL,
+    PERMISSIONS.POS_VIEW, PERMISSIONS.POS_CREATE, PERMISSIONS.POS_MANAGE,
     PERMISSIONS.POS_PRINT,
-    PERMISSIONS.CASH_REGISTER_VIEW,
-    PERMISSIONS.CASH_REGISTER_MANAGE,
-    PERMISSIONS.CASH_REGISTER_OPEN,
-    PERMISSIONS.CASH_REGISTER_CLOSE,
-    PERMISSIONS.SHIFT_VIEW,
-    PERMISSIONS.SHIFT_MANAGE,
-    PERMISSIONS.SHIFT_START,
-    PERMISSIONS.SHIFT_END,
-    PERMISSIONS.RETURN_VIEW,
-    PERMISSIONS.RETURN_CREATE,
-    PERMISSIONS.RETURN_EDIT,
-    PERMISSIONS.RETURN_DELETE,
-    PERMISSIONS.RETURN_MANAGE,
-    PERMISSIONS.RETURN_APPROVE,
-    PERMISSIONS.RETURN_REJECT,
-    PERMISSIONS.RETURN_PROCESS,
-    PERMISSIONS.REFUND_VIEW,
-    PERMISSIONS.REFUND_CREATE,
-    PERMISSIONS.REFUND_EDIT,
-    PERMISSIONS.REFUND_DELETE,
-    PERMISSIONS.REFUND_MANAGE,
-    PERMISSIONS.REFUND_APPROVE,
-    PERMISSIONS.REFUND_REJECT,
-    PERMISSIONS.REFUND_COMPLETE,
-    PERMISSIONS.INVOICE_VIEW,
-    PERMISSIONS.INVOICE_CREATE,
-    PERMISSIONS.INVOICE_EDIT,
-    PERMISSIONS.INVOICE_DELETE,
-    PERMISSIONS.INVOICE_MANAGE,
-    PERMISSIONS.INVOICE_SEND,
-    PERMISSIONS.INVOICE_PRINT,
-    PERMISSIONS.INVOICE_PAID,
-    PERMISSIONS.INVOICE_VOID,
-    PERMISSIONS.INVOICE_CANCEL,
-    PERMISSIONS.RECEIPT_VIEW,
-    PERMISSIONS.RECEIPT_CREATE,
-    PERMISSIONS.RECEIPT_EDIT,
-    PERMISSIONS.RECEIPT_DELETE,
-    PERMISSIONS.RECEIPT_MANAGE,
-    PERMISSIONS.RECEIPT_PRINT,
-    PERMISSIONS.RECEIPT_EMAIL,
-    PERMISSIONS.RECEIPT_VOID,
-    PERMISSIONS.PAYMENT_VIEW,
-    PERMISSIONS.PAYMENT_CREATE,
-    PERMISSIONS.PAYMENT_MANAGE,
-    PERMISSIONS.PAYMENT_REFUND,
-    PERMISSIONS.DASHBOARD_VIEW,
-    PERMISSIONS.DASHBOARD_MANAGE,
-    PERMISSIONS.INTEGRATION_VIEW,
-    PERMISSIONS.INTEGRATION_MANAGE,
-    PERMISSIONS.API_VIEW,
-    PERMISSIONS.API_MANAGE,
-    PERMISSIONS.WEBHOOK_VIEW,
-    PERMISSIONS.WEBHOOK_MANAGE,
+    PERMISSIONS.CASH_REGISTER_VIEW, PERMISSIONS.CASH_REGISTER_MANAGE,
+    PERMISSIONS.CASH_REGISTER_OPEN, PERMISSIONS.CASH_REGISTER_CLOSE,
+    PERMISSIONS.SHIFT_VIEW, PERMISSIONS.SHIFT_MANAGE,
+    PERMISSIONS.SHIFT_START, PERMISSIONS.SHIFT_END,
+    PERMISSIONS.RETURN_VIEW, PERMISSIONS.RETURN_CREATE,
+    PERMISSIONS.RETURN_EDIT, PERMISSIONS.RETURN_DELETE,
+    PERMISSIONS.RETURN_MANAGE, PERMISSIONS.RETURN_APPROVE,
+    PERMISSIONS.RETURN_REJECT, PERMISSIONS.RETURN_PROCESS,
+    PERMISSIONS.REFUND_VIEW, PERMISSIONS.REFUND_CREATE,
+    PERMISSIONS.REFUND_EDIT, PERMISSIONS.REFUND_DELETE,
+    PERMISSIONS.REFUND_MANAGE, PERMISSIONS.REFUND_APPROVE,
+    PERMISSIONS.REFUND_REJECT, PERMISSIONS.REFUND_COMPLETE,
+    PERMISSIONS.INVOICE_VIEW, PERMISSIONS.INVOICE_CREATE,
+    PERMISSIONS.INVOICE_EDIT, PERMISSIONS.INVOICE_DELETE,
+    PERMISSIONS.INVOICE_MANAGE, PERMISSIONS.INVOICE_SEND,
+    PERMISSIONS.INVOICE_PRINT, PERMISSIONS.INVOICE_PAID,
+    PERMISSIONS.INVOICE_VOID, PERMISSIONS.INVOICE_CANCEL,
+    PERMISSIONS.RECEIPT_VIEW, PERMISSIONS.RECEIPT_CREATE,
+    PERMISSIONS.RECEIPT_EDIT, PERMISSIONS.RECEIPT_DELETE,
+    PERMISSIONS.RECEIPT_MANAGE, PERMISSIONS.RECEIPT_PRINT,
+    PERMISSIONS.RECEIPT_EMAIL, PERMISSIONS.RECEIPT_VOID,
+    PERMISSIONS.PAYMENT_VIEW, PERMISSIONS.PAYMENT_CREATE,
+    PERMISSIONS.PAYMENT_MANAGE, PERMISSIONS.PAYMENT_REFUND,
+    PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.DASHBOARD_MANAGE,
+    PERMISSIONS.INTEGRATION_VIEW, PERMISSIONS.INTEGRATION_MANAGE,
+    PERMISSIONS.API_VIEW, PERMISSIONS.API_MANAGE,
+    PERMISSIONS.WEBHOOK_VIEW, PERMISSIONS.WEBHOOK_MANAGE,
   ],
   MANAGER: [
-    PERMISSIONS.USER_VIEW,
-    PERMISSIONS.USER_ACTIVATE,
+    PERMISSIONS.USER_VIEW, PERMISSIONS.USER_ACTIVATE,
     PERMISSIONS.USER_DEACTIVATE,
-    PERMISSIONS.CATEGORY_VIEW,
-    PERMISSIONS.CATEGORY_CREATE,
+    PERMISSIONS.CATEGORY_VIEW, PERMISSIONS.CATEGORY_CREATE,
     PERMISSIONS.CATEGORY_EDIT,
-    PERMISSIONS.PRODUCT_VIEW,
-    PERMISSIONS.PRODUCT_CREATE,
-    PERMISSIONS.PRODUCT_EDIT,
-    PERMISSIONS.PRODUCT_EXPORT,
-    PERMISSIONS.SUPPLIER_VIEW,
-    PERMISSIONS.SUPPLIER_CREATE,
+    PERMISSIONS.PRODUCT_VIEW, PERMISSIONS.PRODUCT_CREATE,
+    PERMISSIONS.PRODUCT_EDIT, PERMISSIONS.PRODUCT_EXPORT,
+    PERMISSIONS.SUPPLIER_VIEW, PERMISSIONS.SUPPLIER_CREATE,
     PERMISSIONS.SUPPLIER_EDIT,
-    PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.ORDER_CREATE,
-    PERMISSIONS.ORDER_EDIT,
-    PERMISSIONS.ORDER_PROCESS,
-    PERMISSIONS.ORDER_CANCEL,
-    PERMISSIONS.CUSTOMER_VIEW,
-    PERMISSIONS.CUSTOMER_CREATE,
+    PERMISSIONS.ORDER_VIEW, PERMISSIONS.ORDER_CREATE, PERMISSIONS.ORDER_EDIT,
+    PERMISSIONS.ORDER_PROCESS, PERMISSIONS.ORDER_CANCEL,
+    PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_CREATE,
     PERMISSIONS.CUSTOMER_EDIT,
-    PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.INVENTORY_CREATE,
-    PERMISSIONS.INVENTORY_EDIT,
-    PERMISSIONS.INVENTORY_ADJUST,
+    PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.INVENTORY_CREATE,
+    PERMISSIONS.INVENTORY_EDIT, PERMISSIONS.INVENTORY_ADJUST,
     PERMISSIONS.INVENTORY_TRANSFER,
-    PERMISSIONS.REPORT_VIEW,
-    PERMISSIONS.REPORT_CREATE,
+    PERMISSIONS.REPORT_VIEW, PERMISSIONS.REPORT_CREATE,
     PERMISSIONS.REPORT_EXPORT,
     PERMISSIONS.ANALYTICS_VIEW,
     PERMISSIONS.SETTINGS_VIEW,
     PERMISSIONS.BUSINESS_UNIT_VIEW,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
-    PERMISSIONS.SALE_EDIT,
-    PERMISSIONS.SALE_EXPORT,
-    PERMISSIONS.SALE_PRINT,
-    PERMISSIONS.SALE_EMAIL,
-    PERMISSIONS.POS_VIEW,
-    PERMISSIONS.POS_CREATE,
-    PERMISSIONS.POS_PRINT,
-    PERMISSIONS.CASH_REGISTER_VIEW,
-    PERMISSIONS.CASH_REGISTER_OPEN,
+    PERMISSIONS.SALE_VIEW, PERMISSIONS.SALE_CREATE, PERMISSIONS.SALE_EDIT,
+    PERMISSIONS.SALE_EXPORT, PERMISSIONS.SALE_PRINT, PERMISSIONS.SALE_EMAIL,
+    PERMISSIONS.POS_VIEW, PERMISSIONS.POS_CREATE, PERMISSIONS.POS_PRINT,
+    PERMISSIONS.CASH_REGISTER_VIEW, PERMISSIONS.CASH_REGISTER_OPEN,
     PERMISSIONS.CASH_REGISTER_CLOSE,
-    PERMISSIONS.SHIFT_VIEW,
-    PERMISSIONS.SHIFT_START,
-    PERMISSIONS.SHIFT_END,
-    PERMISSIONS.RETURN_VIEW,
-    PERMISSIONS.RETURN_CREATE,
-    PERMISSIONS.RETURN_EDIT,
-    PERMISSIONS.RETURN_APPROVE,
-    PERMISSIONS.RETURN_REJECT,
-    PERMISSIONS.RETURN_PROCESS,
-    PERMISSIONS.REFUND_VIEW,
-    PERMISSIONS.REFUND_CREATE,
-    PERMISSIONS.REFUND_EDIT,
-    PERMISSIONS.REFUND_APPROVE,
-    PERMISSIONS.REFUND_REJECT,
-    PERMISSIONS.REFUND_COMPLETE,
-    PERMISSIONS.INVOICE_VIEW,
-    PERMISSIONS.INVOICE_CREATE,
-    PERMISSIONS.INVOICE_EDIT,
-    PERMISSIONS.INVOICE_SEND,
-    PERMISSIONS.INVOICE_PRINT,
-    PERMISSIONS.INVOICE_PAID,
-    PERMISSIONS.RECEIPT_VIEW,
-    PERMISSIONS.RECEIPT_CREATE,
-    PERMISSIONS.RECEIPT_EDIT,
-    PERMISSIONS.RECEIPT_PRINT,
+    PERMISSIONS.SHIFT_VIEW, PERMISSIONS.SHIFT_START, PERMISSIONS.SHIFT_END,
+    PERMISSIONS.RETURN_VIEW, PERMISSIONS.RETURN_CREATE,
+    PERMISSIONS.RETURN_EDIT, PERMISSIONS.RETURN_APPROVE,
+    PERMISSIONS.RETURN_REJECT, PERMISSIONS.RETURN_PROCESS,
+    PERMISSIONS.REFUND_VIEW, PERMISSIONS.REFUND_CREATE,
+    PERMISSIONS.REFUND_EDIT, PERMISSIONS.REFUND_APPROVE,
+    PERMISSIONS.REFUND_REJECT, PERMISSIONS.REFUND_COMPLETE,
+    PERMISSIONS.INVOICE_VIEW, PERMISSIONS.INVOICE_CREATE,
+    PERMISSIONS.INVOICE_EDIT, PERMISSIONS.INVOICE_SEND,
+    PERMISSIONS.INVOICE_PRINT, PERMISSIONS.INVOICE_PAID,
+    PERMISSIONS.RECEIPT_VIEW, PERMISSIONS.RECEIPT_CREATE,
+    PERMISSIONS.RECEIPT_EDIT, PERMISSIONS.RECEIPT_PRINT,
     PERMISSIONS.RECEIPT_EMAIL,
-    PERMISSIONS.PAYMENT_VIEW,
-    PERMISSIONS.PAYMENT_CREATE,
-    PERMISSIONS.DASHBOARD_VIEW,
-    PERMISSIONS.DASHBOARD_MANAGE,
+    PERMISSIONS.PAYMENT_VIEW, PERMISSIONS.PAYMENT_CREATE,
+    PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.DASHBOARD_MANAGE,
   ],
   EDITOR: [
     PERMISSIONS.USER_VIEW,
-    PERMISSIONS.CATEGORY_VIEW,
-    PERMISSIONS.CATEGORY_CREATE,
+    PERMISSIONS.CATEGORY_VIEW, PERMISSIONS.CATEGORY_CREATE,
     PERMISSIONS.CATEGORY_EDIT,
-    PERMISSIONS.PRODUCT_VIEW,
-    PERMISSIONS.PRODUCT_CREATE,
+    PERMISSIONS.PRODUCT_VIEW, PERMISSIONS.PRODUCT_CREATE,
     PERMISSIONS.PRODUCT_EDIT,
-    PERMISSIONS.SUPPLIER_VIEW,
-    PERMISSIONS.SUPPLIER_CREATE,
+    PERMISSIONS.SUPPLIER_VIEW, PERMISSIONS.SUPPLIER_CREATE,
     PERMISSIONS.SUPPLIER_EDIT,
-    PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.ORDER_CREATE,
-    PERMISSIONS.CUSTOMER_VIEW,
-    PERMISSIONS.CUSTOMER_CREATE,
+    PERMISSIONS.ORDER_VIEW, PERMISSIONS.ORDER_CREATE,
+    PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_CREATE,
     PERMISSIONS.CUSTOMER_EDIT,
-    PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.INVENTORY_CREATE,
+    PERMISSIONS.INVENTORY_VIEW, PERMISSIONS.INVENTORY_CREATE,
     PERMISSIONS.INVENTORY_EDIT,
-    PERMISSIONS.REPORT_VIEW,
-    PERMISSIONS.REPORT_CREATE,
+    PERMISSIONS.REPORT_VIEW, PERMISSIONS.REPORT_CREATE,
     PERMISSIONS.ANALYTICS_VIEW,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
-    PERMISSIONS.SALE_EDIT,
-    PERMISSIONS.SALE_PRINT,
-    PERMISSIONS.SALE_EMAIL,
-    PERMISSIONS.POS_VIEW,
-    PERMISSIONS.POS_CREATE,
-    PERMISSIONS.POS_PRINT,
-    PERMISSIONS.CASH_REGISTER_VIEW,
-    PERMISSIONS.CASH_REGISTER_OPEN,
-    PERMISSIONS.SHIFT_VIEW,
-    PERMISSIONS.SHIFT_START,
-    PERMISSIONS.RETURN_VIEW,
-    PERMISSIONS.RETURN_CREATE,
+    PERMISSIONS.SALE_VIEW, PERMISSIONS.SALE_CREATE, PERMISSIONS.SALE_EDIT,
+    PERMISSIONS.SALE_PRINT, PERMISSIONS.SALE_EMAIL,
+    PERMISSIONS.POS_VIEW, PERMISSIONS.POS_CREATE, PERMISSIONS.POS_PRINT,
+    PERMISSIONS.CASH_REGISTER_VIEW, PERMISSIONS.CASH_REGISTER_OPEN,
+    PERMISSIONS.SHIFT_VIEW, PERMISSIONS.SHIFT_START,
+    PERMISSIONS.RETURN_VIEW, PERMISSIONS.RETURN_CREATE,
     PERMISSIONS.RETURN_EDIT,
-    PERMISSIONS.REFUND_VIEW,
-    PERMISSIONS.REFUND_CREATE,
+    PERMISSIONS.REFUND_VIEW, PERMISSIONS.REFUND_CREATE,
     PERMISSIONS.REFUND_EDIT,
-    PERMISSIONS.INVOICE_VIEW,
-    PERMISSIONS.INVOICE_CREATE,
-    PERMISSIONS.INVOICE_EDIT,
-    PERMISSIONS.INVOICE_SEND,
+    PERMISSIONS.INVOICE_VIEW, PERMISSIONS.INVOICE_CREATE,
+    PERMISSIONS.INVOICE_EDIT, PERMISSIONS.INVOICE_SEND,
     PERMISSIONS.INVOICE_PRINT,
-    PERMISSIONS.RECEIPT_VIEW,
-    PERMISSIONS.RECEIPT_CREATE,
-    PERMISSIONS.RECEIPT_EDIT,
-    PERMISSIONS.RECEIPT_PRINT,
+    PERMISSIONS.RECEIPT_VIEW, PERMISSIONS.RECEIPT_CREATE,
+    PERMISSIONS.RECEIPT_EDIT, PERMISSIONS.RECEIPT_PRINT,
     PERMISSIONS.RECEIPT_EMAIL,
-    PERMISSIONS.PAYMENT_VIEW,
-    PERMISSIONS.PAYMENT_CREATE,
+    PERMISSIONS.PAYMENT_VIEW, PERMISSIONS.PAYMENT_CREATE,
     PERMISSIONS.DASHBOARD_VIEW,
   ],
   VIEWER: [
@@ -628,61 +401,39 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   ],
   EMPLOYEE: [
     PERMISSIONS.PRODUCT_VIEW,
-    PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.ORDER_CREATE,
-    PERMISSIONS.CUSTOMER_VIEW,
-    PERMISSIONS.CUSTOMER_CREATE,
+    PERMISSIONS.ORDER_VIEW, PERMISSIONS.ORDER_CREATE,
+    PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_CREATE,
     PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
-    PERMISSIONS.POS_VIEW,
-    PERMISSIONS.POS_CREATE,
-    PERMISSIONS.RETURN_VIEW,
-    PERMISSIONS.RETURN_CREATE,
-    PERMISSIONS.REFUND_VIEW,
-    PERMISSIONS.REFUND_CREATE,
-    PERMISSIONS.RECEIPT_VIEW,
-    PERMISSIONS.RECEIPT_CREATE,
+    PERMISSIONS.SALE_VIEW, PERMISSIONS.SALE_CREATE,
+    PERMISSIONS.POS_VIEW, PERMISSIONS.POS_CREATE,
+    PERMISSIONS.RETURN_VIEW, PERMISSIONS.RETURN_CREATE,
+    PERMISSIONS.REFUND_VIEW, PERMISSIONS.REFUND_CREATE,
+    PERMISSIONS.RECEIPT_VIEW, PERMISSIONS.RECEIPT_CREATE,
     PERMISSIONS.RECEIPT_PRINT,
     PERMISSIONS.DASHBOARD_VIEW,
   ],
   CASHIER: [
     PERMISSIONS.PRODUCT_VIEW,
-    PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.ORDER_CREATE,
-    PERMISSIONS.CUSTOMER_VIEW,
-    PERMISSIONS.CUSTOMER_CREATE,
+    PERMISSIONS.ORDER_VIEW, PERMISSIONS.ORDER_CREATE,
+    PERMISSIONS.CUSTOMER_VIEW, PERMISSIONS.CUSTOMER_CREATE,
     PERMISSIONS.INVENTORY_VIEW,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
-    PERMISSIONS.SALE_PRINT,
-    PERMISSIONS.SALE_EMAIL,
-    PERMISSIONS.POS_VIEW,
-    PERMISSIONS.POS_CREATE,
-    PERMISSIONS.POS_PRINT,
-    PERMISSIONS.CASH_REGISTER_VIEW,
-    PERMISSIONS.CASH_REGISTER_OPEN,
+    PERMISSIONS.SALE_VIEW, PERMISSIONS.SALE_CREATE,
+    PERMISSIONS.SALE_PRINT, PERMISSIONS.SALE_EMAIL,
+    PERMISSIONS.POS_VIEW, PERMISSIONS.POS_CREATE, PERMISSIONS.POS_PRINT,
+    PERMISSIONS.CASH_REGISTER_VIEW, PERMISSIONS.CASH_REGISTER_OPEN,
     PERMISSIONS.CASH_REGISTER_CLOSE,
-    PERMISSIONS.SHIFT_VIEW,
-    PERMISSIONS.SHIFT_START,
-    PERMISSIONS.SHIFT_END,
-    PERMISSIONS.RETURN_VIEW,
-    PERMISSIONS.RETURN_CREATE,
-    PERMISSIONS.REFUND_VIEW,
-    PERMISSIONS.REFUND_CREATE,
-    PERMISSIONS.RECEIPT_VIEW,
-    PERMISSIONS.RECEIPT_CREATE,
-    PERMISSIONS.RECEIPT_PRINT,
-    PERMISSIONS.RECEIPT_EMAIL,
-    PERMISSIONS.PAYMENT_VIEW,
-    PERMISSIONS.PAYMENT_CREATE,
+    PERMISSIONS.SHIFT_VIEW, PERMISSIONS.SHIFT_START, PERMISSIONS.SHIFT_END,
+    PERMISSIONS.RETURN_VIEW, PERMISSIONS.RETURN_CREATE,
+    PERMISSIONS.REFUND_VIEW, PERMISSIONS.REFUND_CREATE,
+    PERMISSIONS.RECEIPT_VIEW, PERMISSIONS.RECEIPT_CREATE,
+    PERMISSIONS.RECEIPT_PRINT, PERMISSIONS.RECEIPT_EMAIL,
+    PERMISSIONS.PAYMENT_VIEW, PERMISSIONS.PAYMENT_CREATE,
     PERMISSIONS.DASHBOARD_VIEW,
   ],
   USER: [
     PERMISSIONS.PRODUCT_VIEW,
     PERMISSIONS.ORDER_VIEW,
-    PERMISSIONS.SALE_VIEW,
-    PERMISSIONS.SALE_CREATE,
+    PERMISSIONS.SALE_VIEW, PERMISSIONS.SALE_CREATE,
     PERMISSIONS.RECEIPT_VIEW,
     PERMISSIONS.DASHBOARD_VIEW,
   ],
@@ -707,50 +458,34 @@ export interface User {
   clerkId?: string;
   phoneNumber?: string;
   avatar?: string;
-  // ✅ NEW: explicit primary business unit id
   businessUnitId?: string | null;
 }
 
 export interface AuthContextType {
-  // User data
   user: User | null;
   userRole: string;
   clerkUser: any;
-
-  // Loading states
   loading: boolean;
   isLoaded: boolean;
   isSignedIn: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
-
-  // Error state
   error: string | null;
-
-  // Setters
   setUser: (user: User | null) => void;
-
-  // Auth actions
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   register: (data: any) => Promise<void>;
   verify2FA: (code: string) => Promise<void>;
   refreshUser: () => Promise<void>;
-
-  // User management
   updateUserRole: (userId: string, role: UserRole) => Promise<void>;
   updateUser: (userId: string, data: Partial<User>) => Promise<void>;
   getUsers: (params?: { page?: number; limit?: number; search?: string }) => Promise<{ users: User[]; total: number }>;
   deleteUser: (userId: string) => Promise<void>;
-
-  // Permission checking
   hasPermission: (roles: string[]) => boolean;
   hasBusinessUnitAccess: (businessUnitId: string) => boolean;
   can: (permission: string) => boolean;
   canAny: (permissions: string[]) => boolean;
   canAll: (permissions: string[]) => boolean;
-
-  // Role checks
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isManager: boolean;
@@ -759,12 +494,6 @@ export interface AuthContextType {
   isEmployee: boolean;
   isCashier: boolean;
   isUser: boolean;
-
-  // ============================================
-  // FULL PERMISSION CHECKS
-  // ============================================
-
-  // User Management
   canViewUsers: boolean;
   canCreateUsers: boolean;
   canEditUsers: boolean;
@@ -774,15 +503,11 @@ export interface AuthContextType {
   canDeactivateUsers: boolean;
   canUpdateUserRole: boolean;
   canExportUsers: boolean;
-
-  // Category
   canViewCategories: boolean;
   canCreateCategories: boolean;
   canEditCategories: boolean;
   canDeleteCategories: boolean;
   canManageCategories: boolean;
-
-  // Product
   canViewProducts: boolean;
   canCreateProducts: boolean;
   canEditProducts: boolean;
@@ -790,15 +515,11 @@ export interface AuthContextType {
   canManageProducts: boolean;
   canExportProducts: boolean;
   canImportProducts: boolean;
-
-  // Supplier
   canViewSuppliers: boolean;
   canCreateSuppliers: boolean;
   canEditSuppliers: boolean;
   canDeleteSuppliers: boolean;
   canManageSuppliers: boolean;
-
-  // Order
   canViewOrders: boolean;
   canCreateOrders: boolean;
   canEditOrders: boolean;
@@ -806,15 +527,11 @@ export interface AuthContextType {
   canManageOrders: boolean;
   canProcessOrders: boolean;
   canCancelOrders: boolean;
-
-  // Customer
   canViewCustomers: boolean;
   canCreateCustomers: boolean;
   canEditCustomers: boolean;
   canDeleteCustomers: boolean;
   canManageCustomers: boolean;
-
-  // Inventory
   canViewInventory: boolean;
   canCreateInventory: boolean;
   canEditInventory: boolean;
@@ -822,36 +539,24 @@ export interface AuthContextType {
   canManageInventory: boolean;
   canAdjustInventory: boolean;
   canTransferInventory: boolean;
-
-  // Report
   canViewReports: boolean;
   canCreateReports: boolean;
   canExportReports: boolean;
   canManageReports: boolean;
-
-  // Analytics
   canViewAnalytics: boolean;
   canExportAnalytics: boolean;
-
-  // Settings
   canViewSettings: boolean;
   canEditSettings: boolean;
   canManageSettings: boolean;
-
-  // System
   canViewSystemLogs: boolean;
   canBackupSystem: boolean;
   canRestoreSystem: boolean;
   canViewSystemSettings: boolean;
-
-  // Business Unit
   canViewBusinessUnits: boolean;
   canCreateBusinessUnits: boolean;
   canEditBusinessUnits: boolean;
   canDeleteBusinessUnits: boolean;
   canManageBusinessUnits: boolean;
-
-  // Sales
   canViewSales: boolean;
   canCreateSales: boolean;
   canEditSales: boolean;
@@ -860,26 +565,18 @@ export interface AuthContextType {
   canExportSales: boolean;
   canPrintSales: boolean;
   canEmailSales: boolean;
-
-  // POS
   canViewPos: boolean;
   canCreatePos: boolean;
   canManagePos: boolean;
   canPrintPos: boolean;
-
-  // Cash Register
   canViewCashRegister: boolean;
   canManageCashRegister: boolean;
   canOpenCashRegister: boolean;
   canCloseCashRegister: boolean;
-
-  // Shift
   canViewShifts: boolean;
   canManageShifts: boolean;
   canStartShift: boolean;
   canEndShift: boolean;
-
-  // Return
   canViewReturns: boolean;
   canCreateReturns: boolean;
   canEditReturns: boolean;
@@ -888,8 +585,6 @@ export interface AuthContextType {
   canApproveReturns: boolean;
   canRejectReturns: boolean;
   canProcessReturns: boolean;
-
-  // Refund
   canViewRefunds: boolean;
   canCreateRefunds: boolean;
   canEditRefunds: boolean;
@@ -898,8 +593,6 @@ export interface AuthContextType {
   canApproveRefunds: boolean;
   canRejectRefunds: boolean;
   canCompleteRefunds: boolean;
-
-  // Invoice
   canViewInvoices: boolean;
   canCreateInvoices: boolean;
   canEditInvoices: boolean;
@@ -910,8 +603,6 @@ export interface AuthContextType {
   canMarkInvoicePaid: boolean;
   canVoidInvoices: boolean;
   canCancelInvoices: boolean;
-
-  // Receipt
   canViewReceipts: boolean;
   canCreateReceipts: boolean;
   canEditReceipts: boolean;
@@ -920,18 +611,12 @@ export interface AuthContextType {
   canPrintReceipts: boolean;
   canEmailReceipts: boolean;
   canVoidReceipts: boolean;
-
-  // Payment
   canViewPayments: boolean;
   canCreatePayments: boolean;
   canManagePayments: boolean;
   canRefundPayments: boolean;
-
-  // Dashboard
   canViewDashboard: boolean;
   canManageDashboard: boolean;
-
-  // Integration
   canViewIntegrations: boolean;
   canManageIntegrations: boolean;
   canViewApi: boolean;
@@ -947,7 +632,7 @@ interface AuthProviderProps {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // ============================================
-// BUSINESS UNIT HELPERS  (NEW)
+// BUSINESS UNIT HELPERS
 // ============================================
 
 function resolveBusinessUnitIdFromUser(
@@ -982,28 +667,44 @@ function persistBusinessUnitId(user: User | null): void {
   }
 }
 
-// Helper to map authService User to local User
 const mapAuthUser = (authUser: any, clerkRole?: string): User => {
-  const role = (clerkRole || authUser.role || 'USER') as UserRole;
+  const role = (
+    clerkRole ||
+    authUser?.role ||
+    'USER'
+  ) as UserRole;
 
   return {
-    id: authUser.id || '',
-    email: authUser.email || '',
-    firstName: authUser.firstName || '',
-    lastName: authUser.lastName || '',
-    role: role,
-    companyId: authUser.companyId,
-    businessUnits: authUser.businessUnits || [],
-    isActive: authUser.isActive !== undefined ? authUser.isActive : true,
-    permissions: authUser.permissions || [],
-    createdAt: authUser.createdAt,
-    updatedAt: authUser.updatedAt,
-    clerkId: authUser.clerkId,
-    phoneNumber: authUser.phoneNumber,
-    avatar: authUser.avatar,
-    businessUnitId: authUser.businessUnitId ?? null,
+    id: authUser?.id || '',
+    email: authUser?.email || '',
+    firstName: authUser?.firstName || '',
+    lastName: authUser?.lastName || '',
+    role,
+    companyId: authUser?.companyId,
+    businessUnits: authUser?.businessUnits || [],
+    isActive: authUser?.isActive !== undefined ? authUser.isActive : true,
+    permissions: authUser?.permissions || [],
+    createdAt: authUser?.createdAt,
+    updatedAt: authUser?.updatedAt,
+    clerkId: authUser?.clerkId,
+    phoneNumber: authUser?.phoneNumber,
+    avatar: authUser?.avatar,
+    businessUnitId: authUser?.businessUnitId ?? null,
   };
 };
+
+function readCachedUser(): User | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem('user');
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as User;
+  } catch {
+    return null;
+  }
+}
 
 // ============================================
 // PROVIDER
@@ -1012,26 +713,115 @@ const mapAuthUser = (authUser: any, clerkRole?: string): User => {
 export function AuthProvider({ children }: AuthProviderProps) {
   const { user: clerkUser, isLoaded: clerkLoaded, isSignedIn } = useUser();
   const { signOut } = useClerk();
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Get user role from Clerk metadata or user object
-  const userRole = useMemo(() => {
-    if (clerkUser?.publicMetadata?.role) {
-      return clerkUser.publicMetadata.role as string;
-    }
-    if (clerkUser?.unsafeMetadata?.role) {
-      return clerkUser.unsafeMetadata.role as string;
-    }
-    if (user?.role) {
-      return user.role;
-    }
-    return 'USER';
-  }, [clerkUser, user]);
+  // Stable primitives from clerkUser
+  const clerkUserId = clerkUser?.id ?? null;
+  const clerkPublicRole =
+    (clerkUser?.publicMetadata?.role as string) || null;
+  const clerkUnsafeRole =
+    (clerkUser?.unsafeMetadata?.role as string) || null;
+  const clerkPrimaryEmail =
+    clerkUser?.emailAddresses?.[0]?.emailAddress || '';
+  const clerkFirstName = clerkUser?.firstName || '';
+  const clerkLastName = clerkUser?.lastName || '';
+  const clerkPhoneNumber =
+    clerkUser?.phoneNumbers?.[0]?.phoneNumber || '';
+  const clerkAvatar = clerkUser?.imageUrl || '';
 
-  // Permission check helper
+  // ============================================
+  // CLERK SYNC — the missing piece
+  // ============================================
+  //
+  // This effect is what was missing from the original file. Without
+  // it, the frontend never tells the backend to provision a `users`
+  // row for the currently-authenticated Clerk user. The result was
+  // that every FK lookup for `userId` failed with USER_NOT_SYNCED.
+  //
+  // We fire this exactly once per Clerk user session (deduped via
+  // `syncAttemptedForRef`) so we don't hammer the endpoint on every
+  // render.
+  //
+  // The backend reads the identity from the verified Clerk JWT.
+  // The body fields below are belt-and-suspenders fallbacks for
+  // cases where the session template omits a claim.
+  const syncAttemptedForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Wait until Clerk has resolved the session.
+    if (!clerkLoaded) return;
+    if (!isSignedIn || !clerkUserId) return;
+
+    // Dedupe: only attempt once per Clerk user ID.
+    if (syncAttemptedForRef.current === clerkUserId) return;
+    syncAttemptedForRef.current = clerkUserId;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        console.log('🔄 [useAuth] Syncing Clerk user with backend...');
+        const syncedUser = await authService.syncClerkUser({
+          clerkId: clerkUserId,
+          email: clerkPrimaryEmail || undefined,
+          firstName: clerkFirstName || undefined,
+          lastName: clerkLastName || undefined,
+          avatar: clerkAvatar || undefined,
+        });
+
+        if (cancelled) return;
+
+        console.log('✅ [useAuth] Clerk user synced with DB:', {
+          id: syncedUser.id,
+          clerkId: syncedUser.clerkId,
+          role: syncedUser.role,
+        });
+      } catch (syncErr) {
+        if (cancelled) return;
+
+        // Reset the dedupe ref so a future session can retry.
+        syncAttemptedForRef.current = null;
+
+        console.error('❌ [useAuth] Clerk user sync failed:', syncErr);
+        // Non-fatal — do not crash the app. The next successful
+        // sync will fix the DB row.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clerkLoaded, isSignedIn, clerkUserId]);
+
+  const userRole = useMemo(() => {
+    if (clerkPublicRole) return clerkPublicRole;
+    if (clerkUnsafeRole) return clerkUnsafeRole;
+    if (user?.role) return user.role;
+
+    const cached = readCachedUser();
+    if (cached?.role) return cached.role;
+
+    return 'USER';
+  }, [clerkPublicRole, clerkUnsafeRole, user?.role]);
+
+  const isSuper = useMemo(() => {
+    if (isSuperAdminRole(userRole)) return true;
+    if (isSuperAdminRole(user?.role)) return true;
+
+    const perms = user?.permissions;
+    if (Array.isArray(perms) && perms.includes(WILDCARD)) return true;
+
+    const cached = readCachedUser();
+    if (cached && isSuperAdminRole(cached.role)) return true;
+
+    return false;
+  }, [userRole, user?.role, user?.permissions]);
+
   const hasPermission = useCallback(
     (roles: string[]): boolean => {
       if (!user) return false;
@@ -1040,61 +830,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
     [user]
   );
 
-  // Check if user has a specific permission
   const can = useCallback(
     (permission: string): boolean => {
+      if (isSuper) return true;
       if (!user) return false;
 
-      // SUPER_ADMIN has all permissions
-      if (user.role === 'SUPER_ADMIN') return true;
-
-      // If user has custom permissions, check them first
       if (user.permissions && user.permissions.length > 0) {
+        if (user.permissions.includes(WILDCARD)) return true;
         return user.permissions.includes(permission);
       }
 
-      // Otherwise check role-based permissions
       const rolePermissions = ROLE_PERMISSIONS[user.role] || [];
+      if (rolePermissions.includes(WILDCARD)) return true;
       return rolePermissions.includes(permission);
     },
-    [user]
+    [user, isSuper]
   );
 
-  // Check if user has any of the given permissions
   const canAny = useCallback(
     (permissions: string[]): boolean => {
+      if (isSuper) return true;
       if (!user) return false;
-      if (user.role === 'SUPER_ADMIN') return true;
       return permissions.some((p) => can(p));
     },
-    [user, can]
+    [user, isSuper, can]
   );
 
-  // Check if user has all of the given permissions
   const canAll = useCallback(
     (permissions: string[]): boolean => {
+      if (isSuper) return true;
       if (!user) return false;
-      if (user.role === 'SUPER_ADMIN') return true;
       return permissions.every((p) => can(p));
     },
-    [user, can]
+    [user, isSuper, can]
   );
 
-  // Check if user has access to a business unit
   const hasBusinessUnitAccess = useCallback(
     (businessUnitId: string): boolean => {
+      if (isSuper) return true;
       if (!user) return false;
-      if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') return true;
-      return user.businessUnits.some(
-        (bu) => bu.businessUnitId === businessUnitId
+      if (user.role === 'ADMIN') return true;
+      return (
+        user.businessUnits?.some(
+          (bu) => bu.businessUnitId === businessUnitId
+        ) ?? false
       );
     },
-    [user]
+    [user, isSuper]
   );
 
-  // Memoized role checks
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
-  const isAdmin = user?.role === 'ADMIN';
+  const isSuperAdmin = isSuper;
+  const isAdmin = isSuper || user?.role === 'ADMIN';
   const isManager = user?.role === 'MANAGER';
   const isEditor = user?.role === 'EDITOR';
   const isViewer = user?.role === 'VIEWER';
@@ -1102,13 +888,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const isCashier = user?.role === 'CASHIER';
   const isUser = user?.role === 'USER';
 
-  // ============================================
-  // MEMOIZED PERMISSION CHECKS
-  // ============================================
-
   const permissionChecks = useMemo(
     () => ({
-      // User Management
       canViewUsers: can(PERMISSIONS.USER_VIEW),
       canCreateUsers: can(PERMISSIONS.USER_CREATE),
       canEditUsers: can(PERMISSIONS.USER_EDIT),
@@ -1118,15 +899,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canDeactivateUsers: can(PERMISSIONS.USER_DEACTIVATE),
       canUpdateUserRole: can(PERMISSIONS.USER_ROLE_UPDATE),
       canExportUsers: can(PERMISSIONS.USER_EXPORT),
-
-      // Category
       canViewCategories: can(PERMISSIONS.CATEGORY_VIEW),
       canCreateCategories: can(PERMISSIONS.CATEGORY_CREATE),
       canEditCategories: can(PERMISSIONS.CATEGORY_EDIT),
       canDeleteCategories: can(PERMISSIONS.CATEGORY_DELETE),
       canManageCategories: can(PERMISSIONS.CATEGORY_MANAGE),
-
-      // Product
       canViewProducts: can(PERMISSIONS.PRODUCT_VIEW),
       canCreateProducts: can(PERMISSIONS.PRODUCT_CREATE),
       canEditProducts: can(PERMISSIONS.PRODUCT_EDIT),
@@ -1134,15 +911,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canManageProducts: can(PERMISSIONS.PRODUCT_MANAGE),
       canExportProducts: can(PERMISSIONS.PRODUCT_EXPORT),
       canImportProducts: can(PERMISSIONS.PRODUCT_IMPORT),
-
-      // Supplier
       canViewSuppliers: can(PERMISSIONS.SUPPLIER_VIEW),
       canCreateSuppliers: can(PERMISSIONS.SUPPLIER_CREATE),
       canEditSuppliers: can(PERMISSIONS.SUPPLIER_EDIT),
       canDeleteSuppliers: can(PERMISSIONS.SUPPLIER_DELETE),
       canManageSuppliers: can(PERMISSIONS.SUPPLIER_MANAGE),
-
-      // Order
       canViewOrders: can(PERMISSIONS.ORDER_VIEW),
       canCreateOrders: can(PERMISSIONS.ORDER_CREATE),
       canEditOrders: can(PERMISSIONS.ORDER_EDIT),
@@ -1150,15 +923,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canManageOrders: can(PERMISSIONS.ORDER_MANAGE),
       canProcessOrders: can(PERMISSIONS.ORDER_PROCESS),
       canCancelOrders: can(PERMISSIONS.ORDER_CANCEL),
-
-      // Customer
       canViewCustomers: can(PERMISSIONS.CUSTOMER_VIEW),
       canCreateCustomers: can(PERMISSIONS.CUSTOMER_CREATE),
       canEditCustomers: can(PERMISSIONS.CUSTOMER_EDIT),
       canDeleteCustomers: can(PERMISSIONS.CUSTOMER_DELETE),
       canManageCustomers: can(PERMISSIONS.CUSTOMER_MANAGE),
-
-      // Inventory
       canViewInventory: can(PERMISSIONS.INVENTORY_VIEW),
       canCreateInventory: can(PERMISSIONS.INVENTORY_CREATE),
       canEditInventory: can(PERMISSIONS.INVENTORY_EDIT),
@@ -1166,36 +935,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canManageInventory: can(PERMISSIONS.INVENTORY_MANAGE),
       canAdjustInventory: can(PERMISSIONS.INVENTORY_ADJUST),
       canTransferInventory: can(PERMISSIONS.INVENTORY_TRANSFER),
-
-      // Report
       canViewReports: can(PERMISSIONS.REPORT_VIEW),
       canCreateReports: can(PERMISSIONS.REPORT_CREATE),
       canExportReports: can(PERMISSIONS.REPORT_EXPORT),
       canManageReports: can(PERMISSIONS.REPORT_MANAGE),
-
-      // Analytics
       canViewAnalytics: can(PERMISSIONS.ANALYTICS_VIEW),
       canExportAnalytics: can(PERMISSIONS.ANALYTICS_EXPORT),
-
-      // Settings
       canViewSettings: can(PERMISSIONS.SETTINGS_VIEW),
       canEditSettings: can(PERMISSIONS.SETTINGS_EDIT),
       canManageSettings: can(PERMISSIONS.SETTINGS_MANAGE),
-
-      // System
       canViewSystemLogs: can(PERMISSIONS.SYSTEM_LOGS),
       canBackupSystem: can(PERMISSIONS.SYSTEM_BACKUP),
       canRestoreSystem: can(PERMISSIONS.SYSTEM_RESTORE),
       canViewSystemSettings: can(PERMISSIONS.SYSTEM_SETTINGS),
-
-      // Business Unit
       canViewBusinessUnits: can(PERMISSIONS.BUSINESS_UNIT_VIEW),
       canCreateBusinessUnits: can(PERMISSIONS.BUSINESS_UNIT_CREATE),
       canEditBusinessUnits: can(PERMISSIONS.BUSINESS_UNIT_EDIT),
       canDeleteBusinessUnits: can(PERMISSIONS.BUSINESS_UNIT_DELETE),
       canManageBusinessUnits: can(PERMISSIONS.BUSINESS_UNIT_MANAGE),
-
-      // Sales
       canViewSales: can(PERMISSIONS.SALE_VIEW),
       canCreateSales: can(PERMISSIONS.SALE_CREATE),
       canEditSales: can(PERMISSIONS.SALE_EDIT),
@@ -1204,26 +961,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canExportSales: can(PERMISSIONS.SALE_EXPORT),
       canPrintSales: can(PERMISSIONS.SALE_PRINT),
       canEmailSales: can(PERMISSIONS.SALE_EMAIL),
-
-      // POS
       canViewPos: can(PERMISSIONS.POS_VIEW),
       canCreatePos: can(PERMISSIONS.POS_CREATE),
       canManagePos: can(PERMISSIONS.POS_MANAGE),
       canPrintPos: can(PERMISSIONS.POS_PRINT),
-
-      // Cash Register
       canViewCashRegister: can(PERMISSIONS.CASH_REGISTER_VIEW),
       canManageCashRegister: can(PERMISSIONS.CASH_REGISTER_MANAGE),
       canOpenCashRegister: can(PERMISSIONS.CASH_REGISTER_OPEN),
       canCloseCashRegister: can(PERMISSIONS.CASH_REGISTER_CLOSE),
-
-      // Shift
       canViewShifts: can(PERMISSIONS.SHIFT_VIEW),
       canManageShifts: can(PERMISSIONS.SHIFT_MANAGE),
       canStartShift: can(PERMISSIONS.SHIFT_START),
       canEndShift: can(PERMISSIONS.SHIFT_END),
-
-      // Return
       canViewReturns: can(PERMISSIONS.RETURN_VIEW),
       canCreateReturns: can(PERMISSIONS.RETURN_CREATE),
       canEditReturns: can(PERMISSIONS.RETURN_EDIT),
@@ -1232,8 +981,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canApproveReturns: can(PERMISSIONS.RETURN_APPROVE),
       canRejectReturns: can(PERMISSIONS.RETURN_REJECT),
       canProcessReturns: can(PERMISSIONS.RETURN_PROCESS),
-
-      // Refund
       canViewRefunds: can(PERMISSIONS.REFUND_VIEW),
       canCreateRefunds: can(PERMISSIONS.REFUND_CREATE),
       canEditRefunds: can(PERMISSIONS.REFUND_EDIT),
@@ -1242,8 +989,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canApproveRefunds: can(PERMISSIONS.REFUND_APPROVE),
       canRejectRefunds: can(PERMISSIONS.REFUND_REJECT),
       canCompleteRefunds: can(PERMISSIONS.REFUND_COMPLETE),
-
-      // Invoice
       canViewInvoices: can(PERMISSIONS.INVOICE_VIEW),
       canCreateInvoices: can(PERMISSIONS.INVOICE_CREATE),
       canEditInvoices: can(PERMISSIONS.INVOICE_EDIT),
@@ -1254,8 +999,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canMarkInvoicePaid: can(PERMISSIONS.INVOICE_PAID),
       canVoidInvoices: can(PERMISSIONS.INVOICE_VOID),
       canCancelInvoices: can(PERMISSIONS.INVOICE_CANCEL),
-
-      // Receipt
       canViewReceipts: can(PERMISSIONS.RECEIPT_VIEW),
       canCreateReceipts: can(PERMISSIONS.RECEIPT_CREATE),
       canEditReceipts: can(PERMISSIONS.RECEIPT_EDIT),
@@ -1264,18 +1007,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       canPrintReceipts: can(PERMISSIONS.RECEIPT_PRINT),
       canEmailReceipts: can(PERMISSIONS.RECEIPT_EMAIL),
       canVoidReceipts: can(PERMISSIONS.RECEIPT_VOID),
-
-      // Payment
       canViewPayments: can(PERMISSIONS.PAYMENT_VIEW),
       canCreatePayments: can(PERMISSIONS.PAYMENT_CREATE),
       canManagePayments: can(PERMISSIONS.PAYMENT_MANAGE),
       canRefundPayments: can(PERMISSIONS.PAYMENT_REFUND),
-
-      // Dashboard
       canViewDashboard: can(PERMISSIONS.DASHBOARD_VIEW),
       canManageDashboard: can(PERMISSIONS.DASHBOARD_MANAGE),
-
-      // Integration
       canViewIntegrations: can(PERMISSIONS.INTEGRATION_VIEW),
       canManageIntegrations: can(PERMISSIONS.INTEGRATION_MANAGE),
       canViewApi: can(PERMISSIONS.API_VIEW),
@@ -1297,9 +1034,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(mappedUser);
       localStorage.setItem('user', JSON.stringify(mappedUser));
       persistBusinessUnitId(mappedUser);
-    } catch (error) {
-      console.error('Failed to update user role:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to update user role:', err);
+      throw err;
     }
   }, []);
 
@@ -1310,9 +1047,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(mappedUser);
       localStorage.setItem('user', JSON.stringify(mappedUser));
       persistBusinessUnitId(mappedUser);
-    } catch (error) {
-      console.error('Failed to update user:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to update user:', err);
+      throw err;
     }
   }, []);
 
@@ -1324,9 +1061,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
           users: response.users.map((u) => mapAuthUser(u)),
           total: response.total,
         };
-      } catch (error) {
-        console.error('Failed to get users:', error);
-        throw error;
+      } catch (err) {
+        console.error('Failed to get users:', err);
+        throw err;
       }
     },
     []
@@ -1335,44 +1072,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const deleteUser = useCallback(async (userId: string) => {
     try {
       await authService.deleteUser(userId);
-    } catch (error) {
-      console.error('Failed to delete user:', error);
-      throw error;
+    } catch (err) {
+      console.error('Failed to delete user:', err);
+      throw err;
     }
   }, []);
-
-  // ============================================
-  // CHECK AUTH — ✅ FIXED to preserve businessUnitId
-  // ============================================
 
   const checkAuth = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Load cached user + previously stored businessUnitId
-      let cachedUser: User | null = null;
-      try {
-        const cached = localStorage.getItem('user');
-        if (cached) cachedUser = JSON.parse(cached);
-      } catch (_e) {
-        /* ignore */
-      }
+      const cachedUser = readCachedUser();
 
       const storedBusinessUnitId =
         typeof window !== 'undefined'
           ? localStorage.getItem('businessUnitId')
           : null;
 
-      if (clerkLoaded && isSignedIn && clerkUser) {
-        const clerkRole =
-          (clerkUser?.publicMetadata?.role as string) ||
-          (clerkUser?.unsafeMetadata?.role as string) ||
-          'USER';
+      if (clerkLoaded && isSignedIn && clerkUserId) {
+        const clerkRole = clerkPublicRole || clerkUnsafeRole || 'USER';
 
-        console.log('Clerk role:', clerkRole);
+        if (process.env.NODE_ENV === 'development') {
+          // eslint-disable-next-line no-console
+          console.log('Clerk role:', clerkRole);
+        }
 
-        const token = localStorage.getItem('auth_token');
+        const token =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('auth_token')
+            : null;
 
         if (token) {
           try {
@@ -1380,12 +1109,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
             if (userData) {
               const mappedUser = mapAuthUser(userData, clerkRole);
 
-              // ✅ Backfill businessUnitId from storage if missing
               if (!mappedUser.businessUnitId && storedBusinessUnitId) {
                 mappedUser.businessUnitId = storedBusinessUnitId;
               }
 
-              // ✅ Preserve cached business units if backend returned none
               if (
                 (!mappedUser.businessUnits ||
                   mappedUser.businessUnits.length === 0) &&
@@ -1401,16 +1128,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
               setLoading(false);
               return;
             }
-          } catch (error) {
-            console.error('Failed to get user from backend:', error);
+          } catch (err) {
+            console.error('Failed to get user from backend:', err);
           }
         }
 
-        // Prefer cached user over a fabricated stub
-        if (cachedUser && cachedUser.id === clerkUser.id) {
+        if (cachedUser && cachedUser.id === clerkUserId) {
           if (
-            clerkRole === 'SUPER_ADMIN' &&
-            cachedUser.role !== 'SUPER_ADMIN'
+            isSuperAdminRole(clerkRole) &&
+            !isSuperAdminRole(cachedUser.role)
           ) {
             cachedUser.role = 'SUPER_ADMIN';
           }
@@ -1425,15 +1151,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
           return;
         }
 
-        // SUPER_ADMIN fallback — but WITHOUT emptying businessUnits
-        if (clerkRole === 'SUPER_ADMIN') {
+        if (isSuperAdminRole(clerkRole)) {
           const adminUser: User = {
-            id: clerkUser.id,
-            email: clerkUser.emailAddresses?.[0]?.emailAddress || '',
-            firstName: clerkUser.firstName || '',
-            lastName: clerkUser.lastName || '',
+            id: clerkUserId,
+            email: clerkPrimaryEmail,
+            firstName: clerkFirstName,
+            lastName: clerkLastName,
             role: 'SUPER_ADMIN',
-            // ✅ preserve cached units if any
             businessUnits: cachedUser?.businessUnits ?? [],
             isActive: true,
             permissions: cachedUser?.permissions ?? [],
@@ -1448,33 +1172,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
           return;
         }
 
-        // If no user found, create one
         try {
-          const randomPassword = Math.random().toString(36).slice(-8) + 'Aa1!';
-
+          const randomPassword =
+            Math.random().toString(36).slice(-8) + 'Aa1!';
           const userData = await authService.register({
-            email: clerkUser.emailAddresses?.[0]?.emailAddress || '',
-            firstName: clerkUser.firstName || '',
-            lastName: clerkUser.lastName || '',
-            phoneNumber: clerkUser.phoneNumbers?.[0]?.phoneNumber || '',
+            email: clerkPrimaryEmail,
+            firstName: clerkFirstName,
+            lastName: clerkLastName,
+            phoneNumber: clerkPhoneNumber,
             password: randomPassword,
             role: clerkRole,
           });
-
           const mappedUser = mapAuthUser(userData, clerkRole);
           setUser(mappedUser);
           setIsAuthenticated(true);
           localStorage.setItem('user', JSON.stringify(mappedUser));
           persistBusinessUnitId(mappedUser);
-        } catch (error) {
-          console.error('Failed to create user in backend:', error);
+        } catch (err) {
+          console.error('Failed to create user in backend:', err);
           const fallbackUser: User = {
-            id: clerkUser.id,
-            email: clerkUser.emailAddresses?.[0]?.emailAddress || '',
-            firstName: clerkUser.firstName || '',
-            lastName: clerkUser.lastName || '',
+            id: clerkUserId,
+            email: clerkPrimaryEmail,
+            firstName: clerkFirstName,
+            lastName: clerkLastName,
             role: clerkRole as UserRole,
-            // ✅ preserve cached units, do not empty them
             businessUnits: cachedUser?.businessUnits ?? [],
             isActive: true,
             permissions: cachedUser?.permissions ?? [],
@@ -1486,33 +1207,44 @@ export function AuthProvider({ children }: AuthProviderProps) {
           localStorage.setItem('user', JSON.stringify(fallbackUser));
           persistBusinessUnitId(fallbackUser);
         }
-      } else {
+      } else if (clerkLoaded) {
         setUser(null);
         setIsAuthenticated(false);
-        localStorage.removeItem('user');
+      } else {
+        // Clerk hasn't finished loading — do nothing.
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
+    } catch (err) {
+      console.error('Auth check failed:', err);
       setError('Authentication failed');
       setUser(null);
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
-  }, [clerkLoaded, isSignedIn, clerkUser]);
+  }, [
+    clerkLoaded,
+    isSignedIn,
+    clerkUserId,
+    clerkPublicRole,
+    clerkUnsafeRole,
+    clerkPrimaryEmail,
+    clerkFirstName,
+    clerkLastName,
+    clerkPhoneNumber,
+  ]);
 
   const refreshUser = useCallback(async () => {
     try {
-      const clerkRole =
-        (clerkUser?.publicMetadata?.role as string) ||
-        (clerkUser?.unsafeMetadata?.role as string);
+      const clerkRole = clerkPublicRole || clerkUnsafeRole || undefined;
 
       const userData = await authService.getCurrentUser();
       if (userData) {
         const mappedUser = mapAuthUser(userData, clerkRole);
-        // ✅ Backfill from storage if the backend didn't provide one
         if (!mappedUser.businessUnitId) {
-          const stored = localStorage.getItem('businessUnitId');
+          const stored =
+            typeof window !== 'undefined'
+              ? localStorage.getItem('businessUnitId')
+              : null;
           if (stored) mappedUser.businessUnitId = stored;
         }
         setUser(mappedUser);
@@ -1520,51 +1252,59 @@ export function AuthProvider({ children }: AuthProviderProps) {
         localStorage.setItem('user', JSON.stringify(mappedUser));
         persistBusinessUnitId(mappedUser);
       }
-    } catch (error) {
-      console.error('Failed to refresh user:', error);
+    } catch (err) {
+      console.error('Failed to refresh user:', err);
     }
-  }, [clerkUser]);
+  }, [clerkPublicRole, clerkUnsafeRole]);
 
-  const login = async (email: string, password: string, remember?: boolean) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await authService.login({ email, password, remember });
-      localStorage.setItem('auth_token', response.token);
-      const mappedUser = mapAuthUser(response.user);
-      setUser(mappedUser);
-      setIsAuthenticated(true);
-      localStorage.setItem('user', JSON.stringify(mappedUser));
-      persistBusinessUnitId(mappedUser);
-    } catch (error) {
-      setError('Login failed');
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
+  const login = useCallback(
+    async (email: string, password: string, remember?: boolean) => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await authService.login({
+          email,
+          password,
+          remember,
+        });
+        localStorage.setItem('auth_token', response.token);
+        const mappedUser = mapAuthUser(response.user);
+        setUser(mappedUser);
+        setIsAuthenticated(true);
+        localStorage.setItem('user', JSON.stringify(mappedUser));
+        persistBusinessUnitId(mappedUser);
+      } catch (err) {
+        setError('Login failed');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await authService.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch (err) {
+      console.error('Logout error:', err);
     } finally {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('user');
       localStorage.removeItem('businessUnitId');
       setUser(null);
       setIsAuthenticated(false);
-
+      // Reset sync dedupe so the next login re-syncs.
+      syncAttemptedForRef.current = null;
       try {
         await signOut();
-      } catch (error) {
-        console.error('Clerk sign out error:', error);
+      } catch (err) {
+        console.error('Clerk sign out error:', err);
       }
     }
-  };
+  }, [signOut]);
 
-  const register = async (data: any) => {
+  const register = useCallback(async (data: any) => {
     try {
       setLoading(true);
       setError(null);
@@ -1575,15 +1315,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsAuthenticated(true);
       localStorage.setItem('user', JSON.stringify(mappedUser));
       persistBusinessUnitId(mappedUser);
-    } catch (error) {
+    } catch (err) {
       setError('Registration failed');
-      throw error;
+      throw err;
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const verify2FA = async (code: string) => {
+  const verify2FA = useCallback(async (code: string) => {
     try {
       setLoading(true);
       setError(null);
@@ -1594,46 +1334,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsAuthenticated(true);
       localStorage.setItem('user', JSON.stringify(mappedUser));
       persistBusinessUnitId(mappedUser);
-    } catch (error) {
+    } catch (err) {
       setError('2FA verification failed');
-      throw error;
+      throw err;
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // ============================================
-  // EFFECTS
-  // ============================================
+  const lastClerkFingerprintRef = useRef<string>('');
 
-  // Run auth check on mount and when Clerk state changes
   useEffect(() => {
+    const fingerprint = `${clerkLoaded}|${isSignedIn}|${clerkUserId}`;
+    if (lastClerkFingerprintRef.current === fingerprint) return;
+    lastClerkFingerprintRef.current = fingerprint;
+
+    if (!clerkLoaded) return;
+
     checkAuth();
-  }, [checkAuth]);
+  }, [clerkLoaded, isSignedIn, clerkUserId, checkAuth]);
 
-  // Load user from localStorage on mount
-  useEffect(() => {
-    try {
-      const cachedUser = localStorage.getItem('user');
-      if (cachedUser) {
-        const parsedUser = JSON.parse(cachedUser);
-        if (clerkUser?.publicMetadata?.role === 'SUPER_ADMIN') {
-          parsedUser.role = 'SUPER_ADMIN';
-        }
-        // ✅ Backfill businessUnitId from dedicated key if missing
-        if (!parsedUser.businessUnitId) {
-          const stored = localStorage.getItem('businessUnitId');
-          if (stored) parsedUser.businessUnitId = stored;
-        }
-        setUser(parsedUser);
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error('Failed to load user from localStorage:', error);
-    }
-  }, [clerkUser]);
-
-  // Listen for auth token changes
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'auth_token') {
@@ -1648,62 +1368,81 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     };
 
+    if (typeof window === 'undefined') return;
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [refreshUser]);
 
-  const value: AuthContextType = {
-    // User data
-    user,
-    userRole,
-    clerkUser,
-
-    // Loading states
-    loading,
-    isLoaded: clerkLoaded,
-    isSignedIn: isSignedIn || false,
-    isLoading: loading || !clerkLoaded,
-    isAuthenticated,
-
-    // Error state
-    error,
-
-    // Setters
-    setUser,
-
-    // Auth actions
-    login,
-    logout,
-    register,
-    verify2FA,
-    refreshUser,
-
-    // User management
-    updateUserRole,
-    updateUser,
-    getUsers,
-    deleteUser,
-
-    // Permission checking
-    hasPermission,
-    hasBusinessUnitAccess,
-    can,
-    canAny,
-    canAll,
-
-    // Role checks
-    isSuperAdmin,
-    isAdmin,
-    isManager,
-    isEditor,
-    isViewer,
-    isEmployee,
-    isCashier,
-    isUser,
-
-    // All permission checks
-    ...permissionChecks,
-  };
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user,
+      userRole,
+      clerkUser,
+      loading,
+      isLoaded: clerkLoaded,
+      isSignedIn: isSignedIn || false,
+      isLoading: loading || !clerkLoaded,
+      isAuthenticated,
+      error,
+      setUser,
+      login,
+      logout,
+      register,
+      verify2FA,
+      refreshUser,
+      updateUserRole,
+      updateUser,
+      getUsers,
+      deleteUser,
+      hasPermission,
+      hasBusinessUnitAccess,
+      can,
+      canAny,
+      canAll,
+      isSuperAdmin,
+      isAdmin,
+      isManager,
+      isEditor,
+      isViewer,
+      isEmployee,
+      isCashier,
+      isUser,
+      ...permissionChecks,
+    }),
+    [
+      user,
+      userRole,
+      clerkUser,
+      loading,
+      clerkLoaded,
+      isSignedIn,
+      isAuthenticated,
+      error,
+      login,
+      logout,
+      register,
+      verify2FA,
+      refreshUser,
+      updateUserRole,
+      updateUser,
+      getUsers,
+      deleteUser,
+      hasPermission,
+      hasBusinessUnitAccess,
+      can,
+      canAny,
+      canAll,
+      isSuperAdmin,
+      isAdmin,
+      isManager,
+      isEditor,
+      isViewer,
+      isEmployee,
+      isCashier,
+      isUser,
+      permissionChecks,
+    ]
+  );
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }
@@ -1717,5 +1456,3 @@ export function useAuth(): AuthContextType {
 }
 
 export default useAuth;
-
-// ===== END PART 2 of 2 — FILE COMPLETE =====

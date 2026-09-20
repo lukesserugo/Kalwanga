@@ -1,39 +1,54 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// packages/web/components/products/ProductDetail.tsx
+
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Edit, Trash2, Package, DollarSign, Barcode,
-  Tag, Layers, Star, ShoppingBag, TrendingUp, Calendar,
-  Loader2, Copy, Check, Eye, Users, Clock, Lock,
-  AlertTriangle, X, Heart, Share2, Truck, Shield,
+  ArrowLeft, Edit, Trash2, Package, Barcode,
+  Tag, Layers, Star, ShoppingBag, TrendingUp,
+  Loader2, Copy, Check, Eye, Lock,
+  AlertTriangle, X, Share2, Truck,
   RotateCcw, CreditCard, ChevronLeft, ChevronRight,
-  ZoomIn, ZoomOut, Minus, Plus, ShoppingCart,
+  ZoomIn, Minus, Plus, ShoppingCart,
   QrCode, Scan, Download, Printer, RefreshCw,
-  FileText, Box, Weight, Ruler, Building2, User,
-  CalendarDays, Hash, Link2, AlertCircle, Info,
+  Weight, Hash, Link2, AlertCircle, Info,
   CheckCircle, XCircle, HelpCircle, Sparkles,
-  Zap, Award, Gift, ThumbsUp, MessageCircle,
-  TrendingDown, BarChart3, PieChart, Clock as ClockIcon,
-  ImageIcon
+  BarChart3, Clock as ClockIcon,
 } from 'lucide-react';
+
 import { productService } from '../../services/productService';
 import { barcodeService } from '../../services/barcodeService';
 import { inventoryService } from '../../services/inventoryService';
+import { cartService } from '../../services/cartService';
+import { guestCartService } from '../../services/guestCartService';
+import { guestRecentlyViewedService } from '../../services/guestRecentlyViewedService';
 import { toast } from '../../utils/toast-manager';
-import { formatCurrency, formatDate, formatNumber } from '../../utils/formatters';
+import {
+  formatCurrency,
+  formatDate,
+} from '../../utils/formatters';
 import { usePermission } from '../../hooks/usePermission';
+import { useAuth } from '../../hooks/useAuth';
 import { PermissionResource } from '../../types/enums';
-import { BarcodeDisplay } from '../barcode/BarcodeDisplay';
 import { WishlistButton } from './WishlistButton';
 import { RecentlyViewed } from './RecentlyViewed';
 import { ProductReviews } from './ProductReviews';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { ProductCard } from './ProductCard';
 
-// Types
+// ============================================
+// TYPES
+// ============================================
+
 interface Product {
   id: string;
   name: string;
@@ -88,6 +103,7 @@ interface Variant {
   attributes?: Record<string, any>;
   barcode?: string | null;
   inventoryId?: string | null;
+  inventory?: { quantity?: number; reserved?: number } | null;
 }
 
 interface BarcodeInfo {
@@ -111,30 +127,65 @@ interface ProductDetailProps {
   isAdmin?: boolean;
 }
 
+interface StockStatus {
+  status: string;
+  color: string;
+  icon: React.ElementType;
+}
+
 // ============================================
 // CONSTANTS
 // ============================================
 
-const PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
-// Sales Analytics Component
-const ProductSalesAnalytics: React.FC<{ productId: string }> = ({ productId }) => {
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: Info },
+  { id: 'specifications', label: 'Specifications', icon: Hash },
+  { id: 'variants', label: 'Variants', icon: Layers },
+  { id: 'inventory', label: 'Inventory', icon: Package },
+  { id: 'reviews', label: 'Reviews', icon: Star },
+] as const;
+
+type TabId =
+  | 'overview'
+  | 'specifications'
+  | 'variants'
+  | 'inventory'
+  | 'reviews'
+  | 'analytics';
+
+// ============================================
+// SALES ANALYTICS SUB-COMPONENT
+// ============================================
+
+interface ProductSalesAnalyticsProps {
+  productId: string;
+}
+
+const ProductSalesAnalytics: React.FC<ProductSalesAnalyticsProps> = ({
+  productId,
+}) => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
-    const loadData = async () => {
+    let cancelled = false;
+    (async () => {
       try {
         setLoading(true);
         const salesData = await productService.getSalesByProduct(productId);
-        setData(salesData);
-      } catch (error) {
-        console.error('Failed to load sales analytics:', error);
+        if (!cancelled) setData(salesData);
+      } catch (err) {
+        console.error('Failed to load sales analytics:', err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    loadData();
   }, [productId]);
 
   if (loading) {
@@ -158,7 +209,9 @@ const ProductSalesAnalytics: React.FC<{ productId: string }> = ({ productId }) =
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Total Revenue</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Total Revenue
+          </p>
           <p className="text-2xl font-bold text-green-600 dark:text-green-400">
             {formatCurrency(data.totalRevenue || 0)}
           </p>
@@ -170,20 +223,32 @@ const ProductSalesAnalytics: React.FC<{ productId: string }> = ({ productId }) =
           </p>
         </div>
         <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400">Average Price</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Average Price
+          </p>
           <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
             {formatCurrency(data.averagePrice || 0)}
           </p>
         </div>
       </div>
+
       {data.items && data.items.length > 0 && (
         <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recent Sales</h4>
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+            Recent Sales
+          </h4>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {data.items.slice(0, 10).map((item: any, index: number) => (
-              <div key={index} className="flex justify-between items-center text-sm border-b border-gray-100 dark:border-gray-700 py-2">
-                <span className="text-gray-600 dark:text-gray-400">{item.date}</span>
-                <span className="text-gray-600 dark:text-gray-400">{item.customerName}</span>
+              <div
+                key={index}
+                className="flex justify-between items-center text-sm border-b border-gray-100 dark:border-gray-700 py-2"
+              >
+                <span className="text-gray-600 dark:text-gray-400">
+                  {item.date}
+                </span>
+                <span className="text-gray-600 dark:text-gray-400">
+                  {item.customerName}
+                </span>
                 <span className="font-medium text-gray-900 dark:text-white">
                   {formatCurrency(item.revenue)}
                 </span>
@@ -196,16 +261,23 @@ const ProductSalesAnalytics: React.FC<{ productId: string }> = ({ productId }) =
   );
 };
 
-export function ProductDetail({ product: initialProduct, isAdmin = false }: ProductDetailProps) {
+// ============================================
+// COMPONENT
+// ============================================
+
+export function ProductDetail({
+  product: initialProduct,
+  isAdmin = false,
+}: ProductDetailProps) {
   const router = useRouter();
   const { canEdit, canDelete, canManage } = usePermission();
   const { isDark } = useThemeStore();
-  
+  const { isAuthenticated } = useAuth();
+
   const [product, setProduct] = useState<Product>(initialProduct);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [copied, setCopied] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -218,287 +290,360 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  
-  // Barcode/QR Code states
+
   const [barcodeInfo, setBarcodeInfo] = useState<BarcodeInfo | null>(null);
   const [loadingBarcode, setLoadingBarcode] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
-  const [inventoryHistory, setInventoryHistory] = useState<InventoryHistory[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [barcodeCopied, setBarcodeCopied] = useState(false);
 
-  // ✅ FIXED: Image error states
-  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
-  const [variantImageErrors, setVariantImageErrors] = useState<Record<string, boolean>>({});
+  const [inventoryHistory, setInventoryHistory] = useState<InventoryHistory[]>(
+    [],
+  );
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const canEditProduct = canEdit(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
-  const canDeleteProduct = canDelete(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
+  const [variantImageErrors, setVariantImageErrors] = useState<
+    Record<string, boolean>
+  >({});
+
+  const canEditProduct =
+    canEdit(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
+  const canDeleteProduct =
+    canDelete(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
+
+  const sideLoadedForId = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // ============================================
-  // ✅ FIXED: Image error handlers
+  // IMAGE HANDLERS
   // ============================================
 
   const handleImageError = useCallback((imageUrl: string) => {
-    setImageErrors(prev => ({ ...prev, [imageUrl]: true }));
+    setImageErrors((prev) => ({ ...prev, [imageUrl]: true }));
   }, []);
 
   const handleVariantImageError = useCallback((imageUrl: string) => {
-    setVariantImageErrors(prev => ({ ...prev, [imageUrl]: true }));
+    setVariantImageErrors((prev) => ({ ...prev, [imageUrl]: true }));
   }, []);
 
-  const getValidImage = useCallback((imageUrl: string | undefined): string => {
-    if (!imageUrl) return PLACEHOLDER_IMAGE;
-    if (imageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
-    return imageUrl;
-  }, [imageErrors]);
+  const getValidImage = useCallback(
+    (imageUrl: string | undefined): string => {
+      if (!imageUrl) return PLACEHOLDER_IMAGE;
+      if (imageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
+      return imageUrl;
+    },
+    [imageErrors],
+  );
 
-  const getValidVariantImage = useCallback((imageUrl: string | undefined): string => {
-    if (!imageUrl) return PLACEHOLDER_IMAGE;
-    if (variantImageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
-    return imageUrl;
-  }, [variantImageErrors]);
+  const getValidVariantImage = useCallback(
+    (imageUrl: string | undefined): string => {
+      if (!imageUrl) return PLACEHOLDER_IMAGE;
+      if (variantImageErrors[imageUrl]) return PLACEHOLDER_IMAGE;
+      return imageUrl;
+    },
+    [variantImageErrors],
+  );
 
-  // Load product data
-  const loadProduct = useCallback(async (productId: string, showLoading = true) => {
-    if (!productId) {
-      router.push(isAdmin ? '/admin/catalog' : '/shop');
-      return;
-    }
+  // ============================================
+  // PRODUCT MAPPING
+  // ============================================
 
-    try {
-      if (showLoading) setLoading(true);
-      setError(null);
-      // Reset image errors on load
-      setImageErrors({});
-      setVariantImageErrors({});
-      
-      const data = await productService.getProductById(productId);
-      
-      // Validate and clean images
-      const validImages = (data.images || []).filter((img: string) => {
+  const mapProduct = useCallback((data: any): Product => {
+    const cleanImages = (arr: unknown): string[] =>
+      (Array.isArray(arr) ? arr : []).filter((img): img is string => {
         if (!img || typeof img !== 'string') return false;
         if (img === PLACEHOLDER_IMAGE) return false;
         if (img.length < 100) return false;
         return true;
       });
-      
-      const images = validImages.length > 0 ? validImages : [];
-      
-      // Map variants with valid images
-      const mappedVariants: Variant[] = (data.variants || []).map((v: any) => {
-        const variantImages = (v.images || []).filter((img: string) => {
-          if (!img || typeof img !== 'string') return false;
-          if (img === PLACEHOLDER_IMAGE) return false;
-          if (img.length < 100) return false;
-          return true;
-        });
-        
-        return {
-          id: v.id,
-          name: v.name,
-          sku: v.sku,
-          price: v.price,
-          costPrice: v.costPrice ?? undefined,
-          stock: v.stock || 0,
-          isActive: v.isActive !== undefined ? v.isActive : true,
-          images: variantImages.length > 0 ? variantImages : [],
-          attributes: v.attributes || {},
-          barcode: v.barcode ?? undefined,
-          inventoryId: v.inventoryId ?? undefined,
-        };
-      });
-      
-      // Fix: Handle null/undefined values properly
-      const mappedProduct: Product = {
-        id: data.id,
-        name: data.name,
-        sku: data.sku,
-        description: data.description || '',
-        unitPrice: data.unitPrice,
-        costPrice: data.costPrice ?? undefined,
-        barcode: data.barcode ?? undefined,
-        images: images,
-        category: data.category ?? undefined,
-        supplier: data.supplier ?? undefined,
-        inventory: data.inventory ? {
-          id: data.inventory.id,
-          quantity: data.inventory.quantity || 0,
-          reserved: data.inventory.reserved || 0,
-          available: (data.inventory.quantity || 0) - (data.inventory.reserved || 0),
-          reorderPoint: (data.inventory as any).reorderPoint || 5,
-          location: (data.inventory as any).location || 'Warehouse',
-          status: (data.inventory as any).status || 'ACTIVE'
-        } : null,
-        variants: mappedVariants,
-        isActive: data.isActive,
-        isDigital: data.isDigital || false,
-        weight: data.weight ?? undefined,
-        taxRate: data.taxRate || 0,
-        minStock: data.minStock ?? undefined,
-        maxStock: data.maxStock ?? undefined,
-        attributes: data.attributes || {},
-        rating: data.rating ?? undefined,
-        reviewCount: data.reviewCount || 0,
-        tags: data.tags ?? null,
-        featured: data.featured || false,
-        inventoryId: data.inventoryId ?? undefined,
-        _count: (data as any)._count ? {
-          saleItems: (data as any)._count.saleItems || 0,
-          orderItems: (data as any)._count.orderItems || 0,
-          reviews: (data as any)._count.reviews || 0
-        } : undefined,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-      };
-      
-      setProduct(mappedProduct);
-      
-      // Load barcode info if exists
-      if (mappedProduct.barcode) {
-        await loadBarcodeInfo(mappedProduct.id);
-      }
-      
-      // Load inventory history for admin
-      if (isAdmin) {
-        await loadInventoryHistory(mappedProduct.id);
-      }
-      
-    } catch (error: any) {
-      setError(error?.message || 'Failed to load product');
-      console.error('Failed to load product:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [isAdmin, router]);
 
-  const loadBarcodeInfo = async (productId: string) => {
-    try {
-      setLoadingBarcode(true);
-      const productData = await productService.getProductById(productId);
-      if (productData.barcode) {
-        const barcodeImg = await barcodeService.generateBarcodeImage(productData.barcode);
-        const qrData = await barcodeService.generateQRCode({
-          product: productData.name,
-          sku: productData.sku,
-          barcode: productData.barcode,
-          price: productData.unitPrice,
-        });
+    const mappedVariants: Variant[] = Array.isArray(data.variants)
+      ? data.variants.map(
+          (v: any): Variant => ({
+            id: v.id,
+            name: v.name,
+            sku: v.sku,
+            price: v.price ?? 0,
+            costPrice: v.costPrice ?? undefined,
+            stock: v.stock ?? 0,
+            isActive: v.isActive !== false,
+            images: cleanImages(v.images),
+            attributes: v.attributes || {},
+            barcode: v.barcode ?? undefined,
+            inventoryId: v.inventoryId ?? undefined,
+            inventory: v.inventory ?? null,
+          }),
+        )
+      : [];
+
+    return {
+      id: data.id,
+      name: data.name,
+      sku: data.sku,
+      description: data.description || '',
+      unitPrice: data.unitPrice ?? 0,
+      costPrice: data.costPrice ?? undefined,
+      barcode: data.barcode ?? undefined,
+      images: cleanImages(data.images),
+      category: data.category ?? null,
+      supplier: data.supplier ?? null,
+      inventory: data.inventory
+        ? {
+            id: data.inventory.id,
+            quantity: data.inventory.quantity ?? 0,
+            reserved: data.inventory.reserved ?? 0,
+            available:
+              (data.inventory.quantity ?? 0) -
+              (data.inventory.reserved ?? 0),
+            reorderPoint: data.inventory.reorderPoint ?? 5,
+            location: data.inventory.location ?? 'Warehouse',
+            status: data.inventory.status ?? 'ACTIVE',
+          }
+        : null,
+      variants: mappedVariants,
+      isActive: data.isActive !== false,
+      isDigital: data.isDigital || false,
+      weight: data.weight ?? undefined,
+      taxRate: data.taxRate ?? 0,
+      minStock: data.minStock ?? undefined,
+      maxStock: data.maxStock ?? undefined,
+      attributes: data.attributes || {},
+      rating: data.rating ?? undefined,
+      reviewCount: data.reviewCount ?? 0,
+      tags: Array.isArray(data.tags) ? data.tags : null,
+      featured: data.featured || false,
+      inventoryId: data.inventoryId ?? undefined,
+      _count: data._count
+        ? {
+            saleItems: data._count.saleItems || 0,
+            orderItems: data._count.orderItems || 0,
+            reviews: data._count.reviews || 0,
+          }
+        : undefined,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    };
+  }, []);
+
+  // ============================================
+  // SIDE-LOADERS
+  // ============================================
+  //
+  // Barcode info is admin-only — the routes it depends on
+  // (`/products/barcode/image`, `/products/qrcode`) require auth.
+  // Guests never see the barcode panel anyway (the JSX gates it on
+  // `isAdmin`), so skipping the fetch is correct.
+
+  const loadBarcodeInfo = useCallback(
+    async (productId: string) => {
+      if (!isAdmin) return;
+
+      try {
+        setLoadingBarcode(true);
+        const productData = await productService.getProductById(productId);
+        if (!productData?.barcode) return;
+
+        const [barcodeImg, qrData] = await Promise.all([
+          barcodeService.generateBarcodeImage(productData.barcode),
+          barcodeService.generateQRCode({
+            product: productData.name,
+            sku: productData.sku,
+            barcode: productData.barcode,
+            price: productData.unitPrice,
+          }),
+        ]);
+
+        if (!isMountedRef.current) return;
         setBarcodeInfo({
           barcode: productData.barcode,
           barcodeUrl: barcodeImg.barcodeUrl,
           qrCodeUrl: qrData.qrCodeUrl || '',
         });
+      } catch (err) {
+        console.warn('No barcode found for this product:', err);
+      } finally {
+        if (isMountedRef.current) setLoadingBarcode(false);
       }
-    } catch (error) {
-      console.warn('No barcode found for this product:', error);
-    } finally {
-      setLoadingBarcode(false);
-    }
-  };
+    },
+    [isAdmin],
+  );
 
-  const loadInventoryHistory = async (productId: string) => {
-    try {
-      setLoadingHistory(true);
-      const inventory = await inventoryService.getInventoryItem(productId);
-      if (inventory && inventory.transactions) {
-        setInventoryHistory(inventory.transactions.map((t: any) => ({
-          date: t.createdAt,
-          type: t.type || 'adjust',
-          quantity: t.quantity,
-          previous: t.previousQuantity || 0,
-          current: t.currentQuantity || 0,
-          reason: t.reason || '',
-          user: t.user?.name || 'System',
-        })));
+  const loadInventoryHistory = useCallback(
+    async (productId: string) => {
+      if (!isAdmin) return;
+
+      try {
+        setLoadingHistory(true);
+        const inventory = await inventoryService.getInventoryItem(productId);
+
+        const transactions = Array.isArray((inventory as any)?.transactions)
+          ? (inventory as any).transactions
+          : [];
+
+        if (!isMountedRef.current) return;
+        setInventoryHistory(
+          transactions.map(
+            (t: any): InventoryHistory => ({
+              date: t.createdAt,
+              type: t.type || 'adjust',
+              quantity: t.quantity ?? 0,
+              previous: t.previousQuantity ?? 0,
+              current: t.currentQuantity ?? 0,
+              reason: t.reason || '',
+              user: t.user?.name || 'System',
+            }),
+          ),
+        );
+      } catch (err) {
+        console.error('Failed to load inventory history:', err);
+      } finally {
+        if (isMountedRef.current) setLoadingHistory(false);
       }
-    } catch (error) {
-      console.error('Failed to load inventory history:', error);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
+    },
+    [isAdmin],
+  );
 
-  const loadRelatedProducts = async (productId: string) => {
-    try {
-      setLoadingRelated(true);
-      const data = await productService.getRelatedProducts(productId, 4);
-      // Map the data to match our Product type
-      const mappedData = (data || []).map((item: any) => ({
-        ...item,
-        description: item.description || '',
-        costPrice: item.costPrice ?? undefined,
-        barcode: item.barcode ?? undefined,
-        weight: item.weight ?? undefined,
-        maxStock: item.maxStock ?? undefined,
-        rating: item.rating ?? undefined,
-        category: item.category ?? undefined,
-        supplier: item.supplier ?? undefined,
-        inventoryId: item.inventoryId ?? undefined,
-      }));
-      setRelatedProducts(mappedData);
-    } catch (error) {
-      console.error('Failed to load related products:', error);
-    } finally {
-      setLoadingRelated(false);
-    }
-  };
+  // Related products is an authenticated route — no public endpoint.
+  // Guests silently get an empty list; the section is hidden anyway
+  // (`!isAdmin && relatedProducts.length > 0`).
+  const loadRelatedProducts = useCallback(
+    async (productId: string) => {
+      if (!isAuthenticated) return;
 
-  const addToRecentlyViewed = async (productId: string) => {
-    try {
-      await productService.addRecentlyViewed(productId);
-    } catch (error) {
-      console.error('Failed to add to recently viewed:', error);
-    }
-  };
+      try {
+        setLoadingRelated(true);
+        const data = await productService.getRelatedProducts(productId, 4);
+        if (!isMountedRef.current) return;
+        setRelatedProducts(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        // 401 is expected for guests; only log unexpected errors.
+        if (err?.response?.status !== 401 && err?.response?.status !== 403) {
+          console.warn('Failed to load related products:', err);
+        }
+      } finally {
+        if (isMountedRef.current) setLoadingRelated(false);
+      }
+    },
+    [isAuthenticated],
+  );
 
-  // Initialize product data
+  const addToRecentlyViewed = useCallback(
+    async (productId: string) => {
+      try {
+        if (isAuthenticated) {
+          await productService.addRecentlyViewed(productId);
+        } else {
+          await guestRecentlyViewedService.add(productId);
+        }
+      } catch (err) {
+        // Best-effort; don't surface failures for tracking.
+        console.warn('Failed to add to recently viewed:', err);
+      }
+    },
+    [isAuthenticated],
+  );
+
+  // ============================================
+  // LOAD PRODUCT
+  // ============================================
+  //
+  // Storefront uses the public route; admin uses the authenticated
+  // route (richer relations, `_count`, supplier, etc).
+
+  const loadProduct = useCallback(
+    async (productId: string, showLoading = true) => {
+      if (!productId) return;
+
+      try {
+        if (showLoading) setLoading(true);
+        setError(null);
+        setImageErrors({});
+        setVariantImageErrors({});
+
+        const data = isAdmin
+          ? await productService.getProductById(productId)
+          : await productService.getPublicProductById(productId);
+
+        if (!isMountedRef.current) return;
+        setProduct(mapProduct(data));
+      } catch (err: any) {
+        if (!isMountedRef.current) return;
+        const status = err?.response?.status;
+        setError(
+          status === 404 ? 'Product not found' : 'Failed to load product',
+        );
+      } finally {
+        if (isMountedRef.current) setLoading(false);
+      }
+    },
+    [isAdmin, mapProduct],
+  );
+
+  // ============================================
+  // MOUNT / PROP CHANGE
+  // ============================================
+
   useEffect(() => {
-    if (initialProduct?.id) {
-      // Map variants with images
-      const mappedProduct: Product = {
-        ...initialProduct,
-        description: initialProduct.description || '',
-        costPrice: initialProduct.costPrice ?? undefined,
-        barcode: initialProduct.barcode ?? undefined,
-        weight: initialProduct.weight ?? undefined,
-        maxStock: initialProduct.maxStock ?? undefined,
-        rating: initialProduct.rating ?? undefined,
-        category: initialProduct.category ?? undefined,
-        supplier: initialProduct.supplier ?? undefined,
-        inventoryId: initialProduct.inventoryId ?? undefined,
-        variants: (initialProduct.variants || []).map((v: any) => ({
-          ...v,
-          images: v.images || [],
-          attributes: v.attributes || {},
-          barcode: v.barcode ?? undefined,
-          inventoryId: v.inventoryId ?? undefined,
-        })),
-      };
-      setProduct(mappedProduct);
-      setSelectedImage(0);
-      loadRelatedProducts(mappedProduct.id);
-      addToRecentlyViewed(mappedProduct.id);
-      
-      if (mappedProduct.barcode) {
-        loadBarcodeInfo(mappedProduct.id);
-      }
-      
-      if (isAdmin) {
-        loadInventoryHistory(mappedProduct.id);
-      }
+    if (!initialProduct?.id) return;
+
+    setProduct(mapProduct(initialProduct));
+    setSelectedImage(0);
+
+    if (sideLoadedForId.current === initialProduct.id) return;
+    sideLoadedForId.current = initialProduct.id;
+
+    loadRelatedProducts(initialProduct.id);
+    addToRecentlyViewed(initialProduct.id);
+
+    // Admin-only side-loads.
+    if (isAdmin && initialProduct.barcode) {
+      loadBarcodeInfo(initialProduct.id);
     }
-  }, [initialProduct, isAdmin]);
+    if (isAdmin) {
+      loadInventoryHistory(initialProduct.id);
+    }
+  }, [
+    initialProduct,
+    isAdmin,
+    mapProduct,
+    loadBarcodeInfo,
+    loadInventoryHistory,
+    loadRelatedProducts,
+    addToRecentlyViewed,
+  ]);
 
-  const handleCopySKU = () => {
+  useEffect(() => {
+    if (!initialProduct?.id && !loading) {
+      router.push(isAdmin ? '/admin/catalog' : '/shop');
+    }
+  }, [initialProduct?.id, isAdmin, loading, router]);
+
+  // ============================================
+  // HANDLERS
+  // ============================================
+
+  const handleCopySKU = useCallback(() => {
     if (!product) return;
-    navigator.clipboard.writeText(product.sku);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success('SKU copied');
-  };
+    navigator.clipboard.writeText(product.sku).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast.success('SKU copied');
+      },
+      () => toast.error('Failed to copy SKU'),
+    );
+  }, [product]);
 
-  const handleCopyBarcode = async () => {
+  const handleCopyBarcode = useCallback(async () => {
     if (!barcodeInfo?.barcode) return;
     try {
       await navigator.clipboard.writeText(barcodeInfo.barcode);
@@ -508,9 +653,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
     } catch {
       toast.error('Failed to copy');
     }
-  };
+  }, [barcodeInfo]);
 
-  const handleDownloadBarcode = () => {
+  const handleDownloadBarcode = useCallback(() => {
     if (!barcodeInfo?.barcodeUrl) return;
     const link = document.createElement('a');
     link.href = barcodeInfo.barcodeUrl;
@@ -519,92 +664,64 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
     link.click();
     document.body.removeChild(link);
     toast.success('Barcode downloaded');
-  };
+  }, [barcodeInfo, product]);
 
-  const handlePrintBarcodeLabel = () => {
+  const handlePrintBarcodeLabel = useCallback(() => {
     if (!barcodeInfo || !product) return;
-    
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    
+
+    const escapeHtml = (v: string) =>
+      v
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
     printWindow.document.write(`
       <html>
         <head>
-          <title>Barcode Label - ${product.name}</title>
+          <title>Barcode Label - ${escapeHtml(product.name)}</title>
           <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              display: flex; 
-              justify-content: center; 
-              align-items: center; 
-              min-height: 100vh; 
-              margin: 0; 
-              background: white; 
-            }
-            .label { 
-              text-align: center; 
-              padding: 20px; 
-              border: 1px solid #ddd; 
-              border-radius: 8px; 
-              max-width: 350px;
-              background: white;
-            }
-            .product-name { 
-              margin: 0 0 5px 0; 
-              font-size: 16px; 
-              font-weight: bold;
-              color: #1a1a1a;
-            }
-            .sku { 
-              color: #666; 
-              font-size: 12px; 
-              margin: 0 0 10px 0; 
-            }
-            .barcode-img { 
-              max-width: 280px; 
-              margin: 10px 0; 
-            }
-            .qr-img { 
-              max-width: 120px; 
-              margin: 5px 0; 
-            }
-            .price { 
-              font-size: 20px; 
-              font-weight: bold; 
-              color: #2563eb; 
-              margin: 5px 0;
-            }
-            .info { 
-              margin-top: 10px; 
-              font-size: 12px;
-              color: #666;
-            }
-            .info span { 
-              margin: 0 5px; 
-            }
-            .divider {
-              border-top: 1px dashed #ddd;
-              margin: 10px 0;
-            }
-            .stock {
-              font-size: 12px;
-              color: #666;
-              margin: 5px 0;
-            }
+            body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: white; }
+            .label { text-align: center; padding: 20px; border: 1px solid #ddd; border-radius: 8px; max-width: 350px; background: white; }
+            .product-name { margin: 0 0 5px 0; font-size: 16px; font-weight: bold; color: #1a1a1a; }
+            .sku { color: #666; font-size: 12px; margin: 0 0 10px 0; }
+            .barcode-img { max-width: 280px; margin: 10px 0; }
+            .qr-img { max-width: 120px; margin: 5px 0; }
+            .price { font-size: 20px; font-weight: bold; color: #2563eb; margin: 5px 0; }
+            .info { margin-top: 10px; font-size: 12px; color: #666; }
+            .info span { margin: 0 5px; }
+            .divider { border-top: 1px dashed #ddd; margin: 10px 0; }
+            .stock { font-size: 12px; color: #666; margin: 5px 0; }
           </style>
         </head>
         <body>
           <div class="label">
-            <div class="product-name">${product.name}</div>
-            <div class="sku">SKU: ${product.sku || 'N/A'}</div>
-            ${barcodeInfo.barcodeUrl ? `<img src="${barcodeInfo.barcodeUrl}" alt="Barcode" class="barcode-img" onerror="this.style.display='none'" />` : ''}
-            ${barcodeInfo.qrCodeUrl ? `<img src="${barcodeInfo.qrCodeUrl}" alt="QR Code" class="qr-img" onerror="this.style.display='none'" />` : ''}
+            <div class="product-name">${escapeHtml(product.name)}</div>
+            <div class="sku">SKU: ${escapeHtml(product.sku || 'N/A')}</div>
+            ${
+              barcodeInfo.barcodeUrl
+                ? `<img src="${barcodeInfo.barcodeUrl}" alt="Barcode" class="barcode-img" onerror="this.style.display='none'" />`
+                : ''
+            }
+            ${
+              barcodeInfo.qrCodeUrl
+                ? `<img src="${barcodeInfo.qrCodeUrl}" alt="QR Code" class="qr-img" onerror="this.style.display='none'" />`
+                : ''
+            }
             <div class="price">${formatCurrency(product.unitPrice)}</div>
             <div class="stock">Stock: ${product.inventory?.quantity || 0}</div>
             <div class="divider"></div>
             <div class="info">
-              <span>${barcodeInfo.barcode}</span>
-              ${product.category?.name ? `<span>| ${product.category.name}</span>` : ''}
+              <span>${escapeHtml(barcodeInfo.barcode)}</span>
+              ${
+                product.category?.name
+                  ? `<span>| ${escapeHtml(product.category.name)}</span>`
+                  : ''
+              }
             </div>
           </div>
           <script>
@@ -614,54 +731,56 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
       </html>
     `);
     printWindow.document.close();
-  };
+  }, [barcodeInfo, product]);
 
-  const handleGenerateBarcode = async () => {
-    if (!product?.id) return;
+  const handleGenerateBarcode = useCallback(async () => {
+    if (!isAdmin || !product?.id) return;
     try {
       setLoadingBarcode(true);
       const result = await barcodeService.generateUniqueBarcode({
         productName: product.name,
         sku: product.sku,
       });
-      
-      await productService.updateProduct(product.id, { barcode: result.barcode });
-      setProduct((prev: Product) => ({ ...prev, barcode: result.barcode }));
-      
-      const barcodeImg = await barcodeService.generateBarcodeImage(result.barcode);
-      const qrData = await barcodeService.generateQRCode({
-        product: product.name,
-        sku: product.sku,
+
+      await productService.updateProduct(product.id, {
         barcode: result.barcode,
-        price: product.unitPrice,
       });
-      
+      setProduct((prev) => ({ ...prev, barcode: result.barcode }));
+
+      const [barcodeImg, qrData] = await Promise.all([
+        barcodeService.generateBarcodeImage(result.barcode),
+        barcodeService.generateQRCode({
+          product: product.name,
+          sku: product.sku,
+          barcode: result.barcode,
+          price: product.unitPrice,
+        }),
+      ]);
+
       setBarcodeInfo({
         barcode: result.barcode,
         barcodeUrl: barcodeImg.barcodeUrl,
         qrCodeUrl: qrData.qrCodeUrl || '',
       });
-      
+
       toast.success('Barcode generated successfully');
       setShowBarcode(true);
-    } catch (error: any) {
-      console.error('Failed to generate barcode:', error);
-      toast.error(error?.message || 'Failed to generate barcode');
+    } catch (err: any) {
+      console.error('Failed to generate barcode:', err);
+      toast.error(err?.message || 'Failed to generate barcode');
     } finally {
-      setLoadingBarcode(false);
+      if (isMountedRef.current) setLoadingBarcode(false);
     }
-  };
+  }, [isAdmin, product]);
 
-  const handleScanBarcode = () => {
+  const handleScanBarcode = useCallback(() => {
     const scanned = prompt('Enter barcode to scan:');
-    if (scanned) {
-      router.push(`/admin/inventory/scan/${scanned}`);
-    }
-  };
+    if (scanned) router.push(`/admin/inventory/scan/${scanned}`);
+  }, [router]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (!canDeleteProduct) {
-      toast.error('You don\'t have permission to delete products');
+      toast.error("You don't have permission to delete products");
       return;
     }
     setDeleting(true);
@@ -669,90 +788,186 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
       await productService.deleteProduct(product.id);
       toast.success('Product deleted successfully');
       router.push(isAdmin ? '/admin/catalog' : '/shop');
-    } catch (error) {
-      console.error('Failed to delete product:', error);
+    } catch (err) {
+      console.error('Failed to delete product:', err);
       toast.error('Failed to delete product');
     } finally {
-      setDeleting(false);
-      setShowDeleteModal(false);
+      if (isMountedRef.current) {
+        setDeleting(false);
+        setShowDeleteModal(false);
+      }
     }
-  };
+  }, [canDeleteProduct, product, isAdmin, router]);
 
-  const handleAddToCart = async () => {
+  // ✅ Real cart mutation — authenticated → authenticated, guest → guest.
+  const handleAddToCart = useCallback(async () => {
     if (!product) return;
     setAddingToCart(true);
     try {
+      const variantId = selectedVariant || undefined;
+      const cart = isAuthenticated ? cartService : guestCartService;
+
+      await cart.addItem({
+        productId: product.id,
+        variantId,
+        quantity,
+      });
+
       toast.success(`${product.name} added to cart`);
-    } catch (error) {
-      toast.error('Failed to add to cart');
+      window.dispatchEvent(new CustomEvent('cart:updated'));
+    } catch (err: any) {
+      console.error('Failed to add to cart:', err);
+      toast.error(
+        err?.response?.data?.message || 'Failed to add to cart',
+      );
     } finally {
-      setAddingToCart(false);
+      if (isMountedRef.current) setAddingToCart(false);
     }
-  };
+  }, [product, selectedVariant, quantity, isAuthenticated]);
 
-  const handleQuantityChange = (delta: number) => {
-    setQuantity(prev => Math.max(1, Math.min(prev + delta, 99)));
-  };
+  const handleQuantityChange = useCallback((delta: number) => {
+    setQuantity((prev) => Math.max(1, Math.min(prev + delta, 99)));
+  }, []);
 
-  const handleShare = () => {
+  const handleShare = useCallback(() => {
     if (!product) return;
     const url = `${window.location.origin}/shop/${product.id}`;
     if (navigator.share) {
-      navigator.share({
-        title: product.name,
-        text: `Check out ${product.name}`,
-        url: url,
-      }).catch(() => {});
+      navigator
+        .share({ title: product.name, text: `Check out ${product.name}`, url })
+        .catch(() => {
+          /* user cancelled */
+        });
     } else {
-      navigator.clipboard.writeText(url).then(() => {
-        toast.success('Product link copied');
-      }).catch(() => {
-        toast.error('Failed to copy link');
-      });
+      navigator.clipboard
+        .writeText(url)
+        .then(() => toast.success('Product link copied'))
+        .catch(() => toast.error('Failed to copy link'));
     }
-  };
+  }, [product]);
 
-  const handleOpenVariantLightbox = (variant: Variant) => {
+  const handleOpenVariantLightbox = useCallback((variant: Variant) => {
     if (variant.images && variant.images.length > 0) {
       setLightboxImages(variant.images);
       setLightboxIndex(0);
       setShowLightbox(true);
     }
-  };
+  }, []);
 
-  const getStockStatus = useCallback(() => {
-    if (!product) return { status: 'No Stock', color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400', icon: HelpCircle };
-    const inventory = product.inventory;
-    if (!inventory) return { status: 'No Stock', color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400', icon: XCircle };
-    const available = inventory.quantity - (inventory.reserved || 0);
-    if (available <= 0) return { status: 'Out of Stock', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', icon: XCircle };
-    if (available <= (product.minStock || 5)) return { status: 'Low Stock', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300', icon: AlertCircle };
-    return { status: 'In Stock', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle };
-  }, [product]);
+  // ============================================
+  // DERIVED
+  // ============================================
 
-  const renderStars = (rating: number = 0) => {
+  const inventory = product?.inventory ?? null;
+  const available = inventory
+    ? (inventory.quantity || 0) - (inventory.reserved || 0)
+    : 0;
+
+  const selectedVariantData = useMemo<Variant | null>(() => {
+    if (!selectedVariant || !product?.variants) return null;
+    return product.variants.find((v) => v.id === selectedVariant) ?? null;
+  }, [selectedVariant, product?.variants]);
+
+  const displayPrice = selectedVariantData?.price ?? product?.unitPrice ?? 0;
+
+  const totalVariants = product?.variants?.length ?? 0;
+  const activeVariants =
+    product?.variants?.filter((v) => v.isActive).length ?? 0;
+  const totalVariantStock =
+    product?.variants?.reduce((sum, v) => {
+      if (v.inventory) {
+        return (
+          sum +
+          Math.max(
+            0,
+            (v.inventory.quantity ?? 0) - (v.inventory.reserved ?? 0),
+          )
+        );
+      }
+      return sum + (v.stock || 0);
+    }, 0) ?? 0;
+
+  const stockStatus: StockStatus = useMemo(() => {
+    if (!inventory) {
+      return {
+        status: 'No Stock',
+        color:
+          'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
+        icon: XCircle,
+      };
+    }
+    if (available <= 0) {
+      return {
+        status: 'Out of Stock',
+        color:
+          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+        icon: XCircle,
+      };
+    }
+    if (available <= (product.minStock || 5)) {
+      return {
+        status: 'Low Stock',
+        color:
+          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+        icon: AlertCircle,
+      };
+    }
+    return {
+      status: 'In Stock',
+      color:
+        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+      icon: CheckCircle,
+    };
+  }, [inventory, available, product?.minStock]);
+
+  const images = product?.images ?? [];
+  const hasImages = images.length > 0;
+  const hasBarcode = !!barcodeInfo || !!product?.barcode;
+
+  const visibleTabs = useMemo(() => {
+    if (!isAdmin) return TABS;
+    return [
+      ...TABS,
+      { id: 'analytics' as TabId, label: 'Analytics', icon: TrendingUp },
+    ];
+  }, [isAdmin]);
+
+  // ============================================
+  // RENDER HELPERS
+  // ============================================
+
+  const renderStars = useCallback((rating: number = 0) => {
     return (
       <div className="flex items-center gap-0.5">
         {[1, 2, 3, 4, 5].map((star) => (
-          <Star
-            key={star}
-            className={`w-4 h-4 ${star <= Math.round(rating) ? 'text-yellow-400 fill-current' : 'text-gray-300 dark:text-gray-600'}`}
+          <Star            key={star}
+            className={`w-4 h-4 ${
+              star <= Math.round(rating)
+                ? 'text-yellow-400 fill-current'
+                : 'text-gray-300 dark:text-gray-600'
+            }`}
           />
         ))}
         {rating > 0 && (
-          <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">({rating.toFixed(1)})</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">
+            ({rating.toFixed(1)})
+          </span>
         )}
       </div>
     );
-  };
+  }, []);
 
-  const renderStarsLarge = (rating: number = 0) => {
-    return (
+  const renderStarsLarge = useCallback(
+    (rating: number = 0) => (
       <div className="flex items-center gap-1">
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
-            className={`w-5 h-5 ${star <= Math.round(rating) ? 'text-yellow-400 fill-current' : 'text-gray-300 dark:text-gray-600'}`}
+            className={`w-5 h-5 ${
+              star <= Math.round(rating)
+                ? 'text-yellow-400 fill-current'
+                : 'text-gray-300 dark:text-gray-600'
+            }`}
           />
         ))}
         {rating > 0 && (
@@ -761,35 +976,21 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           </span>
         )}
       </div>
-    );
-  };
+    ),
+    [product?.reviewCount],
+  );
 
-  const stock = getStockStatus();
-  const inventory = product?.inventory;
-  const available = inventory ? inventory.quantity - (inventory.reserved || 0) : 0;
-  const images = product?.images || [];
-  const hasImages = images.length > 0;
-  const hasBarcode = !!barcodeInfo || !!product?.barcode;
-  const selectedVariantData = selectedVariant 
-    ? product?.variants?.find((v: Variant) => v.id === selectedVariant) 
-    : null;
-
-  const displayPrice = useMemo(() => {
-    if (selectedVariantData) {
-      return selectedVariantData.price;
-    }
-    return product?.unitPrice || 0;
-  }, [selectedVariantData, product?.unitPrice]);
-
-  const totalVariants = product?.variants?.length || 0;
-  const activeVariants = product?.variants?.filter((v: Variant) => v.isActive).length || 0;
-  const totalVariantStock = product?.variants?.reduce((sum: number, v: Variant) => sum + (v.stock || 0), 0) || 0;
+  // ============================================
+  // EARLY RETURNS
+  // ============================================
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 bg-gray-50 dark:bg-gray-900">
         <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
-        <p className="mt-4 text-gray-500 dark:text-gray-400">Loading product...</p>
+        <p className="mt-4 text-gray-500 dark:text-gray-400">
+          Loading product...
+        </p>
       </div>
     );
   }
@@ -798,7 +999,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 bg-gray-50 dark:bg-gray-900">
         <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Error Loading Product</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Error Loading Product
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">{error}</p>
         <button
           onClick={() => router.push(isAdmin ? '/admin/catalog' : '/shop')}
@@ -814,8 +1017,12 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 bg-gray-50 dark:bg-gray-900">
         <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Product Not Found</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">The product you're looking for doesn't exist.</p>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Product Not Found
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          The product you're looking for doesn't exist.
+        </p>
         <button
           onClick={() => router.push(isAdmin ? '/admin/catalog' : '/shop')}
           className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
@@ -826,26 +1033,43 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
     );
   }
 
+  // ============================================
+  // MAIN RENDER
+  // ============================================
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
       <div className="max-w-7xl mx-auto p-4 sm:p-6">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-6 flex-wrap">
-          <Link href="/" className="hover:text-gray-700 dark:hover:text-gray-300">Home</Link>
+          <Link
+            href="/"
+            className="hover:text-gray-700 dark:hover:text-gray-300"
+          >
+            Home
+          </Link>
           <span>/</span>
-          <Link href={isAdmin ? '/admin/catalog' : '/shop'} className="hover:text-gray-700 dark:hover:text-gray-300">
+          <Link
+            href={isAdmin ? '/admin/catalog' : '/shop'}
+            className="hover:text-gray-700 dark:hover:text-gray-300"
+          >
             {isAdmin ? 'Catalog' : 'Shop'}
           </Link>
           <span>/</span>
           {product.category && (
             <>
-              <Link href={`/shop?category=${product.category.id}`} className="hover:text-gray-700 dark:hover:text-gray-300">
+              <Link
+                href={`/shop?category=${product.category.id}`}
+                className="hover:text-gray-700 dark:hover:text-gray-300"
+              >
                 {product.category.name}
               </Link>
               <span>/</span>
             </>
           )}
-          <span className="text-gray-700 dark:text-gray-300 font-medium truncate">{product.name}</span>
+          <span className="text-gray-700 dark:text-gray-300 font-medium truncate">
+            {product.name}
+          </span>
         </nav>
 
         {/* Header */}
@@ -859,12 +1083,11 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
             <div className="flex items-center gap-4">
-              {/* ✅ FIXED: Product thumbnail with error handling */}
               <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0">
                 {hasImages ? (
-                  <img 
-                    src={getValidImage(images[0])} 
-                    alt={product.name} 
+                  <img
+                    src={getValidImage(images[0])}
+                    alt={product.name}
                     className="w-full h-full object-cover"
                     onError={() => handleImageError(images[0])}
                   />
@@ -873,7 +1096,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                 )}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{product.name}</h1>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {product.name}
+                </h1>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1">
                     <Hash className="w-4 h-4" />
@@ -883,20 +1108,27 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     onClick={handleCopySKU}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                     title="Copy SKU"
+                    aria-label="Copy SKU"
                   >
-                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                    {copied ? (
+                      <Check className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
                   </button>
-                  {hasBarcode && (
+                  {hasBarcode && isAdmin && (
                     <span className="flex items-center gap-1">
                       <Barcode className="w-4 h-4" />
                       Barcode: {barcodeInfo?.barcode || product.barcode}
                     </span>
                   )}
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    product.isActive
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                  }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      product.isActive
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                    }`}
+                  >
                     {product.isActive ? 'Active' : 'Inactive'}
                   </span>
                   {product.featured && (
@@ -923,7 +1155,11 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           <div className="flex flex-wrap gap-2">
             {!isAdmin && (
               <>
-                <WishlistButton productId={product.id} variant="full" size="sm" />
+                <WishlistButton
+                  productId={product.id}
+                  variant="full"
+                  size="sm"
+                />
                 <button
                   onClick={handleShare}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
@@ -954,17 +1190,21 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           </div>
         </div>
 
-        {/* Status Alerts */}
+        {/* Status alerts */}
         {isAdmin && !product.isActive && (
           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">This product is currently inactive and not visible to customers.</span>
+            <span className="text-red-700 dark:text-red-300">
+              This product is currently inactive and not visible to customers.
+            </span>
           </div>
         )}
         {available <= 0 && (
           <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 dark:text-red-300">This product is out of stock.</span>
+            <span className="text-red-700 dark:text-red-300">
+              This product is out of stock.
+            </span>
           </div>
         )}
         {isAdmin && available <= (product.minStock || 5) && available > 0 && (
@@ -976,9 +1216,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           </div>
         )}
 
-        {/* Product Main Section */}
+        {/* Main grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Image Gallery - ✅ FIXED with error handling */}
+          {/* Image gallery */}
           <div className="space-y-4">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden aspect-square">
               {hasImages ? (
@@ -1006,6 +1246,7 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                 }}
                 className="absolute bottom-4 right-4 p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
                 title="Zoom in"
+                aria-label="Zoom in"
               >
                 <ZoomIn className="w-5 h-5" />
               </button>
@@ -1017,12 +1258,11 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               )}
             </div>
 
-            {/* Thumbnails - ✅ FIXED with error handling */}
             {hasImages && images.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                {images.map((image: string, index: number) => (
+                {images.map((image, index) => (
                   <button
-                    key={index}
+                    key={`${image.slice(0, 24)}-${index}`}
                     onClick={() => setSelectedImage(index)}
                     className={`w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
                       selectedImage === index
@@ -1031,9 +1271,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     }`}
                     aria-label={`Image ${index + 1}`}
                   >
-                    <img 
-                      src={getValidImage(image)} 
-                      alt={`${product.name} ${index + 1}`} 
+                    <img
+                      src={getValidImage(image)}
+                      alt={`${product.name} ${index + 1}`}
                       className="w-full h-full object-cover"
                       onError={() => handleImageError(image)}
                     />
@@ -1043,13 +1283,14 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
             )}
           </div>
 
-          {/* Product Info */}
+          {/* Info column */}
           <div className="space-y-6">
-            {/* Title & Rating */}
             <div>
               <div className="flex items-start justify-between">
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{product.name}</h1>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {product.name}
+                  </h1>
                   {product.rating && product.rating > 0 && (
                     <div className="flex items-center gap-2 mt-1">
                       {renderStarsLarge(product.rating)}
@@ -1065,21 +1306,12 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                 <span className="text-3xl font-bold text-blue-600 dark:text-blue-400">
                   {formatCurrency(displayPrice)}
                 </span>
-                {selectedVariantData && selectedVariantData.price !== product.unitPrice && (
-                  <span className="text-sm text-gray-400 line-through">
-                    {formatCurrency(product.unitPrice)}
-                  </span>
-                )}
-                {product.costPrice && product.costPrice > 0 && product.costPrice > displayPrice && (
-                  <>
+                {selectedVariantData &&
+                  selectedVariantData.price !== product.unitPrice && (
                     <span className="text-sm text-gray-400 line-through">
-                      {formatCurrency(product.costPrice)}
+                      {formatCurrency(product.unitPrice)}
                     </span>
-                    <span className="text-sm font-medium text-green-600 dark:text-green-400">
-                      Save {formatCurrency(product.costPrice - displayPrice)}
-                    </span>
-                  </>
-                )}
+                  )}
               </div>
               {product.taxRate > 0 && (
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -1088,11 +1320,13 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               )}
             </div>
 
-            {/* Stock Status */}
+            {/* Stock status */}
             <div className="flex items-center gap-4">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${stock.color} flex items-center gap-1`}>
-                <stock.icon className="w-4 h-4" />
-                {stock.status}
+              <span
+                className={`px-3 py-1 rounded-full text-sm font-medium ${stockStatus.color} flex items-center gap-1`}
+              >
+                <stockStatus.icon className="w-4 h-4" />
+                {stockStatus.status}
               </span>
               {available > 0 && available <= 10 && (
                 <span className="text-sm text-yellow-600 dark:text-yellow-400">
@@ -1101,7 +1335,7 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               )}
             </div>
 
-            {/* Barcode Section */}
+            {/* Barcode section — admin only */}
             {isAdmin && (
               <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1110,13 +1344,17 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                       <Barcode className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Barcode / QR Code</p>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Barcode / QR Code
+                      </p>
                       {hasBarcode ? (
                         <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
                           {barcodeInfo?.barcode || product.barcode}
                         </p>
                       ) : (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">No barcode assigned</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          No barcode assigned
+                        </p>
                       )}
                     </div>
                   </div>
@@ -1154,24 +1392,22 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                         <button
                           onClick={handleDownloadBarcode}
                           className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center gap-1"
+                          aria-label="Download barcode"
                         >
                           <Download className="w-4 h-4" />
                         </button>
                       </>
                     )}
-                    {isAdmin && (
-                      <button
-                        onClick={handleScanBarcode}
-                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm flex items-center gap-1 transition-colors"
-                      >
-                        <Scan className="w-4 h-4" />
-                        Scan
-                      </button>
-                    )}
+                    <button
+                      onClick={handleScanBarcode}
+                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm flex items-center gap-1 transition-colors"
+                    >
+                      <Scan className="w-4 h-4" />
+                      Scan
+                    </button>
                   </div>
                 </div>
 
-                {/* Barcode Display */}
                 <AnimatePresence>
                   {showBarcode && barcodeInfo && (
                     <motion.div
@@ -1182,18 +1418,23 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     >
                       <div className="flex flex-wrap items-center justify-center gap-6">
                         <div className="text-center">
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Barcode</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                            Barcode
+                          </p>
                           {barcodeInfo.barcodeUrl ? (
-                            <img 
-                              src={barcodeInfo.barcodeUrl} 
-                              alt="Barcode" 
+                            <img
+                              src={barcodeInfo.barcodeUrl}
+                              alt="Barcode"
                               className="h-12 w-auto"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).style.display =
+                                  'none';
                               }}
                             />
                           ) : (
-                            <div className="h-12 flex items-center justify-center text-gray-400">No barcode</div>
+                            <div className="h-12 flex items-center justify-center text-gray-400">
+                              No barcode
+                            </div>
                           )}
                           <p className="text-xs font-mono text-gray-600 dark:text-gray-400 mt-1 text-center">
                             {barcodeInfo.barcode}
@@ -1212,16 +1453,21 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                         </div>
                         {barcodeInfo.qrCodeUrl && (
                           <div className="text-center">
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">QR Code</p>
-                            <img 
-                              src={barcodeInfo.qrCodeUrl} 
-                              alt="QR Code" 
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                              QR Code
+                            </p>
+                            <img
+                              src={barcodeInfo.qrCodeUrl}
+                              alt="QR Code"
                               className="w-20 h-20 object-contain"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
+                                (e.target as HTMLImageElement).style.display =
+                                  'none';
                               }}
                             />
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Scan to view product</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Scan to view product
+                            </p>
                           </div>
                         )}
                       </div>
@@ -1235,8 +1481,8 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
             {product.description && (
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
-                  {product.description.length > 300 
-                    ? `${product.description.slice(0, 300)}...` 
+                  {product.description.length > 300
+                    ? `${product.description.slice(0, 300)}...`
                     : product.description}
                 </p>
                 {product.description.length > 300 && (
@@ -1250,7 +1496,7 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               </div>
             )}
 
-            {/* Key Features */}
+            {/* Key features */}
             <div className="grid grid-cols-2 gap-3 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
               {product.isDigital && (
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
@@ -1274,72 +1520,93 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               </div>
             </div>
 
-            {/* Variants with Image Support - ✅ FIXED with error handling */}
+            {/* Variants */}
             {product.variants && product.variants.length > 0 && (
               <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Variants</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Variants
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  {product.variants.filter((v: Variant) => v.isActive).map((variant: Variant) => (
-                    <button
-                      key={variant.id}
-                      onClick={() => setSelectedVariant(selectedVariant === variant.id ? null : variant.id)}
-                      className={`px-3 py-1.5 rounded-lg border text-sm transition-colors flex items-center gap-2 ${
-                        selectedVariant === variant.id
-                          ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                          : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-400'
-                      }`}
-                    >
-                      {/* ✅ FIXED: Variant image with optional chaining */}
-                      {variant.images && variant.images.length > 0 && (
-                        <div 
-                          className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenVariantLightbox(variant);
-                          }}
-                        >
-                          <img 
-                            src={getValidVariantImage(variant.images?.[0])} 
-                            alt={variant.name} 
-                            className="w-full h-full object-cover"
-                            onError={() => handleVariantImageError(variant.images?.[0] || '')}
-                          />
-                        </div>
-                      )}
-                      {variant.name}
-                      {variant.price !== product.unitPrice && (
-                        <span className="ml-1 text-xs">
-                          ({formatCurrency(variant.price)})
-                        </span>
-                      )}
-                      {variant.stock <= 0 && (
-                        <span className="ml-1 text-xs text-red-500">(Out of stock)</span>
-                      )}
-                    </button>
-                  ))}
+                  {product.variants
+                    .filter((v) => v.isActive)
+                    .map((variant) => (
+                      <button
+                        key={variant.id}
+                        onClick={() =>
+                          setSelectedVariant(
+                            selectedVariant === variant.id ? null : variant.id,
+                          )
+                        }
+                        className={`px-3 py-1.5 rounded-lg border text-sm transition-colors flex items-center gap-2 ${
+                          selectedVariant === variant.id
+                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                            : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-400'
+                        }`}
+                      >
+                        {variant.images && variant.images.length > 0 && (
+                          <div
+                            className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenVariantLightbox(variant);
+                            }}
+                          >
+                            <img
+                              src={getValidVariantImage(variant.images[0])}
+                              alt={variant.name}
+                              className="w-full h-full object-cover"
+                              onError={() =>
+                                handleVariantImageError(variant.images![0])
+                              }
+                            />
+                          </div>
+                        )}
+                        {variant.name}
+                        {variant.price !== product.unitPrice && (
+                          <span className="ml-1 text-xs">
+                            ({formatCurrency(variant.price)})
+                          </span>
+                        )}
+                        {variant.stock <= 0 && (
+                          <span className="ml-1 text-xs text-red-500">
+                            (Out of stock)
+                          </span>
+                        )}
+                      </button>
+                    ))}
                 </div>
-                {selectedVariantData && selectedVariantData.attributes && 
+                {selectedVariantData &&
+                  selectedVariantData.attributes &&
                   Object.keys(selectedVariantData.attributes).length > 0 && (
-                  <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Variant Attributes</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {Object.entries(selectedVariantData.attributes).map(([key, value]) => (
-                        <span key={key} className="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded">
-                          {key}: {String(value)}
-                        </span>
-                      ))}
+                    <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Variant Attributes
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {Object.entries(selectedVariantData.attributes).map(
+                          ([key, value]) => (
+                            <span
+                              key={key}
+                              className="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded"
+                            >
+                              {key}: {String(value)}
+                            </span>
+                          ),
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
               </div>
             )}
 
             {/* Tags */}
             {product.tags && product.tags.length > 0 && (
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Tags:</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                  Tags:
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  {product.tags.map((tag: string) => (
+                  {product.tags.map((tag) => (
                     <Link
                       key={tag}
                       href={`/shop?search=${tag}`}
@@ -1352,7 +1619,7 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               </div>
             )}
 
-            {/* Quantity & Add to Cart */}
+            {/* Add to cart — storefront only */}
             {!isAdmin && (
               <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <div className="flex flex-wrap items-center gap-4">
@@ -1365,7 +1632,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     >
                       <Minus className="w-4 h-4" />
                     </button>
-                    <span className="w-12 text-center text-gray-900 dark:text-white">{quantity}</span>
+                    <span className="w-12 text-center text-gray-900 dark:text-white">
+                      {quantity}
+                    </span>
                     <button
                       onClick={() => handleQuantityChange(1)}
                       disabled={quantity >= 99}
@@ -1387,10 +1656,20 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     )}
                     {addingToCart ? 'Adding...' : 'Add to Cart'}
                   </button>
-                  <WishlistButton productId={product.id} variant="icon" size="md" />
+                  <WishlistButton
+                    productId={product.id}
+                    variant="icon"
+                    size="md"
+                  />
                 </div>
                 <button
-                  onClick={() => router.push('/checkout')}
+                  onClick={async () => {
+                    const ok = await handleAddToCart();
+                    // `handleAddToCart` doesn't return; re-check state
+                    // via the event. Simpler: push to checkout after a
+                    // microtask so the cart is committed server-side.
+                    if (!addingToCart) router.push('/checkout');
+                  }}
                   disabled={available <= 0}
                   className="w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -1406,17 +1685,10 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto">
             <nav className="flex gap-4">
-              {[
-                { id: 'overview', label: 'Overview', icon: Info },
-                { id: 'specifications', label: 'Specifications', icon: Hash },
-                { id: 'variants', label: 'Variants', icon: Layers },
-                { id: 'inventory', label: 'Inventory', icon: Package },
-                { id: 'reviews', label: 'Reviews', icon: Star },
-                ...(isAdmin ? [{ id: 'analytics', label: 'Analytics', icon: TrendingUp }] : []),
-              ].map(({ id, label, icon: Icon }) => (
+              {visibleTabs.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
-                  onClick={() => setActiveTab(id)}
+                  onClick={() => setActiveTab(id as TabId)}
                   className={`flex items-center gap-1.5 px-4 py-3 border-b-2 font-medium text-sm transition-colors capitalize whitespace-nowrap ${
                     activeTab === id
                       ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -1430,11 +1702,13 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                       {totalVariants}
                     </span>
                   )}
-                  {id === 'reviews' && product.reviewCount && product.reviewCount > 0 && (
-                    <span className="ml-1 text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
-                      {product.reviewCount}
-                    </span>
-                  )}
+                  {id === 'reviews' &&
+                    product.reviewCount &&
+                    product.reviewCount > 0 && (
+                      <span className="ml-1 text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                        {product.reviewCount}
+                      </span>
+                    )}
                 </button>
               ))}
             </nav>
@@ -1444,7 +1718,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Description</h3>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                    Description
+                  </h3>
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
                       {product.description || 'No description provided'}
@@ -1454,102 +1730,124 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Product Details</h3>
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                      Product Details
+                    </h3>
                     <div className="space-y-2">
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Category</span>
-                        <span className="text-gray-900 dark:text-white">{product.category?.name || 'Uncategorized'}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Supplier</span>
-                        <span className="text-gray-900 dark:text-white">{product.supplier?.name || 'N/A'}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Type</span>
-                        <span className="text-gray-900 dark:text-white">{product.isDigital ? 'Digital' : 'Physical'}</span>
-                      </div>
-                      {product.weight && (
-                        <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                          <span className="text-gray-600 dark:text-gray-400">Weight</span>
-                          <span className="text-gray-900 dark:text-white">{product.weight} kg</span>
-                        </div>
+                      <DetailRow
+                        label="Category"
+                        value={product.category?.name || 'Uncategorized'}
+                      />
+                      <DetailRow
+                        label="Supplier"
+                        value={product.supplier?.name || 'N/A'}
+                      />
+                      <DetailRow
+                        label="Type"
+                        value={product.isDigital ? 'Digital' : 'Physical'}
+                      />
+                      {product.weight !== undefined && (
+                        <DetailRow
+                          label="Weight"
+                          value={`${product.weight} kg`}
+                        />
                       )}
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Created</span>
-                        <span className="text-gray-900 dark:text-white">{formatDate(product.createdAt)}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Updated</span>
-                        <span className="text-gray-900 dark:text-white">{formatDate(product.updatedAt)}</span>
-                      </div>
+                      <DetailRow
+                        label="Created"
+                        value={formatDate(product.createdAt)}
+                      />
+                      <DetailRow
+                        label="Updated"
+                        value={formatDate(product.updatedAt)}
+                      />
                     </div>
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Pricing & Inventory</h3>
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                      Pricing & Inventory
+                    </h3>
                     <div className="space-y-2">
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Unit Price</span>
-                        <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(product.unitPrice)}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Cost Price</span>
-                        <span className="text-gray-900 dark:text-white">{formatCurrency(product.costPrice || 0)}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Tax Rate</span>
-                        <span className="text-gray-900 dark:text-white">{product.taxRate || 0}%</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Min Stock</span>
-                        <span className="text-gray-900 dark:text-white">{product.minStock || 5}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Max Stock</span>
-                        <span className="text-gray-900 dark:text-white">{product.maxStock || 'N/A'}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
-                        <span className="text-gray-600 dark:text-gray-400">Available</span>
-                        <span className={`font-medium ${
-                          available <= 0 ? 'text-red-600 dark:text-red-400' : 
-                          available <= (product.minStock || 5) ? 'text-yellow-600 dark:text-yellow-400' : 
-                          'text-green-600 dark:text-green-400'
-                        }`}>
-                          {available}
-                        </span>
-                      </div>
+                      <DetailRow
+                        label="Unit Price"
+                        value={formatCurrency(product.unitPrice)}
+                        emphasize
+                      />
+                      <DetailRow
+                        label="Cost Price"
+                        value={formatCurrency(product.costPrice || 0)}
+                      />
+                      <DetailRow
+                        label="Tax Rate"
+                        value={`${product.taxRate || 0}%`}
+                      />
+                      <DetailRow
+                        label="Min Stock"
+                        value={String(product.minStock || 5)}
+                      />
+                      <DetailRow
+                        label="Max Stock"
+                        value={String(product.maxStock || 'N/A')}
+                      />
+                      <DetailRow
+                        label="Available"
+                        value={String(available)}
+                        tone={
+                          available <= 0
+                            ? 'negative'
+                            : available <= (product.minStock || 5)
+                            ? 'warning'
+                            : 'positive'
+                        }
+                        emphasize
+                      />
                     </div>
                   </div>
                 </div>
 
-                {product.attributes && Object.keys(product.attributes).length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Attributes</h3>
-                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto">
-                      <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all font-mono">
-                        {JSON.stringify(product.attributes, null, 2)}
-                      </pre>
+                {product.attributes &&
+                  Object.keys(product.attributes).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                        Attributes
+                      </h3>
+                      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 overflow-x-auto">
+                        <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all font-mono">
+                          {JSON.stringify(product.attributes, null, 2)}
+                        </pre>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
               </div>
             )}
 
             {activeTab === 'specifications' && (
               <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">Specifications</h3>
-                {product.attributes && Object.keys(product.attributes).length > 0 ? (
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
+                  Specifications
+                </h3>
+                {product.attributes &&
+                Object.keys(product.attributes).length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {Object.entries(product.attributes).map(([key, value]) => (
-                      <div key={key} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{key.replace(/_/g, ' ')}</p>
+                      <div
+                        key={key}
+                        className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3"
+                      >
+                        <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                          {key.replace(/_/g, ' ')}
+                        </p>
                         <p className="text-sm font-medium text-gray-900 dark:text-white break-all">
-                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          {typeof value === 'object'
+                            ? JSON.stringify(value)
+                            : String(value)}
                         </p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 dark:text-gray-400 text-center py-8">No specifications available</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                    No specifications available
+                  </p>
                 )}
               </div>
             )}
@@ -1558,25 +1856,31 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               <div>
                 {product.variants && product.variants.length > 0 ? (
                   <div className="space-y-4">
-                    {product.variants.map((variant: Variant) => (
-                      <div key={variant.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                    {product.variants.map((variant) => (
+                      <div
+                        key={variant.id}
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                      >
                         <div className="flex items-center gap-4">
-                          {/* ✅ FIXED: Variant detail image with optional chaining */}
                           {variant.images && variant.images.length > 0 && (
-                            <div 
+                            <div
                               className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex-shrink-0 cursor-pointer"
                               onClick={() => handleOpenVariantLightbox(variant)}
                             >
-                              <img 
-                                src={getValidVariantImage(variant.images?.[0])} 
-                                alt={variant.name} 
+                              <img
+                                src={getValidVariantImage(variant.images[0])}
+                                alt={variant.name}
                                 className="w-full h-full object-cover"
-                                onError={() => handleVariantImageError(variant.images?.[0] || '')}
+                                onError={() =>
+                                  handleVariantImageError(variant.images![0])
+                                }
                               />
                             </div>
                           )}
                           <div>
-                            <p className="font-medium text-gray-900 dark:text-white">{variant.name}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {variant.name}
+                            </p>
                             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                               <span className="flex items-center gap-1">
                                 <Hash className="w-3 h-3" />
@@ -1586,35 +1890,49 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                                 {formatCurrency(variant.price)}
                               </span>
                               <span>Stock: {variant.stock}</span>
-                              {variant.barcode && <span className="text-xs">Barcode: {variant.barcode}</span>}
+                              {variant.barcode && isAdmin && (
+                                <span className="text-xs">
+                                  Barcode: {variant.barcode}
+                                </span>
+                              )}
                               {variant.inventoryId && (
                                 <span className="text-xs text-blue-500 flex items-center gap-1">
                                   <Link2 className="w-3 h-3" />
                                   Inventory Linked
                                 </span>
                               )}
-                              {variant.attributes && Object.keys(variant.attributes).length > 0 && (
-                                <span className="text-xs text-gray-400">
-                                  {Object.entries(variant.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')}
-                                </span>
-                              )}
+                              {variant.attributes &&
+                                Object.keys(variant.attributes).length >
+                                  0 && (
+                                  <span className="text-xs text-gray-400">
+                                    {Object.entries(variant.attributes)
+                                      .map(([k, v]) => `${k}: ${v}`)
+                                      .join(', ')}
+                                  </span>
+                                )}
                             </div>
                             {variant.images && variant.images.length > 1 && (
                               <div className="flex gap-1 mt-2">
-                                {variant.images.slice(1, 4).map((img, idx) => (
-                                  <div 
-                                    key={idx} 
-                                    className="w-10 h-10 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600 cursor-pointer"
-                                    onClick={() => handleOpenVariantLightbox(variant)}
-                                  >
-                                    <img 
-                                      src={getValidVariantImage(img)} 
-                                      alt={`${variant.name} ${idx + 2}`} 
-                                      className="w-full h-full object-cover"
-                                      onError={() => handleVariantImageError(img)}
-                                    />
-                                  </div>
-                                ))}
+                                {variant.images
+                                  .slice(1, 4)
+                                  .map((img, idx) => (
+                                    <div
+                                      key={`${img.slice(0, 24)}-${idx}`}
+                                      className="w-10 h-10 rounded-md overflow-hidden border border-gray-200 dark:border-gray-600 cursor-pointer"
+                                      onClick={() =>
+                                        handleOpenVariantLightbox(variant)
+                                      }
+                                    >
+                                      <img
+                                        src={getValidVariantImage(img)}
+                                        alt={`${variant.name} ${idx + 2}`}
+                                        className="w-full h-full object-cover"
+                                        onError={() =>
+                                          handleVariantImageError(img)
+                                        }
+                                      />
+                                    </div>
+                                  ))}
                                 {variant.images.length > 4 && (
                                   <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs text-gray-500">
                                     +{variant.images.length - 4}
@@ -1624,18 +1942,22 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                             )}
                           </div>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          variant.isActive
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                        }`}>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            variant.isActive
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                          }`}
+                        >
                           {variant.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-center text-gray-500 dark:text-gray-400 py-8">No variants for this product</p>
+                  <p className="text-center text-gray-500 dark:text-gray-400 py-8">
+                    No variants for this product
+                  </p>
                 )}
               </div>
             )}
@@ -1643,45 +1965,58 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
             {activeTab === 'inventory' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Total Stock</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{inventory?.quantity || 0}</p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Reserved</p>
-                    <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{inventory?.reserved || 0}</p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Available</p>
-                    <p className={`text-2xl font-bold ${
-                      available <= 0 ? 'text-red-600 dark:text-red-400' : 
-                      available <= (product.minStock || 5) ? 'text-yellow-600 dark:text-yellow-400' : 
-                      'text-green-600 dark:text-green-400'
-                    }`}>
-                      {available}
-                    </p>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Reorder Point</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{inventory?.reorderPoint || product.minStock || 5}</p>
-                  </div>
+                  <StatBlock
+                    label="Total Stock"
+                    value={inventory?.quantity || 0}
+                  />
+                  <StatBlock
+                    label="Reserved"
+                    value={inventory?.reserved || 0}
+                    tone="warning"
+                  />
+                  <StatBlock
+                    label="Available"
+                    value={available}
+                    tone={
+                      available <= 0
+                        ? 'negative'
+                        : available <= (product.minStock || 5)
+                        ? 'warning'
+                        : 'positive'
+                    }
+                  />
+                  <StatBlock
+                    label="Reorder Point"
+                    value={inventory?.reorderPoint || product.minStock || 5}
+                  />
                 </div>
 
-                {/* Variant Stock Summary */}
                 {totalVariants > 0 && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">Variant Stock Summary</h4>
+                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+                      Variant Stock Summary
+                    </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Total Variants</span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">{totalVariants}</p>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Total Variants
+                        </span>
+                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                          {totalVariants}
+                        </p>
                       </div>
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Active Variants</span>
-                        <p className="text-lg font-bold text-gray-900 dark:text-white">{activeVariants}</p>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Active Variants
+                        </span>
+                        <p className="text-lg font-bold text-gray-900 dark:text-white">
+                          {activeVariants}
+                        </p>
                       </div>
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Combined Stock</span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Combined Stock
+                        </span>
                         <p className="text-lg font-bold text-gray-900 dark:text-white">
                           {(inventory?.quantity || 0) + totalVariantStock}
                         </p>
@@ -1692,16 +2027,19 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
 
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
                   <div className="flex flex-wrap gap-4 text-sm text-yellow-700 dark:text-yellow-300">
-                    <span>📍 Location: {inventory?.location || 'Warehouse'}</span>
-                    <span>📦 SKU: {product.sku}</span>
-                    {product.barcode && <span>🔲 Barcode: {product.barcode}</span>}
+                    <span>
+                      Location: {inventory?.location || 'Warehouse'}
+                    </span>
+                    <span>SKU: {product.sku}</span>
+                    {product.barcode && isAdmin && (
+                      <span>Barcode: {product.barcode}</span>
+                    )}
                     <span className="text-xs">
                       Low stock threshold: {product.minStock || 5} units
                     </span>
                   </div>
                 </div>
 
-                {/* Inventory History */}
                 {isAdmin && (
                   <div>
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
@@ -1717,43 +2055,79 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 dark:bg-gray-700/50">
                             <tr>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">Date</th>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">Type</th>
-                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">Quantity</th>
-                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">Previous</th>
-                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">Current</th>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">Reason</th>
-                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">User</th>
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                                Date
+                              </th>
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                                Type
+                              </th>
+                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                                Quantity
+                              </th>
+                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                                Previous
+                              </th>
+                              <th className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
+                                Current
+                              </th>
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                                Reason
+                              </th>
+                              <th className="px-3 py-2 text-left text-gray-600 dark:text-gray-400">
+                                User
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {inventoryHistory.map((entry, index) => (
-                              <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{formatDate(entry.date)}</td>
+                              <tr
+                                key={index}
+                                className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                              >
+                                <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                                  {formatDate(entry.date)}
+                                </td>
                                 <td className="px-3 py-2">
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    entry.type === 'in' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-                                    entry.type === 'out' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' :
-                                    entry.type === 'adjust' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                                    'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                                  }`}>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      entry.type === 'in'
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                        : entry.type === 'out'
+                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                                        : entry.type === 'adjust'
+                                        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                    }`}
+                                  >
                                     {entry.type}
                                   </span>
                                 </td>
                                 <td className="px-3 py-2 text-right font-medium text-gray-900 dark:text-white">
-                                  {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                                  {entry.quantity > 0
+                                    ? `+${entry.quantity}`
+                                    : entry.quantity}
                                 </td>
-                                <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{entry.previous}</td>
-                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">{entry.current}</td>
-                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{entry.reason || '-'}</td>
-                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{entry.user || 'System'}</td>
+                                <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                                  {entry.previous}
+                                </td>
+                                <td className="px-3 py-2 text-right text-gray-900 dark:text-white">
+                                  {entry.current}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
+                                  {entry.reason || '-'}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
+                                  {entry.user || 'System'}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
                     ) : (
-                      <p className="text-center text-gray-500 dark:text-gray-400 py-4">No inventory history available</p>
+                      <p className="text-center text-gray-500 dark:text-gray-400 py-4">
+                        No inventory history available
+                      </p>
                     )}
                   </div>
                 )}
@@ -1770,10 +2144,12 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           </div>
         </div>
 
-        {/* Related Products */}
+        {/* Related */}
         {!isAdmin && relatedProducts.length > 0 && (
           <div className="mt-8">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">You May Also Like</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              You May Also Like
+            </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {relatedProducts.map((relatedProduct, index) => (
                 <motion.div
@@ -1786,8 +2162,8 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     product={relatedProduct}
                     index={index}
                     variant="default"
-                    showWishlist={true}
-                    showAddToCart={true}
+                    showWishlist
+                    showAddToCart
                   />
                 </motion.div>
               ))}
@@ -1795,14 +2171,14 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           </div>
         )}
 
-        {/* Recently Viewed */}
+        {/* Recently viewed */}
         {!isAdmin && (
           <div className="mt-8">
             <RecentlyViewed limit={6} />
           </div>
         )}
 
-        {/* Lightbox with variant image support - ✅ FIXED with error handling */}
+        {/* Lightbox */}
         <AnimatePresence>
           {showLightbox && lightboxImages.length > 0 && (
             <motion.div
@@ -1822,7 +2198,9 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setLightboxIndex(prev => (prev > 0 ? prev - 1 : lightboxImages.length - 1));
+                  setLightboxIndex((prev) =>
+                    prev > 0 ? prev - 1 : lightboxImages.length - 1,
+                  );
                 }}
                 className="absolute left-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
                 aria-label="Previous image"
@@ -1834,12 +2212,16 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                 alt={product.name}
                 className="max-w-[90vw] max-h-[90vh] object-contain"
                 onClick={(e) => e.stopPropagation()}
-                onError={() => handleImageError(lightboxImages[lightboxIndex])}
+                onError={() =>
+                  handleImageError(lightboxImages[lightboxIndex])
+                }
               />
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setLightboxIndex(prev => (prev < lightboxImages.length - 1 ? prev + 1 : 0));
+                  setLightboxIndex((prev) =>
+                    prev < lightboxImages.length - 1 ? prev + 1 : 0,
+                  );
                 }}
                 className="absolute right-4 p-2 text-white hover:bg-white/20 rounded-lg transition-colors"
                 aria-label="Next image"
@@ -1847,7 +2229,7 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                 <ChevronRight className="w-6 h-6" />
               </button>
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-2">
-                {lightboxImages.map((_: any, index: number) => (
+                {lightboxImages.map((_, index) => (
                   <button
                     key={index}
                     onClick={(e) => {
@@ -1865,7 +2247,7 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           )}
         </AnimatePresence>
 
-        {/* Delete Modal */}
+        {/* Delete modal — admin only */}
         <AnimatePresence>
           {showDeleteModal && (
             <motion.div
@@ -1874,7 +2256,10 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
-              <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
+              <div
+                className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
+                onClick={() => setShowDeleteModal(false)}
+              />
               <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
@@ -1893,13 +2278,22 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
                     <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Product</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      Delete Product
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      This action cannot be undone
+                    </p>
                   </div>
                 </div>
                 <p className="text-gray-600 dark:text-gray-300 mb-6">
-                  Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{product.name}</strong>?
-                  This will permanently remove the product and all associated data, including variants, inventory, and sales history.
+                  Are you sure you want to delete{' '}
+                  <strong className="text-gray-900 dark:text-white">
+                    {product.name}
+                  </strong>
+                  ? This will permanently remove the product and all
+                  associated data, including variants, inventory, and sales
+                  history.
                 </p>
                 <div className="flex justify-end gap-3">
                   <button
@@ -1926,6 +2320,68 @@ export function ProductDetail({ product: initialProduct, isAdmin = false }: Prod
           )}
         </AnimatePresence>
       </div>
+    </div>
+  );
+}
+
+export default ProductDetail;
+
+// ============================================
+// SMALL PRESENTATIONAL HELPERS
+// ============================================
+
+interface DetailRowProps {
+  label: string;
+  value: React.ReactNode;
+  emphasize?: boolean;
+  tone?: 'positive' | 'negative' | 'warning' | 'neutral';
+}
+
+function DetailRow({
+  label,
+  value,
+  emphasize = false,
+  tone = 'neutral',
+}: DetailRowProps) {
+  const toneClass =
+    tone === 'positive'
+      ? 'text-green-600 dark:text-green-400'
+      : tone === 'negative'
+      ? 'text-red-600 dark:text-red-400'
+      : tone === 'warning'
+      ? 'text-yellow-600 dark:text-yellow-400'
+      : 'text-gray-900 dark:text-white';
+
+  return (
+    <div className="flex justify-between py-1 border-b border-gray-100 dark:border-gray-700">
+      <span className="text-gray-600 dark:text-gray-400">{label}</span>
+      <span className={`${emphasize ? 'font-medium' : ''} ${toneClass}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+interface StatBlockProps {
+  label: string;
+  value: number;
+  tone?: 'positive' | 'negative' | 'warning' | 'neutral';
+}
+
+function StatBlock({ label, value, tone = 'neutral' }: StatBlockProps) {
+  const toneClass =
+    tone === 'positive'
+      ? 'text-green-600 dark:text-green-400'
+      : tone === 'negative'
+      ? 'text-red-600 dark:text-red-400'
+      : tone === 'warning'
+      ? 'text-yellow-600 dark:text-yellow-400'
+      : 'text-gray-900 dark:text-white';
+
+  return (
+    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
+      <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
+      <p className={`text-2xl font-bold ${toneClass}`}>{value}</p>
     </div>
   );
 }

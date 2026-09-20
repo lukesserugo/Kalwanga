@@ -28,6 +28,46 @@ import { RegisterCard } from './RegisterCard';
 import type { Register, Shift, ShiftScope } from '../../types/register';
 
 // ============================================
+// BUSINESS UNIT PERSISTENCE
+// ============================================
+//
+// When a register is created, the modal sends `businessUnitId` in
+// the POST body. The backend saves the register under that unit.
+// But the FETCH path (`GET /shifts/registers`) has no body, so it
+// resolves the business unit from `req.query.businessUnitId` or,
+// if absent, falls through to the user's primary unit.
+//
+// If the user's primary unit differs from the modal's selection,
+// the create and fetch resolve to different units, and the register
+// is invisible.
+//
+// Writing the chosen unit to localStorage closes the gap: the
+// frontend sends it on every subsequent fetch, so both paths agree.
+
+const BUSINESS_UNIT_STORAGE_KEYS = [
+  'selectedBusinessUnitId',
+  'businessUnitId',
+] as const;
+
+function persistBusinessUnitId(businessUnitId: string | undefined | null) {
+  if (!businessUnitId) return;
+  if (
+    businessUnitId === 'default' ||
+    businessUnitId === 'null' ||
+    businessUnitId === 'undefined'
+  ) {
+    return;
+  }
+  try {
+    for (const key of BUSINESS_UNIT_STORAGE_KEYS) {
+      localStorage.setItem(key, businessUnitId);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+// ============================================
 // TOAST
 // ============================================
 
@@ -190,10 +230,29 @@ export function ShiftsDashboard() {
   // HANDLERS
   // ============================================
 
+  /**
+   * Create a register.
+   *
+   * After the create succeeds, the modal's chosen `businessUnitId`
+   * is written to localStorage. That makes `readStoredBusinessUnitId`
+   * in `useShifts` return the SAME unit on the subsequent
+   * `fetchRegisters()` call that `loadData()` triggers — so the
+   * new register appears in the list instead of being queried from
+   * a different unit.
+   *
+   * Without this write, the create path (which sends the ID in the
+   * body) and the fetch path (which reads from query params or
+   * falls back to the user's primary unit) can disagree about
+   * which unit to use.
+   */
   const handleCreateRegister = async (data: any) => {
     try {
       const created = await createRegister(data);
       console.log('✅ Register created:', created);
+
+      // Persist the chosen unit BEFORE the re-fetch below.
+      persistBusinessUnitId(data?.businessUnitId);
+
       toast.success('Register created successfully');
       setShowRegisterModal(false);
       setEditingRegister(null);
@@ -209,10 +268,26 @@ export function ShiftsDashboard() {
     }
   };
 
+  /**
+   * Update a register.
+   *
+   * The edit modal doesn't currently send `businessUnitId` (the
+   * backend's `updateRegisterSchema` only accepts name/code/isActive),
+   * so there's nothing new to persist here. If you later add
+   * business-unit reassignment to the modal, call
+   * `persistBusinessUnitId(data.businessUnitId)` here too.
+   */
   const handleUpdateRegister = async (data: any) => {
     try {
       if (!editingRegister) return;
       await updateRegister(editingRegister.id, data);
+
+      // Defensive — if the modal ever starts sending a business
+      // unit, persist it. Today this is a no-op.
+      if (data?.businessUnitId) {
+        persistBusinessUnitId(data.businessUnitId);
+      }
+
       toast.success('Register updated successfully');
       setShowRegisterModal(false);
       setEditingRegister(null);

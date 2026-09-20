@@ -5,11 +5,18 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { userService } from '../../services/userService';
 import { businessUnitService } from '../../services/businessUnitService';
-import { PERMISSIONS } from '../../types/permissions';
 import { UserRole } from '../../types/enums';
 import { toast } from 'react-hot-toast';
+
+// ============================================
+// ICON IMPORTS — lucide-react
+// ============================================
+//
+// Every icon referenced in the JSX must be imported here. Missing
+// one produces "Cannot find name 'X'" across the whole render tree.
+
 import {
-  UsersRound, Plus, X, Search, Edit2, Trash2, 
+  UsersRound, Plus, X, Search, Edit2, Trash2,
   Loader2, CheckCircle, XCircle, AlertCircle,
   Shield, User, Mail, Calendar, Clock, MoreVertical,
   ChevronDown, ChevronUp, FolderOpen, FolderClosed,
@@ -23,23 +30,32 @@ import {
   MessageSquare, Link, ExternalLink, Download,
   Upload, FileText, Printer, Send, Mail as MailIcon,
   Briefcase, Building, Store, Globe, Crown, Award,
-  Zap, Sparkles, Rocket, Target, Flag, Gift
+  Zap, Sparkles, Rocket, Target, Flag, Gift,
 } from 'lucide-react';
 
-interface UserGroup {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-  permissions: string[];
-  isActive: boolean;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
+// ============================================
+// CANONICAL TYPE IMPORTS
+// ============================================
+//
+// Use the shared `UserGroup` from `types/user.ts` as the base for
+// the component's local view model. This avoids "Type 'UserGroup'
+// is not assignable" errors when the service returns the canonical
+// shape.
+
+import type { UserGroup as CanonicalUserGroup } from '../../types/user';
+
+// ============================================
+// LOCAL VIEW MODEL
+// ============================================
+//
+// Extend the canonical `UserGroup` with the two view-only fields
+// the UI needs (aggregates computed by the API and the inline
+// members list returned by `getGroupMembers`).
+
+interface UserGroup extends CanonicalUserGroup {
   memberCount?: number;
   members?: GroupMember[];
-  businessUnitId?: string;
+  businessUnitId?: string | null;
 }
 
 interface GroupMember {
@@ -52,9 +68,20 @@ interface GroupMember {
     email: string;
     firstName: string;
     lastName: string;
-    avatar?: string;
+    avatar?: string | null;
   };
 }
+
+// ============================================
+// SERVICE INPUT TYPES
+// ============================================
+//
+// ⚠️ These MUST match the `CreateGroupData` / `UpdateGroupData`
+//    declarations in `services/userService.ts` exactly. The service
+//    is what the API accepts, so the component's local copies must
+//    be structurally identical — otherwise TS2345 fires on the
+//    `userService.createGroup(data)` / `.updateGroup(id, data)`
+//    call sites.
 
 interface CreateGroupData {
   name: string;
@@ -86,6 +113,22 @@ interface UserGroupManagerProps {
   onGroupsChange?: () => void;
   readOnly?: boolean;
 }
+
+// ============================================
+// PERMISSION CONSTANTS
+// ============================================
+//
+// The canonical `types/permissions.ts` exposes the boolean-flag
+// `UserPermissions` interface and a `buildPermissionsFromSet`
+// resolver — it does NOT export a string registry. This component
+// only needs the `USER_MANAGE` string for its management gate.
+//
+// ⚠️ Keep this in sync with the backend's permission strings in
+//    `packages/backend/src/middleware/auth.ts`.
+
+const PERMISSIONS = {
+  USER_MANAGE: 'user:manage',
+} as const;
 
 // Pre-defined colors for groups
 const GROUP_COLORS = [
@@ -161,14 +204,14 @@ interface BusinessUnit {
   isActive?: boolean;
 }
 
-export function UserGroupManager({ 
-  onGroupSelect, 
+export function UserGroupManager({
+  onGroupSelect,
   selectedGroupId,
   onGroupsChange,
   readOnly = false
 }: UserGroupManagerProps) {
   const { can, isSuperAdmin, isAdmin } = useAuth();
-  
+
   // State
   const [groups, setGroups] = useState<UserGroup[]>([]);
   const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
@@ -183,7 +226,7 @@ export function UserGroupManager({
   const [sortBy, setSortBy] = useState<'name' | 'members' | 'created'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
-  
+
   // Form state for create/edit
   const [formData, setFormData] = useState<CreateGroupData>({
     name: '',
@@ -194,7 +237,7 @@ export function UserGroupManager({
     members: [],
     businessUnitId: '',
   });
-  
+
   // Member management
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
@@ -209,7 +252,7 @@ export function UserGroupManager({
   const loadBusinessUnits = useCallback(async () => {
     try {
       const response = await businessUnitService?.getAllBusinessUnits?.();
-      
+
       if (response && Array.isArray(response)) {
         setBusinessUnits(response);
       } else if (response?.data && Array.isArray(response.data)) {
@@ -230,11 +273,11 @@ export function UserGroupManager({
   const loadGroups = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await userService.getGroups({ 
+      const response = await userService.getGroups({
         limit: 100,
         isActive: filterActive !== null ? filterActive : undefined
       });
-      
+
       if (response?.data && Array.isArray(response.data)) {
         setGroups(response.data);
         // Select first group if none selected
@@ -253,9 +296,9 @@ export function UserGroupManager({
   // Load available users for member management
   const loadAvailableUsers = useCallback(async () => {
     try {
-      const response = await userService.getAllUsers({ 
-        limit: 100, 
-        isActive: true 
+      const response = await userService.getAllUsers({
+        limit: 100,
+        isActive: true
       });
       if (response?.data && Array.isArray(response.data)) {
         setAvailableUsers(response.data);
@@ -300,19 +343,19 @@ export function UserGroupManager({
   // Filter groups
   const filteredGroups = useMemo(() => {
     let result = groups;
-    
+
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      result = result.filter(g => 
+      result = result.filter(g =>
         g.name.toLowerCase().includes(search) ||
-        g.description?.toLowerCase().includes(search)
+        (g.description ?? '').toLowerCase().includes(search)
       );
     }
-    
+
     if (filterActive !== null) {
       result = result.filter(g => g.isActive === filterActive);
     }
-    
+
     // Sort
     result = [...result].sort((a, b) => {
       let comparison = 0;
@@ -331,7 +374,7 @@ export function UserGroupManager({
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });
-    
+
     return result;
   }, [groups, searchTerm, filterActive, sortBy, sortOrder]);
 
@@ -342,7 +385,7 @@ export function UserGroupManager({
       toast.error('Group name is required');
       return;
     }
-    
+
     try {
       setLoading(true);
       const data: CreateGroupData = {
@@ -358,10 +401,10 @@ export function UserGroupManager({
           isLead: memberIsLead
         }))
       };
-      
+
       const result = await userService.createGroup(data);
       toast.success('Group created successfully!');
-      
+
       // Reset form
       setFormData({
         name: '',
@@ -374,11 +417,11 @@ export function UserGroupManager({
       });
       setSelectedMembers([]);
       setShowCreateModal(false);
-      
+
       // Reload groups
       await loadGroups();
       onGroupsChange?.();
-      
+
       // Select the new group
       if (result?.id) {
         setSelectedGroup(result);
@@ -400,7 +443,7 @@ export function UserGroupManager({
       toast.error('Group name is required');
       return;
     }
-    
+
     try {
       setLoading(true);
       const data: UpdateGroupData = {
@@ -412,10 +455,10 @@ export function UserGroupManager({
         isActive: selectedGroup.isActive,
         businessUnitId: formData.businessUnitId || undefined,
       };
-      
+
       await userService.updateGroup(selectedGroup.id, data);
       toast.success('Group updated successfully!');
-      
+
       setShowEditModal(false);
       await loadGroups();
       onGroupsChange?.();
@@ -430,12 +473,12 @@ export function UserGroupManager({
   // Delete group
   const handleDeleteGroup = async () => {
     if (!selectedGroup) return;
-    
+
     try {
       setLoading(true);
       await userService.deleteGroup(selectedGroup.id);
       toast.success('Group deleted successfully!');
-      
+
       setShowDeleteConfirm(false);
       setSelectedGroup(null);
       await loadGroups();
@@ -451,7 +494,7 @@ export function UserGroupManager({
   // Assign users to group
   const handleAssignUsers = async () => {
     if (!selectedGroup || selectedMembers.length === 0) return;
-    
+
     try {
       setLoading(true);
       const result = await userService.assignUsersToGroup(
@@ -459,7 +502,7 @@ export function UserGroupManager({
         selectedMembers,
         { role: memberRole, isLead: memberIsLead }
       );
-      
+
       toast.success(`${result.assignedCount} users assigned successfully!`);
       setSelectedMembers([]);
       await loadGroupMembers(selectedGroup.id);
@@ -476,7 +519,7 @@ export function UserGroupManager({
   // Remove user from group
   const handleRemoveUser = async (userId: string) => {
     if (!selectedGroup) return;
-    
+
     try {
       setLoading(true);
       await userService.removeUsersFromGroup(selectedGroup.id, [userId]);
@@ -495,7 +538,7 @@ export function UserGroupManager({
   // Toggle group status
   const handleToggleStatus = async () => {
     if (!selectedGroup) return;
-    
+
     try {
       setLoading(true);
       if (selectedGroup.isActive) {
@@ -541,18 +584,18 @@ export function UserGroupManager({
   };
 
   // Get color class
-  const getColorClass = (color?: string) => {
+  const getColorClass = (color?: string | null) => {
     return color || 'bg-blue-500';
   };
 
   // Get icon component
-  const getIconComponent = (iconName?: string) => {
+  const getIconComponent = (iconName?: string | null) => {
     const icon = GROUP_ICONS.find(i => i.name === iconName);
     return icon?.component || <UsersRound className="w-5 h-5" />;
   };
 
   // Get business unit name
-  const getBusinessUnitName = (businessUnitId?: string) => {
+  const getBusinessUnitName = (businessUnitId?: string | null) => {
     if (!businessUnitId) return null;
     const bu = businessUnits.find(b => b.id === businessUnitId);
     return bu ? `${bu.name} (${bu.code})` : null;
@@ -583,7 +626,7 @@ export function UserGroupManager({
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 flex-wrap">
           {!isReadOnly && (
             <button
@@ -616,7 +659,7 @@ export function UserGroupManager({
             className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
           />
         </div>
-        
+
         <div className="flex items-center gap-2 flex-wrap">
           <select
             value={sortBy}
@@ -627,20 +670,20 @@ export function UserGroupManager({
             <option value="members">Sort by Members</option>
             <option value="created">Sort by Created</option>
           </select>
-          
+
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
           >
             {sortOrder === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />}
           </button>
-          
+
           <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode('grid')}
               className={`p-2 transition-colors ${
-                viewMode === 'grid' 
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' 
+                viewMode === 'grid'
+                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
                   : 'hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
             >
@@ -649,8 +692,8 @@ export function UserGroupManager({
             <button
               onClick={() => setViewMode('list')}
               className={`p-2 transition-colors ${
-                viewMode === 'list' 
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' 
+                viewMode === 'list'
+                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
                   : 'hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
             >
@@ -717,7 +760,7 @@ export function UserGroupManager({
                   {group.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              
+
               <div className="mt-3 flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                 <span className="flex items-center gap-1">
                   <UsersRound className="w-4 h-4" />
@@ -734,7 +777,7 @@ export function UserGroupManager({
                   </span>
                 )}
               </div>
-              
+
               {group.permissions && group.permissions.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {group.permissions.slice(0, 3).map((perm, idx) => (
@@ -749,7 +792,7 @@ export function UserGroupManager({
                   )}
                 </div>
               )}
-              
+
               {!isReadOnly && (
                 <div className="mt-3 flex items-center gap-2 pt-3 border-t border-gray-200 dark:border-gray-700 flex-wrap">
                   <button
@@ -903,7 +946,7 @@ export function UserGroupManager({
         </div>
       )}
 
-      {/* Create Group Modal - Keep existing modal code */}
+      {/* Create Group Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
@@ -919,7 +962,7 @@ export function UserGroupManager({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <form onSubmit={handleCreateGroup} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -934,20 +977,20 @@ export function UserGroupManager({
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Description
                 </label>
                 <textarea
-                  value={formData.description}
+                  value={formData.description || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Enter group description"
                   rows={2}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Business Unit
@@ -971,7 +1014,7 @@ export function UserGroupManager({
                   Assign a business unit to this group for organizational purposes
                 </p>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -989,7 +1032,7 @@ export function UserGroupManager({
                     ))}
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Color
@@ -1009,7 +1052,7 @@ export function UserGroupManager({
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
@@ -1048,7 +1091,7 @@ export function UserGroupManager({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <form onSubmit={handleUpdateGroup} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1063,20 +1106,20 @@ export function UserGroupManager({
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Description
                 </label>
                 <textarea
-                  value={formData.description}
+                  value={formData.description || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Enter group description"
                   rows={2}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Business Unit
@@ -1097,7 +1140,7 @@ export function UserGroupManager({
                   </select>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -1115,7 +1158,7 @@ export function UserGroupManager({
                     ))}
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Color
@@ -1135,7 +1178,7 @@ export function UserGroupManager({
                   </div>
                 </div>
               </div>
-              
+
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                   <input
@@ -1147,7 +1190,7 @@ export function UserGroupManager({
                   Active
                 </label>
               </div>
-              
+
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
@@ -1186,7 +1229,7 @@ export function UserGroupManager({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="space-y-6">
               {/* Add Members */}
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
@@ -1225,11 +1268,11 @@ export function UserGroupManager({
                     </label>
                   </div>
                 </div>
-                
+
                 <div className="mt-3">
                   <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800">
                     {availableUsers
-                      .filter(u => 
+                      .filter(u =>
                         !selectedGroup.members?.some(m => m.userId === u.id) &&
                         (u.email.toLowerCase().includes(memberSearch.toLowerCase()) ||
                          u.firstName.toLowerCase().includes(memberSearch.toLowerCase()) ||
@@ -1240,8 +1283,8 @@ export function UserGroupManager({
                         <button
                           key={user.id}
                           onClick={() => {
-                            setSelectedMembers(prev => 
-                              prev.includes(user.id) 
+                            setSelectedMembers(prev =>
+                              prev.includes(user.id)
                                 ? prev.filter(id => id !== user.id)
                                 : [...prev, user.id]
                             );
@@ -1269,7 +1312,7 @@ export function UserGroupManager({
                   )}
                 </div>
               </div>
-              
+
               {/* Current Members */}
               <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
@@ -1320,7 +1363,7 @@ export function UserGroupManager({
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center justify-end gap-2 pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setShowMembersModal(false)}
@@ -1345,14 +1388,14 @@ export function UserGroupManager({
                 Delete Group
               </h3>
             </div>
-            
+
             <p className="text-gray-600 dark:text-gray-300 mb-2">
               Are you sure you want to delete <strong>{selectedGroup.name}</strong>?
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               This action cannot be undone. All members will be removed from this group.
             </p>
-            
+
             <div className="flex items-center justify-end gap-2">
               <button
                 onClick={() => setShowDeleteConfirm(false)}

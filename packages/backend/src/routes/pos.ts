@@ -10,6 +10,45 @@ const router = Router();
 // All POS routes require authentication
 router.use(requireAuth);
 
+// ⚠️ ORDERING RULES FOR THIS FILE:
+//   1. All static GET routes BEFORE parameterized GET routes.
+//   2. All static POST/PUT/DELETE routes BEFORE `/:id` variants.
+// Violating these will cause `/products/search` to match `/products/:id`,
+// `/cart/details` to match nothing useful, etc.
+//
+// ─────────────────────────────────────────────────────────────────
+//  IDEMPOTENCY CONTRACT
+// ─────────────────────────────────────────────────────────────────
+//  The only route on this router that creates a sale — and therefore
+//  the only one that supports idempotency — is:
+//
+//      POST /api/pos/checkout
+//
+//  It honors an `Idempotency-Key` HTTP header (or an `idempotencyKey`
+//  body field as a fallback). Sending the same key twice within any
+//  time window returns the original sale — no duplicate row, no
+//  double inventory decrement, no double loyalty award.
+//
+//  Related routers that expose the same contract:
+//      POST /api/sales               (saleController.createSale)
+//      POST /api/sales/checkout      (saleController.createSaleFromCart)
+//      POST /api/sales/pos/checkout  (posController.checkout)  ← this one
+//
+//  Logic lives in:
+//      • PosController.getIdempotencyKey
+//      • SaleController.getIdempotencyKey
+//      • SaleService.findSaleByIdempotencyKey / withIdempotency
+//      • sales.idempotencyKey (nullable, unique index)
+//
+//  Routes on this router that do NOT support idempotency (by design):
+//      * every cart-mutation and item-mutation route — they act on the
+//        current cart, and repeating them is idempotent at the cart
+//        level (setting the same discount twice is the same as once)
+//      * every GET route — reads have no side effects
+//
+//  Those do not need keys.
+// ─────────────────────────────────────────────────────────────────
+
 // ============================================
 // CART ROUTES
 // ============================================
@@ -78,6 +117,11 @@ router.delete(
 // CHECKOUT ROUTES
 // ============================================
 
+/**
+ * POST /api/pos/checkout
+ *
+ * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
+ */
 router.post(
   '/checkout',
   requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),

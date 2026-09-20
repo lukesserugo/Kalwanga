@@ -325,4 +325,32 @@ export function useToast() {
   };
 }
 
+// ============================================
+// COMPATIBILITY EXPORT
+// ============================================
+
+export type ToastCompatType = 'success' | 'error' | 'warning' | 'info';
+
+/**
+ * Legacy-compatible showToast. Drop-in replacement for the
+ * hand-rolled hook that used to live in hooks/useToast.ts.
+ */
+export const showToast = (
+  message: string,
+  type: ToastCompatType = 'info',
+  duration?: number
+): string => {
+  const options: ToastOptions = duration !== undefined ? { duration } : {};
+  switch (type) {
+    case 'success':
+      return toast.success(message, options);
+    case 'error':
+      return toast.error(message, options);
+    case 'warning':
+      return toast.warning(message, options);
+    case 'info':
+    default:
+      return toast.info(message, options);
+  }
+};
 export default toast;

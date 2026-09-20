@@ -2,19 +2,18 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { 
-  Lock, Upload, X, Image as ImageIcon, Eye, 
-  Plus, Trash2, Layers, DollarSign, Tag, Save, 
-  Loader2, AlertCircle, CheckCircle, ChevronDown,
-  Star, Heart, Truck, Shield, Clock, ArrowLeft,
-  Barcode, QrCode, Scan, RefreshCw, Copy, Check,
-  Info, AlertTriangle, Search, Link2, Unlink,
-  Package, Database, GitBranch, Printer, Download,
-  Edit, Trash, EyeOff, Settings, Wand2
+import {
+  Lock, Upload, X, Image as ImageIcon, Eye,
+  Plus, Trash2, Layers, DollarSign, Save,
+  Loader2, AlertCircle, CheckCircle, Star,
+  Barcode, QrCode, Copy, Check, Info, AlertTriangle,
+  Search, Package, Database, ArrowLeft, Download,
+  Wand2,
 } from 'lucide-react';
+
 import { productService } from '../../../../../services/productService';
 import { inventoryService } from '../../../../../services/inventoryService';
 import { categoryService } from '../../../../../services/categoryService';
@@ -26,7 +25,7 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { PermissionResource } from '../../../../../types/enums';
 
 // ============================================
-// INTERFACES
+// TYPES
 // ============================================
 
 interface Category {
@@ -60,6 +59,12 @@ interface InventoryItem {
   businessUnitId?: string;
 }
 
+/**
+ * The local editable variant shape. It mirrors only the fields the
+ * form actually manages. The backend's `createProduct` service
+ * accepts this shape directly — it does NOT require `id`, `productId`,
+ * `createdAt`, or `updatedAt`.
+ */
 interface Variant {
   id?: string;
   name: string;
@@ -94,6 +99,45 @@ interface BarcodeDisplayData {
   format: string;
 }
 
+/**
+ * The payload sent to `productService.createProductFromInventory`.
+ *
+ * ✅ This type is deliberately NOT `Partial<Product>` — the form
+ *    produces create-shaped variants (no `id`, no `productId`, no
+ *    timestamps), which `ProductVariant` requires. Using a dedicated
+ *    interface avoids the TS2345 mismatch.
+ */
+interface ProductPayload {
+  name: string;
+  sku: string;
+  description?: string;
+  unitPrice: number;
+  costPrice?: number;
+  barcode?: string;
+  categoryId?: string;
+  supplierId?: string;
+  isActive: boolean;
+  featured: boolean;
+  isDigital: boolean;
+  taxRate?: number;
+  weight?: number;
+  minStock: number;
+  maxStock?: number;
+  tags: string[];
+  images: string[];
+  notes?: string;
+  seo: {
+    title?: string;
+    description?: string;
+    slug?: string;
+    keywords: string[];
+  };
+  variants: Variant[];
+  inventoryId: string;
+  businessUnitId: string;
+  createdBy: string;
+}
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -105,6 +149,252 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MAX_IMAGES = 10;
 const MAX_VARIANTS = 10;
 const MAX_VARIANT_IMAGES = 5;
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+const PLACEHOLDER_BUSINESS_UNIT_VALUES = new Set([
+  '',
+  'default',
+  'default-business-unit',
+  'undefined',
+  'null',
+]);
+
+const EMPTY_VARIANT: Variant = {
+  name: '',
+  sku: '',
+  price: 0,
+  costPrice: 0,
+  stock: 0,
+  attributes: {},
+  images: [],
+};
+
+// ============================================
+// HELPERS
+// ============================================
+
+function isRealBusinessUnitId(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  return !PLACEHOLDER_BUSINESS_UNIT_VALUES.has(trimmed.toLowerCase());
+}
+
+function resolveBusinessUnitIdFromStorage(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  const keys = ['selectedBusinessUnitId', 'businessUnitId'];
+  for (const key of keys) {
+    try {
+      const stored = localStorage.getItem(key);
+      if (isRealBusinessUnitId(stored)) return stored;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  try {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      const fromUser =
+        user?.businessUnitId ||
+        user?.businessUnits?.[0]?.businessUnitId ||
+        user?.businessUnits?.[0]?.id;
+      if (isRealBusinessUnitId(fromUser)) return fromUser;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
+// ============================================
+// IMAGE HELPERS
+// ============================================
+
+function compressImage(
+  dataUrl: string,
+  maxWidth: number = MAX_IMAGE_DIMENSION,
+  maxHeight: number = MAX_IMAGE_DIMENSION_HEIGHT,
+  quality: number = 0.85
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = (maxWidth / width) * height;
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = (maxHeight / height) * width;
+          height = maxHeight;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let result = canvas.toDataURL('image/jpeg', quality);
+        let currentQuality = quality;
+        while (result.length > MAX_IMAGE_SIZE && currentQuality > 0.3) {
+          currentQuality -= 0.05;
+          result = canvas.toDataURL('image/jpeg', currentQuality);
+        }
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function processImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const result = reader.result as string;
+        const compressed = await compressImage(
+          result,
+          MAX_IMAGE_DIMENSION,
+          MAX_IMAGE_DIMENSION_HEIGHT,
+          0.85
+        );
+        resolve(compressed);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function validateImage(img: unknown): string | null {
+  if (typeof img !== 'string') return null;
+  if (!img || img.length === 0) return null;
+
+  if (img.startsWith('http://') || img.startsWith('https://')) return img;
+  if (!img.startsWith('data:image/')) return null;
+
+  try {
+    const parts = img.split(',');
+    if (parts.length !== 2) return null;
+    if (!parts[1] || parts[1].length < 10) return null;
+
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(parts[1])) return null;
+
+    if (img.length > MAX_IMAGE_SIZE) {
+      console.warn(
+        `⚠️ Image too large (${Math.round(img.length / 1024 / 1024)}MB), using placeholder`
+      );
+      return PLACEHOLDER_IMAGE;
+    }
+
+    return img;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================
+// SKU HELPERS
+// ============================================
+
+function generateUniqueSKU(productName?: string, variantName?: string): string {
+  const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
+  const random = Math.random().toString(36).substring(2, 5).toUpperCase();
+
+  if (variantName) {
+    const basePrefix =
+      (productName || 'PRD')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'PRD';
+    const variantPrefix =
+      variantName
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'VAR';
+    return `${basePrefix}-${variantPrefix}-${timestamp}-${random}`;
+  }
+
+  const prefix =
+    (productName || 'PRD')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 3)
+      .toUpperCase() || 'PRD';
+  return `${prefix}-${timestamp}-${random}`;
+}
+
+// ============================================
+// INVENTORY UNWRAPPER
+// ============================================
+
+function extractInventoryArray(response: any): any[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+
+  const r = response as any;
+  if (Array.isArray(r.items)) return r.items;
+  if (Array.isArray(r.inventory)) return r.inventory;
+  if (Array.isArray(r.data)) return r.data;
+  if (r.data && Array.isArray(r.data.items)) return r.data.items;
+  if (r.data && Array.isArray(r.data.inventory)) return r.data.inventory;
+  if (r.data && Array.isArray(r.data.data)) return r.data.data;
+
+  return [];
+}
+
+function mapToInventoryItem(raw: any, fallbackBU: string): InventoryItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const id = raw.id || raw.inventoryId;
+  if (!id) return null;
+
+  const quantity = raw.quantity ?? raw.stock ?? 0;
+  const reserved = raw.reserved ?? 0;
+
+  return {
+    id,
+    name: raw.name || raw.product?.name || 'Unnamed',
+    sku: raw.sku || raw.product?.sku || 'N/A',
+    barcode: raw.barcode || raw.product?.barcode || null,
+    quantity,
+    reserved,
+    available: quantity - reserved,
+    location: raw.location || 'Warehouse',
+    unitPrice: raw.unitPrice || raw.price || raw.product?.unitPrice || 0,
+    costPrice: raw.costPrice || raw.product?.costPrice || 0,
+    category: raw.category || raw.product?.category?.name || 'Uncategorized',
+    categoryId: raw.categoryId || raw.product?.categoryId || null,
+    supplier: raw.supplier || raw.product?.supplier?.name || null,
+    supplierId: raw.supplierId || raw.product?.supplierId || null,
+    reorderPoint: raw.reorderPoint || raw.minStock || 5,
+    hasProduct: !!raw.productId || !!raw.hasProduct || !!raw.product,
+    productId: raw.productId || raw.product?.id || null,
+    businessUnitId: raw.businessUnitId || fallbackBU,
+  };
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -112,10 +402,11 @@ const MAX_VARIANT_IMAGES = 5;
 
 export default function AddProductPage() {
   const router = useRouter();
+  const params = useParams<{ id?: string }>();
   const { user } = useAuth();
   const { canCreate, canManage, isLoading: permissionLoading } = usePermission();
-  
-  // State
+
+  // ── State ──────────────────────────────────
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -128,23 +419,15 @@ export default function AddProductPage() {
   const [activeTab, setActiveTab] = useState('basic');
   const [showVariantForm, setShowVariantForm] = useState(false);
   const [variants, setVariants] = useState<Variant[]>([]);
-  const [newVariant, setNewVariant] = useState<Variant>({
-    name: '',
-    sku: '',
-    price: 0,
-    costPrice: 0,
-    stock: 0,
-    attributes: {},
-    images: [],
-  });
+  const [newVariant, setNewVariant] = useState<Variant>(EMPTY_VARIANT);
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
-  
-  // Edit mode state
+
+  // ── Edit mode ──────────────────────────────
   const [isEditMode, setIsEditMode] = useState(false);
   const [productId, setProductId] = useState<string | null>(null);
-  
-  // Barcode/QR Code State
+
+  // ── Barcode ────────────────────────────────
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -154,23 +437,23 @@ export default function AddProductPage() {
   const [barcodePrefix, setBarcodePrefix] = useState('PRD');
   const [barcodeLength, setBarcodeLength] = useState(12);
   const [includeQR, setIncludeQR] = useState(true);
-  
-  // Selected inventory for linking
+
+  // ── Inventory selection ────────────────────
   const [selectedInventory, setSelectedInventory] = useState<InventoryItem | null>(null);
   const [searchInventoryQuery, setSearchInventoryQuery] = useState('');
-  const [showInventoryPicker, setShowInventoryPicker] = useState(true);
+  const [showInventoryPicker, setShowInventoryPicker] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [businessUnitId, setBusinessUnitId] = useState<string>('');
   const [inventoryLoadError, setInventoryLoadError] = useState<string | null>(null);
-  
-  // Auto SKU State
+
+  // ── Auto SKU ───────────────────────────────
   const [autoGenerateSKU, setAutoGenerateSKU] = useState(true);
-  
-  // Image state
+
+  // ── Image upload ───────────────────────────
   const [uploadingImages, setUploadingImages] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
-  
-  // Form data
+
+  // ── Form ───────────────────────────────────
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -201,249 +484,254 @@ export default function AddProductPage() {
   const [newTag, setNewTag] = useState('');
   const [newSeoKeyword, setNewSeoKeyword] = useState('');
 
-  const canCreateProducts = canCreate(PermissionResource.PRODUCT) || canManage(PermissionResource.PRODUCT);
+  const canCreateProducts =
+    canCreate(PermissionResource.PRODUCT) ||
+    canManage(PermissionResource.PRODUCT);
+
+  const autoSelectedRef = useRef(false);
 
   // ============================================
-  // IMAGE COMPRESSION FUNCTIONS
+  // FETCHERS
   // ============================================
 
-  const compressImage = useCallback((
-    dataUrl: string,
-    maxWidth: number = MAX_IMAGE_DIMENSION,
-    maxHeight: number = MAX_IMAGE_DIMENSION_HEIGHT,
-    quality: number = 0.85
-  ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
-          if (width > maxWidth) {
-            height = (maxWidth / width) * height;
-            width = maxWidth;
-          }
-          if (height > maxHeight) {
-            width = (maxHeight / height) * width;
-            height = maxHeight;
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            let result = canvas.toDataURL('image/jpeg', quality);
-            
-            let currentQuality = quality;
-            while (result.length > MAX_IMAGE_SIZE && currentQuality > 0.3) {
-              currentQuality -= 0.05;
-              result = canvas.toDataURL('image/jpeg', currentQuality);
-            }
-            
-            resolve(result);
-          } else {
-            reject(new Error('Could not get canvas context'));
-          }
-        } catch (error) {
-          reject(error);
-        }
-      };
-      img.onerror = reject;
-      img.src = dataUrl;
-    });
+  const fetchCategories = useCallback(async () => {
+    try {
+      const data = await categoryService.getAllCategories({
+        limit: 100,
+        isActive: true,
+      });
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      setCategories([]);
+    }
   }, []);
 
-  const processImageFile = useCallback(async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
+  const fetchSuppliers = useCallback(async () => {
+    try {
+      const data = await supplierService.getAllSuppliers({
+        limit: 100,
+        isActive: true,
+      });
+      setSuppliers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching suppliers:', error);
+      setSuppliers([]);
+    }
+  }, []);
+
+  const fetchInventoryItems = useCallback(
+    async (search?: string) => {
+      try {
+        setInventoryLoading(true);
+        setInventoryLoadError(null);
+
+        // ✅ Read the BU from localStorage — validated against placeholders.
+        const buId = resolveBusinessUnitIdFromStorage() || 'default';
+
+        const params: Record<string, any> = {
+          page: 1,
+          limit: 100,
+          businessUnitId: buId,
+        };
+        if (search) params.search = search;
+
+        let rawItems: any[] = [];
+
         try {
-          const result = reader.result as string;
-          let compressed = await compressImage(result, MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION_HEIGHT, 0.85);
-          
-          let quality = 0.85;
-          while (compressed.length > MAX_IMAGE_SIZE && quality > 0.3) {
-            quality -= 0.05;
-            compressed = await compressImage(result, MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION_HEIGHT, quality);
-          }
-          
-          resolve(compressed);
-        } catch (error) {
-          reject(error);
+          const response = await inventoryService.getInventoryItems(params);
+          rawItems = extractInventoryArray(response);
+        } catch (err) {
+          console.warn('getInventoryItems failed:', err);
         }
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }, [compressImage]);
 
-  // ============================================
-  // SKU GENERATION FUNCTIONS
-  // ============================================
+        if (rawItems.length === 0) {
+          try {
+            const response = await inventoryService.getAllInventory(buId);
+            rawItems = extractInventoryArray(response);
+          } catch (err) {
+            console.warn('getAllInventory failed:', err);
+          }
+        }
 
-  const generateSKU = useCallback((productName?: string, variantName?: string) => {
-    const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
-    const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-    
-    if (variantName) {
-      const basePrefix = (productName || formData.name || 'PRD')
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .slice(0, 3)
-        .toUpperCase() || 'PRD';
-      const variantPrefix = variantName
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .slice(0, 3)
-        .toUpperCase() || 'VAR';
-      return `${basePrefix}-${variantPrefix}-${timestamp}-${random}`;
-    }
-    
-    const prefix = (productName || formData.name || 'PRD')
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 3)
-      .toUpperCase() || 'PRD';
-    return `${prefix}-${timestamp}-${random}`;
-  }, [formData.name]);
+        if (rawItems.length === 0) {
+          try {
+            const response = await inventoryService.getInventory(params);
+            rawItems = extractInventoryArray(response);
+          } catch (err) {
+            console.warn('getInventory failed:', err);
+          }
+        }
 
-  const handleNameChange = useCallback((value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      name: value,
-      sku: autoGenerateSKU && value.trim().length >= 2 
-        ? generateSKU(value) 
-        : prev.sku
-    }));
-    
-    if (touched.name) {
-      const error = validateField('name', value);
-      setErrors(prev => ({ ...prev, name: error }));
-    }
-  }, [autoGenerateSKU, generateSKU, touched.name]);
+        const mapped = rawItems
+          .map((r) => mapToInventoryItem(r, buId))
+          .filter((x): x is InventoryItem => x !== null);
 
-  const generateVariantSKU = useCallback((variantName: string) => {
-    return generateSKU(formData.name || 'PRD', variantName);
-  }, [formData.name, generateSKU]);
+        setInventoryItems(mapped);
+        setInventoryLoadError(
+          mapped.length === 0
+            ? 'No inventory items found. Create one first, then return here.'
+            : null
+        );
 
-  const handleVariantNameChange = useCallback((value: string) => {
-    setNewVariant(prev => ({
-      ...prev,
-      name: value,
-      sku: value.trim().length >= 2 ? generateVariantSKU(value) : prev.sku
-    }));
-  }, [generateVariantSKU]);
+        if (
+          !autoSelectedRef.current &&
+          !selectedInventory &&
+          !isEditMode &&
+          mapped.length > 0
+        ) {
+          autoSelectedRef.current = true;
+          const first = mapped[0];
+          setSelectedInventory(first);
+          setFormData((prev) => ({
+            ...prev,
+            inventoryId: first.id,
+            name: prev.name || first.name,
+            sku: prev.sku || first.sku,
+            unitPrice: prev.unitPrice || first.unitPrice?.toString() || '',
+            costPrice: prev.costPrice || first.costPrice?.toString() || '',
+            barcode: prev.barcode || first.barcode || '',
+            categoryId: prev.categoryId || first.categoryId || '',
+            supplierId: prev.supplierId || first.supplierId || '',
+            minStock: prev.minStock || first.reorderPoint?.toString() || '5',
+          }));
+          toast.info(`Auto-selected inventory: ${first.name}`);
+        }
+      } catch (error) {
+        console.error('Error fetching inventory items:', error);
+        setInventoryItems([]);
+        setInventoryLoadError('Failed to load inventory items.');
+        toast.error('Failed to load inventory items');
+      } finally {
+        setInventoryLoading(false);
+      }
+    },
+    [isEditMode, selectedInventory]
+  );
 
-  // ============================================
-  // LOAD PRODUCT FOR EDIT
-  // ============================================
-
-  const loadProductForEdit = useCallback(async (id: string) => {
+  const fetchData = useCallback(async () => {
     try {
       setLoadingData(true);
-      const product = await productService.getProductById(id);
-      
-      if (!product || !product.id) {
-        toast.error('Product not found');
-        router.push('/admin/catalog');
-        return;
-      }
-      
-      // Find the linked inventory
-      let linkedInventory = null;
-      if (product.inventoryId) {
-        try {
-          const inv = await inventoryService.getInventoryItem(product.inventoryId);
-          if (inv) {
-            linkedInventory = {
-              id: inv.id,
-              name: inv.name || inv.product?.name || 'Unknown',
-              sku: inv.sku || inv.product?.sku || 'N/A',
-              barcode: inv.barcode || inv.product?.barcode || null,
-              quantity: inv.quantity || 0,
-              reserved: inv.reserved || 0,
-              available: (inv.quantity || 0) - (inv.reserved || 0),
-              location: inv.location || 'Warehouse',
-              unitPrice: inv.unitPrice || inv.product?.unitPrice || 0,
-              costPrice: inv.costPrice || inv.product?.costPrice || 0,
-              category: inv.category || inv.product?.category?.name || 'Uncategorized',
-              categoryId: inv.categoryId || inv.product?.categoryId || null,
-              supplier: inv.supplier || inv.product?.supplier?.name || null,
-              supplierId: inv.supplierId || inv.product?.supplierId || null,
-              reorderPoint: inv.reorderPoint || 5,
-              hasProduct: true,
-              productId: product.id,
-              businessUnitId: inv.businessUnitId || '',
-            };
-            setSelectedInventory(linkedInventory);
-          }
-        } catch (e) {
-          console.warn('Could not load linked inventory:', e);
-        }
-      }
-      
-      setFormData({
-        name: product.name || '',
-        sku: product.sku || '',
-        description: product.description || '',
-        unitPrice: product.unitPrice?.toString() || '',
-        costPrice: product.costPrice?.toString() || '',
-        barcode: product.barcode || '',
-        categoryId: product.categoryId || '',
-        supplierId: product.supplierId || '',
-        isActive: product.isActive !== false,
-        featured: product.featured || false,
-        isDigital: product.isDigital || false,
-        taxRate: product.taxRate?.toString() || '',
-        weight: product.weight?.toString() || '',
-        minStock: product.minStock?.toString() || '5',
-        maxStock: product.maxStock?.toString() || '',
-        tags: product.tags || [],
-        images: product.images || [],
-        notes: product.notes || '',
-        seo: {
-          title: product.seo?.title || '',
-          description: product.seo?.description || '',
-          slug: product.seo?.slug || '',
-          keywords: product.seo?.keywords || [],
-        },
-        inventoryId: product.inventoryId || '',
-      });
-      
-      if (product.images && product.images.length > 0) {
-        setPreviewImage(product.images[0]);
-      }
-      
-      if (product.variants) {
-        setVariants(product.variants.map((v: any) => ({
-          id: v.id,
-          name: v.name,
-          sku: v.sku,
-          price: v.price,
-          costPrice: v.costPrice || 0,
-          stock: v.stock || 0,
-          attributes: v.attributes || {},
-          isActive: v.isActive !== false,
-          barcode: v.barcode || undefined,
-          images: v.images || [],
-        })));
-      }
-    } catch (error: any) {
-      console.error('Failed to load product:', error);
-      if (error?.response?.status === 404) {
-        toast.error('Product not found');
-        router.push('/admin/catalog');
-      } else {
-        toast.error('Failed to load product');
-      }
+
+      // ✅ Resolve the BU from the canonical storage key chain.
+      const buId = resolveBusinessUnitIdFromStorage() || '';
+      setBusinessUnitId(buId);
+
+      await Promise.all([
+        fetchCategories(),
+        fetchSuppliers(),
+        fetchInventoryItems(),
+      ]);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to load form data');
     } finally {
       setLoadingData(false);
     }
-  }, [router]);
+  }, [fetchCategories, fetchSuppliers, fetchInventoryItems]);
+
+  // ============================================
+  // EDIT MODE — load product
+  // ============================================
+
+  const loadProductForEdit = useCallback(
+    async (id: string) => {
+      try {
+        setLoadingData(true);
+        const product = await productService.getProductById(id);
+
+        if (!product || !product.id) {
+          toast.error('Product not found');
+          router.push('/admin/catalog');
+          return;
+        }
+
+        if (product.inventoryId) {
+          try {
+            const inv = await inventoryService.getInventoryItem(
+              product.inventoryId
+            );
+            if (inv) {
+              const mapped = mapToInventoryItem(
+                { ...inv, productId: product.id },
+                product.businessUnitId || ''
+              );
+              if (mapped) {
+                setSelectedInventory(mapped);
+                autoSelectedRef.current = true;
+              }
+            }
+          } catch (e) {
+            console.warn('Could not load linked inventory:', e);
+          }
+        }
+
+        setFormData({
+          name: product.name || '',
+          sku: product.sku || '',
+          description: product.description || '',
+          unitPrice: product.unitPrice?.toString() || '',
+          costPrice: product.costPrice?.toString() || '',
+          barcode: product.barcode || '',
+          categoryId: product.categoryId || '',
+          supplierId: product.supplierId || '',
+          isActive: product.isActive !== false,
+          featured: product.featured || false,
+          isDigital: product.isDigital || false,
+          taxRate: product.taxRate?.toString() || '',
+          weight: product.weight?.toString() || '',
+          minStock: product.minStock?.toString() || '5',
+          maxStock: product.maxStock?.toString() || '',
+          tags: Array.isArray(product.tags) ? product.tags : [],
+          images: Array.isArray(product.images) ? product.images : [],
+          notes: product.notes || '',
+          seo: {
+            title: product.seo?.title || '',
+            description: product.seo?.description || '',
+            slug: product.seo?.slug || '',
+            keywords: Array.isArray(product.seo?.keywords)
+              ? product.seo!.keywords
+              : [],
+          },
+          inventoryId: product.inventoryId || '',
+        });
+
+        if (product.images && product.images.length > 0) {
+          setPreviewImage(product.images[0]);
+        }
+
+        if (product.variants) {
+          setVariants(
+            product.variants.map((v: any) => ({
+              id: v.id,
+              name: v.name,
+              sku: v.sku,
+              price: v.price,
+              costPrice: v.costPrice || 0,
+              stock: v.stock || 0,
+              attributes: v.attributes || {},
+              isActive: v.isActive !== false,
+              barcode: v.barcode || undefined,
+              images: Array.isArray(v.images) ? v.images : [],
+            }))
+          );
+        }
+
+        setAutoGenerateSKU(false);
+      } catch (error: any) {
+        console.error('Failed to load product:', error);
+        if (error?.response?.status === 404) {
+          toast.error('Product not found');
+          router.push('/admin/catalog');
+        } else {
+          toast.error('Failed to load product');
+        }
+      } finally {
+        setLoadingData(false);
+      }
+    },
+    [router]
+  );
 
   // ============================================
   // EFFECTS
@@ -454,453 +742,235 @@ export default function AddProductPage() {
   }, []);
 
   useEffect(() => {
-    if (isClient && canCreateProducts) {
-      const path = window.location.pathname;
-      if (path.includes('/edit/')) {
-        const id = path.split('/edit/')[1];
-        if (id && id !== 'add') {
-          setProductId(id);
-          setIsEditMode(true);
-          loadProductForEdit(id);
-          return;
-        }
-      }
-      fetchData();
-    } else if (isClient && !canCreateProducts) {
+    if (!isClient) return;
+    if (!canCreateProducts) {
       setLoadingData(false);
+      return;
     }
+
+    const idFromParams = params?.id;
+    const idFromPath = (() => {
+      const path = window.location.pathname;
+      return path.includes('/edit/') ? path.split('/edit/')[1] : undefined;
+    })();
+    const candidateId = idFromParams || idFromPath;
+
+    if (candidateId && candidateId !== 'add' && candidateId !== 'new') {
+      setProductId(candidateId);
+      setIsEditMode(true);
+      loadProductForEdit(candidateId);
+      return;
+    }
+
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, canCreateProducts]);
 
   // ============================================
-  // DATA FETCHING - ✅ FIXED with proper type handling
+  // SKU GENERATION
   // ============================================
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoadingData(true);
-      
-      const buId = localStorage.getItem('businessUnitId') || 'default';
-      setBusinessUnitId(buId);
-      
-      await Promise.all([
-        fetchCategories(),
-        fetchSuppliers(),
-        fetchInventoryItems(),
-      ]);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to load form data');
-    } finally {
-      if (!isEditMode) {
-        setLoadingData(false);
-      }
-    }
-  }, [isEditMode]);
+  const handleNameChange = useCallback(
+    (value: string) => {
+      setFormData((prev) => ({
+        ...prev,
+        name: value,
+        sku:
+          autoGenerateSKU && value.trim().length >= 2
+            ? generateUniqueSKU(value)
+            : prev.sku,
+      }));
 
-  const fetchCategories = useCallback(async () => {
-    try {
-      const data = await categoryService.getAllCategories({ limit: 100, isActive: true });
-      setCategories(data || []);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      setCategories([]);
-    }
-  }, []);
+      if (touched.name) {
+        const error = validateField('name', value);
+        setErrors((prev) => ({ ...prev, name: error }));
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [autoGenerateSKU, touched.name]
+  );
 
-  const fetchSuppliers = useCallback(async () => {
-    try {
-      const data = await supplierService.getAllSuppliers({ limit: 100, isActive: true });
-      setSuppliers(data || []);
-    } catch (error) {
-      console.error('Error fetching suppliers:', error);
-      setSuppliers([]);
-    }
-  }, []);
-
-  // ✅ FIXED: Properly handle all response types without TypeScript errors
-  const fetchInventoryItems = useCallback(async (search?: string) => {
-    try {
-      setInventoryLoading(true);
-      setInventoryLoadError(null);
-      
-      const buId = localStorage.getItem('businessUnitId') || 'default';
-      
-      const params: any = { 
-        page: 1, 
-        limit: 100,
-        businessUnitId: buId,
-      };
-      if (search) params.search = search;
-      
-      console.log('📤 Fetching inventory items with params:', params);
-      
-      let rawItems: any[] = [];
-      let extractedItems: any[] = [];
-      
-      // ✅ FIXED: Try getInventoryItems first - using type-safe access
-      try {
-        const response = await inventoryService.getInventoryItems(params);
-        console.log('📥 getInventoryItems response type:', typeof response);
-        console.log('📥 getInventoryItems response keys:', response ? Object.keys(response) : 'null');
-        
-        if (response) {
-          // Type-safe extraction - check each property existence
-          // ✅ FIXED: Use 'as any' to safely access properties that TypeScript doesn't know about
-          const responseAny = response as any;
-          
-          // Check for items array
-          if (responseAny.items && Array.isArray(responseAny.items)) {
-            rawItems = responseAny.items;
-            console.log(`✅ Found ${rawItems.length} items from response.items`);
-          }
-          // Check for inventory array
-          else if (responseAny.inventory && Array.isArray(responseAny.inventory)) {
-            rawItems = responseAny.inventory;
-            console.log(`✅ Found ${rawItems.length} items from response.inventory`);
-          }
-          // Check for data array
-          else if (responseAny.data && Array.isArray(responseAny.data)) {
-            rawItems = responseAny.data;
-            console.log(`✅ Found ${rawItems.length} items from response.data`);
-          }
-          // Response is the array itself
-          else if (Array.isArray(response)) {
-            rawItems = response;
-            console.log(`✅ Found ${rawItems.length} items from response array`);
-          }
-        }
-        
-        if (rawItems.length > 0) {
-          extractedItems = rawItems;
-          console.log(`✅ Found ${extractedItems.length} inventory items from getInventoryItems`);
-        }
-      } catch (e) {
-        console.warn('❌ getInventoryItems failed:', e);
-      }
-      
-      // ✅ FIXED: Try getAllInventory as fallback
-      if (extractedItems.length === 0) {
-        try {
-          console.log('🔄 Trying getAllInventory as fallback...');
-          const response = await inventoryService.getAllInventory(buId);
-          console.log('📥 getAllInventory response type:', typeof response);
-          console.log('📥 getAllInventory response keys:', response ? Object.keys(response) : 'null');
-          
-          if (response) {
-            const responseAny = response as any;
-            
-            // Check for items array
-            if (responseAny.items && Array.isArray(responseAny.items)) {
-              rawItems = responseAny.items;
-              console.log(`✅ Found ${rawItems.length} items from response.items`);
-            }
-            // Check for inventory array
-            else if (responseAny.inventory && Array.isArray(responseAny.inventory)) {
-              rawItems = responseAny.inventory;
-              console.log(`✅ Found ${rawItems.length} items from response.inventory`);
-            }
-            // Check for data array
-            else if (responseAny.data && Array.isArray(responseAny.data)) {
-              rawItems = responseAny.data;
-              console.log(`✅ Found ${rawItems.length} items from response.data`);
-            }
-            // Response is the array itself
-            else if (Array.isArray(response)) {
-              rawItems = response;
-              console.log(`✅ Found ${rawItems.length} items from response array`);
-            }
-          }
-          
-          if (rawItems.length > 0) {
-            extractedItems = rawItems;
-            console.log(`✅ Found ${extractedItems.length} inventory items from getAllInventory`);
-          }
-        } catch (e) {
-          console.warn('❌ getAllInventory failed:', e);
-        }
-      }
-      
-      // ✅ FIXED: Try getInventory as last resort
-      if (extractedItems.length === 0) {
-        try {
-          console.log('🔄 Trying getInventory as fallback...');
-          const response = await inventoryService.getInventory({ 
-            page: 1, 
-            limit: 100,
-            businessUnitId: buId 
-          });
-          console.log('📥 getInventory response type:', typeof response);
-          console.log('📥 getInventory response keys:', response ? Object.keys(response) : 'null');
-          
-          if (response) {
-            const responseAny = response as any;
-            
-            // Check for inventory array
-            if (responseAny.inventory && Array.isArray(responseAny.inventory)) {
-              rawItems = responseAny.inventory;
-              console.log(`✅ Found ${rawItems.length} items from response.inventory`);
-            }
-            // Check for items array
-            else if (responseAny.items && Array.isArray(responseAny.items)) {
-              rawItems = responseAny.items;
-              console.log(`✅ Found ${rawItems.length} items from response.items`);
-            }
-            // Check for data array
-            else if (responseAny.data && Array.isArray(responseAny.data)) {
-              rawItems = responseAny.data;
-              console.log(`✅ Found ${rawItems.length} items from response.data`);
-            }
-            // Response is the array itself
-            else if (Array.isArray(response)) {
-              rawItems = response;
-              console.log(`✅ Found ${rawItems.length} items from response array`);
-            }
-          }
-          
-          if (rawItems.length > 0) {
-            extractedItems = rawItems;
-            console.log(`✅ Found ${extractedItems.length} inventory items from getInventory`);
-          }
-        } catch (e) {
-          console.warn('❌ getInventory failed:', e);
-        }
-      }
-      
-      // ✅ FIXED: Ensure items is always an array before mapping
-      if (!extractedItems || !Array.isArray(extractedItems) || extractedItems.length === 0) {
-        console.log('⚠️ No inventory items found');
-        setInventoryItems([]);
-        setInventoryLoadError('No inventory items found. Please create an inventory item first.');
-        setInventoryLoading(false);
-        return;
-      }
-      
-      // ✅ FIXED: Safely map items with null checks
-      const mappedItems: InventoryItem[] = extractedItems
-        .filter((item: any) => item && typeof item === 'object')
-        .map((item: any) => ({
-          id: item.id || '',
-          name: item.name || item.product?.name || 'Unnamed',
-          sku: item.sku || item.product?.sku || 'N/A',
-          barcode: item.barcode || item.product?.barcode || null,
-          quantity: item.quantity || item.stock || 0,
-          reserved: item.reserved || 0,
-          available: (item.quantity || item.stock || 0) - (item.reserved || 0),
-          location: item.location || 'Warehouse',
-          unitPrice: item.unitPrice || item.price || item.product?.unitPrice || 0,
-          costPrice: item.costPrice || item.product?.costPrice || 0,
-          category: item.category || item.product?.category?.name || 'Uncategorized',
-          categoryId: item.categoryId || item.product?.categoryId || null,
-          supplier: item.supplier || item.product?.supplier?.name || null,
-          supplierId: item.supplierId || item.product?.supplierId || null,
-          reorderPoint: item.reorderPoint || item.minStock || 5,
-          hasProduct: !!item.productId || !!item.hasProduct || !!item.product,
-          productId: item.productId || item.product?.id || null,
-          businessUnitId: item.businessUnitId || buId,
-        }))
-        .filter((item: InventoryItem) => item.id && item.id !== '');
-      
-      console.log(`✅ Mapped ${mappedItems.length} inventory items`);
-      setInventoryItems(mappedItems);
-      setInventoryLoadError(null);
-      
-      // Auto-select first inventory item if none selected and not in edit mode
-      if (mappedItems.length > 0 && !selectedInventory && !isEditMode) {
-        const firstItem = mappedItems[0];
-        setSelectedInventory(firstItem);
-        setFormData(prev => ({
-          ...prev,
-          inventoryId: firstItem.id,
-          name: prev.name || firstItem.name,
-          sku: prev.sku || firstItem.sku,
-          unitPrice: prev.unitPrice || firstItem.unitPrice?.toString() || '',
-          costPrice: prev.costPrice || firstItem.costPrice?.toString() || '',
-          barcode: prev.barcode || firstItem.barcode || '',
-          categoryId: prev.categoryId || firstItem.categoryId || '',
-          supplierId: prev.supplierId || firstItem.supplierId || '',
-          minStock: prev.minStock || firstItem.reorderPoint?.toString() || '5',
-        }));
-        toast.info(`Auto-selected inventory: ${firstItem.name}`);
-      }
-      
-    } catch (error) {
-      console.error('❌ Error fetching inventory items:', error);
-      setInventoryItems([]);
-      setInventoryLoadError('Failed to load inventory items. Please refresh and try again.');
-      toast.error('Failed to load inventory items');
-    } finally {
-      setInventoryLoading(false);
-    }
-  }, [selectedInventory, isEditMode]);
+  const handleVariantNameChange = useCallback((value: string) => {
+    setNewVariant((prev) => ({
+      ...prev,
+      name: value,
+      sku:
+        value.trim().length >= 2
+          ? generateUniqueSKU(formData.name || 'PRD', value)
+          : prev.sku,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.name]);
 
   // ============================================
   // IMAGE UPLOAD
   // ============================================
 
-  const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-    if (formData.images.length >= MAX_IMAGES) {
-      toast.error(`Maximum ${MAX_IMAGES} images allowed`);
+      if (formData.images.length >= MAX_IMAGES) {
+        toast.error(`Maximum ${MAX_IMAGES} images allowed`);
+        e.target.value = '';
+        return;
+      }
+
+      const validFiles: File[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) {
+          toast.error(`${file.name} is not an image file`);
+          continue;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error(`${file.name} exceeds the ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
+          continue;
+        }
+        if (formData.images.length + validFiles.length >= MAX_IMAGES) {
+          toast.warning(`Maximum ${MAX_IMAGES} images allowed, skipping remaining`);
+          break;
+        }
+        validFiles.push(file);
+      }
+
+      if (validFiles.length === 0) {
+        e.target.value = '';
+        return;
+      }
+
+      setUploadingImages(true);
+      toast.info(`Processing ${validFiles.length} image(s)...`);
+
+      const newImages: string[] = [];
+      for (const file of validFiles) {
+        try {
+          setUploadProgress((prev) => ({ ...prev, [file.name]: 0 }));
+          const compressed = await processImageFile(file);
+          newImages.push(compressed);
+          setUploadProgress((prev) => ({ ...prev, [file.name]: 100 }));
+        } catch (error) {
+          console.error('Failed to process image:', error);
+          toast.error(`Failed to process ${file.name}`);
+        }
+      }
+
+      if (newImages.length > 0) {
+        setFormData((prev) => ({
+          ...prev,
+          images: [...prev.images, ...newImages],
+        }));
+        if (!previewImage) setPreviewImage(newImages[0]);
+        toast.success(`${newImages.length} image(s) uploaded successfully`);
+      }
+
+      setUploadingImages(false);
+      setUploadProgress({});
       e.target.value = '';
-      return;
-    }
+    },
+    [formData.images.length, previewImage]
+  );
 
-    const validFiles: File[] = [];
-    
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (!file.type.startsWith('image/')) {
-        toast.error(`${file.name} is not an image file`);
-        continue;
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`${file.name} exceeds the ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
-        continue;
-      }
-      if (formData.images.length + validFiles.length >= MAX_IMAGES) {
-        toast.warning(`Maximum ${MAX_IMAGES} images allowed, skipping remaining`);
-        break;
-      }
-      validFiles.push(file);
-    }
-
-    if (validFiles.length === 0) {
-      e.target.value = '';
-      return;
-    }
-
-    setUploadingImages(true);
-    toast.info(`Processing ${validFiles.length} image(s)...`);
-
-    const newImages: string[] = [];
-    
-    for (let i = 0; i < validFiles.length; i++) {
-      const file = validFiles[i];
-      try {
-        setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
-        const compressed = await processImageFile(file);
-        newImages.push(compressed);
-        setUploadProgress(prev => ({ ...prev, [file.name]: 100 }));
-      } catch (error) {
-        console.error('Failed to process image:', error);
-        toast.error(`Failed to process ${file.name}`);
-      }
-    }
-
-    if (newImages.length > 0) {
-      setFormData(prev => ({
+  const removeImage = useCallback(
+    (index: number) => {
+      const imageToRemove = formData.images[index];
+      setFormData((prev) => ({
         ...prev,
-        images: [...prev.images, ...newImages]
+        images: prev.images.filter((_, i) => i !== index),
       }));
-      if (!previewImage) {
-        setPreviewImage(newImages[0]);
+      if (previewImage === imageToRemove) {
+        const remaining = formData.images.filter((_, i) => i !== index);
+        setPreviewImage(remaining.length > 0 ? remaining[0] : null);
       }
-      toast.success(`${newImages.length} image(s) uploaded successfully`);
-    }
+    },
+    [formData.images, previewImage]
+  );
 
-    setUploadingImages(false);
-    setUploadProgress({});
-    e.target.value = '';
-  }, [formData.images.length, previewImage, processImageFile]);
-
-  const removeImage = useCallback((index: number) => {
-    const imageToRemove = formData.images[index];
-    setFormData(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index)
-    }));
-    if (previewImage === imageToRemove) {
-      const remaining = formData.images.filter((_, i) => i !== index);
-      setPreviewImage(remaining.length > 0 ? remaining[0] : null);
-    }
-  }, [formData.images, previewImage]);
-
-  const setMainImage = useCallback((index: number) => {
-    const image = formData.images[index];
-    if (image) {
+  const setMainImage = useCallback(
+    (index: number) => {
+      const image = formData.images[index];
+      if (!image) return;
       setPreviewImage(image);
       const newImages = [...formData.images];
       const [removed] = newImages.splice(index, 1);
       newImages.unshift(removed);
-      setFormData(prev => ({
-        ...prev,
-        images: newImages
-      }));
-    }
-  }, [formData.images]);
+      setFormData((prev) => ({ ...prev, images: newImages }));
+    },
+    [formData.images]
+  );
 
   // ============================================
   // VARIANT IMAGE UPLOAD
   // ============================================
 
-  const handleVariantImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const handleVariantImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-    if ((newVariant.images?.length || 0) >= MAX_VARIANT_IMAGES) {
-      toast.error(`Maximum ${MAX_VARIANT_IMAGES} images per variant`);
+      if ((newVariant.images?.length || 0) >= MAX_VARIANT_IMAGES) {
+        toast.error(`Maximum ${MAX_VARIANT_IMAGES} images per variant`);
+        e.target.value = '';
+        return;
+      }
+
+      const validFiles: File[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) {
+          toast.error(`${file.name} is not an image file`);
+          continue;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          toast.error(`${file.name} exceeds the ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
+          continue;
+        }
+        if ((newVariant.images?.length || 0) + validFiles.length >= MAX_VARIANT_IMAGES) {
+          toast.warning(`Maximum ${MAX_VARIANT_IMAGES} images per variant, skipping remaining`);
+          break;
+        }
+        validFiles.push(file);
+      }
+
+      if (validFiles.length === 0) {
+        e.target.value = '';
+        return;
+      }
+
+      const newImages: string[] = [];
+      for (const file of validFiles) {
+        try {
+          const compressed = await processImageFile(file);
+          newImages.push(compressed);
+        } catch (error) {
+          console.error('Failed to process variant image:', error);
+          toast.error(`Failed to process ${file.name}`);
+        }
+      }
+
+      if (newImages.length > 0) {
+        setNewVariant((prev) => ({
+          ...prev,
+          images: [...(prev.images || []), ...newImages],
+        }));
+        toast.success(`${newImages.length} variant image(s) uploaded`);
+      }
+
       e.target.value = '';
-      return;
-    }
-
-    const validFiles: File[] = [];
-    
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (!file.type.startsWith('image/')) {
-        toast.error(`${file.name} is not an image file`);
-        continue;
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`${file.name} exceeds the ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
-        continue;
-      }
-      if ((newVariant.images?.length || 0) + validFiles.length >= MAX_VARIANT_IMAGES) {
-        toast.warning(`Maximum ${MAX_VARIANT_IMAGES} images per variant, skipping remaining`);
-        break;
-      }
-      validFiles.push(file);
-    }
-
-    if (validFiles.length === 0) {
-      e.target.value = '';
-      return;
-    }
-
-    const newImages: string[] = [];
-    
-    for (const file of validFiles) {
-      try {
-        const compressed = await processImageFile(file);
-        newImages.push(compressed);
-      } catch (error) {
-        console.error('Failed to process variant image:', error);
-        toast.error(`Failed to process ${file.name}`);
-      }
-    }
-
-    if (newImages.length > 0) {
-      setNewVariant(prev => ({
-        ...prev,
-        images: [...(prev.images || []), ...newImages]
-      }));
-      toast.success(`${newImages.length} variant image(s) uploaded`);
-    }
-
-    e.target.value = '';
-  }, [newVariant.images, processImageFile]);
+    },
+    [newVariant.images]
+  );
 
   const removeVariantImage = useCallback((index: number) => {
-    setNewVariant(prev => ({
+    setNewVariant((prev) => ({
       ...prev,
-      images: (prev.images || []).filter((_, i) => i !== index)
+      images: (prev.images || []).filter((_, i) => i !== index),
     }));
   }, []);
 
   // ============================================
-  // BARCODE FUNCTIONS
+  // BARCODE
   // ============================================
 
   const handleGenerateBarcode = useCallback(async () => {
@@ -911,31 +981,35 @@ export default function AddProductPage() {
 
     setGeneratingBarcode(true);
     setBarcodeError(null);
-    
+
     try {
       const options = {
         prefix: barcodePrefix,
         length: barcodeLength,
         productName: formData.name,
         format: barcodeFormat,
-        includeQR: includeQR,
+        includeQR,
       };
-      
+
       const result = await barcodeService.generateUniqueBarcode(options);
-      
+
       if (result && result.barcode) {
-        setFormData(prev => ({ ...prev, barcode: result.barcode }));
-        
-        const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(result.barcode)}&code=${barcodeFormat}&dpi=96`;
-        const qrCodeUrl = includeQR 
-          ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify({
-              product: formData.name,
-              sku: formData.sku || 'SKU',
-              barcode: result.barcode,
-              format: barcodeFormat,
-            }))}&size=200x200`
+        setFormData((prev) => ({ ...prev, barcode: result.barcode }));
+
+        const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+          result.barcode
+        )}&code=${barcodeFormat}&dpi=96`;
+        const qrCodeUrl = includeQR
+          ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+              JSON.stringify({
+                product: formData.name,
+                sku: formData.sku || 'SKU',
+                barcode: result.barcode,
+                format: barcodeFormat,
+              })
+            )}&size=200x200`
           : '';
-        
+
         setBarcodeData({
           barcode: result.barcode,
           barcodeUrl,
@@ -943,7 +1017,7 @@ export default function AddProductPage() {
           generatedAt: new Date().toISOString(),
           format: barcodeFormat,
         });
-        
+
         setShowBarcodeModal(true);
         toast.success('Barcode generated successfully');
       }
@@ -956,45 +1030,43 @@ export default function AddProductPage() {
     }
   }, [formData.name, formData.sku, barcodePrefix, barcodeLength, barcodeFormat, includeQR]);
 
-  const handleGenerateVariantBarcode = useCallback(async (index: number) => {
-    const variant = variants[index];
-    if (!variant) return;
-    
-    if (!variant.name) {
-      toast.error('Please enter a variant name first');
-      return;
-    }
+  const handleGenerateVariantBarcode = useCallback(
+    async (index: number) => {
+      const variant = variants[index];
+      if (!variant) return;
 
-    setGeneratingBarcode(true);
-    
-    try {
-      const options = {
-        prefix: 'VAR',
-        length: 10,
-        productName: variant.name,
-        format: 'CODE128' as const,
-        includeQR: true,
-      };
-      
-      const result = await barcodeService.generateUniqueBarcode(options);
-      
-      if (result && result.barcode) {
-        const updatedVariants = [...variants];
-        updatedVariants[index] = { 
-          ...updatedVariants[index], 
-          barcode: result.barcode 
-        };
-        setVariants(updatedVariants);
-        
-        toast.success(`Barcode generated for variant: ${variant.name}`);
+      if (!variant.name) {
+        toast.error('Please enter a variant name first');
+        return;
       }
-    } catch (error: any) {
-      console.error('Failed to generate variant barcode:', error);
-      toast.error(error?.message || 'Failed to generate barcode');
-    } finally {
-      setGeneratingBarcode(false);
-    }
-  }, [variants]);
+
+      setGeneratingBarcode(true);
+      try {
+        const result = await barcodeService.generateUniqueBarcode({
+          prefix: 'VAR',
+          length: 10,
+          productName: variant.name,
+          format: 'CODE128',
+          includeQR: true,
+        });
+
+        if (result && result.barcode) {
+          setVariants((prev) => {
+            const next = [...prev];
+            next[index] = { ...next[index], barcode: result.barcode };
+            return next;
+          });
+          toast.success(`Barcode generated for variant: ${variant.name}`);
+        }
+      } catch (error: any) {
+        console.error('Failed to generate variant barcode:', error);
+        toast.error(error?.message || 'Failed to generate barcode');
+      } finally {
+        setGeneratingBarcode(false);
+      }
+    },
+    [variants]
+  );
 
   const handleCopyBarcode = useCallback(async () => {
     if (!formData.barcode) return;
@@ -1014,7 +1086,8 @@ export default function AddProductPage() {
 
   const handleSelectInventory = useCallback((item: InventoryItem) => {
     setSelectedInventory(item);
-    setFormData(prev => ({
+    autoSelectedRef.current = true;
+    setFormData((prev) => ({
       ...prev,
       inventoryId: item.id,
       name: prev.name || item.name,
@@ -1030,8 +1103,16 @@ export default function AddProductPage() {
     toast.success(`Selected inventory: ${item.name}`);
   }, []);
 
+  const clearSelectedInventory = useCallback(() => {
+    setSelectedInventory(null);
+    autoSelectedRef.current = false;
+    setFormData((prev) => ({ ...prev, inventoryId: '' }));
+    setShowInventoryPicker(true);
+    fetchInventoryItems();
+  }, [fetchInventoryItems]);
+
   // ============================================
-  // VARIANT FUNCTIONS
+  // VARIANTS
   // ============================================
 
   const handleAddVariant = useCallback(() => {
@@ -1040,91 +1121,84 @@ export default function AddProductPage() {
       return;
     }
 
-    const variantErrors: Record<string, string> = {};
-    if (!newVariant.name.trim()) variantErrors.variantName = 'Variant name is required';
-    if (!newVariant.sku.trim()) variantErrors.variantSku = 'SKU is required';
-    if (newVariant.price <= 0) variantErrors.variantPrice = 'Price must be greater than 0';
-    
-    if (Object.keys(variantErrors).length > 0) {
-      const firstError = Object.values(variantErrors)[0];
-      toast.error(firstError);
+    if (!newVariant.name.trim()) {
+      toast.error('Variant name is required');
+      return;
+    }
+    if (!newVariant.sku.trim()) {
+      toast.error('Variant SKU is required');
+      return;
+    }
+    if (newVariant.price <= 0) {
+      toast.error('Variant price must be greater than 0');
       return;
     }
 
-    const existingSku = variants.find(v => v.sku === newVariant.sku.toUpperCase());
+    const existingSku = variants.find(
+      (v) => v.sku.toUpperCase() === newVariant.sku.toUpperCase()
+    );
     if (existingSku) {
       toast.error('Variant SKU already exists');
       return;
     }
 
-    setVariants(prev => [...prev, { 
-      ...newVariant, 
-      sku: newVariant.sku.toUpperCase(),
-      id: `variant_${Date.now()}`,
-      images: newVariant.images || [],
-    }]);
-    
-    setNewVariant({
-      name: '',
-      sku: '',
-      price: 0,
-      costPrice: 0,
-      stock: 0,
-      attributes: {},
-      images: [],
-    });
+    setVariants((prev) => [
+      ...prev,
+      {
+        ...newVariant,
+        sku: newVariant.sku.toUpperCase(),
+        id: `variant_${Date.now()}`,
+        images: newVariant.images || [],
+      },
+    ]);
+
+    setNewVariant(EMPTY_VARIANT);
     setShowVariantForm(false);
     toast.success('Variant added successfully');
   }, [newVariant, variants]);
 
   const removeVariant = useCallback((index: number) => {
-    setVariants(prev => prev.filter((_, i) => i !== index));
+    setVariants((prev) => prev.filter((_, i) => i !== index));
     toast.info('Variant removed');
   }, []);
 
   // ============================================
-  // TAG FUNCTIONS
+  // TAGS / SEO
   // ============================================
 
   const addTag = useCallback(() => {
     const trimmed = newTag.trim();
     if (trimmed && !formData.tags.includes(trimmed)) {
-      setFormData(prev => ({
-        ...prev,
-        tags: [...prev.tags, trimmed]
-      }));
+      setFormData((prev) => ({ ...prev, tags: [...prev.tags, trimmed] }));
       setNewTag('');
     }
   }, [newTag, formData.tags]);
 
   const removeTag = useCallback((tag: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      tags: prev.tags.filter(t => t !== tag)
+      tags: prev.tags.filter((t) => t !== tag),
     }));
   }, []);
 
   const addSeoKeyword = useCallback(() => {
     const trimmed = newSeoKeyword.trim();
     if (trimmed && !formData.seo.keywords.includes(trimmed)) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        seo: {
-          ...prev.seo,
-          keywords: [...prev.seo.keywords, trimmed]
-        }
+        seo: { ...prev.seo, keywords: [...prev.seo.keywords, trimmed] },
       }));
       setNewSeoKeyword('');
     }
   }, [newSeoKeyword, formData.seo.keywords]);
 
   const removeSeoKeyword = useCallback((keyword: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       seo: {
         ...prev.seo,
-        keywords: prev.seo.keywords.filter(k => k !== keyword)
-      }
+        keywords: prev.seo.keywords.filter((k) => k !== keyword),
+      },
     }));
   }, []);
 
@@ -1132,288 +1206,286 @@ export default function AddProductPage() {
   // VALIDATION
   // ============================================
 
-  const validateField = useCallback((name: string, value: any): string => {
-    switch (name) {
-      case 'name':
-        if (!value || !value.trim()) return 'Product name is required';
-        if (value.trim().length < 2) return 'Product name must be at least 2 characters';
-        return '';
-      case 'sku':
-        if (!value || !value.trim()) return 'SKU is required';
-        if (value.trim().length < 2) return 'SKU must be at least 2 characters';
-        return '';
-      case 'unitPrice':
-        if (!value && value !== 0) return 'Unit price is required';
-        if (parseFloat(value) < 0) return 'Unit price must be greater than or equal to 0';
-        return '';
-      case 'minStock':
-        if (value && parseInt(value) < 0) return 'Min stock must be greater than or equal to 0';
-        return '';
-      case 'maxStock':
-        if (value && parseInt(value) < 0) return 'Max stock must be greater than or equal to 0';
-        if (value && formData.minStock && parseInt(value) < parseInt(formData.minStock)) {
-          return 'Max stock must be greater than min stock';
-        }
-        return '';
-      case 'barcode':
-        if (value && value.length < 4) return 'Barcode must be at least 4 characters';
-        return '';
-      case 'inventoryId':
-        if (!value) return 'Please select an inventory item';
-        return '';
-      case 'categoryId':
-        return '';
-      default:
-        return '';
-    }
-  }, [formData.minStock]);
-
-  const handleBlur = useCallback((field: string, value: any) => {
-    setTouched(prev => ({ ...prev, [field]: true }));
-    const error = validateField(field, value);
-    if (error) {
-      setErrors(prev => ({ ...prev, [field]: error }));
-    } else {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  }, [validateField]);
-
-  // ============================================
-  // VALIDATE IMAGE HELPER
-  // ============================================
-
-  const validateImage = useCallback((img: any): string | null => {
-    const PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    
-    if (typeof img !== 'string') return null;
-    if (!img || img.length === 0) return null;
-    
-    if (img.startsWith('http://') || img.startsWith('https://')) {
-      return img;
-    }
-    
-    if (!img.startsWith('data:image/')) return null;
-    
-    try {
-      const parts = img.split(',');
-      if (parts.length !== 2) return null;
-      if (!parts[1] || parts[1].length < 10) return null;
-      
-      const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-      if (!base64Regex.test(parts[1])) return null;
-      
-      const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-      if (img.length > MAX_IMAGE_BYTES) {
-        console.warn(`⚠️ Image too large (${Math.round(img.length / 1024 / 1024)}MB), using placeholder`);
-        return PLACEHOLDER_IMAGE;
-      }
-      
-      return img;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  // ============================================
-  // SUBMIT - ✅ FIXED: Properly sync with inventory
-  // ============================================
-
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const requiredFields = ['name', 'sku', 'unitPrice', 'inventoryId'];
-    const newErrors: FormErrors = {};
-    let hasError = false;
-
-    if (!formData.inventoryId || !selectedInventory) {
-      newErrors.inventoryId = 'Please select an inventory item';
-      hasError = true;
-    }
-
-    requiredFields.forEach(field => {
-      const value = formData[field as keyof typeof formData];
-      const error = validateField(field, value);
-      if (error) {
-        newErrors[field] = error;
-        hasError = true;
-      }
-    });
-
-    if (formData.categoryId && formData.categoryId !== '') {
-      const categoryExists = categories.some(c => c.id === formData.categoryId);
-      if (!categoryExists) {
-        newErrors.categoryId = 'Selected category does not exist';
-        hasError = true;
-      }
-    }
-
-    if (hasError) {
-      setErrors(newErrors);
-      toast.error('Please fix all errors before submitting');
-      const firstErrorField = Object.keys(newErrors)[0];
-      const element = document.querySelector(`[name="${firstErrorField}"]`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Process tags
-      let tagsArray: string[] = [];
-      
-      if (Array.isArray(formData.tags)) {
-        tagsArray = formData.tags.flatMap((tag: any) => {
-          if (typeof tag === 'string') {
-            if (tag.includes(',')) {
-              return tag.split(',').map((t: string) => t.trim()).filter(Boolean);
-            }
-            return tag.trim();
+  const validateField = useCallback(
+    (name: string, value: any): string => {
+      switch (name) {
+        case 'name':
+          if (!value || !String(value).trim()) return 'Product name is required';
+          if (String(value).trim().length < 2)
+            return 'Product name must be at least 2 characters';
+          return '';
+        case 'sku':
+          if (!value || !String(value).trim()) return 'SKU is required';
+          if (String(value).trim().length < 2)
+            return 'SKU must be at least 2 characters';
+          return '';
+        case 'unitPrice':
+          if (value === '' || value === null || value === undefined)
+            return 'Unit price is required';
+          if (parseFloat(String(value)) < 0)
+            return 'Unit price must be greater than or equal to 0';
+          return '';
+        case 'minStock':
+          if (value && parseInt(String(value), 10) < 0)
+            return 'Min stock must be greater than or equal to 0';
+          return '';
+        case 'maxStock':
+          if (value && parseInt(String(value), 10) < 0)
+            return 'Max stock must be greater than or equal to 0';
+          if (
+            value &&
+            formData.minStock &&
+            parseInt(String(value), 10) < parseInt(formData.minStock, 10)
+          ) {
+            return 'Max stock must be greater than min stock';
           }
           return '';
-        }).filter(Boolean);
+        case 'barcode':
+          if (value && String(value).length < 4)
+            return 'Barcode must be at least 4 characters';
+          return '';
+        case 'inventoryId':
+          if (!value) return 'Please select an inventory item';
+          return '';
+        case 'categoryId':
+          return '';
+        default:
+          return '';
       }
+    },
+    [formData.minStock]
+  );
 
-      // Process images
-      const PLACEHOLDER_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-      let processedImages: string[] = [];
-      const mainImages = Array.isArray(formData.images) ? formData.images : [];
-      
-      for (const img of mainImages) {
-        const validated = validateImage(img);
-        if (validated) {
-          processedImages.push(validated);
-        }
-      }
-      
-      if (processedImages.length === 0 && mainImages.length > 0) {
-        processedImages = [PLACEHOLDER_IMAGE];
-      }
-
-      // Process variants
-      const processedVariants = variants.map(v => {
-        let cleanVariantImages: string[] = [];
-        const variantImages = Array.isArray(v.images) ? v.images : [];
-        
-        for (const img of variantImages) {
-          const validated = validateImage(img);
-          if (validated) {
-            cleanVariantImages.push(validated);
-          }
-        }
-        
-        if (cleanVariantImages.length === 0 && variantImages.length > 0) {
-          cleanVariantImages = [PLACEHOLDER_IMAGE];
-        }
-
-        return {
-          name: v.name.trim(),
-          sku: v.sku.trim().toUpperCase(),
-          price: v.price || 0,
-          costPrice: v.costPrice || 0,
-          stock: v.stock || 0,
-          attributes: v.attributes || {},
-          isActive: true,
-          barcode: v.barcode || undefined,
-          images: cleanVariantImages.length > 0 ? cleanVariantImages : undefined,
-        };
+  const handleBlur = useCallback(
+    (field: string, value: any) => {
+      setTouched((prev) => ({ ...prev, [field]: true }));
+      const error = validateField(field, value);
+      setErrors((prev) => {
+        const next = { ...prev };
+        if (error) next[field] = error;
+        else delete next[field];
+        return next;
       });
-
-      // Build product data - ALWAYS linked to inventory
-      const categoryId = formData.categoryId && formData.categoryId !== '' 
-        ? formData.categoryId 
-        : undefined;
-
-      const productData = {
-        name: formData.name.trim(),
-        sku: formData.sku.trim().toUpperCase(),
-        description: formData.description.trim() || undefined,
-        unitPrice: parseFloat(formData.unitPrice) || 0,
-        costPrice: formData.costPrice ? parseFloat(formData.costPrice) : undefined,
-        barcode: formData.barcode.trim() || undefined,
-        categoryId: categoryId,
-        supplierId: formData.supplierId || undefined,
-        isActive: formData.isActive,
-        featured: formData.featured,
-        isDigital: formData.isDigital,
-        taxRate: formData.taxRate ? parseFloat(formData.taxRate) : undefined,
-        weight: formData.weight ? parseFloat(formData.weight) : undefined,
-        minStock: formData.minStock ? parseInt(formData.minStock) : 5,
-        maxStock: formData.maxStock ? parseInt(formData.maxStock) : undefined,
-        tags: tagsArray,
-        images: processedImages,
-        notes: formData.notes.trim() || undefined,
-        seo: {
-          title: formData.seo.title.trim() || undefined,
-          description: formData.seo.description.trim() || undefined,
-          slug: formData.seo.slug.trim() || undefined,
-          keywords: formData.seo.keywords,
-        },
-        variants: processedVariants,
-        inventoryId: formData.inventoryId,
-        businessUnitId: businessUnitId || 'default',
-        createdBy: user?.id || 'system',
-      };
-
-      console.log('📤 Creating product from inventory:', {
-        inventoryId: formData.inventoryId,
-        productData: {
-          ...productData,
-          images: productData.images.map((img, i) => {
-            const size = Math.round(img.length / 1024);
-            return `[Image ${i + 1}: ${size}KB]`;
-          }),
-        },
-      });
-
-      // ✅ FIXED: Create product from inventory - this handles the synchronization
-      const result = await productService.createProductFromInventory(
-        formData.inventoryId,
-        productData
-      );
-      
-      toast.success('Product created and linked to inventory successfully');
-      
-      // Refresh inventory items to show updated stock
-      fetchInventoryItems();
-      
-      router.push('/admin/catalog');
-      router.refresh();
-    } catch (error: any) {
-      console.error('Error creating product:', error);
-      
-      let errorMessage = 'Failed to create product from inventory';
-      if (error.response) {
-        const data = error.response.data;
-        console.error('Response data:', data);
-        if (data?.message) {
-          errorMessage = data.message;
-        } else if (data?.error) {
-          errorMessage = data.error;
-        } else if (data?.errors) {
-          const errorMessages = Object.values(data.errors).flat().join(', ');
-          errorMessage = errorMessages;
-        }
-      } else if (error.request) {
-        errorMessage = 'No response from server. Please check if backend is running.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [formData, variants, businessUnitId, user, router, validateField, validateImage, categories, selectedInventory, fetchInventoryItems]);
+    },
+    [validateField]
+  );
 
   // ============================================
-  // RENDER IMAGE GALLERY
+  // SUBMIT
+  // ============================================
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+
+      const requiredFields = ['name', 'sku', 'unitPrice'];
+      const newErrors: FormErrors = {};
+      let hasError = false;
+
+      if (!formData.inventoryId || !selectedInventory) {
+        newErrors.inventoryId = 'Please select an inventory item';
+        hasError = true;
+      }
+
+      requiredFields.forEach((field) => {
+        const value = formData[field as keyof typeof formData];
+        const error = validateField(field, value);
+        if (error) {
+          newErrors[field] = error;
+          hasError = true;
+        }
+      });
+
+      if (formData.categoryId) {
+        const categoryExists = categories.some(
+          (c) => c.id === formData.categoryId
+        );
+        if (!categoryExists) {
+          newErrors.categoryId = 'Selected category does not exist';
+          hasError = true;
+        }
+      }
+
+      if (hasError) {
+        setErrors(newErrors);
+        toast.error('Please fix all errors before submitting');
+        const firstErrorField = Object.keys(newErrors)[0];
+        const element = document.querySelector(`[name="${firstErrorField}"]`);
+        if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      // ✅ Resolve the BU one last time. Prefer the caller's
+      //    `businessUnitId` state (set in `fetchData`), then a fresh
+      //    localStorage read, then the selected inventory's BU.
+      const resolvedBusinessUnitId =
+        (isRealBusinessUnitId(businessUnitId) ? businessUnitId : null) ||
+        resolveBusinessUnitIdFromStorage() ||
+        (isRealBusinessUnitId(selectedInventory?.businessUnitId)
+          ? selectedInventory!.businessUnitId
+          : null);
+
+      if (!resolvedBusinessUnitId) {
+        const msg =
+          'No valid business unit is selected. Please refresh the page and try again.';
+        setErrors((prev) => ({ ...prev, general: msg }));
+        toast.error(msg);
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        // Tags
+        const tagsArray: string[] = Array.isArray(formData.tags)
+          ? formData.tags
+              .flatMap((tag: any) =>
+                typeof tag === 'string'
+                  ? tag.includes(',')
+                    ? tag.split(',').map((t) => t.trim())
+                    : tag.trim()
+                  : []
+              )
+              .filter(Boolean)
+          : [];
+
+        // Main images
+        let processedImages: string[] = [];
+        const mainImages = Array.isArray(formData.images) ? formData.images : [];
+        for (const img of mainImages) {
+          const validated = validateImage(img);
+          if (validated) processedImages.push(validated);
+        }
+        if (processedImages.length === 0 && mainImages.length > 0) {
+          processedImages = [PLACEHOLDER_IMAGE];
+        }
+
+        // Variants — build a plain array of the local `Variant` shape.
+        // The service type `ProductPayload.variants` is `Variant[]`, not
+        // `ProductVariant[]`, so this is a clean assignment.
+        const processedVariants: Variant[] = variants.map((v) => {
+          let cleanVariantImages: string[] = [];
+          const variantImages = Array.isArray(v.images) ? v.images : [];
+          for (const img of variantImages) {
+            const validated = validateImage(img);
+            if (validated) cleanVariantImages.push(validated);
+          }
+          if (cleanVariantImages.length === 0 && variantImages.length > 0) {
+            cleanVariantImages = [PLACEHOLDER_IMAGE];
+          }
+
+          return {
+            name: v.name.trim(),
+            sku: v.sku.trim().toUpperCase(),
+            price: v.price || 0,
+            costPrice: v.costPrice || 0,
+            stock: v.stock || 0,
+            attributes: v.attributes || {},
+            isActive: true,
+            barcode: v.barcode || undefined,
+            images:
+              cleanVariantImages.length > 0 ? cleanVariantImages : undefined,
+          };
+        });
+
+        const categoryId =
+          formData.categoryId && formData.categoryId !== ''
+            ? formData.categoryId
+            : undefined;
+
+        // ✅ Typed as our own `ProductPayload` — no more TS2345.
+        const productData: ProductPayload = {
+          name: formData.name.trim(),
+          sku: formData.sku.trim().toUpperCase(),
+          description: formData.description.trim() || undefined,
+          unitPrice: parseFloat(formData.unitPrice) || 0,
+          costPrice: formData.costPrice
+            ? parseFloat(formData.costPrice)
+            : undefined,
+          barcode: formData.barcode.trim() || undefined,
+          categoryId,
+          supplierId: formData.supplierId || undefined,
+          isActive: formData.isActive,
+          featured: formData.featured,
+          isDigital: formData.isDigital,
+          taxRate: formData.taxRate ? parseFloat(formData.taxRate) : undefined,
+          weight: formData.weight ? parseFloat(formData.weight) : undefined,
+          minStock: formData.minStock ? parseInt(formData.minStock, 10) : 5,
+          maxStock: formData.maxStock
+            ? parseInt(formData.maxStock, 10)
+            : undefined,
+          tags: tagsArray,
+          images: processedImages,
+          notes: formData.notes.trim() || undefined,
+          seo: {
+            title: formData.seo.title.trim() || undefined,
+            description: formData.seo.description.trim() || undefined,
+            slug: formData.seo.slug.trim() || undefined,
+            keywords: formData.seo.keywords,
+          },
+          variants: processedVariants,
+          inventoryId: formData.inventoryId,
+          businessUnitId: resolvedBusinessUnitId,
+          createdBy: user?.id || 'system',
+        };
+
+        console.log('📤 Creating product from inventory:', {
+          inventoryId: formData.inventoryId,
+          businessUnitId: resolvedBusinessUnitId,
+          productData: {
+            ...productData,
+            images: productData.images.map((img, i) => {
+              const size = Math.round(img.length / 1024);
+              return `[Image ${i + 1}: ${size}KB]`;
+            }),
+          },
+        });
+
+        await productService.createProductFromInventory(
+          formData.inventoryId,
+          productData
+        );
+
+        toast.success('Product created and linked to inventory successfully');
+
+        router.push('/admin/catalog');
+        router.refresh();
+      } catch (error: any) {
+        console.error('Error creating product:', error);
+
+        let errorMessage = 'Failed to create product from inventory';
+        if (error.response) {
+          const data = error.response.data;
+          if (data?.message) errorMessage = data.message;
+          else if (data?.error) errorMessage = data.error;
+          else if (data?.errors) {
+            errorMessage = Object.values(data.errors).flat().join(', ');
+          }
+        } else if (error.request) {
+          errorMessage = 'No response from server. Please check if backend is running.';
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+
+        toast.error(errorMessage);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      formData,
+      variants,
+      businessUnitId,
+      user,
+      router,
+      validateField,
+      categories,
+      selectedInventory,
+    ]
+  );
+
+  // ============================================
+  // IMAGE GALLERY
   // ============================================
 
   const renderImageGallery = () => {
@@ -1443,16 +1515,14 @@ export default function AddProductPage() {
 
     return (
       <div className="space-y-6">
-        {/* Main Preview */}
         {previewImage && (
           <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 aspect-video max-w-2xl mx-auto">
-            <img 
-              src={previewImage} 
-              alt="Product preview" 
+            <img
+              src={previewImage}
+              alt="Product preview"
               className="w-full h-full object-contain"
               onError={(e) => {
-                console.warn('Image failed to load, showing placeholder');
-                (e.target as HTMLImageElement).src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
               }}
             />
             <div className="absolute bottom-2 right-2">
@@ -1463,23 +1533,22 @@ export default function AddProductPage() {
           </div>
         )}
 
-        {/* Image Thumbnails */}
         <div className="flex flex-wrap gap-4">
           {formData.images.map((image, index) => (
-            <div 
-              key={index} 
+            <div
+              key={index}
               className={`relative w-24 h-24 rounded-lg overflow-hidden border-2 ${
-                previewImage === image 
-                  ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' 
+                previewImage === image
+                  ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50'
                   : 'border-gray-200 dark:border-gray-600'
               } group hover:border-blue-400 transition-all`}
             >
-              <img 
-                src={image} 
-                alt={`Product ${index + 1}`} 
+              <img
+                src={image}
+                alt={`Product ${index + 1}`}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                  (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
                 }}
               />
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
@@ -1510,8 +1579,7 @@ export default function AddProductPage() {
               </div>
             </div>
           ))}
-          
-          {/* Upload Button */}
+
           {formData.images.length < MAX_IMAGES && (
             <label className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400">
               {uploadingImages ? (
@@ -1535,9 +1603,10 @@ export default function AddProductPage() {
           )}
         </div>
 
-        {/* Image Info */}
         <div className="text-xs text-gray-500 dark:text-gray-400">
-          <p>{formData.images.length} of {MAX_IMAGES} images uploaded</p>
+          <p>
+            {formData.images.length} of {MAX_IMAGES} images uploaded
+          </p>
           {uploadingImages && (
             <p className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -1550,7 +1619,7 @@ export default function AddProductPage() {
   };
 
   // ============================================
-  // RENDER
+  // RENDER GATES
   // ============================================
 
   if (permissionLoading || !isClient) {
@@ -1570,7 +1639,9 @@ export default function AddProductPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
           You don't have permission to add products. Please contact your administrator.
         </p>
@@ -1590,11 +1661,17 @@ export default function AddProductPage() {
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading inventory data...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading inventory data...
+          </p>
         </div>
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 transition-colors duration-200">
@@ -1614,8 +1691,8 @@ export default function AddProductPage() {
                 {isEditMode ? 'Edit Product' : 'Create Product from Inventory'}
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {isEditMode 
-                  ? 'Update existing product information' 
+                {isEditMode
+                  ? 'Update existing product information'
                   : 'Select an inventory item to create a product for sales'}
               </p>
             </div>
@@ -1628,38 +1705,40 @@ export default function AddProductPage() {
           </Link>
         </div>
 
-        {/* Inventory Selection - Required */}
+        {/* Inventory selection */}
         <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Select Inventory Item <span className="text-red-500">*</span>
               </label>
+
               {selectedInventory ? (
                 <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                   <Database className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 dark:text-white truncate">{selectedInventory.name}</p>
+                    <p className="font-medium text-gray-900 dark:text-white truncate">
+                      {selectedInventory.name}
+                    </p>
                     <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
                       <span>SKU: {selectedInventory.sku}</span>
                       <span>•</span>
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Stock: {selectedInventory.quantity}</span>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        Stock: {selectedInventory.quantity}
+                      </span>
                       <span>•</span>
                       <span>Location: {selectedInventory.location}</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedInventory(null);
-                      setFormData(prev => ({ ...prev, inventoryId: '' }));
-                      setShowInventoryPicker(true);
-                      fetchInventoryItems();
-                    }}
-                    className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                  >
-                    Change
-                  </button>
+                  {!isEditMode && (
+                    <button
+                      type="button"
+                      onClick={clearSelectedInventory}
+                      className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                    >
+                      Change
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex gap-2">
@@ -1684,6 +1763,7 @@ export default function AddProductPage() {
                   </button>
                 </div>
               )}
+
               {errors.inventoryId && (
                 <p className="mt-1 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
                   <AlertCircle className="w-4 h-4" />
@@ -1703,7 +1783,7 @@ export default function AddProductPage() {
           </div>
         </div>
 
-        {/* Inventory Picker Modal */}
+        {/* Inventory picker modal */}
         {showInventoryPicker && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
@@ -1738,12 +1818,16 @@ export default function AddProductPage() {
                   {inventoryLoading ? (
                     <div className="text-center py-8">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
-                      <p className="mt-2 text-gray-500 dark:text-gray-400">Loading inventory...</p>
+                      <p className="mt-2 text-gray-500 dark:text-gray-400">
+                        Loading inventory...
+                      </p>
                     </div>
                   ) : inventoryItems.length === 0 ? (
                     <div className="text-center py-8">
                       <Package className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                      <p className="text-gray-500 dark:text-gray-400">No inventory items available</p>
+                      <p className="text-gray-500 dark:text-gray-400">
+                        No inventory items available
+                      </p>
                       <p className="text-sm text-gray-400 dark:text-gray-500">
                         Create an inventory item first, then create a product from it.
                       </p>
@@ -1763,18 +1847,26 @@ export default function AddProductPage() {
                         type="button"
                         onClick={() => handleSelectInventory(item)}
                         className={`w-full text-left p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border ${
-                          selectedInventory?.id === item.id 
-                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
+                          selectedInventory?.id === item.id
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                             : 'border-gray-200 dark:border-gray-700'
                         }`}
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {item.name}
+                            </p>
                             <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-1">
                               <span>SKU: {item.sku}</span>
                               <span>•</span>
-                              <span className={`font-medium ${item.quantity > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                              <span
+                                className={`font-medium ${
+                                  item.quantity > 0
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-red-600 dark:text-red-400'
+                                }`}
+                              >
                                 Stock: {item.quantity}
                               </span>
                               <span>•</span>
@@ -1790,7 +1882,9 @@ export default function AddProductPage() {
                           {selectedInventory?.id === item.id ? (
                             <CheckCircle className="w-5 h-5 text-blue-600" />
                           ) : (
-                            <span className="text-sm text-blue-600 dark:text-blue-400">Select →</span>
+                            <span className="text-sm text-blue-600 dark:text-blue-400">
+                              Select →
+                            </span>
                           )}
                         </div>
                       </button>
@@ -1799,7 +1893,8 @@ export default function AddProductPage() {
                 </div>
                 {inventoryItems.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400">
-                    {inventoryItems.length} inventory item{inventoryItems.length !== 1 ? 's' : ''} available
+                    {inventoryItems.length} inventory item
+                    {inventoryItems.length !== 1 ? 's' : ''} available
                   </div>
                 )}
               </div>
@@ -1807,7 +1902,7 @@ export default function AddProductPage() {
           </div>
         )}
 
-        {/* Barcode Modal */}
+        {/* Barcode modal */}
         {showBarcodeModal && barcodeData && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden">
@@ -1827,13 +1922,15 @@ export default function AddProductPage() {
               <div className="p-6">
                 <div className="flex flex-col items-center space-y-4">
                   <div className="bg-white rounded-lg p-4 border border-gray-200 dark:border-gray-700 w-full">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">Barcode</p>
-                    <img 
-                      src={barcodeData.barcodeUrl} 
-                      alt="Barcode" 
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
+                      Barcode
+                    </p>
+                    <img
+                      src={barcodeData.barcodeUrl}
+                      alt="Barcode"
                       className="w-full max-w-xs mx-auto h-auto"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                        (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
                       }}
                     />
                     <p className="text-sm font-mono text-center mt-2 text-gray-800 dark:text-gray-200">
@@ -1843,28 +1940,34 @@ export default function AddProductPage() {
                       Format: {barcodeData.format}
                     </p>
                   </div>
-                  
+
                   {barcodeData.qrCodeUrl && (
                     <div className="bg-white rounded-lg p-4 border border-gray-200 dark:border-gray-700 w-full">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">QR Code</p>
-                      <img 
-                        src={barcodeData.qrCodeUrl} 
-                        alt="QR Code" 
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
+                        QR Code
+                      </p>
+                      <img
+                        src={barcodeData.qrCodeUrl}
+                        alt="QR Code"
                         className="w-32 h-32 mx-auto object-contain"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                          (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE;
                         }}
                       />
                     </div>
                   )}
-                  
+
                   <div className="flex flex-wrap gap-2 justify-center w-full">
                     <button
                       type="button"
                       onClick={handleCopyBarcode}
                       className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2"
                     >
-                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      {copied ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
                       Copy
                     </button>
                     <button
@@ -1887,7 +1990,7 @@ export default function AddProductPage() {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Tabs + Form */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors duration-200">
           <div className="border-b border-gray-200 dark:border-gray-700 px-4 sm:px-6 overflow-x-auto">
             <nav className="flex gap-2 sm:gap-4 py-2">
@@ -1901,6 +2004,7 @@ export default function AddProductPage() {
               ].map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
+                  type="button"
                   onClick={() => setActiveTab(id)}
                   className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize whitespace-nowrap flex items-center gap-2 ${
                     activeTab === id
@@ -1916,13 +2020,14 @@ export default function AddProductPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6">
-            {/* BASIC INFORMATION */}
+            {/* BASIC */}
             {activeTab === 'basic' && (
               <div className="space-y-6">
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
                   <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
                     <Info className="w-4 h-4" />
-                    This product will be linked to inventory: <strong>{selectedInventory?.name || 'None selected'}</strong>
+                    This product will be linked to inventory:{' '}
+                    <strong>{selectedInventory?.name || 'None selected'}</strong>
                   </p>
                 </div>
 
@@ -1938,7 +2043,9 @@ export default function AddProductPage() {
                     onChange={(e) => handleNameChange(e.target.value)}
                     onBlur={(e) => handleBlur('name', e.target.value)}
                     className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
-                      errors.name ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                      errors.name
+                        ? 'border-red-500 dark:border-red-500'
+                        : 'border-gray-300 dark:border-gray-600'
                     }`}
                     placeholder="Enter product name"
                   />
@@ -1965,20 +2072,22 @@ export default function AddProductPage() {
                         setFormData({ ...formData, sku: e.target.value.toUpperCase() });
                         if (touched.sku) {
                           const error = validateField('sku', e.target.value);
-                          setErrors(prev => ({ ...prev, sku: error }));
+                          setErrors((prev) => ({ ...prev, sku: error }));
                         }
                       }}
                       onBlur={(e) => handleBlur('sku', e.target.value)}
                       className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
-                        errors.sku ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        errors.sku
+                          ? 'border-red-500 dark:border-red-500'
+                          : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="Auto-generated from product name"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const newSKU = generateSKU(formData.name);
-                        setFormData(prev => ({ ...prev, sku: newSKU }));
+                        const newSKU = generateUniqueSKU(formData.name);
+                        setFormData((prev) => ({ ...prev, sku: newSKU }));
                         setAutoGenerateSKU(true);
                         toast.success('SKU generated');
                       }}
@@ -1996,7 +2105,10 @@ export default function AddProductPage() {
                       onChange={(e) => setAutoGenerateSKU(e.target.checked)}
                       className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-700"
                     />
-                    <label htmlFor="autoGenerateSKU" className="text-xs text-gray-500 dark:text-gray-400">
+                    <label
+                      htmlFor="autoGenerateSKU"
+                      className="text-xs text-gray-500 dark:text-gray-400"
+                    >
                       Auto-generate SKU from product name
                     </label>
                   </div>
@@ -2014,7 +2126,9 @@ export default function AddProductPage() {
                   </label>
                   <textarea
                     value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="Enter product description"
@@ -2034,12 +2148,14 @@ export default function AddProductPage() {
                         setFormData({ ...formData, barcode: e.target.value });
                         if (touched.barcode) {
                           const error = validateField('barcode', e.target.value);
-                          setErrors(prev => ({ ...prev, barcode: error }));
+                          setErrors((prev) => ({ ...prev, barcode: error }));
                         }
                       }}
                       onBlur={(e) => handleBlur('barcode', e.target.value)}
                       className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
-                        errors.barcode ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        errors.barcode
+                          ? 'border-red-500 dark:border-red-500'
+                          : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="Enter barcode or generate"
                     />
@@ -2077,8 +2193,9 @@ export default function AddProductPage() {
                         const value = e.target.value;
                         setFormData({ ...formData, categoryId: value });
                         if (value) {
-                          const categoryName = categories.find(c => c.id === value)?.name || value;
-                          toast.info(`Category selected: ${categoryName}`);
+                          const name =
+                            categories.find((c) => c.id === value)?.name || value;
+                          toast.info(`Category selected: ${name}`);
                         }
                       }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
@@ -2092,7 +2209,8 @@ export default function AddProductPage() {
                     </select>
                     {formData.categoryId && (
                       <p className="mt-1 text-xs text-green-600 dark:text-green-400">
-                        ✓ Category selected: {categories.find(c => c.id === formData.categoryId)?.name}
+                        ✓ Category selected:{' '}
+                        {categories.find((c) => c.id === formData.categoryId)?.name}
                       </p>
                     )}
                     {errors.categoryId && (
@@ -2108,7 +2226,9 @@ export default function AddProductPage() {
                     </label>
                     <select
                       value={formData.supplierId}
-                      onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, supplierId: e.target.value })
+                      }
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors duration-200"
                     >
                       <option value="">Select Supplier</option>
@@ -2130,7 +2250,12 @@ export default function AddProductPage() {
                       type="text"
                       value={newTag}
                       onChange={(e) => setNewTag(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addTag();
+                        }
+                      }}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                       placeholder="Add a tag (press Enter to add)"
                     />
@@ -2167,7 +2292,9 @@ export default function AddProductPage() {
                     <input
                       type="checkbox"
                       checked={formData.isActive}
-                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, isActive: e.target.checked })
+                      }
                       className="w-4 h-4 text-blue-600 rounded dark:bg-gray-700 dark:border-gray-600"
                     />
                     <span className="text-sm">Active</span>
@@ -2176,16 +2303,22 @@ export default function AddProductPage() {
                     <input
                       type="checkbox"
                       checked={formData.featured}
-                      onChange={(e) => setFormData({ ...formData, featured: e.target.checked })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, featured: e.target.checked })
+                      }
                       className="w-4 h-4 text-yellow-500 rounded dark:bg-gray-700 dark:border-gray-600"
                     />
-                    <span className="text-sm">⭐ Featured</span>
+                    <span className="text-sm flex items-center gap-1">
+                      <Star className="w-3.5 h-3.5" /> Featured
+                    </span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer text-gray-700 dark:text-gray-300">
                     <input
                       type="checkbox"
                       checked={formData.isDigital}
-                      onChange={(e) => setFormData({ ...formData, isDigital: e.target.checked })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, isDigital: e.target.checked })
+                      }
                       className="w-4 h-4 text-purple-500 rounded dark:bg-gray-700 dark:border-gray-600"
                     />
                     <span className="text-sm">Digital Product</span>
@@ -2194,13 +2327,14 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* PRICING TAB */}
+            {/* PRICING */}
             {activeTab === 'pricing' && (
               <div className="space-y-6">
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
                   <p className="text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
                     <Info className="w-4 h-4" />
-                    Pricing is inherited from the linked inventory item. Changes here will update the inventory price.
+                    Pricing is inherited from the linked inventory item. Changes here
+                    will update the inventory price.
                   </p>
                 </div>
 
@@ -2210,7 +2344,9 @@ export default function AddProductPage() {
                       Unit Price <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                        $
+                      </span>
                       <input
                         type="number"
                         name="unitPrice"
@@ -2218,16 +2354,22 @@ export default function AddProductPage() {
                         step="0.01"
                         min="0"
                         value={formData.unitPrice}
-                        onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({ ...formData, unitPrice: e.target.value })
+                        }
                         onBlur={(e) => handleBlur('unitPrice', e.target.value)}
                         className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
-                          errors.unitPrice ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                          errors.unitPrice
+                            ? 'border-red-500 dark:border-red-500'
+                            : 'border-gray-300 dark:border-gray-600'
                         }`}
                         placeholder="0.00"
                       />
                     </div>
                     {errors.unitPrice && (
-                      <p className="mt-1 text-sm text-red-500 dark:text-red-400">{errors.unitPrice}</p>
+                      <p className="mt-1 text-sm text-red-500 dark:text-red-400">
+                        {errors.unitPrice}
+                      </p>
                     )}
                   </div>
                   <div>
@@ -2235,13 +2377,17 @@ export default function AddProductPage() {
                       Cost Price
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                        $
+                      </span>
                       <input
                         type="number"
                         step="0.01"
                         min="0"
                         value={formData.costPrice}
-                        onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({ ...formData, costPrice: e.target.value })
+                        }
                         className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                         placeholder="0.00"
                       />
@@ -2259,7 +2405,9 @@ export default function AddProductPage() {
                     min="0"
                     max="100"
                     value={formData.taxRate}
-                    onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, taxRate: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="0.00"
                   />
@@ -2267,30 +2415,46 @@ export default function AddProductPage() {
 
                 {formData.unitPrice && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">Price Summary</h4>
+                    <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
+                      Price Summary
+                    </h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Unit Price:</span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Unit Price:
+                        </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2">
                           ${parseFloat(formData.unitPrice || '0').toFixed(2)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Cost Price:</span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Cost Price:
+                        </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2">
                           ${parseFloat(formData.costPrice || '0').toFixed(2)}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Profit Margin:</span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Profit Margin:
+                        </span>
                         <span className="font-medium text-green-600 dark:text-green-400 ml-2">
-                          {formData.costPrice && parseFloat(formData.costPrice) > 0
-                            ? `${(((parseFloat(formData.unitPrice) - parseFloat(formData.costPrice)) / parseFloat(formData.unitPrice)) * 100).toFixed(1)}%`
+                          {formData.costPrice &&
+                          parseFloat(formData.costPrice) > 0
+                            ? `${(
+                                ((parseFloat(formData.unitPrice) -
+                                  parseFloat(formData.costPrice)) /
+                                  parseFloat(formData.unitPrice)) *
+                                100
+                              ).toFixed(1)}%`
                             : 'N/A'}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Tax Rate:</span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Tax Rate:
+                        </span>
                         <span className="font-medium text-gray-900 dark:text-white ml-2">
                           {formData.taxRate || 0}%
                         </span>
@@ -2301,7 +2465,7 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* INVENTORY TAB */}
+            {/* INVENTORY */}
             {activeTab === 'inventory' && (
               <div className="space-y-6">
                 {selectedInventory && (
@@ -2313,32 +2477,54 @@ export default function AddProductPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                       <div>
                         <span className="text-gray-600 dark:text-gray-400">Name:</span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-1 block">{selectedInventory.name}</span>
+                        <span className="font-medium text-gray-900 dark:text-white ml-1 block">
+                          {selectedInventory.name}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-600 dark:text-gray-400">SKU:</span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-1 block">{selectedInventory.sku}</span>
+                        <span className="font-medium text-gray-900 dark:text-white ml-1 block">
+                          {selectedInventory.sku}
+                        </span>
                       </div>
                       <div>
                         <span className="text-gray-600 dark:text-gray-400">Stock:</span>
-                        <span className={`font-medium ml-1 block ${selectedInventory.quantity > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        <span
+                          className={`font-medium ml-1 block ${
+                            selectedInventory.quantity > 0
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }`}
+                        >
                           {selectedInventory.quantity} units
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600 dark:text-gray-400">Location:</span>
-                        <span className="font-medium text-gray-900 dark:text-white ml-1 block">{selectedInventory.location}</span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          Location:
+                        </span>
+                        <span className="font-medium text-gray-900 dark:text-white ml-1 block">
+                          {selectedInventory.location}
+                        </span>
                       </div>
                       {selectedInventory.barcode && (
                         <div>
-                          <span className="text-gray-600 dark:text-gray-400">Barcode:</span>
-                          <span className="font-medium text-gray-900 dark:text-white ml-1 block font-mono">{selectedInventory.barcode}</span>
+                          <span className="text-gray-600 dark:text-gray-400">
+                            Barcode:
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-white ml-1 block font-mono">
+                            {selectedInventory.barcode}
+                          </span>
                         </div>
                       )}
                       {selectedInventory.category && (
                         <div>
-                          <span className="text-gray-600 dark:text-gray-400">Category:</span>
-                          <span className="font-medium text-gray-900 dark:text-white ml-1 block">{selectedInventory.category}</span>
+                          <span className="text-gray-600 dark:text-gray-400">
+                            Category:
+                          </span>
+                          <span className="font-medium text-gray-900 dark:text-white ml-1 block">
+                            {selectedInventory.category}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -2366,11 +2552,15 @@ export default function AddProductPage() {
                       type="number"
                       name="minStock"
                       value={formData.minStock}
-                      onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, minStock: e.target.value })
+                      }
                       onBlur={(e) => handleBlur('minStock', e.target.value)}
                       min="0"
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
-                        errors.minStock ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        errors.minStock
+                          ? 'border-red-500 dark:border-red-500'
+                          : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="0"
                     />
@@ -2389,11 +2579,15 @@ export default function AddProductPage() {
                       type="number"
                       name="maxStock"
                       value={formData.maxStock}
-                      onChange={(e) => setFormData({ ...formData, maxStock: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, maxStock: e.target.value })
+                      }
                       onBlur={(e) => handleBlur('maxStock', e.target.value)}
                       min="0"
                       className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 ${
-                        errors.maxStock ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        errors.maxStock
+                          ? 'border-red-500 dark:border-red-500'
+                          : 'border-gray-300 dark:border-gray-600'
                       }`}
                       placeholder="0"
                     />
@@ -2415,7 +2609,9 @@ export default function AddProductPage() {
                     step="0.01"
                     min="0"
                     value={formData.weight}
-                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, weight: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="0.00"
                   />
@@ -2423,19 +2619,19 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* IMAGES TAB */}
+            {/* IMAGES */}
             {activeTab === 'images' && (
-              <div className="space-y-6">
-                {renderImageGallery()}
-              </div>
+              <div className="space-y-6">{renderImageGallery()}</div>
             )}
 
-            {/* VARIANTS TAB */}
+            {/* VARIANTS */}
             {activeTab === 'variants' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Product Variants</h3>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      Product Variants
+                    </h3>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       {variants.length} of {MAX_VARIANTS} variants configured
                     </p>
@@ -2458,21 +2654,32 @@ export default function AddProductPage() {
                 {variants.length === 0 ? (
                   <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                     <Layers className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                    <p className="text-gray-500 dark:text-gray-400">No variants added yet</p>
-                    <p className="text-sm text-gray-400 dark:text-gray-500">Variants share the same inventory stock</p>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      No variants added yet
+                    </p>
+                    <p className="text-sm text-gray-400 dark:text-gray-500">
+                      Variants share the same inventory stock
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {variants.map((variant, index) => (
-                      <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                      <div
+                        key={variant.id || index}
+                        className="border border-gray-200 dark:border-gray-700 rounded-lg p-4"
+                      >
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="font-medium text-gray-900 dark:text-white">{variant.name}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {variant.name}
+                            </p>
                             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                               <span>SKU: {variant.sku}</span>
                               <span>Price: ${variant.price.toFixed(2)}</span>
                               <span>Stock: {variant.stock}</span>
-                              {variant.barcode && <span>Barcode: {variant.barcode}</span>}
+                              {variant.barcode && (
+                                <span>Barcode: {variant.barcode}</span>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -2496,13 +2703,17 @@ export default function AddProductPage() {
                         {variant.images && variant.images.length > 0 && (
                           <div className="flex gap-2 mt-3">
                             {variant.images.map((img, imgIndex) => (
-                              <div key={imgIndex} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-                                <img 
-                                  src={img} 
-                                  alt={`${variant.name} ${imgIndex + 1}`} 
+                              <div
+                                key={imgIndex}
+                                className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                              >
+                                <img
+                                  src={img}
+                                  alt={`${variant.name} ${imgIndex + 1}`}
                                   className="w-full h-full object-cover"
                                   onError={(e) => {
-                                    (e.target as HTMLImageElement).src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                                    (e.target as HTMLImageElement).src =
+                                      PLACEHOLDER_IMAGE;
                                   }}
                                 />
                               </div>
@@ -2516,7 +2727,9 @@ export default function AddProductPage() {
 
                 {showVariantForm && (
                   <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/30">
-                    <h4 className="font-medium text-gray-900 dark:text-white mb-4">New Variant</h4>
+                    <h4 className="font-medium text-gray-900 dark:text-white mb-4">
+                      New Variant
+                    </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -2538,15 +2751,23 @@ export default function AddProductPage() {
                           <input
                             type="text"
                             value={newVariant.sku}
-                            onChange={(e) => setNewVariant({ ...newVariant, sku: e.target.value.toUpperCase() })}
+                            onChange={(e) =>
+                              setNewVariant({
+                                ...newVariant,
+                                sku: e.target.value.toUpperCase(),
+                              })
+                            }
                             className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                             placeholder="Auto-generated"
                           />
                           <button
                             type="button"
                             onClick={() => {
-                              const newSKU = generateVariantSKU(newVariant.name || 'VAR');
-                              setNewVariant(prev => ({ ...prev, sku: newSKU }));
+                              const newSKU = generateUniqueSKU(
+                                formData.name || 'PRD',
+                                newVariant.name || 'VAR'
+                              );
+                              setNewVariant((prev) => ({ ...prev, sku: newSKU }));
                             }}
                             className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             title="Generate SKU"
@@ -2560,13 +2781,20 @@ export default function AddProductPage() {
                           Price <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">$</span>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400">
+                            $
+                          </span>
                           <input
                             type="number"
                             step="0.01"
                             min="0"
                             value={newVariant.price}
-                            onChange={(e) => setNewVariant({ ...newVariant, price: parseFloat(e.target.value) || 0 })}
+                            onChange={(e) =>
+                              setNewVariant({
+                                ...newVariant,
+                                price: parseFloat(e.target.value) || 0,
+                              })
+                            }
                             className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                             placeholder="0.00"
                           />
@@ -2580,7 +2808,12 @@ export default function AddProductPage() {
                           type="number"
                           min="0"
                           value={newVariant.stock}
-                          onChange={(e) => setNewVariant({ ...newVariant, stock: parseInt(e.target.value) || 0 })}
+                          onChange={(e) =>
+                            setNewVariant({
+                              ...newVariant,
+                              stock: parseInt(e.target.value) || 0,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                           placeholder="0"
                         />
@@ -2592,25 +2825,30 @@ export default function AddProductPage() {
                         Variant Images (Max {MAX_VARIANT_IMAGES})
                       </label>
                       <div className="flex flex-wrap gap-3">
-                        {newVariant.images && newVariant.images.map((img, index) => (
-                          <div key={index} className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600">
-                            <img 
-                              src={img} 
-                              alt={`Variant ${index + 1}`} 
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeVariantImage(index)}
-                              className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 hover:bg-red-700 transition-colors"
+                        {newVariant.images &&
+                          newVariant.images.map((img, index) => (
+                            <div
+                              key={index}
+                              className="relative w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600"
                             >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
+                              <img
+                                src={img}
+                                alt={`Variant ${index + 1}`}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src =
+                                    PLACEHOLDER_IMAGE;
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeVariantImage(index)}
+                                className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 hover:bg-red-700 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
                         {(newVariant.images?.length || 0) < MAX_VARIANT_IMAGES && (
                           <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors">
                             <Upload className="w-5 h-5" />
@@ -2652,7 +2890,7 @@ export default function AddProductPage() {
               </div>
             )}
 
-            {/* SEO TAB */}
+            {/* SEO */}
             {activeTab === 'seo' && (
               <div className="space-y-6">
                 <div>
@@ -2662,10 +2900,12 @@ export default function AddProductPage() {
                   <input
                     type="text"
                     value={formData.seo.title}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      seo: { ...prev.seo, title: e.target.value }
-                    }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        seo: { ...prev.seo, title: e.target.value },
+                      }))
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="SEO title"
                   />
@@ -2679,10 +2919,12 @@ export default function AddProductPage() {
                   </label>
                   <textarea
                     value={formData.seo.description}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      seo: { ...prev.seo, description: e.target.value }
-                    }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        seo: { ...prev.seo, description: e.target.value },
+                      }))
+                    }
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="SEO description"
@@ -2698,10 +2940,12 @@ export default function AddProductPage() {
                   <input
                     type="text"
                     value={formData.seo.slug}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      seo: { ...prev.seo, slug: e.target.value }
-                    }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        seo: { ...prev.seo, slug: e.target.value },
+                      }))
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                     placeholder="custom-url-slug"
                   />
@@ -2715,7 +2959,12 @@ export default function AddProductPage() {
                       type="text"
                       value={newSeoKeyword}
                       onChange={(e) => setNewSeoKeyword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSeoKeyword())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addSeoKeyword();
+                        }
+                      }}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                       placeholder="Add a keyword"
                     />

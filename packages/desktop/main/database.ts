@@ -1,37 +1,87 @@
+// D:\Projects\Kalwanga\packages\desktop\main\database.ts
+
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import Database from 'better-sqlite3';
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import { logger } from './logger.js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
 const DB_PATH = path.join(app.getPath('userData'), 'pos.db');
 
-let db: Database.Database | null = null;
+let db: SqlJsDatabase | null = null;
+let SQL: any = null;
 
-export function getDatabase(): Database.Database {
+// ============================================
+// PUBLIC API — identical shape to the previous better-sqlite3 version
+// ============================================
+
+/**
+ * Return a live handle to the SQLite database.
+ * Throws if `initializeDatabase()` hasn't completed yet.
+ *
+ * The returned object supports the same call surface the rest of the
+ * codebase already uses:
+ *
+ *   db.exec(sql)                     — run one or more statements
+ *   db.run(sql, params)              — run a single parameterized statement
+ *   db.prepare(sql).run(params)      — parameterized run
+ *   db.prepare(sql).all(params)      — array of rows
+ *   db.prepare(sql).get(params)      — first row or undefined
+ */
+export function getDatabase(): SqlJsDatabase {
   if (!db) {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
+    throw new Error(
+      'Database not initialized. Call initializeDatabase() first.',
+    );
   }
   return db;
 }
 
+/**
+ * Persist the in-memory database to disk.
+ *
+ * sql.js keeps the whole database in memory. Every write happens to RAM
+ * only; nothing reaches the filesystem until this function runs. Call it
+ * after any write operation you care about surviving a crash, and on a
+ * timer (see main/index.ts) as a safety net.
+ */
+export function saveDatabase(): void {
+  if (!db) return;
+  try {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(DB_PATH, buffer);
+  } catch (error) {
+    logger.error('Failed to save database:', error);
+  }
+}
+
 export async function initializeDatabase(): Promise<void> {
   try {
-    const database = getDatabase();
-    
-    // Check if database exists
-    if (!fs.existsSync(DB_PATH)) {
-      logger.info('Creating new database...');
-      await initializeSchema(database);
-      logger.info(`Database created at: ${DB_PATH}`);
+    // Locate the WASM runtime that ships inside sql.js. require.resolve
+    // finds it inside node_modules regardless of the process cwd.
+    const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
+
+    SQL = await initSqlJs({
+      locateFile: () => wasmPath,
+    });
+
+    if (fs.existsSync(DB_PATH)) {
+      logger.info('Loading existing database from:', DB_PATH);
+
+      const buffer = fs.readFileSync(DB_PATH);
+      const localDb = new SQL.Database(buffer);
+      db = localDb;
+
+      await runMigrations(localDb);
     } else {
-      logger.info('Database already exists at:', DB_PATH);
-      await runMigrations(database);
+      logger.info('Creating new database at:', DB_PATH);
+
+      const localDb = new SQL.Database();
+      db = localDb;
+
+      await initializeSchema(localDb);
+      saveDatabase();
     }
 
     logger.info('Database initialized successfully');
@@ -41,9 +91,30 @@ export async function initializeDatabase(): Promise<void> {
   }
 }
 
-async function initializeSchema(db: Database.Database): Promise<void> {
-  // Create tables
-  db.exec(`
+export function getDatabasePath(): string {
+  return DB_PATH;
+}
+
+export function closeDatabase(): void {
+  if (db) {
+    try {
+      saveDatabase();
+    } catch (error) {
+      logger.error('Error saving database on close:', error);
+    }
+    db.close();
+    db = null;
+  }
+}
+
+// ============================================
+// PRIVATE — SCHEMA AND MIGRATIONS
+// ============================================
+
+async function initializeSchema(
+  database: SqlJsDatabase,
+): Promise<void> {
+  database.exec(`
     -- Settings table
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,35 +242,44 @@ async function initializeSchema(db: Database.Database): Promise<void> {
     );
 
     -- Indexes
-    CREATE INDEX idx_products_sku ON local_products(sku);
-    CREATE INDEX idx_products_sync_status ON local_products(sync_status);
-    CREATE INDEX idx_sales_receipt ON local_sales(receipt_number);
-    CREATE INDEX idx_sales_sync_status ON local_sales(sync_status);
-    CREATE INDEX idx_sales_customer ON local_sales(customer_id);
-    CREATE INDEX idx_sale_items_sale ON local_sale_items(sale_id);
-    CREATE INDEX idx_customers_email ON local_customers(email);
-    CREATE INDEX idx_customers_sync_status ON local_customers(sync_status);
-    CREATE INDEX idx_offline_queue_status ON offline_queue(status);
-    CREATE INDEX idx_sync_logs_created ON sync_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_products_sku
+      ON local_products(sku);
+    CREATE INDEX IF NOT EXISTS idx_products_sync_status
+      ON local_products(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_sales_receipt
+      ON local_sales(receipt_number);
+    CREATE INDEX IF NOT EXISTS idx_sales_sync_status
+      ON local_sales(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_sales_customer
+      ON local_sales(customer_id);
+    CREATE INDEX IF NOT EXISTS idx_sale_items_sale
+      ON local_sale_items(sale_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_email
+      ON local_customers(email);
+    CREATE INDEX IF NOT EXISTS idx_customers_sync_status
+      ON local_customers(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_offline_queue_status
+      ON offline_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_sync_logs_created
+      ON sync_logs(created_at);
   `);
 
-  // Insert default settings
-  const settings = db.prepare(`
-    INSERT OR IGNORE INTO settings (key, value) VALUES 
+  database.run(`
+    INSERT OR IGNORE INTO settings (key, value) VALUES
       ('last_sync', '1970-01-01T00:00:00.000Z'),
       ('auto_sync', 'true'),
       ('sync_interval', '300'),
       ('offline_mode', 'false')
   `);
-  settings.run();
 
   logger.info('Database schema initialized');
 }
 
-async function runMigrations(db: Database.Database): Promise<void> {
+async function runMigrations(
+  database: SqlJsDatabase,
+): Promise<void> {
   try {
-    // Create migrations table if it doesn't exist
-    db.exec(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS migrations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
@@ -207,50 +287,57 @@ async function runMigrations(db: Database.Database): Promise<void> {
       )
     `);
 
-    // Get applied migrations
-    const appliedMigrations = db.prepare('SELECT name FROM migrations ORDER BY id').all() as { name: string }[];
-    const appliedNames = new Set(appliedMigrations.map(m => m.name));
+    // sql.js returns query results as { columns, values } tuples rather
+    // than an array of plain row objects. Flatten into a Set of names.
+    const appliedNames = new Set<string>();
+    const result = database.exec(
+      'SELECT name FROM migrations ORDER BY id',
+    );
+    if (result.length > 0) {
+      for (const row of result[0].values) {
+        appliedNames.add(String(row[0]));
+      }
+    }
 
-    // Check for migrations directory
     const migrationsPath = path.join(__dirname, '../migrations');
-    if (fs.existsSync(migrationsPath)) {
-      const migrationFiles = fs.readdirSync(migrationsPath)
-        .filter(file => file.endsWith('.sql'))
-        .sort();
+    if (!fs.existsSync(migrationsPath)) {
+      return;
+    }
 
-      for (const migrationFile of migrationFiles) {
-        if (!appliedNames.has(migrationFile)) {
-          logger.info(`Applying migration: ${migrationFile}`);
-          const sql = fs.readFileSync(path.join(migrationsPath, migrationFile), 'utf-8');
-          
-          // Run migration in transaction
-          db.exec('BEGIN TRANSACTION');
-          try {
-            db.exec(sql);
-            db.prepare('INSERT INTO migrations (name) VALUES (?)').run(migrationFile);
-            db.exec('COMMIT');
-            logger.info(`Migration applied: ${migrationFile}`);
-          } catch (error) {
-            db.exec('ROLLBACK');
-            logger.error(`Failed to apply migration ${migrationFile}:`, error);
-            throw error;
-          }
-        }
+    const migrationFiles = fs
+      .readdirSync(migrationsPath)
+      .filter((file) => file.endsWith('.sql'))
+      .sort();
+
+    for (const migrationFile of migrationFiles) {
+      if (appliedNames.has(migrationFile)) continue;
+
+      logger.info(`Applying migration: ${migrationFile}`);
+      const sql = fs.readFileSync(
+        path.join(migrationsPath, migrationFile),
+        'utf-8',
+      );
+
+      database.exec('BEGIN TRANSACTION');
+      try {
+        database.exec(sql);
+        database.run(
+          'INSERT INTO migrations (name) VALUES (?)',
+          [migrationFile],
+        );
+        database.exec('COMMIT');
+        logger.info(`Migration applied: ${migrationFile}`);
+      } catch (error) {
+        database.exec('ROLLBACK');
+        logger.error(
+          `Failed to apply migration ${migrationFile}:`,
+          error,
+        );
+        throw error;
       }
     }
   } catch (error) {
     logger.error('Failed to run migrations:', error);
     throw error;
-  }
-}
-
-export function getDatabasePath(): string {
-  return DB_PATH;
-}
-
-export function closeDatabase(): void {
-  if (db) {
-    db.close();
-    db = null;
   }
 }

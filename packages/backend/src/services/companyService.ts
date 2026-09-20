@@ -243,9 +243,27 @@ export class CompanyService extends BaseService {
   }
 
   /**
-   * Create a new company with default business unit
+   * Create a new company with default business unit.
+   *
+   * ⭐ ONBOARDING-CRITICAL:
+   * If `userId` is provided, this method links the creator to
+   * the new company by setting `user.companyId = company.id`,
+   * and adds them to the BusinessUnitUser pivot of the default
+   * business unit.
+   *
+   * This linkage is what makes `resolveContext` in the onboarding
+   * controller able to find the company for the user. Without it,
+   * every downstream step probe (settings, sales settings, BU,
+   * products, etc.) short-circuits to false and the guide gets
+   * stuck on step 1.
+   *
+   * The `userId` parameter is optional so that:
+   *   - Bulk/admin creation paths can call without linkage.
+   *   - Existing tests that don't have a user in scope still work.
+   *   - The `getOrCreateDefaultCompany` path (system-owned
+   *     default company) does not accidentally adopt the caller.
    */
-  async createCompany(data: ExtendedCreateCompanyDto) {
+  async createCompany(data: ExtendedCreateCompanyDto, userId?: string) {
     try {
       if (!data.name || !data.email || !data.phone) {
         throw new AppError('Name, email, and phone are required', 400);
@@ -349,7 +367,52 @@ export class CompanyService extends BaseService {
             },
           });
 
-          // 5. Create audit log
+          // 5. ⭐ Link the creator to the new company.
+          //
+          // This is what makes onboarding step 2+ work. The
+          // onboarding resolver reads user.companyId to scope
+          // every probe. Without this, the guide cannot advance.
+          //
+          // We also add the creator to the BusinessUnitUser
+          // pivot of the default BU so:
+          //   • Step 4 (BU) is treated as complete (a BU exists
+          //     with them as a member).
+          //   • Step 6 (team members) correctly shows 0 others
+          //     until they invite someone.
+          //   • BU-scoped queries throughout the app can resolve
+          //     the user's business unit.
+          if (userId) {
+            await tx.user.update({
+              where: { id: userId },
+              data: { companyId: created.id },
+            });
+
+            await tx.businessUnitUser.upsert({
+              where: {
+                userId_businessUnitId: {
+                  userId,
+                  businessUnitId: defaultBusinessUnit.id,
+                },
+              },
+              create: {
+                userId,
+                businessUnitId: defaultBusinessUnit.id,
+                role: 'ADMIN',
+                isActive: true,
+              },
+              update: { isActive: true },
+            });
+
+            console.log(
+              `✅ Linked user ${userId} → company ${created.id} and BU ${defaultBusinessUnit.id}`
+            );
+          } else {
+            console.log(
+              `⚠️ createCompany called without userId — company ${created.id} has no owner link`
+            );
+          }
+
+          // 6. Create audit log
           try {
             await tx.auditLog.create({
               data: {
@@ -357,7 +420,9 @@ export class CompanyService extends BaseService {
                 entityType: 'COMPANY',
                 entityId: created.id,
                 entityName: created.name,
-                userId: 'system',
+                // If we have a user, attribute the audit to them;
+                // otherwise fall back to the system sentinel.
+                userId: userId || 'system',
                 severity: 'HIGH',
                 changes: {
                   name: created.name,
@@ -365,6 +430,7 @@ export class CompanyService extends BaseService {
                   phone: created.phone,
                   businessUnitId: defaultBusinessUnit.id,
                   businessUnitName: defaultBusinessUnit.name,
+                  createdByUserId: userId || null,
                 },
               },
             });
@@ -788,11 +854,6 @@ export class CompanyService extends BaseService {
 
   /**
    * Get default business unit for a company
-   *
-   * ✅ FIXED: Now returns the MOST RECENT active unit, matching the
-   *    fallback order used by shiftController, productController, and
-   *    inventoryController. Previously used 'asc' (oldest), which
-   *    returned a unit that owned none of the current data.
    */
   async getDefaultBusinessUnit(companyId: string) {
     try {
@@ -828,7 +889,6 @@ export class CompanyService extends BaseService {
       });
 
       if (!defaultBusinessUnit) {
-        // Only create a default if the company has NO active units yet
         return await this.prisma.businessUnit.create({
           data: {
             name: 'Main Store',
@@ -889,7 +949,14 @@ export class CompanyService extends BaseService {
   // ============================================
 
   /**
-   * Get or create default company
+   * Get or create default company.
+   *
+   * NOTE: This is the system-owned fallback used by legacy code
+   * paths. It does NOT link the caller's user account, because
+   * there is no caller in scope — this is used for seeding and
+   * for the `/companies/default` endpoint which is intentionally
+   * unscoped. Do not add userId linkage here; onboarding uses
+   * `createCompany(data, userId)` instead.
    */
   async getOrCreateDefaultCompany(): Promise<any> {
     try {
@@ -1024,6 +1091,32 @@ export class CompanyService extends BaseService {
           where: { id: userId },
           data: { companyId: company.id },
         });
+
+        // ⭐ Also link the user to the default BU so onboarding
+        // step 4 is treated as satisfied and BU-scoped queries
+        // resolve correctly.
+        const defaultBu = await this.prisma.businessUnit.findFirst({
+          where: { companyId: company.id, isActive: true },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        if (defaultBu) {
+          await this.prisma.businessUnitUser.upsert({
+            where: {
+              userId_businessUnitId: {
+                userId,
+                businessUnitId: defaultBu.id,
+              },
+            },
+            create: {
+              userId,
+              businessUnitId: defaultBu.id,
+              role: 'ADMIN',
+              isActive: true,
+            },
+            update: { isActive: true },
+          });
+        }
       }
 
       return company;
@@ -1153,6 +1246,366 @@ export class CompanyService extends BaseService {
       };
     } catch (error) {
       this.handleError(error, 'CompanyService.getCompanyActivity');
+      throw error;
+    }
+  }
+
+  /**
+   * Get company settings (company + sales settings)
+   */
+  async getCompanySettings(companyId: string): Promise<{
+    settings: any;
+    salesSettings: any;
+  }> {
+    try {
+      if (!companyId) {
+        throw new AppError('Company ID is required', 400);
+      }
+
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { id: true },
+      });
+
+      if (!company) {
+        throw new AppError('Company not found', 404);
+      }
+
+      const [settings, salesSettings] = await Promise.all([
+        this.prisma.companySettings.findUnique({
+          where: { companyId },
+        }),
+        this.prisma.salesSettings.findUnique({
+          where: { companyId },
+        }),
+      ]);
+
+      return {
+        settings: settings || null,
+        salesSettings: salesSettings || null,
+      };
+    } catch (error) {
+      this.handleError(error, 'CompanyService.getCompanySettings');
+      throw error;
+    }
+  }
+
+  /**
+   * Update company settings (upserts company + sales settings)
+   */
+  async updateCompanySettings(
+    companyId: string,
+    data: { settings?: any; salesSettings?: any }
+  ): Promise<{ settings: any; salesSettings: any }> {
+    try {
+      if (!companyId) {
+        throw new AppError('Company ID is required', 400);
+      }
+
+      const company = await this.prisma.company.findUnique({
+        where: { id: companyId },
+        select: { id: true },
+      });
+
+      if (!company) {
+        throw new AppError('Company not found', 404);
+      }
+
+      const result = await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          let updatedSettings = null;
+          let updatedSalesSettings = null;
+
+          if (data.settings && Object.keys(data.settings).length > 0) {
+            updatedSettings = await tx.companySettings.upsert({
+              where: { companyId },
+              create: {
+                companyId,
+                ...data.settings,
+              },
+              update: {
+                ...data.settings,
+              },
+            });
+          } else {
+            updatedSettings = await tx.companySettings.findUnique({
+              where: { companyId },
+            });
+          }
+
+          if (
+            data.salesSettings &&
+            Object.keys(data.salesSettings).length > 0
+          ) {
+            updatedSalesSettings = await tx.salesSettings.upsert({
+              where: { companyId },
+              create: {
+                companyId,
+                ...data.salesSettings,
+              },
+              update: {
+                ...data.salesSettings,
+              },
+            });
+          } else {
+            updatedSalesSettings = await tx.salesSettings.findUnique({
+              where: { companyId },
+            });
+          }
+
+          try {
+            await tx.auditLog.create({
+              data: {
+                action: 'UPDATE',
+                entityType: 'COMPANY',
+                entityId: companyId,
+                entityName: 'Company Settings',
+                userId: 'system',
+                severity: 'INFO',
+                changes: {
+                  settingsUpdated: !!data.settings,
+                  salesSettingsUpdated: !!data.salesSettings,
+                },
+              },
+            });
+          } catch (auditError) {
+            console.warn('Audit log creation skipped:', auditError);
+          }
+
+          return {
+            settings: updatedSettings,
+            salesSettings: updatedSalesSettings,
+          };
+        }
+      );
+
+      console.log(`✅ Company settings updated for company ${companyId}`);
+      return result;
+    } catch (error) {
+      this.handleError(error, 'CompanyService.updateCompanySettings');
+      throw error;
+    }
+  }
+
+    /**
+   * Get aggregate reports across companies.
+   *
+   * Returns summary numbers for a company reports dashboard:
+   * totals per company, active/inactive counts, and a
+   * rollup of sales revenue grouped by company.
+   *
+   * Optionally scoped by `companyId` (single-company report)
+   * or by a date range (`startDate` / `endDate`) for revenue.
+   */
+  async getCompanyReports(params?: {
+    companyId?: string;
+    startDate?: Date;
+    endDate?: Date;
+    includeInactive?: boolean;
+  }) {
+    try {
+      const {
+        companyId,
+        startDate,
+        endDate,
+        includeInactive = false,
+      } = params || {};
+
+      // Base filter: optionally scoped by company, and optionally
+      // including inactive rows.
+      const companyWhere: Prisma.CompanyWhereInput = {};
+      if (companyId) companyWhere.id = companyId;
+      if (!includeInactive) companyWhere.isActive = true;
+
+      // Revenue date filter (applies to sale.saleDate).
+      const saleDateFilter: Prisma.SaleWhereInput['saleDate'] =
+        startDate || endDate
+          ? {
+              ...(startDate ? { gte: startDate } : {}),
+              ...(endDate ? { lte: endDate } : {}),
+            }
+          : undefined;
+
+      const [
+        companies,
+        totalCompanies,
+        activeCompanies,
+        totalBusinessUnits,
+        totalUsers,
+        totalCustomers,
+        totalSuppliers,
+        totalProducts,
+        salesAggregate,
+        companiesByCurrency,
+        companiesByMonth,
+      ] = await Promise.all([
+        // Per-company rollup — the shape the UI will iterate over.
+        this.prisma.company.findMany({
+          where: companyWhere,
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            isActive: true,
+            currency: true,
+            createdAt: true,
+            _count: {
+              select: {
+                businessUnits: true,
+                users: true,
+                customers: true,
+                suppliers: true,
+              },
+            },
+          },
+        }),
+
+        this.prisma.company.count({ where: companyWhere }),
+
+        this.prisma.company.count({
+          where: { ...companyWhere, isActive: true },
+        }),
+
+        this.prisma.businessUnit.count({
+          where: companyId
+            ? { companyId, isActive: true }
+            : { isActive: true },
+        }),
+
+        this.prisma.user.count({
+          where: {
+            ...(companyId ? { companyId } : {}),
+            isActive: true,
+          },
+        }),
+
+        this.prisma.customer.count({
+          where: {
+            ...(companyId ? { companyId } : {}),
+            isActive: true,
+          },
+        }),
+
+        this.prisma.supplier.count({
+          where: {
+            ...(companyId ? { companyId } : {}),
+            isActive: true,
+          },
+        }),
+
+        this.prisma.product.count({
+          where: {
+            isActive: true,
+            ...(companyId ? { businessUnit: { companyId } } : {}),
+          },
+        }),
+
+        // Total revenue across the filtered set.
+        this.prisma.sale.aggregate({
+          where: {
+            status: 'COMPLETED',
+            ...(companyId ? { businessUnit: { companyId } } : {}),
+            ...(saleDateFilter ? { saleDate: saleDateFilter } : {}),
+          },
+          _sum: { total: true },
+          _count: { _all: true },
+        }),
+
+        // Companies grouped by currency (nice for multi-currency UIs).
+        this.prisma.company.groupBy({
+          by: ['currency'],
+          where: companyWhere,
+          _count: { _all: true },
+        }),
+
+        // New companies per month for the last 12 months.
+        // Prisma doesn't have a direct "groupBy month" — we
+        // fetch createdAt values and bucket in JS.
+        this.prisma.company.findMany({
+          where: {
+            ...companyWhere,
+            createdAt: {
+              gte: new Date(
+                new Date().setMonth(new Date().getMonth() - 11, 1)
+              ),
+            },
+          },
+          select: { createdAt: true },
+        }),
+      ]);
+
+      // Bucket companies by YYYY-MM for the last 12 months.
+      const monthBuckets: Record<string, number> = {};
+      const now = new Date();
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+          2,
+          '0'
+        )}`;
+        monthBuckets[key] = 0;
+      }
+      for (const row of companiesByMonth) {
+        const d = new Date(row.createdAt);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+          2,
+          '0'
+        )}`;
+        if (key in monthBuckets) monthBuckets[key]++;
+      }
+
+      return {
+        // Totals
+        totalCompanies,
+        activeCompanies,
+        inactiveCompanies: totalCompanies - activeCompanies,
+        totalBusinessUnits,
+        totalUsers,
+        totalCustomers,
+        totalSuppliers,
+        totalProducts,
+
+        // Revenue (scoped by companyId + date range if provided)
+        totalRevenue: salesAggregate._sum.total || 0,
+        totalSales: salesAggregate._count._all || 0,
+
+        // Groupings
+        companiesByCurrency: companiesByCurrency.map((row) => ({
+          currency: row.currency,
+          count: row._count._all,
+        })),
+        companiesByMonth: Object.entries(monthBuckets).map(
+          ([month, count]) => ({ month, count })
+        ),
+
+        // Per-company rollup
+        companies: companies.map((c) => ({
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          isActive: c.isActive,
+          currency: c.currency,
+          createdAt: c.createdAt,
+          businessUnitCount: c._count.businessUnits,
+          userCount: c._count.users,
+          customerCount: c._count.customers,
+          supplierCount: c._count.suppliers,
+        })),
+
+        // Period info if a date range was supplied
+        period:
+          startDate || endDate
+            ? {
+                startDate: startDate ?? null,
+                endDate: endDate ?? null,
+              }
+            : null,
+
+        generatedAt: new Date(),
+      };
+    } catch (error) {
+      this.handleError(error, 'CompanyService.getCompanyReports');
       throw error;
     }
   }

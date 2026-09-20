@@ -2,29 +2,45 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, ShoppingCart, Users, Clock, Calendar,
-  RefreshCw, Filter, X, Loader2, AlertCircle,
-  Eye, ChevronDown, ChevronUp, Search,
-  Package, DollarSign, User, Mail, Phone,
-  MapPin, Building2, Globe, Timer,
-  AlertTriangle, ThumbsDown, ThumbsUp,
-  ChevronLeft, ChevronRight, Menu,
-  Grid, List, Settings, Bell, Lock,
-  Download, Printer, Send, Mail as MailIcon,
-  Sparkles, Zap, Crown, Shield, Award,
-  TrendingDown, Minus, Plus, ArrowUp, ArrowDown
+  ArrowLeft,
+  AlertTriangle,
+  Mail as MailIcon,
+  X,
+  Loader2,
+  AlertCircle,
+  Eye,
+  Search,
+  Filter,
+  Package,
+  RefreshCw,
+  User,
+  Clock,
+  ThumbsUp,
+  BarChart3,
+  Lock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from '../../../../../utils/toast-manager';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
-import { api } from '../../../../../services/api';
 import { cartService } from '../../../../../services/cartService';
-import { formatCurrency, formatDate, formatNumber, formatTimeAgo } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatNumber,
+  formatTimeAgo,
+} from '../../../../../utils/formatters';
+import { useConfirm } from '../../../../../components/notifications/ConfirmProvider';
 
 // ============================================
 // INTERFACES
@@ -84,20 +100,32 @@ interface AbandonedFilters {
   hours: number;
   minValue?: number;
   status: string;
-  dateRange: string;
 }
+
+const DEFAULT_FILTERS: AbandonedFilters = {
+  search: '',
+  hours: 24,
+  status: 'all',
+};
+
+const DEFAULT_PAGINATION: PaginationInfo = {
+  total: 0,
+  page: 1,
+  totalPages: 1,
+  limit: 20,
+};
 
 // ============================================
 // CONSTANTS
 // ============================================
 
-const DATE_RANGES = [
-  { value: 'today', label: 'Today' },
-  { value: 'yesterday', label: 'Yesterday' },
-  { value: 'week', label: 'This Week' },
-  { value: 'month', label: 'This Month' },
-  { value: 'quarter', label: 'This Quarter' },
-  { value: 'year', label: 'This Year' },
+const HOURS_OPTIONS = [
+  { value: 12, label: 'Last 12 hours' },
+  { value: 24, label: 'Last 24 hours' },
+  { value: 48, label: 'Last 48 hours' },
+  { value: 72, label: 'Last 72 hours' },
+  { value: 168, label: 'Last 7 days' },
+  { value: 720, label: 'Last 30 days' },
 ];
 
 const STATUS_FILTERS = [
@@ -114,162 +142,262 @@ const STATUS_FILTERS = [
 export default function AdminAbandonedCartsPage() {
   const router = useRouter();
   const { canManage, isLoading: permissionLoading } = usePermission();
-  
+  const confirm = useConfirm();
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [carts, setCarts] = useState<AbandonedCart[]>([]);
-  const [pagination, setPagination] = useState<PaginationInfo>({
-    total: 0,
-    page: 1,
-    totalPages: 1,
-    limit: 20,
-  });
-  const [filters, setFilters] = useState<AbandonedFilters>({
-    search: '',
-    hours: 24,
-    status: 'all',
-    dateRange: 'week',
-  });
+  const [pagination, setPagination] =
+    useState<PaginationInfo>(DEFAULT_PAGINATION);
+  const [filters, setFilters] =
+    useState<AbandonedFilters>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedCart, setSelectedCart] = useState<AbandonedCart | null>(null);
+  const [selectedCart, setSelectedCart] =
+    useState<AbandonedCart | null>(null);
   const [showCartModal, setShowCartModal] = useState(false);
-  const [recovering, setRecovering] = useState(false);
+  const [workingCartId, setWorkingCartId] = useState<string | null>(null);
 
-  const canViewAbandoned = canManage(PermissionResource.CART_VIEW) || 
-                          canManage(PermissionResource.CART_MANAGE) ||
-                          canManage(PermissionResource.ANALYTICS);
+  const isMountedRef = useRef(true);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
+
+  // ============================================
+  // PERMISSIONS
+  // ============================================
+
+  const canViewAbandoned =
+    canManage(PermissionResource.CART_VIEW) ||
+    canManage(PermissionResource.CART_MANAGE) ||
+    canManage(PermissionResource.ANALYTICS);
+
+  const canRecoverCart =
+    canManage(PermissionResource.CART_MANAGE) ||
+    canManage(PermissionResource.CART_CHECKOUT);
 
   // ============================================
   // DATA FETCHING
   // ============================================
 
-  const fetchAbandonedCarts = useCallback(async (showLoading = true) => {
-    if (!canViewAbandoned) return;
+  const fetchAbandonedCarts = useCallback(
+    async (mode: 'initial' | 'refresh' | 'silent' = 'silent') => {
+      if (!canViewAbandoned) return;
 
-    try {
-      if (showLoading) setLoading(true);
-      if (!showLoading) setRefreshing(true);
-      setError(null);
+      if (mode === 'initial') setLoading(true);
+      if (mode === 'refresh') setRefreshing(true);
 
-      const params: any = {
-        page: pagination.page,
-        limit: pagination.limit,
-        hours: filters.hours,
-      };
+      try {
+        setError(null);
 
-      if (filters.search) params.search = filters.search;
-      if (filters.minValue) params.minValue = filters.minValue;
-      if (filters.status !== 'all') params.status = filters.status;
+        const params: Record<string, unknown> = {
+          page: pagination.page,
+          limit: pagination.limit,
+          hours: filters.hours,
+        };
+        if (filters.search) params.search = filters.search;
+        if (typeof filters.minValue === 'number') {
+          params.minValue = filters.minValue;
+        }
+        if (filters.status !== 'all') params.status = filters.status;
 
-      // Date range
-      if (filters.dateRange !== 'all') {
-        params.dateRange = filters.dateRange;
-      }
+        const response = await cartService.getAbandonedCarts(params);
+        if (!isMountedRef.current) return;
 
-      console.log('📤 Fetching abandoned carts with params:', params);
-
-      const response = await cartService.getAbandonedCarts(params);
-      console.log('📥 Abandoned carts response:', response);
-
-      if (response) {
-        setCarts(response.carts || []);
+        setCarts(response.carts ?? []);
         setPagination({
-          total: response.total || 0,
-          page: response.page || 1,
-          totalPages: response.totalPages || 1,
-          limit: response.limit || 20,
+          total: response.total ?? 0,
+          page: response.page ?? 1,
+          totalPages: response.totalPages ?? 1,
+          limit: response.limit ?? DEFAULT_PAGINATION.limit,
         });
+      } catch (err: any) {
+        if (!isMountedRef.current) return;
+        console.error('Failed to fetch abandoned carts:', err);
+        const message =
+          err?.response?.data?.message ||
+          err?.message ||
+          'Failed to load abandoned carts';
+        setError(message);
+        toast.error(message);
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } catch (error: any) {
-      console.error('Failed to fetch abandoned carts:', error);
-      setError(error?.message || 'Failed to load abandoned carts');
-      toast.error('Failed to load abandoned carts');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [canViewAbandoned, filters, pagination.page, pagination.limit]);
+    },
+    [
+      canViewAbandoned,
+      filters.search,
+      filters.hours,
+      filters.minValue,
+      filters.status,
+      pagination.page,
+      pagination.limit,
+    ],
+  );
 
+  // Refetch whenever the filters or pagination change.
   useEffect(() => {
-    if (canViewAbandoned) {
-      fetchAbandonedCarts();
-    } else {
+    if (!canViewAbandoned) {
       setLoading(false);
+      return;
     }
-  }, [canViewAbandoned, fetchAbandonedCarts]);
+    void fetchAbandonedCarts(loading ? 'initial' : 'silent');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    canViewAbandoned,
+    filters.search,
+    filters.hours,
+    filters.minValue,
+    filters.status,
+    pagination.page,
+    pagination.limit,
+  ]);
 
   // ============================================
   // HANDLERS
   // ============================================
 
-  const handleRefresh = () => {
-    fetchAbandonedCarts(false);
+  const handleRefresh = useCallback(async () => {
+    await fetchAbandonedCarts('refresh');
     toast.success('Abandoned carts refreshed');
-  };
+  }, [fetchAbandonedCarts]);
 
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page }));
-    }
-  };
-
-  const handleLimitChange = (limit: number) => {
-    setPagination(prev => ({ ...prev, limit, page: 1 }));
-  };
-
-  const handleFilterChange = (key: keyof AbandonedFilters, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      search: '',
-      hours: 24,
-      status: 'all',
-      dateRange: 'week',
+  const handlePageChange = useCallback((page: number) => {
+    setPagination((prev) => {
+      if (page < 1 || page > prev.totalPages) return prev;
+      return { ...prev, page };
     });
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
-  const handleViewCart = (cart: AbandonedCart) => {
+  const handleLimitChange = useCallback((limit: number) => {
+    setPagination((prev) => ({ ...prev, limit, page: 1 }));
+  }, []);
+
+  const handleFilterChange = useCallback(
+    <K extends keyof AbandonedFilters>(
+      key: K,
+      value: AbandonedFilters[K],
+    ) => {
+      setFilters((prev) => ({ ...prev, [key]: value }));
+      // Search already debounces below; other filters reset to page 1
+      // immediately.
+      if (key !== 'search') {
+        setPagination((prev) => ({ ...prev, page: 1 }));
+      }
+    },
+    [],
+  );
+
+  const handleSearchInput = useCallback(
+    (value: string) => {
+      setFilters((prev) => ({ ...prev, search: value }));
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+      searchDebounceRef.current = setTimeout(() => {
+        setPagination((prev) => ({ ...prev, page: 1 }));
+      }, 300);
+    },
+    [],
+  );
+
+  const handleClearFilters = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  }, []);
+
+  const handleViewCart = useCallback((cart: AbandonedCart) => {
     setSelectedCart(cart);
     setShowCartModal(true);
-  };
+  }, []);
 
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setShowCartModal(false);
     setSelectedCart(null);
-  };
+  }, []);
 
-  const handleRecoverCart = async (cartId: string) => {
-    if (!confirm('Are you sure you want to recover this cart? The user will be notified.')) return;
+  const handleRecoverCart = useCallback(
+    async (cartId: string) => {
+      if (!canRecoverCart) {
+        toast.error('You do not have permission to recover carts');
+        return;
+      }
 
-    setRecovering(true);
-    try {
-      // TODO: Implement cart recovery API
-      // await cartService.recoverCart(cartId);
-      toast.success('Cart recovery initiated. User will be notified.');
-      await fetchAbandonedCarts(false);
-    } catch (error: any) {
-      console.error('Failed to recover cart:', error);
-      toast.error(error?.message || 'Failed to recover cart');
-    } finally {
-      setRecovering(false);
-    }
-  };
+      const ok = await confirm({
+        title: 'Recover this cart?',
+        description:
+          'The user will be notified and their session will be reactivated. The cart will be marked ACTIVE.',
+        tone: 'info',
+        confirmLabel: 'Recover',
+      });
+      if (!ok) return;
 
-  const handleSendReminder = async (cartId: string) => {
-    try {
-      // TODO: Implement reminder API
-      // await cartService.sendCartReminder(cartId);
-      toast.success('Reminder sent successfully');
-    } catch (error: any) {
-      console.error('Failed to send reminder:', error);
-      toast.error(error?.message || 'Failed to send reminder');
-    }
-  };
+      setWorkingCartId(cartId);
+      try {
+        await cartService.recoverCart({ cartId, notifyUser: true });
+        toast.success('Cart recovery initiated');
+        window.dispatchEvent(new CustomEvent('cart:updated'));
+        await fetchAbandonedCarts('silent');
+      } catch (err: any) {
+        const message =
+          err?.response?.data?.message ||
+          err?.message ||
+          'Failed to recover cart';
+        toast.error(message);
+      } finally {
+        if (isMountedRef.current) setWorkingCartId(null);
+      }
+    },
+    [canRecoverCart, confirm, fetchAbandonedCarts],
+  );
+
+  const handleSendReminder = useCallback(
+    async (cartId: string) => {
+      if (!canRecoverCart) {
+        toast.error('You do not have permission to send reminders');
+        return;
+      }
+
+      setWorkingCartId(cartId);
+      try {
+        await cartService.sendReminder({ cartId });
+        toast.success('Reminder sent');
+      } catch (err: any) {
+        const message =
+          err?.response?.data?.message ||
+          err?.message ||
+          'Failed to send reminder';
+        toast.error(message);
+      } finally {
+        if (isMountedRef.current) setWorkingCartId(null);
+      }
+    },
+    [canRecoverCart],
+  );
+
+  // ============================================
+  // DERIVED
+  // ============================================
+
+  const stats = useMemo(() => {
+    const total = pagination.total;
+    const pageValue = carts.reduce((sum, c) => sum + (c.total || 0), 0);
+    const avgValue = carts.length > 0 ? pageValue / carts.length : 0;
+    return { total, pageValue, avgValue };
+  }, [carts, pagination.total]);
 
   // ============================================
   // HELPERS
@@ -277,10 +405,14 @@ export default function AdminAbandonedCartsPage() {
 
   const getStatusColor = (status: string): string => {
     const colors: Record<string, string> = {
-      ACTIVE: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-      SAVED: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-      CHECKED_OUT: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
-      ABANDONED: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+      ACTIVE:
+        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+      SAVED:
+        'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+      CHECKED_OUT:
+        'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
+      ABANDONED:
+        'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
@@ -295,25 +427,27 @@ export default function AdminAbandonedCartsPage() {
     return labels[status] || status;
   };
 
-  const getAbandonmentRisk = (hours: number): { label: string; color: string; icon: React.ReactNode } => {
+  const getAbandonmentRisk = (
+    hours: number,
+  ): { label: string; color: string; icon: React.ReactNode } => {
     if (hours > 72) {
-      return { 
-        label: 'High Risk', 
+      return {
+        label: 'High Risk',
         color: 'text-red-600 dark:text-red-400',
-        icon: <AlertTriangle className="w-4 h-4" />
+        icon: <AlertTriangle className="w-4 h-4" />,
       };
     }
     if (hours > 24) {
-      return { 
-        label: 'Medium Risk', 
-        color: 'text-yellow-600 dark:text-yellow-400',
-        icon: <Clock className="w-4 h-4" />
+      return {
+        label: 'Medium Risk',
+        color: 'text-amber-600 dark:text-amber-400',
+        icon: <Clock className="w-4 h-4" />,
       };
     }
-    return { 
-      label: 'Low Risk', 
-      color: 'text-green-600 dark:text-green-400',
-      icon: <ThumbsUp className="w-4 h-4" />
+    return {
+      label: 'Low Risk',
+      color: 'text-emerald-600 dark:text-emerald-400',
+      icon: <ThumbsUp className="w-4 h-4" />,
     };
   };
 
@@ -325,8 +459,10 @@ export default function AdminAbandonedCartsPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 dark:text-blue-400 mx-auto" />
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading abandoned carts...</p>
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading abandoned carts…
+          </p>
         </div>
       </div>
     );
@@ -338,13 +474,16 @@ export default function AdminAbandonedCartsPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view abandoned carts. Please contact your administrator.
+          You don't have permission to view abandoned carts.
         </p>
         <button
+          type="button"
           onClick={() => router.push('/admin')}
-          className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          className="mt-4 px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors"
         >
           Back to Dashboard
         </button>
@@ -363,6 +502,7 @@ export default function AdminAbandonedCartsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
             <button
+              type="button"
               onClick={() => router.push('/admin/cart')}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
               aria-label="Back to cart management"
@@ -381,23 +521,29 @@ export default function AdminAbandonedCartsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               onClick={handleRefresh}
               disabled={refreshing}
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
               aria-label="Refresh"
             >
-              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`}
+              />
             </button>
             <button
-              onClick={() => setShowFilters(!showFilters)}
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-sm"
+              aria-expanded={showFilters}
             >
               <Filter className="w-4 h-4" />
               Filters
             </button>
             <button
+              type="button"
               onClick={() => router.push('/admin/cart/analytics')}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm"
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm shadow-sm"
             >
               <BarChart3 className="w-4 h-4" />
               Analytics
@@ -405,151 +551,194 @@ export default function AdminAbandonedCartsPage() {
           </div>
         </div>
 
-        {/* Stats Summary */}
+        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Total Abandoned</p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {formatNumber(pagination.total)}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Potential Revenue</p>
-            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-              {formatCurrency(carts.reduce((sum, cart) => sum + cart.total, 0))}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Avg Cart Value</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {carts.length > 0 ? formatCurrency(carts.reduce((sum, cart) => sum + cart.total, 0) / carts.length) : '$0'}
-            </p>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Recovery Rate</p>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-              0%
-            </p>
-          </div>
+          <StatCard
+            label="Total Abandoned"
+            value={formatNumber(stats.total)}
+            accent="text-red-600 dark:text-red-400"
+          />
+          <StatCard
+            label="Potential Revenue (page)"
+            value={formatCurrency(stats.pageValue)}
+            accent="text-amber-600 dark:text-amber-400"
+          />
+          <StatCard
+            label="Avg Cart Value (page)"
+            value={formatCurrency(stats.avgValue)}
+            accent="text-orange-600 dark:text-orange-400"
+          />
+          <StatCard
+            label="Recovery Rate"
+            value="—"
+            accent="text-emerald-600 dark:text-emerald-400"
+          />
         </div>
 
         {/* Filters */}
-        {showFilters && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6"
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <AnimatePresence initial={false}>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 mb-6 overflow-hidden"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Search
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={filters.search}
+                      onChange={(e) =>
+                        handleSearchInput(e.target.value)
+                      }
+                      placeholder="Search by user or email…"
+                      className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Hours Abandoned
+                  </label>
+                  <select
+                    value={filters.hours}
+                    onChange={(e) =>
+                      handleFilterChange(
+                        'hours',
+                        parseInt(e.target.value, 10),
+                      )
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none"
+                  >
+                    {HOURS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={filters.status}
+                    onChange={(e) =>
+                      handleFilterChange('status', e.target.value)
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none"
+                  >
+                    {STATUS_FILTERS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Min Value
+                  </label>
                   <input
-                    type="text"
-                    value={filters.search}
-                    onChange={(e) => handleFilterChange('search', e.target.value)}
-                    placeholder="Search by user or email..."
-                    className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    type="number"
+                    value={filters.minValue ?? ''}
+                    onChange={(e) =>
+                      handleFilterChange(
+                        'minValue',
+                        e.target.value
+                          ? parseFloat(e.target.value)
+                          : undefined,
+                      )
+                    }
+                    placeholder="0.00"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hours Abandoned</label>
-                <select
-                  value={filters.hours}
-                  onChange={(e) => handleFilterChange('hours', parseInt(e.target.value))}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              <div className="flex justify-end mt-4">
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                 >
-                  <option value={12}>Last 12 hours</option>
-                  <option value={24}>Last 24 hours</option>
-                  <option value={48}>Last 48 hours</option>
-                  <option value={72}>Last 72 hours</option>
-                  <option value={168}>Last 7 days</option>
-                  <option value={720}>Last 30 days</option>
-                </select>
+                  Clear Filters
+                </button>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                <select
-                  value={filters.status}
-                  onChange={(e) => handleFilterChange('status', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  {STATUS_FILTERS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Min Value</label>
-                <input
-                  type="number"
-                  value={filters.minValue || ''}
-                  onChange={(e) => handleFilterChange('minValue', e.target.value ? parseFloat(e.target.value) : undefined)}
-                  placeholder="0.00"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end mt-4">
-              <button
-                onClick={handleClearFilters}
-                className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-              >
-                Clear Filters
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Error Display */}
+        {/* Error */}
         {error && (
           <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800 dark:text-red-200">Error</p>
-              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                Error
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {error}
+              </p>
             </div>
-            <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800 dark:text-red-400 p-1">
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              aria-label="Dismiss error"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* Carts Table */}
+        {/* Table */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Items</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Abandoned</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Risk</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                  <Th>User</Th>
+                  <Th>Items</Th>
+                  <Th align="right">Total</Th>
+                  <Th>Status</Th>
+                  <Th>Abandoned</Th>
+                  <Th>Risk</Th>
+                  <Th align="right">Actions</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {carts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500 dark:text-gray-400">
-                      <ShoppingCart className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                      <p className="text-lg font-medium">No abandoned carts found</p>
-                      <p className="text-sm">Try adjusting your filters</p>
+                    <td
+                      colSpan={7}
+                      className="px-4 py-12 text-center text-gray-500 dark:text-gray-400"
+                    >
+                      <AlertTriangle className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                      <p className="text-lg font-medium">
+                        No abandoned carts
+                      </p>
+                      <p className="text-sm">
+                        Try widening the hours filter or clearing
+                        search.
+                      </p>
                     </td>
                   </tr>
                 ) : (
                   carts.map((cart) => {
-                    const risk = getAbandonmentRisk(cart.hoursAbandoned || 0);
+                    const risk = getAbandonmentRisk(
+                      cart.hoursAbandoned || 0,
+                    );
+                    const isWorking = workingCartId === cart.id;
                     return (
                       <motion.tr
                         key={cart.id}
@@ -560,58 +749,92 @@ export default function AdminAbandonedCartsPage() {
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <User className="w-4 h-4 text-gray-400" />
-                            <div>
-                              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                {cart.user?.firstName} {cart.user?.lastName}
+                            <User className="w-4 h-4 text-gray-400 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                {cart.user?.firstName}{' '}
+                                {cart.user?.lastName}
                               </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">{cart.user?.email}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                {cart.user?.email}
+                              </p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                          {cart.itemCount || cart.items?.length || 0} items
+                        <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
+                          {cart.itemCount ??
+                            cart.items?.length ??
+                            0}{' '}
+                          items
                         </td>
-                        <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white">
+                        <td className="px-4 py-3 text-right text-sm font-medium text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(cart.total || 0)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(cart.status)}`}>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(cart.status)}`}
+                          >
                             {getStatusLabel(cart.status)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                          {cart.abandonedAt ? formatTimeAgo(cart.abandonedAt) : formatTimeAgo(cart.updatedAt)}
+                          {cart.abandonedAt
+                            ? formatTimeAgo(cart.abandonedAt)
+                            : formatTimeAgo(cart.updatedAt)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`flex items-center gap-1 text-sm font-medium ${risk.color}`}>
+                          <span
+                            className={`flex items-center gap-1 text-sm font-medium ${risk.color}`}
+                          >
                             {risk.icon}
                             {risk.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td
+                          className="px-4 py-3 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex items-center justify-end gap-1">
                             <button
+                              type="button"
                               onClick={() => handleViewCart(cart)}
                               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                               title="View Details"
+                              aria-label="View details"
                             >
                               <Eye className="w-4 h-4 text-gray-500" />
                             </button>
                             <button
-                              onClick={() => handleSendReminder(cart.id)}
-                              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                              type="button"
+                              onClick={() =>
+                                handleSendReminder(cart.id)
+                              }
+                              disabled={isWorking || !canRecoverCart}
+                              className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors disabled:opacity-50"
                               title="Send Reminder"
+                              aria-label="Send reminder"
                             >
-                              <MailIcon className="w-4 h-4 text-blue-500" />
+                              {isWorking ? (
+                                <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                              ) : (
+                                <MailIcon className="w-4 h-4 text-blue-500" />
+                              )}
                             </button>
                             <button
-                              onClick={() => handleRecoverCart(cart.id)}
-                              disabled={recovering}
-                              className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors disabled:opacity-50"
+                              type="button"
+                              onClick={() =>
+                                handleRecoverCart(cart.id)
+                              }
+                              disabled={isWorking || !canRecoverCart}
+                              className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded transition-colors disabled:opacity-50"
                               title="Recover Cart"
+                              aria-label="Recover cart"
                             >
-                              <RefreshCw className="w-4 h-4 text-green-500" />
+                              {isWorking ? (
+                                <Loader2 className="w-4 h-4 text-emerald-500 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-4 h-4 text-emerald-500" />
+                              )}
                             </button>
                           </div>
                         </td>
@@ -627,13 +850,20 @@ export default function AdminAbandonedCartsPage() {
           {pagination.totalPages > 1 && (
             <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-                  {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+                <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                  Showing{' '}
+                  {(pagination.page - 1) * pagination.limit + 1} to{' '}
+                  {Math.min(
+                    pagination.page * pagination.limit,
+                    pagination.total,
+                  )}{' '}
+                  of {pagination.total}
                 </span>
                 <select
                   value={pagination.limit}
-                  onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                  onChange={(e) =>
+                    handleLimitChange(parseInt(e.target.value, 10))
+                  }
                   className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
                 >
                   <option value={10}>10</option>
@@ -642,23 +872,31 @@ export default function AdminAbandonedCartsPage() {
                   <option value={100}>100</option>
                 </select>
               </div>
-              <div className="flex gap-1">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => handlePageChange(pagination.page - 1)}
+                  type="button"
+                  onClick={() =>
+                    handlePageChange(pagination.page - 1)
+                  }
                   disabled={pagination.page <= 1}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="inline-flex items-center gap-1 px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
+                  <ChevronLeft className="w-3.5 h-3.5" />
                   Previous
                 </button>
-                <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300">
-                  Page {pagination.page} of {pagination.totalPages}
+                <span className="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 tabular-nums">
+                  {pagination.page} / {pagination.totalPages}
                 </span>
                 <button
-                  onClick={() => handlePageChange(pagination.page + 1)}
+                  type="button"
+                  onClick={() =>
+                    handlePageChange(pagination.page + 1)
+                  }
                   disabled={pagination.page >= pagination.totalPages}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="inline-flex items-center gap-1 px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Next
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -666,128 +904,244 @@ export default function AdminAbandonedCartsPage() {
         </div>
       </div>
 
-      {/* Cart Detail Modal */}
+      {/* Detail modal */}
       <AnimatePresence>
         {showCartModal && selectedCart && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCloseModal} />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={handleCloseModal}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6"
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Modal Header */}
+              {/* Header */}
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
                     <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Abandoned Cart Details</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      ID: {selectedCart.id.slice(0, 12)}...
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                      Abandoned Cart Details
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-mono truncate">
+                      ID: {selectedCart.id.slice(0, 12)}…
                     </p>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={handleCloseModal}
                   className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  aria-label="Close"
                 >
                   <X className="w-5 h-5 text-gray-500" />
                 </button>
               </div>
 
-              {/* Cart Info */}
+              {/* Info grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">User</p>
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    {selectedCart.user?.firstName} {selectedCart.user?.lastName}
+                <InfoTile label="User">
+                  <p className="font-medium text-gray-900 dark:text-white truncate">
+                    {selectedCart.user?.firstName}{' '}
+                    {selectedCart.user?.lastName}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{selectedCart.user?.email}</p>
-                </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Status</p>
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedCart.status)}`}>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    {selectedCart.user?.email}
+                  </p>
+                </InfoTile>
+                <InfoTile label="Status">
+                  <span
+                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedCart.status)}`}
+                  >
                     {getStatusLabel(selectedCart.status)}
                   </span>
-                </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(selectedCart.total || 0)}</p>
-                </div>
-                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Abandoned</p>
-                  <p className="font-medium text-gray-900 dark:text-white">
-                    {selectedCart.abandonedAt ? formatTimeAgo(selectedCart.abandonedAt) : formatTimeAgo(selectedCart.updatedAt)}
+                </InfoTile>
+                <InfoTile label="Total">
+                  <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+                    {formatCurrency(selectedCart.total || 0)}
                   </p>
-                </div>
+                </InfoTile>
+                <InfoTile label="Abandoned">
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {selectedCart.abandonedAt
+                      ? formatTimeAgo(selectedCart.abandonedAt)
+                      : formatTimeAgo(selectedCart.updatedAt)}
+                  </p>
+                </InfoTile>
               </div>
 
-              {/* Cart Items */}
+              {/* Items */}
               <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                <h4 className="font-semibold text-gray-900 dark:text-white">Items</h4>
-                {selectedCart.items && selectedCart.items.length > 0 ? (
+                <h4 className="font-semibold text-gray-900 dark:text-white">
+                  Items
+                </h4>
+                {selectedCart.items &&
+                selectedCart.items.length > 0 ? (
                   selectedCart.items.map((item) => (
-                    <div key={item.id} className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                    >
                       <div className="w-16 h-16 bg-gray-200 dark:bg-gray-600 rounded-lg overflow-hidden flex-shrink-0">
-                        {item.product.images?.[0] ? (
-                          <img src={item.product.images[0]} alt={item.product.name} className="w-full h-full object-cover" />
+                        {item.product?.images?.[0] ? (
+                          <img
+                            src={item.product.images[0]}
+                            alt={item.product.name}
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
-                          <Package className="w-8 h-8 text-gray-400 mx-auto mt-4" />
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Package className="w-8 h-8 text-gray-400" />
+                          </div>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-white">{item.product.name}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">SKU: {item.product.sku}</p>
+                        <p className="font-medium text-gray-900 dark:text-white truncate">
+                          {item.product?.name || 'Product'}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          SKU: {item.product?.sku || 'N/A'}
+                        </p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(item.unitPrice)}</p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Qty: {item.quantity}</p>
-                        <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Total: {formatCurrency(item.total)}</p>
+                      <div className="text-right shrink-0">
+                        <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+                          {formatCurrency(item.unitPrice)}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                          Qty: {item.quantity}
+                        </p>
+                        <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
+                          {formatCurrency(item.total)}
+                        </p>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p className="text-gray-500 dark:text-gray-400 text-center py-4">No items in this cart</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+                    No items in this cart
+                  </p>
                 )}
               </div>
 
-              {/* Modal Footer */}
+              {/* Footer */}
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
+                  type="button"
                   onClick={handleCloseModal}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
                 >
                   Close
                 </button>
-                <button
-                  onClick={() => {
-                    handleSendReminder(selectedCart.id);
-                    handleCloseModal();
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
-                >
-                  <MailIcon className="w-4 h-4" />
-                  Send Reminder
-                </button>
-                <button
-                  onClick={() => {
-                    handleRecoverCart(selectedCart.id);
-                    handleCloseModal();
-                  }}
-                  disabled={recovering}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Recover Cart
-                </button>
+                {canRecoverCart && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleSendReminder(selectedCart.id);
+                      }}
+                      disabled={workingCartId === selectedCart.id}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
+                    >
+                      {workingCartId === selectedCart.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <MailIcon className="w-4 h-4" />
+                      )}
+                      Send Reminder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleRecoverCart(selectedCart.id);
+                      }}
+                      disabled={workingCartId === selectedCart.id}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
+                    >
+                      {workingCartId === selectedCart.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      Recover Cart
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================
+// SUB-COMPONENTS
+// ============================================
+
+function Th({
+  children,
+  align = 'left',
+}: {
+  children: React.ReactNode;
+  align?: 'left' | 'right';
+}) {
+  return (
+    <th
+      className={`px-4 py-3 text-${align} text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}
+    >
+      {children}
+    </th>
+  );
+}
+
+function InfoTile({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  accent = 'text-gray-900 dark:text-white',
+}: {
+  label: string;
+  value: string | number;
+  accent?: string;
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        {label}
+      </p>
+      <p className={`text-2xl font-bold tabular-nums ${accent}`}>
+        {value}
+      </p>
     </div>
   );
 }

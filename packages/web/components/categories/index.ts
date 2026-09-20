@@ -4,3 +4,4 @@ export * from './CategoryGrid';
 export * from './CategoryShowcase';
 export * from './CategoryForm';
 export * from './CategoryList';
+export * from './CategoryAvatar';

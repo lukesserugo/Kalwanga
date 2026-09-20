@@ -3,6 +3,100 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 // ============================================
+// REQUEST CONFIG EXTENSIONS
+// ============================================
+//
+// `silent` — set on a per-request basis to suppress the automatic
+// error logging that normally happens in `handleResponseError`.
+//
+// Use case: `safeFetch` in dashboard pages treats a 404 as "endpoint
+// not implemented yet" and does its own (informational) logging.
+// Without this flag, `handleResponseError` emits three red-error lines
+// before the caller gets a chance to handle the rejection, which
+// clutters the console with noise that is not actionable.
+
+interface SilentableRequestConfig extends AxiosRequestConfig {
+  silent?: boolean;
+}
+
+// ============================================
+// PAGINATION ATTACHMENT
+// ============================================
+//
+// When the backend returns `{ success, data: T[], pagination, stats }`,
+// `extractData` returns `data` — the array — and needs to attach the
+// sibling fields so callers can read them.
+//
+// The original implementation used `Object.defineProperty` with
+// `enumerable: false`. That made the fields invisible to
+// `JSON.stringify`, `Object.keys`, and — critically — `for...in`,
+// which broke some consumers that expected to see them.
+//
+// The new implementation uses a Symbol-keyed non-enumerable property
+// **plus** enumerable assignment when the value is an array. Arrays
+// never have their own `pagination`/`stats`/`scope` keys, so setting
+// them directly doesn't overwrite anything the array actually owns.
+
+const PAGINATION_KEY = Symbol.for('api.pagination');
+const STATS_KEY = Symbol.for('api.stats');
+const SCOPE_KEY = Symbol.for('api.scope');
+
+/**
+ * Attach a sibling field to the extracted `data` without clobbering
+ * anything the data already owns.
+ *
+ * - Arrays: assign directly (they don't have these keys) — this makes
+ *   the field visible to `Object.keys` and `JSON.stringify`, which is
+ *   what most consumers want.
+ * - Objects: same — unless the key already exists, in which case we
+ *   fall back to a Symbol so nothing is lost.
+ *
+ * Either way, also attach the Symbol-keyed copy so a caller that
+ * prefers symbol access can use `data[PAGINATION_KEY]`.
+ */
+function attachSibling<T extends object>(
+  target: T,
+  key: 'pagination' | 'stats' | 'scope',
+  value: unknown,
+): void {
+  if (!target || typeof target !== 'object') return;
+  if (value === undefined || value === null) return;
+
+  // Symbol copy — always set, never overwrites anything.
+  const symbol =
+    key === 'pagination'
+      ? PAGINATION_KEY
+      : key === 'stats'
+      ? STATS_KEY
+      : SCOPE_KEY;
+
+  try {
+    Object.defineProperty(target, symbol, {
+      value,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+  } catch {
+    /* ignore */
+  }
+
+  // Direct copy — only when the key isn't already present.
+  if (!(key in target)) {
+    try {
+      Object.defineProperty(target, key, {
+        value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+// ============================================
 // TOKEN REFRESH STATE
 // ============================================
 
@@ -23,23 +117,26 @@ const tokenState: TokenRefreshState = {
 };
 
 // ============================================
+// ONBOARDING MUTATION EVENT
+// ============================================
+
+const ONBOARDING_MUTATED_EVENT = 'onboarding:mutated';
+
+// ============================================
 // BUSINESS UNIT RESOLUTION
 // ============================================
 
-/**
- * ✅ NEW: Resolve the active business unit ID from localStorage.
- * Checked in this order:
- *   1. businessUnitId key
- *   2. user.businessUnitId
- *   3. user.businessUnits[0].businessUnitId
- * Returns null if nothing is found (caller decides whether to send the header).
- */
 function resolveBusinessUnitId(): string | null {
   if (typeof window === 'undefined') return null;
 
   try {
     const direct = localStorage.getItem('businessUnitId');
-    if (direct && direct !== 'undefined' && direct !== 'null' && direct !== 'default') {
+    if (
+      direct &&
+      direct !== 'undefined' &&
+      direct !== 'null' &&
+      direct !== 'default'
+    ) {
       return direct;
     }
   } catch (_e) {
@@ -79,7 +176,8 @@ class ApiService {
   private isRefreshing: boolean = false;
 
   private constructor() {
-    const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const baseURL =
+      process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
     console.log('🔗 API Base URL:', baseURL);
 
@@ -88,32 +186,26 @@ class ApiService {
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
+        Accept: 'application/json',
       },
       withCredentials: true,
     });
 
     // ============================================
     // REQUEST INTERCEPTOR
-    // Adds Authorization + X-Business-Unit-Id on every request
     // ============================================
+
     this.client.interceptors.request.use(
       async (config) => {
-        // Skip auth for webhook endpoints
         if (config.url?.includes('/webhook')) {
           return config;
         }
 
-        // ✅ Attach Authorization
         const authHeaders = await this.getAuthHeaders();
         if (authHeaders.Authorization) {
           config.headers.Authorization = authHeaders.Authorization;
         }
 
-        // ✅ FIXED: attach business unit ID header if available.
-        // The backend controller reads req.headers['x-business-unit-id']
-        // as an explicit override. Never send 'default' — that would
-        // confuse the resolver.
         const businessUnitId = resolveBusinessUnitId();
         if (businessUnitId) {
           config.headers['x-business-unit-id'] = businessUnitId;
@@ -121,12 +213,12 @@ class ApiService {
 
         return config;
       },
-      (error) => Promise.reject(error)
+      (error) => Promise.reject(error),
     );
 
     this.client.interceptors.response.use(
       this.handleResponse.bind(this),
-      this.handleResponseError.bind(this)
+      this.handleResponseError.bind(this),
     );
   }
 
@@ -162,8 +254,8 @@ class ApiService {
       if (timeSinceLastAttempt < tokenState.cooldownPeriod) {
         console.log(
           `⏳ Token refresh on cooldown (${Math.round(
-            (tokenState.cooldownPeriod - timeSinceLastAttempt) / 1000
-          )}s remaining)`
+            (tokenState.cooldownPeriod - timeSinceLastAttempt) / 1000,
+          )}s remaining)`,
         );
         return false;
       }
@@ -256,7 +348,9 @@ class ApiService {
       try {
         if (attempt > 0) {
           const delay = Math.pow(2, attempt - 1) * 1000;
-          console.log(`⏳ Retry ${attempt}/${maxRetries} after ${delay}ms delay...`);
+          console.log(
+            `⏳ Retry ${attempt}/${maxRetries} after ${delay}ms delay...`,
+          );
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
 
@@ -264,7 +358,7 @@ class ApiService {
         tokenState.lastAttemptTime = Date.now();
 
         console.log(
-          `🔑 Getting Clerk token (attempt ${tokenState.attempts}/${tokenState.maxAttempts})...`
+          `🔑 Getting Clerk token (attempt ${tokenState.attempts}/${tokenState.maxAttempts})...`,
         );
         const token = await this.getClerkToken!();
 
@@ -278,7 +372,7 @@ class ApiService {
       } catch (error: any) {
         console.error(
           `❌ Token attempt ${attempt + 1} failed:`,
-          error.message || error
+          error.message || error,
         );
         lastError = error;
 
@@ -311,15 +405,69 @@ class ApiService {
   // ============================================
 
   private handleResponse(response: AxiosResponse): AxiosResponse {
-    console.log(
-      `📥 ${response.config.method?.toUpperCase()} ${response.config.url} - Status: ${response.status}`
-    );
+    const silent = (response.config as SilentableRequestConfig | undefined)
+      ?.silent;
+    if (!silent) {
+      console.log(
+        `📥 ${response.config.method?.toUpperCase()} ${response.config.url} - Status: ${response.status}`,
+      );
+    }
+
+    this.notifyMutationIfApplicable(response);
+
     return response;
   }
 
+  private notifyMutationIfApplicable(response: AxiosResponse): void {
+    if (typeof window === 'undefined') return;
+
+    const method = response.config?.method?.toLowerCase();
+    if (!method) return;
+    if (!['post', 'put', 'patch', 'delete'].includes(method)) return;
+    if (response.status < 200 || response.status >= 300) return;
+
+    const url = response.config?.url ?? '';
+    if (
+      url.includes('/auth/') ||
+      url.includes('/sign-in') ||
+      url.includes('/sign-up') ||
+      url.includes('/webhook')
+    ) {
+      return;
+    }
+
+    try {
+      window.dispatchEvent(new Event(ONBOARDING_MUTATED_EVENT));
+    } catch {
+      /* ignore */
+    }
+  }
+
   private handleResponseError(error: any): Promise<any> {
+    const config = error.config as SilentableRequestConfig | undefined;
+    const silent = config?.silent === true;
+
+    if (silent) {
+      if (error.response?.status === 401) {
+        if (!error.config?.url?.includes('/auth/')) {
+          try {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('businessUnitId');
+          } catch {
+            /* ignore */
+          }
+          this.resetTokenState();
+        }
+      }
+      return Promise.reject(error);
+    }
+
     if (error.response) {
-      console.error(`❌ API Error ${error.response.status}:`, error.response.data);
+      console.error(
+        `❌ API Error ${error.response.status}:`,
+        error.response.data,
+      );
       console.error('📋 Error details:', {
         url: error.config?.url,
         method: error.config?.method,
@@ -338,35 +486,41 @@ class ApiService {
         if (responseData?.errors && Array.isArray(responseData.errors)) {
           console.error('   Validation Errors:');
           responseData.errors.forEach((err: any) => {
-            console.error(`     - ${err.field}: ${err.message} (${err.code})`);
+            console.error(
+              `     - ${err.field}: ${err.message} (${err.code})`,
+            );
           });
         } else if (responseData?.message) {
           console.error(`   Message: ${responseData.message}`);
         } else if (responseData?.error) {
           console.error(`   Error: ${responseData.error}`);
         } else {
-          console.error('   Response data:', JSON.stringify(responseData, null, 2));
+          console.error(
+            '   Response data:',
+            JSON.stringify(responseData, null, 2),
+          );
         }
       }
 
-      // ✅ FIXED: Never fabricate a "success" response for 404s.
-      // Just log a warning and let the caller decide how to handle it.
       if (
         error.response?.status === 404 &&
         error.config?.url?.includes('/payment-providers')
       ) {
         console.warn(
-          '⚠️ Payment providers endpoint not found (may not be configured yet)'
+          '⚠️ Payment providers endpoint not found (may not be configured yet)',
         );
       }
 
       if (error.response?.status === 401) {
         console.error('❌ 401 Unauthorized - Token invalid or expired');
         if (!error.config?.url?.includes('/auth/')) {
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('user');
-          // ✅ FIXED: also clear businessUnitId so a re-login sets it fresh
-          localStorage.removeItem('businessUnitId');
+          try {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('businessUnitId');
+          } catch {
+            /* ignore */
+          }
           this.resetTokenState();
         }
       }
@@ -374,7 +528,7 @@ class ApiService {
       console.error('❌ NETWORK ERROR - Cannot reach backend');
       console.error(
         '   Expected URL:',
-        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
       );
       console.error('   Check if backend is running on port 3001');
     }
@@ -385,14 +539,13 @@ class ApiService {
   /**
    * Extract data from the standard `{ success, data, ... }` envelope.
    *
-   * Preserves sibling fields (`pagination`, `stats`, `scope`) by
-   * attaching them to the returned value as non-enumerable properties.
-   * This means:
-   *   - `extractData<Register[]>(resp)` returns the array (as before)
-   *   - `extractData<any>(resp)` still exposes `.pagination` and `.stats`
-   *     when the caller reads them (like productService.getAllProducts does)
+   * Sibling fields (`pagination`, `stats`, `scope`) are attached to the
+   * returned value so callers can read them. For arrays, the fields are
+   * attached as **enumerable** properties so `Object.keys`,
+   * `JSON.stringify`, and spread work as expected. A Symbol-keyed copy
+   * is always attached for callers that prefer symbol access.
    */
-  private extractData<T>(responseData: any): T {
+  private extractData<T>(responseData: any, silent = false): T {
     if (
       responseData &&
       typeof responseData === 'object' &&
@@ -401,37 +554,21 @@ class ApiService {
     ) {
       const data = responseData.data;
 
-      // ✅ Preserve sibling metadata so callers like
-      //    `productService.getAllProducts` can read `response.pagination`
-      //    even after the unwrap.
       if (data !== null && typeof data === 'object') {
-        if ('pagination' in responseData && !('pagination' in data)) {
-          Object.defineProperty(data, 'pagination', {
-            value: responseData.pagination,
-            enumerable: false,
-            configurable: true,
-            writable: true,
-          });
+        if ('pagination' in responseData) {
+          attachSibling(data, 'pagination', responseData.pagination);
         }
-        if ('stats' in responseData && !('stats' in data)) {
-          Object.defineProperty(data, 'stats', {
-            value: responseData.stats,
-            enumerable: false,
-            configurable: true,
-            writable: true,
-          });
+        if ('stats' in responseData) {
+          attachSibling(data, 'stats', responseData.stats);
         }
-        if ('scope' in responseData && !('scope' in data)) {
-          Object.defineProperty(data, 'scope', {
-            value: responseData.scope,
-            enumerable: false,
-            configurable: true,
-            writable: true,
-          });
+        if ('scope' in responseData) {
+          attachSibling(data, 'scope', responseData.scope);
         }
       }
 
-      console.log('✅ Extracted data from response wrapper');
+      if (!silent) {
+        console.log('✅ Extracted data from response wrapper');
+      }
       return data as T;
     }
 
@@ -447,38 +584,155 @@ class ApiService {
     return responseData as T;
   }
 
+  /**
+   * Normalize any response shape into `{ data, pagination }`.
+   *
+   * Public helper for callers that want a consistent shape without
+   * writing their own normalization. Handles:
+   *
+   *   1. Array                       → { data: T[], pagination: null }
+   *   2. { data: T[] }               → { data: T[], pagination: sibling }
+   *   3. { data: { data: T[], ... } } → { data: T[], pagination: from-inner }
+   *   4. { products: T[], total }    → { data: T[], pagination: built }
+   *
+   * Used by `productService.getPublicProducts` and its siblings.
+   */
+  public normalizeListResponse<T = any>(
+    response: any,
+    fallbackLimit = 12,
+  ): {
+    data: T[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  } {
+    // 1 — Raw array
+    if (Array.isArray(response)) {
+      const pagination = (response as any).pagination;
+      return {
+        data: response,
+        total: Number(pagination?.total ?? response.length),
+        page: Number(pagination?.page ?? 1),
+        totalPages: Number(pagination?.totalPages ?? 1),
+        limit: Number(pagination?.limit ?? fallbackLimit),
+      };
+    }
+
+    // 2 — `{ data: T[], pagination }`
+    if (response && Array.isArray(response.data)) {
+      return {
+        data: response.data,
+        total: Number(
+          response.pagination?.total ?? response.data.length,
+        ),
+        page: Number(response.pagination?.page ?? 1),
+        totalPages: Number(response.pagination?.totalPages ?? 1),
+        limit: Number(response.pagination?.limit ?? fallbackLimit),
+      };
+    }
+
+    // 3 — `{ data: { data: T[], total, page, ... } }`
+    if (
+      response &&
+      response.data &&
+      Array.isArray(response.data.data)
+    ) {
+      return {
+        data: response.data.data,
+        total: Number(
+          response.data.total ?? response.data.data.length,
+        ),
+        page: Number(response.data.page ?? 1),
+        totalPages: Number(response.data.totalPages ?? 1),
+        limit: Number(response.data.limit ?? fallbackLimit),
+      };
+    }
+
+    // 4 — `{ products: T[], total, page, ... }`
+    if (response && Array.isArray(response.products)) {
+      return {
+        data: response.products,
+        total: Number(response.total ?? response.products.length),
+        page: Number(response.page ?? 1),
+        totalPages: Number(response.totalPages ?? 1),
+        limit: Number(response.limit ?? fallbackLimit),
+      };
+    }
+
+    // 5 — `{ data: { items: T[], ... } }`
+    if (
+      response &&
+      response.data &&
+      Array.isArray(response.data.items)
+    ) {
+      return {
+        data: response.data.items,
+        total: Number(response.data.total ?? response.data.items.length),
+        page: Number(response.data.page ?? 1),
+        totalPages: Number(response.data.totalPages ?? 1),
+        limit: Number(response.data.limit ?? fallbackLimit),
+      };
+    }
+
+    return {
+      data: [],
+      total: 0,
+      page: 1,
+      totalPages: 1,
+      limit: fallbackLimit,
+    };
+  }
+
   // ============================================
   // HTTP METHODS
   // ============================================
 
-  async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  async get<T>(url: string, config?: SilentableRequestConfig): Promise<T> {
+    const silent = config?.silent === true;
     try {
       const response: AxiosResponse<any> = await this.client.get(url, {
         ...config,
       });
 
-      return this.extractData<T>(response.data);
+      return this.extractData<T>(response.data, silent);
     } catch (error) {
-      console.error(`GET ${url} failed:`, error);
+      if (!silent) {
+        console.error(`GET ${url} failed:`, error);
+      }
       throw error;
     }
   }
 
-  async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async post<T>(
+    url: string,
+    data?: any,
+    config?: SilentableRequestConfig,
+  ): Promise<T> {
+    const silent = config?.silent === true;
     try {
-      if (data && typeof data === 'object' && !(data instanceof FormData)) {
+      if (
+        !silent &&
+        data &&
+        typeof data === 'object' &&
+        !(data instanceof FormData)
+      ) {
         const logData = { ...data };
         if (logData.password) logData.password = '***';
         if (logData.token) logData.token = '***';
         if (logData.apiKey) logData.apiKey = '***';
         if (logData.secretKey) logData.secretKey = '***';
         if (logData.images && Array.isArray(logData.images)) {
-          logData.images = logData.images.map((img: string, index: number) => {
-            if (img && img.length > 200) {
-              return `[Image ${index + 1}: ${Math.round(img.length / 1024)}KB]`;
-            }
-            return img;
-          });
+          logData.images = logData.images.map(
+            (img: string, index: number) => {
+              if (img && img.length > 200) {
+                return `[Image ${index + 1}: ${Math.round(
+                  img.length / 1024,
+                )}KB]`;
+              }
+              return img;
+            },
+          );
         }
         console.log('📦 Payload:', JSON.stringify(logData, null, 2));
       }
@@ -487,27 +741,32 @@ class ApiService {
         ...config,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
           ...config?.headers,
         },
         maxBodyLength: 10 * 1024 * 1024,
         maxContentLength: 10 * 1024 * 1024,
       });
 
-      return this.extractData<T>(response.data);
+      return this.extractData<T>(response.data, silent);
     } catch (error: any) {
-      console.error(`❌ POST ${url} failed:`, error);
+      if (!silent) {
+        console.error(`❌ POST ${url} failed:`, error);
 
-      if (error?.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-        console.error('Request URL:', error.config?.url);
+        if (error?.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', error.response.data);
+          console.error('Request URL:', error.config?.url);
 
-        if (error.response.status === 400 && error.response.data?.errors) {
-          console.error('📋 Validation Errors:');
-          error.response.data.errors.forEach((err: any) => {
-            console.error(`   - ${err.field}: ${err.message}`);
-          });
+          if (
+            error.response.status === 400 &&
+            error.response.data?.errors
+          ) {
+            console.error('📋 Validation Errors:');
+            error.response.data.errors.forEach((err: any) => {
+              console.error(`   - ${err.field}: ${err.message}`);
+            });
+          }
         }
       }
 
@@ -515,70 +774,90 @@ class ApiService {
     }
   }
 
-  async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async put<T>(
+    url: string,
+    data?: any,
+    config?: SilentableRequestConfig,
+  ): Promise<T> {
+    const silent = config?.silent === true;
     try {
       const response = await this.client.put(url, data, {
         ...config,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
           ...config?.headers,
         },
       });
 
-      return this.extractData<T>(response.data);
+      return this.extractData<T>(response.data, silent);
     } catch (error: any) {
-      console.error(`❌ PUT ${url} failed:`, error);
+      if (!silent) {
+        console.error(`❌ PUT ${url} failed:`, error);
 
-      if (error?.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-        console.error('Request URL:', error.config?.url);
+        if (error?.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', error.response.data);
+          console.error('Request URL:', error.config?.url);
+        }
       }
 
       throw error;
     }
   }
 
-  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  async patch<T>(
+    url: string,
+    data?: any,
+    config?: SilentableRequestConfig,
+  ): Promise<T> {
+    const silent = config?.silent === true;
     try {
       const response = await this.client.patch(url, data, {
         ...config,
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
           ...config?.headers,
         },
       });
 
-      return this.extractData<T>(response.data);
+      return this.extractData<T>(response.data, silent);
     } catch (error: any) {
-      console.error(`❌ PATCH ${url} failed:`, error);
+      if (!silent) {
+        console.error(`❌ PATCH ${url} failed:`, error);
 
-      if (error?.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-        console.error('Request URL:', error.config?.url);
+        if (error?.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', error.response.data);
+          console.error('Request URL:', error.config?.url);
+        }
       }
 
       throw error;
     }
   }
 
-  async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  async delete<T>(
+    url: string,
+    config?: SilentableRequestConfig,
+  ): Promise<T> {
+    const silent = config?.silent === true;
     try {
       const response: AxiosResponse<any> = await this.client.delete(url, {
         ...config,
       });
 
-      return this.extractData<T>(response.data);
+      return this.extractData<T>(response.data, silent);
     } catch (error: any) {
-      console.error(`❌ DELETE ${url} failed:`, error);
+      if (!silent) {
+        console.error(`❌ DELETE ${url} failed:`, error);
 
-      if (error?.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-        console.error('Request URL:', error.config?.url);
+        if (error?.response) {
+          console.error('Response status:', error.response.status);
+          console.error('Response data:', error.response.data);
+          console.error('Request URL:', error.config?.url);
+        }
       }
 
       throw error;
@@ -589,16 +868,11 @@ class ApiService {
   // UPLOAD / DOWNLOAD
   // ============================================
 
-  /**
-   * ✅ FIXED: Accepts either a `File` (with optional `additionalData`)
-   * OR a pre-built `FormData` — because `productService.importProducts`
-   * passes a FormData directly.
-   */
   async upload<T>(
     url: string,
     fileOrFormData: File | FormData,
     fieldName: string = 'file',
-    additionalData?: Record<string, any>
+    additionalData?: Record<string, any>,
   ): Promise<T> {
     let formData: FormData;
 
@@ -625,7 +899,10 @@ class ApiService {
     return this.extractData<T>(response.data);
   }
 
-  async download(url: string, config?: AxiosRequestConfig): Promise<Blob> {
+  async download(
+    url: string,
+    config?: AxiosRequestConfig,
+  ): Promise<Blob> {
     const response: AxiosResponse<Blob> = await this.client.get(url, {
       ...config,
       responseType: 'blob',
@@ -636,7 +913,7 @@ class ApiService {
   async downloadFile(
     url: string,
     filename: string,
-    config?: AxiosRequestConfig
+    config?: AxiosRequestConfig,
   ): Promise<void> {
     const blob = await this.download(url, config);
     const link = document.createElement('a');
@@ -659,16 +936,19 @@ class ApiService {
 
   addRequestInterceptor(
     onFulfilled: (config: any) => any,
-    onRejected?: (error: any) => any
+    onRejected?: (error: any) => any,
   ): number {
     return this.client.interceptors.request.use(onFulfilled, onRejected);
   }
 
   addResponseInterceptor(
     onFulfilled: (response: any) => any,
-    onRejected?: (error: any) => any
+    onRejected?: (error: any) => any,
   ): number {
-    return this.client.interceptors.response.use(onFulfilled, onRejected);
+    return this.client.interceptors.response.use(
+      onFulfilled,
+      onRejected,
+    );
   }
 
   removeInterceptor(interceptorId: number): void {
@@ -682,3 +962,7 @@ class ApiService {
 
 export const api = ApiService.getInstance();
 export const apiService = api;
+
+// Re-export the pagination symbols for consumers that prefer symbol
+// access to the attached sibling fields.
+export { PAGINATION_KEY, STATS_KEY, SCOPE_KEY };

@@ -1,170 +1,48 @@
 // D:\Projects\Kalwanga\packages\web\types\businessUnit.ts
 
-import { 
-  UserRole, 
-  BusinessUnitType, 
-  AuditAction, 
+import {
+  UserRole,
+  BusinessUnitType,
+  AuditAction,
   AuditSeverity,
   SortOrder,
   getEnumValues,
   isValidEnumValue,
   getEnumLabel,
-  getEnumOptions
+  getEnumOptions,
 } from './enums';
 
 // ============================================
-// TYPE IMPORTS (Referenced from other type files)
+// CANONICAL IMPORTS
 // ============================================
+//
+// Every cross-cutting model is imported from the module that OWNS it.
+// This file MUST NOT redeclare User, Company, Product, ProductVariant,
+// Category, Supplier, or Inventory. If you find yourself needing to
+// add a field to one of them, edit the file where it lives — not here.
+//
+// Ownership map (do not deviate):
+//   User, Company            → ./user
+//   Product, ProductVariant  → ./product
+//   Category                 → ./category
+//   Supplier                 → ./supplier
+//   Inventory                → ./inventory
+//
+// All model imports are `import type` so the compiler erases them and
+// the runtime cycles
+//   businessUnit ↔ user, businessUnit ↔ product,
+//   businessUnit ↔ category, businessUnit ↔ supplier,
+//   businessUnit ↔ inventory
+// never actually load.
 
-export interface User {
-  id: string;
-  clerkId?: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  phoneNumber?: string;
-  role: UserRole;
-  isActive: boolean;
-  avatar?: string;
-  lastLoginAt?: string;
-  createdAt: string;
-  updatedAt: string;
-  businessUnitId?: string;
-  businessUnits?: BusinessUnitUser[];
-  permissions?: string[];
-  companyId?: string;
-}
-
-export interface Company {
-  id: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  website?: string;
-  taxId?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  businessUnits?: BusinessUnit[];
-  users?: User[];
-}
-
-export interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  barcode?: string;
-  description?: string;
-  unitPrice: number;
-  costPrice: number;
-  taxRate: number;
-  minStock: number;
-  maxStock?: number;
-  isActive: boolean;
-  isDigital: boolean;
-  featured: boolean;
-  weight?: number;
-  dimensions?: string;
-  images: string[];
-  attributes?: Record<string, any>;
-  notes?: string;
-  tags: string[];
-  seo?: Record<string, any>;
-  rating: number;
-  reviewCount: number;
-  status: 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED' | 'DRAFT';
-  type: 'SIMPLE' | 'VARIABLE' | 'DIGITAL' | 'SERVICE';
-  taxType: 'EXCLUSIVE' | 'INCLUSIVE' | 'NONE';
-  categoryId?: string;
-  supplierId?: string;
-  businessUnitId: string;
-  createdBy: string;
-  updatedBy: string;
-  createdAt: string;
-  updatedAt: string;
-  category?: Category;
-  supplier?: Supplier;
-  inventory?: Inventory[];
-  variants?: ProductVariant[];
-}
-
-export interface Inventory {
-  id: string;
-  productId: string;
-  variantId?: string;
-  businessUnitId: string;
-  quantity: number;
-  reserved: number;
-  available: number;
-  reorderPoint: number;
-  reorderQuantity: number;
-  location: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED' | 'LOW_STOCK' | 'OUT_OF_STOCK';
-  createdAt: string;
-  updatedAt: string;
-  product?: Product;
-  variant?: ProductVariant;
-  businessUnit?: BusinessUnit;
-}
-
-export interface ProductVariant {
-  id: string;
-  productId: string;
-  name: string;
-  sku: string;
-  barcode?: string;
-  price: number;
-  costPrice: number;
-  stock: number;
-  images: string[];
-  attributes: Record<string, any>;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  product?: Product;
-  inventory?: Inventory[];
-}
-
-export interface Category {
-  id: string;
-  name: string;
-  description?: string | null;
-  parentId?: string | null;
-  businessUnitId: string;
-  isActive: boolean;
-  featured: boolean;
-  createdAt: string;
-  updatedAt: string;
-  parent?: Category;
-  children?: Category[];
-  products?: Product[];
-  productCount?: number;
-  childCount?: number;
-}
-
-export interface Supplier {
-  id: string;
-  name: string;
-  contactPerson?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  taxId?: string;
-  website?: string;
-  notes?: string;
-  rating?: number;
-  isActive: boolean;
-  companyId: string;
-  paymentTerms?: string;
-  creditLimit?: number;
-  createdAt: string;
-  updatedAt: string;
-  products?: Product[];
-}
+import type { User, Company } from './user';
+import type { Product, ProductVariant } from './product';
+import type { Category } from './category';
+import type { Supplier } from './supplier';
+import type { Inventory } from './inventory';
 
 // ============================================
-// BUSINESS UNIT TYPES
+// BUSINESS UNIT
 // ============================================
 
 export interface BusinessUnit {
@@ -324,12 +202,46 @@ export interface BulkDeleteResponse {
 }
 
 // ============================================
-// VALIDATION FUNCTIONS
+// VALIDATION
 // ============================================
+//
+// Accepts the same shapes the backend accepts:
+//   • CUIDs (Prisma default):  c + 24 alphanumeric chars
+//   • UUIDs:                   8-4-4-4-12 hex
+//   • Clerk IDs:               user_...
+//   • Simple IDs:              letters/digits/_/- between 10 and 50 chars
 
 export function isValidBusinessUnitId(id: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(id);
+  if (!id || id === 'default') return false;
+
+  const RESERVED = new Set([
+    'users',
+    'reports',
+    'settings',
+    'stats',
+    'details',
+    'company',
+    'code',
+    'bulk-delete',
+    'ensure',
+    'test',
+    'new',
+    'edit',
+  ]);
+  if (RESERVED.has(id.toLowerCase())) return false;
+
+  const cuidRegex = /^c[a-z0-9]{24}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const clerkIdRegex = /^user_[a-zA-Z0-9]{20,}$/;
+  const simpleIdRegex = /^[a-zA-Z0-9_-]{10,50}$/;
+
+  return (
+    cuidRegex.test(id) ||
+    uuidRegex.test(id) ||
+    clerkIdRegex.test(id) ||
+    simpleIdRegex.test(id)
+  );
 }
 
 export function isValidBusinessUnitIdOrFallback(id: string): boolean {
@@ -347,8 +259,7 @@ export function isValidBusinessUnitName(name: string): boolean {
 
 export function isValidBusinessUnitEmail(email?: string | null): boolean {
   if (!email) return true;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export function isValidBusinessUnitPhone(phone?: string | null): boolean {
@@ -448,8 +359,7 @@ export function getBusinessUnitStatusColor(isActive: boolean): string {
 }
 
 export function formatBusinessUnitAddress(businessUnit: BusinessUnit): string {
-  if (!businessUnit.address) return '';
-  return businessUnit.address;
+  return businessUnit.address ?? '';
 }
 
 export function getBusinessUnitDisplayName(businessUnit: BusinessUnit): string {
@@ -464,7 +374,10 @@ export function getBusinessUnitShortName(businessUnit: BusinessUnit): string {
 // ROLE HELPERS
 // ============================================
 
-export function userHasRole(user: BusinessUnitUser | undefined, role: UserRole | string): boolean {
+export function userHasRole(
+  user: BusinessUnitUser | undefined,
+  role: UserRole | string
+): boolean {
   if (!user) return false;
   return user.role === role;
 }
@@ -480,17 +393,17 @@ export function userIsManager(user: BusinessUnitUser | undefined): boolean {
 }
 
 // ============================================
-// EXPORT ALL
+// RE-EXPORTS (backward compatibility)
 // ============================================
 
-export { 
-  UserRole, 
-  BusinessUnitType, 
-  AuditAction, 
+export {
+  UserRole,
+  BusinessUnitType,
+  AuditAction,
   AuditSeverity,
   SortOrder,
   getEnumValues,
   isValidEnumValue,
   getEnumLabel,
-  getEnumOptions
+  getEnumOptions,
 };

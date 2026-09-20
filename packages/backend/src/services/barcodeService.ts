@@ -90,29 +90,75 @@ export class BarcodeService {
   /**
    * Generate unique barcode with options
    */
-  async generateUniqueBarcode(options?: GenerateBarcodeOptions): Promise<{ barcode: string }> {
+  async generateUniqueBarcode(
+    options?: GenerateBarcodeOptions
+  ): Promise<{ barcode: string }> {
     try {
-      const prefix = options?.prefix || 'PRD';
-      const length = options?.length || 12;
+      const prefix = String(options?.prefix ?? 'PRD').toUpperCase();
+      const desiredLength = Number.isFinite(options?.length)
+        ? Math.max(8, Math.min(20, Number(options?.length)))
+        : 12;
+
+      const digitsOnly = /^\d+$/.test(prefix);
+
       let barcode = '';
       let attempts = 0;
       const maxAttempts = 100;
 
       do {
-        const randomPart = Math.floor(Math.random() * Math.pow(10, length - prefix.length - 1))
-          .toString()
-          .padStart(length - prefix.length - 1, '0');
-        
-        const base = prefix + randomPart;
-        let sum = 0;
-        for (let i = 0; i < base.length; i++) {
-          sum += parseInt(base[i]) * (i % 2 === 0 ? 1 : 3);
+        if (digitsOnly) {
+          // ── EAN-13 path ─────────────────────────────────────
+          // Compute a numeric payload of the desired length minus
+          // the check digit, then append a valid EAN-13 check.
+          const bodyLength = Math.max(2, desiredLength - 1 - prefix.length);
+          const randomPart = Math.floor(Math.random() * Math.pow(10, bodyLength))
+            .toString()
+            .padStart(bodyLength, '0');
+
+          const base = prefix + randomPart; // all digits
+          let sum = 0;
+          for (let i = 0; i < base.length; i++) {
+            const digit = Number(base[i]);
+            if (!Number.isFinite(digit)) {
+              throw new AppError(
+                'Internal barcode generation error: non-numeric character in numeric path',
+                500
+              );
+            }
+            sum += digit * (i % 2 === 0 ? 1 : 3);
+          }
+          const checkDigit = (10 - (sum % 10)) % 10;
+          barcode = `${base}${checkDigit}`;
+        } else {
+          // ── Alphanumeric path ───────────────────────────────
+          // No checksum. Build `<PREFIX><timestamp><random>` and
+          // slice to the desired length.
+          const tsPart = Date.now().toString(36).toUpperCase();
+          const randPart = Math.random()
+            .toString(36)
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, '');
+          const body = `${tsPart}${randPart}`.slice(
+            0,
+            Math.max(4, desiredLength - prefix.length)
+          );
+          barcode = `${prefix}${body}`;
         }
-        const checkDigit = (10 - (sum % 10)) % 10;
-        barcode = base + checkDigit;
+
+        // Defensive: reject anything that leaked a bad token.
+        if (/nan|undefined|null/i.test(barcode)) {
+          attempts++;
+          if (attempts >= maxAttempts) {
+            throw new AppError(
+              'Barcode generation produced an invalid value after maximum attempts',
+              500
+            );
+          }
+          continue;
+        }
 
         attempts++;
-        
+
         const existing = await prisma.product.findFirst({
           where: { barcode },
           select: { id: true },
@@ -123,7 +169,10 @@ export class BarcodeService {
         }
 
         if (attempts >= maxAttempts) {
-          throw new AppError('Could not generate unique barcode after maximum attempts', 500);
+          throw new AppError(
+            'Could not generate unique barcode after maximum attempts',
+            500
+          );
         }
       } while (true);
 

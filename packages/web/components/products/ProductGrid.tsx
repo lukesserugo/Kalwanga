@@ -1,23 +1,141 @@
 // D:\Projects\Kalwanga\packages\web\components\products\ProductGrid.tsx
+
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Package, Heart, ShoppingCart, Eye, Star, 
-  ChevronDown, Filter, Grid, List, Search,
-  X, Loader2, AlertCircle, Layers, ImageIcon, Link2
+import {
+  Package,
+  ShoppingCart,
+  Eye,
+  Star,
+  ChevronDown,
+  Filter,
+  Grid,
+  List,
+  Search,
+  X,
+  Loader2,
+  AlertCircle,
+  Layers,
+  ImageIcon,
+  Link2,
 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { productService } from '../../services/productService';
-import { formatCurrency } from '../../utils/helpers';
+import { cartService } from '../../services/cartService';
+import { guestCartService } from '../../services/guestCartService';
+import { formatCurrency } from '../../utils/formatters';
 import { WishlistButton } from './WishlistButton';
-import { useThemeStore } from '../../app/stores/themeStore';
 import { useAuth } from '../../hooks/useAuth';
-import { Product, ProductSearchParams } from '../../types/product';
-import { SortOrder, ProductSortField } from '../../types/enums';
+
+// ============================================
+// TYPES
+// ============================================
+//
+// Locally narrowed shapes that mirror the backend's normalized wire
+// format. `inventory` is SINGULAR on both `Product` and
+// `ProductVariant` — Prisma's `inventoryId String? @unique` relation
+// produces one row, not many.
+
+interface Inventory {
+  id: string;
+  businessUnitId: string;
+  locationId?: string | null;
+  quantity: number;
+  reserved: number;
+  available: number;
+  reorderPoint: number;
+  reorderQuantity: number;
+  location?: string | null;
+  shelfNumber?: string | null;
+  supplier?: string | null;
+  notes?: string | null;
+  status: string;
+  images: string[];
+  description?: string | null;
+  weight?: number | null;
+  taxRate?: number | null;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProductVariant {
+  id: string;
+  productId?: string;
+  name: string;
+  sku: string;
+  price: number;
+  costPrice?: number | null;
+  stock: number;
+  images?: string[];
+  attributes?: Record<string, any>;
+  isActive?: boolean;
+  barcode?: string | null;
+  inventoryId?: string | null;
+  /** Singular — matches backend. */
+  inventory?: Inventory | null;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface Supplier {
+  id: string;
+  name: string;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  description?: string | null;
+  sku: string;
+  barcode?: string | null;
+  unitPrice: number;
+  costPrice?: number | null;
+  taxRate?: number | null;
+  minStock?: number | null;
+  maxStock?: number | null;
+  isActive: boolean;
+  isDigital: boolean;
+  featured?: boolean;
+  weight?: number | null;
+  dimensions?: any;
+  images: string[];
+  attributes?: Record<string, any> | null;
+  notes?: string | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  categoryId?: string | null;
+  category?: Category | null;
+  businessUnitId?: string;
+  businessUnit?: any;
+  supplierId?: string | null;
+  supplier?: Supplier | null;
+  /** Singular — matches backend. */
+  inventory?: Inventory | null;
+  /** Scalar FK; non-null means the product is linked to an inventory row. */
+  inventoryId?: string | null;
+  variants?: ProductVariant[];
+  reviews?: any[];
+  tags?: string[];
+  seo?: any;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface ProductGridProps {
   limit?: number;
@@ -31,6 +149,40 @@ interface ProductGridProps {
   className?: string;
 }
 
+// ============================================
+// STOCK HELPER
+// ============================================
+//
+// Mirrors the backend's `computeStockAggregates` against the singular
+// inventory shape. Prefers `inventory.quantity - inventory.reserved`
+// on a variant when a linked Inventory row exists; falls back to the
+// denormalized `variant.stock` otherwise.
+
+function getAvailableStock(product: Product): number {
+  const inv = product.inventory;
+  const productAvailable = inv
+    ? Math.max(0, (inv.quantity ?? 0) - (inv.reserved ?? 0))
+    : 0;
+
+  let variantAvailable = 0;
+  for (const v of product.variants ?? []) {
+    if (v.inventory) {
+      variantAvailable += Math.max(
+        0,
+        (v.inventory.quantity ?? 0) - (v.inventory.reserved ?? 0),
+      );
+    } else {
+      variantAvailable += v.stock ?? 0;
+    }
+  }
+
+  return Math.max(0, productAvailable + variantAvailable);
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
 export default function ProductGrid({
   limit = 12,
   categoryId = '',
@@ -42,11 +194,10 @@ export default function ProductGrid({
   columns = 4,
   className = '',
 }: ProductGridProps) {
-  const { user, isAuthenticated } = useAuth();
-  const { isDark } = useThemeStore();
+  const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
-  
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +217,18 @@ export default function ProductGrid({
   });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [addingToCart, setAddingToCart] = useState<Record<string, boolean>>({});
+  const [addingToCart, setAddingToCart] = useState<Record<string, boolean>>(
+    {},
+  );
+
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const columnClasses = {
     2: 'grid-cols-1 sm:grid-cols-2',
@@ -74,156 +236,210 @@ export default function ProductGrid({
     4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4',
   };
 
-  useEffect(() => {
-    fetchProducts();
-  }, [filters, pagination.page]);
+  // ============================================
+  // PRODUCT TRANSFORM
+  // ============================================
+  //
+  // Backend already normalizes the wire shape. This function maps
+  // the service response into the local `Product` interface — mostly
+  // pass-through, but `inventory` must stay `null` when absent (not
+  // `[]`, which was the old bug that made every product look linked).
 
-  const getAvailableStock = (product: Product): number => {
-    if (!product.inventory || product.inventory.length === 0) return 0;
-    const inventory = product.inventory[0];
-    const mainStock = inventory.quantity - (inventory.reserved || 0);
-    
-    // 🔥 Include variant stock
-    let variantStock = 0;
-    if (product.variants && product.variants.length > 0) {
-      variantStock = product.variants.reduce((sum, v: any) => sum + (v.stock || 0), 0);
-    }
-    
-    return mainStock + variantStock;
-  };
+  const transformProduct = useCallback(
+    (sp: any): Product => ({
+      id: sp.id || '',
+      name: sp.name || '',
+      description: sp.description || '',
+      sku: sp.sku || '',
+      barcode: sp.barcode ?? null,
+      unitPrice: sp.unitPrice || 0,
+      costPrice: sp.costPrice ?? null,
+      taxRate: sp.taxRate ?? 0,
+      minStock: sp.minStock ?? 5,
+      maxStock: sp.maxStock ?? null,
+      isActive: sp.isActive !== undefined ? sp.isActive : true,
+      isDigital: sp.isDigital || false,
+      featured: sp.featured || false,
+      weight: sp.weight ?? null,
+      dimensions: sp.dimensions,
+      images: sp.images || [],
+      attributes: sp.attributes ?? null,
+      notes: sp.notes ?? null,
+      rating: sp.rating || 0,
+      reviewCount: sp.reviewCount || 0,
+      categoryId: sp.categoryId ?? null,
+      category: sp.category ?? null,
+      businessUnitId: sp.businessUnitId || '',
+      businessUnit: sp.businessUnit,
+      supplierId: sp.supplierId ?? null,
+      supplier: sp.supplier ?? null,
+      // Singular — default to null, not [].
+      inventory: sp.inventory ?? null,
+      inventoryId: sp.inventoryId ?? null,
+      variants: Array.isArray(sp.variants)
+        ? sp.variants.map((v: any): ProductVariant => ({
+            id: v.id,
+            productId: v.productId,
+            name: v.name || '',
+            sku: v.sku || '',
+            price: v.price || 0,
+            costPrice: v.costPrice ?? null,
+            stock: v.stock || 0,
+            images: v.images || [],
+            attributes: v.attributes || {},
+            isActive: v.isActive !== undefined ? v.isActive : true,
+            barcode: v.barcode ?? null,
+            inventoryId: v.inventoryId ?? null,
+            inventory: v.inventory ?? null,
+          }))
+        : [],
+      reviews: sp.reviews || [],
+      tags: sp.tags || [],
+      seo: sp.seo,
+      createdBy: sp.createdBy ?? null,
+      updatedBy: sp.updatedBy ?? null,
+      createdAt: sp.createdAt || new Date().toISOString(),
+      updatedAt: sp.updatedAt || new Date().toISOString(),
+    }),
+    [],
+  );
 
-  // Helper function to transform service product to type product
-  const transformProduct = (serviceProduct: any): Product => {
-    return {
-      id: serviceProduct.id || '',
-      name: serviceProduct.name || '',
-      description: serviceProduct.description || '',
-      sku: serviceProduct.sku || '',
-      barcode: serviceProduct.barcode,
-      unitPrice: serviceProduct.unitPrice || 0,
-      costPrice: serviceProduct.costPrice,
-      taxRate: serviceProduct.taxRate || 0,
-      minStock: serviceProduct.minStock ?? 5,
-      maxStock: serviceProduct.maxStock,
-      isActive: serviceProduct.isActive !== undefined ? serviceProduct.isActive : true,
-      isDigital: serviceProduct.isDigital || false,
-      featured: serviceProduct.featured || false,
-      weight: serviceProduct.weight,
-      dimensions: serviceProduct.dimensions,
-      images: serviceProduct.images || [],
-      attributes: serviceProduct.attributes,
-      notes: serviceProduct.notes,
-      rating: serviceProduct.rating || 0,
-      reviewCount: serviceProduct.reviewCount || 0,
-      categoryId: serviceProduct.categoryId,
-      category: serviceProduct.category,
-      businessUnitId: serviceProduct.businessUnitId || '',
-      businessUnit: serviceProduct.businessUnit,
-      supplierId: serviceProduct.supplierId,
-      supplier: serviceProduct.supplier,
-      inventory: serviceProduct.inventory || [],
-      // 🔥 Map variants with images
-      variants: (serviceProduct.variants || []).map((v: any) => ({
-        ...v,
-        images: v.images || [],
-        attributes: v.attributes || {},
-        barcode: v.barcode || null,
-        inventoryId: v.inventoryId || null,
-      })),
-      reviews: serviceProduct.reviews || [],
-      tags: serviceProduct.tags || [],
-      seo: serviceProduct.seo,
-      createdBy: serviceProduct.createdBy,
-      updatedBy: serviceProduct.updatedBy,
-      createdAt: serviceProduct.createdAt || new Date().toISOString(),
-      updatedAt: serviceProduct.updatedAt || new Date().toISOString(),
-    };
-  };
+  // ============================================
+  // DATA FETCH
+  // ============================================
+  //
+  // Uses the PUBLIC route so guests can browse. The backend's public
+  // endpoint auto-hides out-of-stock items, which is the storefront's
+  // default behavior anyway.
+  //
+  // Backend `validSortFields`: name | sku | unitPrice | createdAt |
+  // updatedAt | rating. Anything else falls back to `createdAt desc`.
+  // So we translate the UI's sort labels into those canonical values.
 
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const params: ProductSearchParams = {
+      const params: any = {
         page: pagination.page,
         limit: pagination.limit || limit,
-        isActive: true,
         search: filters.search || undefined,
         categoryId: filters.categoryId || undefined,
         featured: featured || undefined,
-        inStock: filters.inStock || undefined,
-        minPrice: filters.minPrice ? parseFloat(filters.minPrice) : undefined,
-        maxPrice: filters.maxPrice ? parseFloat(filters.maxPrice) : undefined,
+        minPrice: filters.minPrice
+          ? parseFloat(filters.minPrice)
+          : undefined,
+        maxPrice: filters.maxPrice
+          ? parseFloat(filters.maxPrice)
+          : undefined,
       };
 
-      // Sort options
       switch (filters.sortBy) {
         case 'price-low':
-          params.sort = ProductSortField.PRICE;
-          params.order = SortOrder.ASC;
+          params.sortBy = 'unitPrice';
+          params.sortOrder = 'asc';
           break;
         case 'price-high':
-          params.sort = ProductSortField.PRICE;
-          params.order = SortOrder.DESC;
+          params.sortBy = 'unitPrice';
+          params.sortOrder = 'desc';
           break;
         case 'rating':
-          params.sort = ProductSortField.RATING;
-          params.order = SortOrder.DESC;
-          break;
-        case 'popular':
-          params.sort = ProductSortField.POPULARITY;
-          params.order = SortOrder.DESC;
+          params.sortBy = 'rating';
+          params.sortOrder = 'desc';
           break;
         case 'newest':
         default:
-          params.sort = ProductSortField.CREATED_AT;
-          params.order = SortOrder.DESC;
+          params.sortBy = 'createdAt';
+          params.sortOrder = 'desc';
           break;
       }
 
-      const response = await productService.getAllProducts(params);
-      
-      // Transform the data to match the Product type
-      const transformedProducts = (response.data || []).map(transformProduct);
-      
-      setProducts(transformedProducts);
-      setPagination({
-        ...pagination,
+      // ✅ Public endpoint — works for guests and authenticated users.
+      const response = await productService.getPublicProducts(params);
+      if (!isMountedRef.current) return;
+
+      const transformedProducts = (response.data || []).map(
+        transformProduct,
+      );
+
+      // `inStock` is effectively a no-op because the public route
+      // already hides out-of-stock items. Applied client-side as a
+      // defensive layer in case a future backend change exposes
+      // out-of-stock items through the public route.
+      let visible = transformedProducts;
+      if (filters.inStock) {
+        visible = visible.filter((p) => getAvailableStock(p) > 0);
+      }
+
+      setProducts(visible);
+      setPagination((prev) => ({
+        ...prev,
         total: response.total || 0,
         totalPages: response.totalPages || 1,
-      });
-    } catch (error) {
-      console.error('Error fetching products:', error);
+      }));
+    } catch (err) {
+      console.error('Error fetching products:', err);
+      if (!isMountedRef.current) return;
       setError('Failed to load products. Please try again.');
       if (showToast) {
         showToast('Failed to load products', 'error');
       }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
-  };
+  }, [
+    filters,
+    pagination.page,
+    pagination.limit,
+    limit,
+    featured,
+    showToast,
+    transformProduct,
+  ]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  // ============================================
+  // ADD TO CART
+  // ============================================
+  //
+  // Guests get the guest cart, not a login redirect. The
+  // `guestCartService` posts to `/cart/guest/items` which is backed
+  // by the `guest_session_id` cookie set by `guestSessionMiddleware`.
 
   const handleAddToCart = async (productId: string) => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect_url=/shop');
-      return;
-    }
-
-    setAddingToCart(prev => ({ ...prev, [productId]: true }));
+    setAddingToCart((prev) => ({ ...prev, [productId]: true }));
     try {
-      // Add to cart logic here
+      const cart = isAuthenticated ? cartService : guestCartService;
+      await cart.addItem({ productId, quantity: 1 });
+
       showToast('Product added to cart!', 'success');
-    } catch (error: any) {
-      showToast(error.response?.data?.message || 'Failed to add to cart', 'error');
+      window.dispatchEvent(new CustomEvent('cart:updated'));
+    } catch (err: any) {
+      // 401 only happens if the guest session middleware failed to
+      // mint a cookie. Fall back to login rather than an opaque
+      // error — the user can still shop after signing in.
+      if (err?.response?.status === 401) {
+        router.push('/login?redirect_url=/shop');
+        return;
+      }
+      showToast(
+        err?.response?.data?.message || 'Failed to add to cart',
+        'error',
+      );
     } finally {
-      setAddingToCart(prev => ({ ...prev, [productId]: false }));
+      if (isMountedRef.current) {
+        setAddingToCart((prev) => ({ ...prev, [productId]: false }));
+      }
     }
   };
 
   const handleFilterChange = (key: string, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const clearFilters = () => {
@@ -235,7 +451,7 @@ export default function ProductGrid({
       inStock: false,
       sortBy: 'newest',
     });
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const hasActiveFilters = useMemo(() => {
@@ -245,34 +461,41 @@ export default function ProductGrid({
     });
   }, [filters]);
 
-  const renderStars = (rating: number = 0) => {
-    return (
-      <div className="flex items-center gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <Star
-            key={star}
-            className={`w-3.5 h-3.5 ${
-              star <= Math.round(rating)
-                ? 'text-yellow-400 fill-current'
-                : 'text-gray-300 dark:text-gray-600'
-            }`}
-          />
-        ))}
-        {rating > 0 && (
-          <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
-            ({rating.toFixed(1)})
-          </span>
-        )}
-      </div>
-    );
-  };
+  // ============================================
+  // RENDER HELPERS
+  // ============================================
+
+  const renderStars = (rating: number = 0) => (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          className={`w-3.5 h-3.5 ${
+            star <= Math.round(rating)
+              ? 'text-yellow-400 fill-current'
+              : 'text-gray-300 dark:text-gray-600'
+          }`}
+        />
+      ))}
+      {rating > 0 && (
+        <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+          ({rating.toFixed(1)})
+        </span>
+      )}
+    </div>
+  );
 
   const renderProductCard = (product: Product) => {
     const available = getAvailableStock(product);
     const isOutOfStock = available <= 0;
     const variantCount = product.variants?.length || 0;
-    const hasVariantImages = product.variants?.some((v: any) => v.images && v.images.length > 0) || false;
-    const isInventoryLinked = !!product.inventory?.[0]?.productId || false;
+    const hasVariantImages =
+      product.variants?.some(
+        (v) => v.images && v.images.length > 0,
+      ) || false;
+    // The linked signal is the scalar FK on `Product`, not a field on
+    // the Inventory row.
+    const isInventoryLinked = !!product.inventoryId;
 
     return (
       <motion.div
@@ -289,7 +512,11 @@ export default function ProductGrid({
           href={`/shop/${product.id}`}
           className={viewMode === 'list' ? 'sm:w-48 flex-shrink-0' : 'block'}
         >
-          <div className={`${viewMode === 'list' ? 'h-48 sm:h-full' : 'aspect-square'} bg-gray-100 dark:bg-gray-700 relative overflow-hidden`}>
+          <div
+            className={`${
+              viewMode === 'list' ? 'h-48 sm:h-full' : 'aspect-square'
+            } bg-gray-100 dark:bg-gray-700 relative overflow-hidden`}
+          >
             {product.images && product.images.length > 0 ? (
               <img
                 src={product.images[0]}
@@ -313,7 +540,6 @@ export default function ProductGrid({
                 Featured
               </div>
             )}
-            {/* 🔥 NEW: Variant indicators */}
             {variantCount > 0 && (
               <div className="absolute bottom-2 left-2 px-2 py-1 bg-purple-500/80 text-white text-xs rounded flex items-center gap-1">
                 <Layers className="w-3 h-3" />
@@ -340,9 +566,13 @@ export default function ProductGrid({
               {product.name}
             </h3>
           </Link>
-          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">SKU: {product.sku}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+            SKU: {product.sku}
+          </p>
           {product.category && (
-            <p className="text-xs text-gray-400 dark:text-gray-500">{product.category.name}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              {product.category.name}
+            </p>
           )}
           {product.rating && product.rating > 0 && (
             <div className="mt-1">{renderStars(product.rating)}</div>
@@ -352,13 +582,19 @@ export default function ProductGrid({
               {product.description}
             </p>
           )}
-          {/* 🔥 NEW: Variant summary in list view */}
           {viewMode === 'list' && variantCount > 0 && (
             <div className="flex flex-wrap gap-2 mt-2">
-              {product.variants?.slice(0, 3).map((variant: any) => (
-                <span key={variant.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-full text-xs">
+              {product.variants?.slice(0, 3).map((variant) => (
+                <span
+                  key={variant.id}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-full text-xs"
+                >
                   {variant.images?.[0] && (
-                    <img src={variant.images[0]} alt={variant.name} className="w-3 h-3 rounded-full object-cover" />
+                    <img
+                      src={variant.images[0]}
+                      alt={variant.name}
+                      className="w-3 h-3 rounded-full object-cover"
+                    />
                   )}
                   {variant.name}
                   <span className="text-purple-400">•</span>
@@ -366,7 +602,9 @@ export default function ProductGrid({
                 </span>
               ))}
               {variantCount > 3 && (
-                <span className="text-xs text-gray-400">+{variantCount - 3} more</span>
+                <span className="text-xs text-gray-400">
+                  +{variantCount - 3} more
+                </span>
               )}
             </div>
           )}
@@ -376,7 +614,9 @@ export default function ProductGrid({
                 {formatCurrency(product.unitPrice)}
               </span>
               {isOutOfStock && (
-                <p className="text-xs text-red-600 dark:text-red-400">Out of stock</p>
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  Out of stock
+                </p>
               )}
               {!isOutOfStock && available <= 5 && (
                 <p className="text-xs text-yellow-600 dark:text-yellow-400">
@@ -407,7 +647,9 @@ export default function ProductGrid({
                   ) : (
                     <ShoppingCart className="w-4 h-4" />
                   )}
-                  <span>{addingToCart[product.id] ? 'Adding...' : 'Add'}</span>
+                  <span>
+                    {addingToCart[product.id] ? 'Adding...' : 'Add'}
+                  </span>
                 </button>
               )}
             </div>
@@ -417,11 +659,18 @@ export default function ProductGrid({
     );
   };
 
+  // ============================================
+  // EARLY RETURNS
+  // ============================================
+
   if (loading && products.length === 0) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {[...Array(8)].map((_, i) => (
-          <div key={i} className="bg-gray-100 dark:bg-gray-700 rounded-xl h-72 animate-pulse" />
+          <div
+            key={i}
+            className="bg-gray-100 dark:bg-gray-700 rounded-xl h-72 animate-pulse"
+          />
         ))}
       </div>
     );
@@ -446,9 +695,13 @@ export default function ProductGrid({
     return (
       <div className="text-center py-12">
         <Package className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">No products found</h3>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          No products found
+        </h3>
         <p className="text-gray-500 dark:text-gray-400 mt-2">
-          {hasActiveFilters ? 'Try adjusting your filters' : 'Check back later for new products'}
+          {hasActiveFilters
+            ? 'Try adjusting your filters'
+            : 'Check back later for new products'}
         </p>
         {hasActiveFilters && (
           <button
@@ -461,6 +714,10 @@ export default function ProductGrid({
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -490,7 +747,6 @@ export default function ProductGrid({
               <option value="price-low">Price: Low → High</option>
               <option value="price-high">Price: High → Low</option>
               <option value="rating">Highest Rated</option>
-              <option value="popular">Most Popular</option>
             </select>
 
             <button
@@ -505,7 +761,9 @@ export default function ProductGrid({
                 type="number"
                 placeholder="Min"
                 value={filters.minPrice}
-                onChange={(e) => handleFilterChange('minPrice', e.target.value)}
+                onChange={(e) =>
+                  handleFilterChange('minPrice', e.target.value)
+                }
                 className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
               />
               <span className="text-gray-500 dark:text-gray-400">-</span>
@@ -513,14 +771,18 @@ export default function ProductGrid({
                 type="number"
                 placeholder="Max"
                 value={filters.maxPrice}
-                onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
+                onChange={(e) =>
+                  handleFilterChange('maxPrice', e.target.value)
+                }
                 className="w-20 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
               />
               <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <input
                   type="checkbox"
                   checked={filters.inStock}
-                  onChange={(e) => handleFilterChange('inStock', e.target.checked)}
+                  onChange={(e) =>
+                    handleFilterChange('inStock', e.target.checked)
+                  }
                   className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
                 />
                 In Stock
@@ -566,10 +828,15 @@ export default function ProductGrid({
       {/* Mobile Filters Modal */}
       {showMobileFilters && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setShowMobileFilters(false)} />
+          <div
+            className="fixed inset-0 bg-black/50"
+            onClick={() => setShowMobileFilters(false)}
+          />
           <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-xl p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Filters</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Filters
+              </h3>
               <button
                 onClick={() => setShowMobileFilters(false)}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -585,7 +852,9 @@ export default function ProductGrid({
                 <input
                   type="number"
                   value={filters.minPrice}
-                  onChange={(e) => handleFilterChange('minPrice', e.target.value)}
+                  onChange={(e) =>
+                    handleFilterChange('minPrice', e.target.value)
+                  }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                   placeholder="Min"
                 />
@@ -597,7 +866,9 @@ export default function ProductGrid({
                 <input
                   type="number"
                   value={filters.maxPrice}
-                  onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
+                  onChange={(e) =>
+                    handleFilterChange('maxPrice', e.target.value)
+                  }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200"
                   placeholder="Max"
                 />
@@ -606,7 +877,9 @@ export default function ProductGrid({
                 <input
                   type="checkbox"
                   checked={filters.inStock}
-                  onChange={(e) => handleFilterChange('inStock', e.target.checked)}
+                  onChange={(e) =>
+                    handleFilterChange('inStock', e.target.checked)
+                  }
                   className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
                 />
                 In Stock Only
@@ -631,7 +904,15 @@ export default function ProductGrid({
       )}
 
       {/* Products Grid */}
-      <div className={viewMode === 'grid' ? `grid ${columnClasses[columns as keyof typeof columnClasses]} gap-6` : 'space-y-4'}>
+      <div
+        className={
+          viewMode === 'grid'
+            ? `grid ${
+                columnClasses[columns as keyof typeof columnClasses]
+              } gap-6`
+            : 'space-y-4'
+        }
+      >
         <AnimatePresence mode="wait">
           {products.map((product) => renderProductCard(product))}
         </AnimatePresence>
@@ -641,7 +922,9 @@ export default function ProductGrid({
       {pagination.totalPages > 1 && (
         <div className="flex justify-center mt-6">
           <button
-            onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+            onClick={() =>
+              setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
+            }
             disabled={pagination.page === pagination.totalPages}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >

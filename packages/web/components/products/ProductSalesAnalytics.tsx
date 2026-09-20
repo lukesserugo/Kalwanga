@@ -2,236 +2,399 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  TrendingUp, TrendingDown, DollarSign, ShoppingBag,
-  Users, Calendar, Clock, BarChart3, PieChart,
-  Download, RefreshCw, Filter, ChevronDown,
-  ArrowUp, ArrowDown, Eye, Star, Package,
-  Loader2, AlertCircle, ChevronRight, Sparkles,
-  Zap, Award, Gift, ThumbsUp, MessageCircle,
-  TrendingUp as TrendingUpIcon, CheckCircle,
-  XCircle, HelpCircle, Info
+  DollarSign,
+  Package,
+  Star,
+  AlertCircle,
+  Loader2,
+  TrendingUp,
+  Layers,
+  Boxes,
+  Info,
+  RefreshCw,
 } from 'lucide-react';
 import { productService } from '../../services/productService';
 import { toast } from '../../utils/toast-manager';
-import { formatCurrency, formatDate, formatNumber } from '../../utils/formatters';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
+import { useAuth } from '../../hooks/useAuth';
 
-interface SalesAnalyticsProps {
+// ============================================
+// TYPES
+// ============================================
+//
+// Everything shown here is derived from endpoints the backend
+// actually serves today:
+//
+//   • GET /products/:id               → product + inventory + variants  (auth)
+//   • GET /products/:id/reviews/stats → rating + review count           (auth)
+//
+// There is NO /products/:id/sales, /analytics, /performance, or
+// /stats endpoint on the backend. Time-series, top customers,
+// conversion rate, return rate, revenue-by-channel, and sales-by-
+// day-of-week are not available and are deliberately not shown.
+
+interface VariantSnapshot {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  costPrice?: number | null;
+  stock: number;
+  inventoryQuantity: number;
+  inventoryReserved: number;
+  available: number;
+  isActive: boolean;
+}
+
+interface ProductSnapshot {
+  id: string;
+  name: string;
+  sku: string;
+  unitPrice: number;
+  costPrice?: number | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  minStock?: number | null;
+  isActive: boolean;
+  featured?: boolean;
+
+  // Product-level inventory (singular — matches backend).
+  inventory: {
+    quantity: number;
+    reserved: number;
+    available: number;
+    reorderPoint: number;
+    location?: string | null;
+  } | null;
+
+  variants: VariantSnapshot[];
+
+  // Aggregates we compute client-side from the above (mirrors the
+  // backend's computeStockAggregates logic).
+  totalStock: number;
+  totalAvailable: number;
+}
+
+interface ReviewStats {
+  average: number;
+  total: number;
+  distribution: { 1: number; 2: number; 3: number; 4: number; 5: number };
+}
+
+interface ProductSalesAnalyticsProps {
   productId: string;
   productName: string;
   unitPrice: number;
   className?: string;
 }
 
-interface SalesData {
-  totalRevenue: number;
-  totalUnits: number;
-  totalOrders: number;
-  averageOrderValue: number;
-  revenueTrend: number;
-  unitsTrend: number;
-  dailySales: Array<{ date: string; revenue: number; units: number }>;
-  topCustomers: Array<{ id: string; name: string; totalSpent: number; orders: number }>;
-  monthlyStats: Array<{ month: string; revenue: number; units: number }>;
-  conversionRate: number;
-  returnRate: number;
-  averageRating: number;
-  reviewCount: number;
-  revenueByCategory?: Array<{ category: string; revenue: number; percentage: number }>;
-  salesByDayOfWeek?: Array<{ day: string; revenue: number; orders: number }>;
+const DEFAULT_REVIEW_STATS: ReviewStats = {
+  average: 0,
+  total: 0,
+  distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+};
+
+// ============================================
+// HELPERS
+// ============================================
+
+function computeSnapshotAggregates(
+  product: any,
+): Pick<ProductSnapshot, 'totalStock' | 'totalAvailable'> {
+  const inv = product.inventory;
+  const productQty = inv?.quantity ?? 0;
+  const productRes = inv?.reserved ?? 0;
+
+  let variantStock = 0;
+  let variantAvailable = 0;
+
+  for (const v of product.variants ?? []) {
+    if (v.inventory) {
+      const q = v.inventory.quantity ?? 0;
+      const r = v.inventory.reserved ?? 0;
+      variantStock += q;
+      variantAvailable += Math.max(0, q - r);
+    } else {
+      variantStock += v.stock ?? 0;
+      variantAvailable += v.stock ?? 0;
+    }
+  }
+
+  return {
+    totalStock: productQty + variantStock,
+    totalAvailable: Math.max(
+      0,
+      productQty - productRes + variantAvailable,
+    ),
+  };
 }
 
-interface MetricCardProps {
+function toSnapshot(raw: any): ProductSnapshot {
+  const inv = raw.inventory
+    ? {
+        quantity: raw.inventory.quantity ?? 0,
+        reserved: raw.inventory.reserved ?? 0,
+        available:
+          (raw.inventory.quantity ?? 0) - (raw.inventory.reserved ?? 0),
+        reorderPoint: raw.inventory.reorderPoint ?? 0,
+        location: raw.inventory.location ?? null,
+      }
+    : null;
+
+  const variants: VariantSnapshot[] = Array.isArray(raw.variants)
+    ? raw.variants.map((v: any) => {
+        const vInv = v.inventory;
+        const q = vInv?.quantity ?? v.stock ?? 0;
+        const r = vInv?.reserved ?? 0;
+        return {
+          id: v.id,
+          name: v.name ?? '',
+          sku: v.sku ?? '',
+          price: v.price ?? 0,
+          costPrice: v.costPrice ?? null,
+          stock: v.stock ?? 0,
+          inventoryQuantity: q,
+          inventoryReserved: r,
+          available: Math.max(0, q - r),
+          isActive: v.isActive !== undefined ? v.isActive : true,
+        };
+      })
+    : [];
+
+  const { totalStock, totalAvailable } = computeSnapshotAggregates({
+    inventory: raw.inventory,
+    variants: raw.variants,
+  });
+
+  return {
+    id: raw.id,
+    name: raw.name ?? '',
+    sku: raw.sku ?? '',
+    unitPrice: raw.unitPrice ?? 0,
+    costPrice: raw.costPrice ?? null,
+    rating: raw.rating ?? null,
+    reviewCount: raw.reviewCount ?? null,
+    minStock: raw.minStock ?? 5,
+    isActive: raw.isActive !== undefined ? raw.isActive : true,
+    featured: !!raw.featured,
+    inventory: inv,
+    variants,
+    totalStock,
+    totalAvailable,
+  };
+}
+
+// ============================================
+// STAT CARD
+// ============================================
+
+interface StatCardProps {
   title: string;
   value: string | number;
-  change?: number;
+  subtitle?: string;
   icon: React.ReactNode;
   color: string;
-  subtitle?: string;
+  hint?: string;
 }
 
-function MetricCard({ title, value, change, icon, color, subtitle }: MetricCardProps) {
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  color,
+  hint,
+}: StatCardProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">{value}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+            {title}
+          </p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">
+            {value}
+          </p>
           {subtitle && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{subtitle}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
+              {subtitle}
+            </p>
           )}
         </div>
         <div className={`p-2 ${color} rounded-lg flex-shrink-0 ml-3`}>
           {icon}
         </div>
       </div>
-      {change !== undefined && (
-        <div className="mt-2 flex items-center gap-1 text-sm">
-          <span className={`flex items-center ${change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-            {change >= 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-            {Math.abs(change)}%
-          </span>
-          <span className="text-gray-500 dark:text-gray-400">vs last period</span>
-        </div>
+      {hint && (
+        <p className="mt-2 text-xs text-gray-400 dark:text-gray-500 flex items-start gap-1">
+          <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+          <span>{hint}</span>
+        </p>
       )}
     </div>
   );
 }
 
-export function ProductSalesAnalytics({ productId, productName, unitPrice, className = '' }: SalesAnalyticsProps) {
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
+export function ProductSalesAnalytics({
+  productId,
+  productName,
+  unitPrice,
+  className = '',
+}: ProductSalesAnalyticsProps) {
+  const { isAuthenticated } = useAuth();
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<SalesData | null>(null);
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
-  const [viewType, setViewType] = useState<'revenue' | 'units'>('revenue');
-  const [selectedMetric, setSelectedMetric] = useState<'revenue' | 'orders' | 'units'>('revenue');
-  const [showDetailedView, setShowDetailedView] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [product, setProduct] = useState<ProductSnapshot | null>(null);
+  const [reviewStats, setReviewStats] =
+    useState<ReviewStats>(DEFAULT_REVIEW_STATS);
 
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    loadAnalytics();
-  }, [productId, timeRange]);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-  const loadAnalytics = async () => {
+  const loadData = useCallback(async () => {
+    // ✅ Defensive guard. This view is admin-only; if it's ever
+    //    mounted under a storefront path, surface a clear message
+    //    instead of a 401 that shows as "Failed to load".
+    if (!isAuthenticated) {
+      setError('Sign in to view product analytics');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      
-      // Mock data with more realistic values
-      const baseRevenue = 10000 + Math.random() * 5000;
-      const baseUnits = 200 + Math.random() * 200;
-      const baseOrders = 50 + Math.random() * 80;
-      
-      const mockData: SalesData = {
-        totalRevenue: baseRevenue,
-        totalUnits: baseUnits,
-        totalOrders: baseOrders,
-        averageOrderValue: baseRevenue / baseOrders,
-        revenueTrend: 8 + Math.random() * 20 - 10,
-        unitsTrend: 5 + Math.random() * 15 - 10,
-        dailySales: Array.from({ length: 30 }, (_, i) => {
-          const date = new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000);
-          return {
-            date: date.toISOString().split('T')[0],
-            revenue: 150 + Math.random() * 600,
-            units: 4 + Math.floor(Math.random() * 18),
-          };
-        }),
-        topCustomers: [
-          { id: '1', name: 'John Doe', totalSpent: 1250, orders: 8 },
-          { id: '2', name: 'Jane Smith', totalSpent: 980, orders: 6 },
-          { id: '3', name: 'Bob Johnson', totalSpent: 750, orders: 5 },
-          { id: '4', name: 'Alice Brown', totalSpent: 620, orders: 4 },
-          { id: '5', name: 'Charlie Wilson', totalSpent: 450, orders: 3 },
-        ],
-        monthlyStats: [
-          { month: 'Jan', revenue: 2100, units: 58 },
-          { month: 'Feb', revenue: 1800, units: 45 },
-          { month: 'Mar', revenue: 2400, units: 62 },
-          { month: 'Apr', revenue: 2900, units: 78 },
-          { month: 'May', revenue: 3300, units: 99 },
-        ],
-        conversionRate: 2.8 + Math.random() * 2,
-        returnRate: 1.2 + Math.random() * 2,
-        averageRating: 4.2 + Math.random() * 0.8,
-        reviewCount: 20 + Math.floor(Math.random() * 30),
-        revenueByCategory: [
-          { category: 'Direct Sales', revenue: baseRevenue * 0.6, percentage: 60 },
-          { category: 'Online Store', revenue: baseRevenue * 0.25, percentage: 25 },
-          { category: 'Marketplace', revenue: baseRevenue * 0.1, percentage: 10 },
-          { category: 'Other', revenue: baseRevenue * 0.05, percentage: 5 },
-        ],
-        salesByDayOfWeek: [
-          { day: 'Mon', revenue: 1200, orders: 12 },
-          { day: 'Tue', revenue: 1100, orders: 10 },
-          { day: 'Wed', revenue: 1400, orders: 14 },
-          { day: 'Thu', revenue: 1300, orders: 13 },
-          { day: 'Fri', revenue: 1700, orders: 16 },
-          { day: 'Sat', revenue: 1900, orders: 18 },
-          { day: 'Sun', revenue: 800, orders: 7 },
-        ],
-      };
-      setData(mockData);
-    } catch (error) {
-      console.error('Failed to load analytics:', error);
-      setError('Failed to load sales analytics');
-      toast.error('Failed to load sales analytics');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      // Simulate export
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success('Analytics exported successfully');
-    } catch (error) {
-      toast.error('Failed to export analytics');
+      // Both of these hit real backend endpoints.
+      const [rawProduct, stats] = await Promise.all([
+        productService.getProductById(productId),
+        productService
+          .getReviewStats(productId)
+          .catch(() => DEFAULT_REVIEW_STATS),
+      ]);
+
+      if (!isMountedRef.current) return;
+
+      if (!rawProduct || !rawProduct.id) {
+        throw new Error('Product not found');
+      }
+
+      setProduct(toSnapshot(rawProduct));
+      setReviewStats({
+        average: Number(stats?.average) || 0,
+        total: Number(stats?.total) || 0,
+        distribution:
+          stats?.distribution ?? { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      });
+    } catch (err: any) {
+      console.error('Failed to load product analytics:', err);
+      if (!isMountedRef.current) return;
+
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        setError('Sign in to view product analytics');
+        return;
+      }
+
+      setError('Failed to load product data');
+      toast.error('Failed to load product data');
     } finally {
-      setExporting(false);
+      if (isMountedRef.current) setLoading(false);
     }
-  };
+  }, [productId, isAuthenticated]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleRefresh = () => {
-    loadAnalytics();
-    toast.info('Refreshing analytics...');
+    loadData();
+    toast.info('Refreshing product data...');
   };
 
-  const handleTimeRangeChange = (range: '7d' | '30d' | '90d' | '1y') => {
-    setTimeRange(range);
-    toast.info(`Showing ${range} data`);
-  };
+  // ============================================
+  // EARLY RETURNS
+  // ============================================
 
   if (loading) {
     return (
       <div className={`flex items-center justify-center py-12 ${className}`}>
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400 mx-auto mb-3" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading analytics...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Loading product data...
+          </p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (error || !product) {
     return (
       <div className={`text-center py-12 ${className}`}>
         <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-        <p className="text-gray-600 dark:text-gray-400">{error}</p>
-        <button
-          onClick={loadAnalytics}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Retry
-        </button>
+        <p className="text-gray-600 dark:text-gray-400">
+          {error || 'No data available'}
+        </p>
+        {isAuthenticated && (
+          <button
+            onClick={loadData}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Retry
+          </button>
+        )}
       </div>
     );
   }
 
-  if (!data) {
-    return (
-      <div className={`text-center py-12 ${className}`}>
-        <BarChart3 className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-        <p className="text-gray-500 dark:text-gray-400">No sales data available</p>
-      </div>
-    );
-  }
+  // ============================================
+  // DERIVED METRICS
+  // ============================================
 
-  const maxRevenue = Math.max(...data.dailySales.map(d => d.revenue));
-  const maxUnits = Math.max(...data.dailySales.map(d => d.units));
-  const maxMonthlyRevenue = Math.max(...data.monthlyStats.map(m => m.revenue));
+  const margin =
+    product.costPrice != null && product.unitPrice > 0
+      ? ((product.unitPrice - product.costPrice) / product.unitPrice) * 100
+      : null;
 
-  const getValue = (day: { revenue: number; units: number }) => {
-    return viewType === 'revenue' ? day.revenue : day.units;
-  };
+  const marginAmount =
+    product.costPrice != null
+      ? product.unitPrice - product.costPrice
+      : null;
 
-  const getMax = () => {
-    return viewType === 'revenue' ? maxRevenue : maxUnits;
-  };
+  const stockStatus =
+    product.totalAvailable <= 0
+      ? 'out_of_stock'
+      : product.totalAvailable <= (product.minStock ?? 5)
+      ? 'low_stock'
+      : 'in_stock';
+
+  const hasVariants = product.variants.length > 0;
+
+  // ✅ The stats endpoint aggregates live from `ProductReview`. The
+  //    denormalized `product.reviewCount` is only trustworthy if the
+  //    stats call failed. Prefer live; fall back to denormalized.
+  const effectiveReviewCount =
+    reviewStats.total > 0
+      ? reviewStats.total
+      : product.reviewCount ?? 0;
+
+  const effectiveAverageRating =
+    reviewStats.average > 0
+      ? reviewStats.average
+      : product.rating ?? 0;
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -239,282 +402,257 @@ export function ProductSalesAnalytics({ productId, productName, unitPrice, class
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <TrendingUpIcon className="w-5 h-5 text-blue-500" />
-            Sales Analytics
+            <TrendingUp className="w-5 h-5 text-blue-500" />
+            Product Overview
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Performance metrics for <span className="font-medium text-gray-700 dark:text-gray-300">{productName}</span>
+            Live data for{' '}
+            <span className="font-medium text-gray-700 dark:text-gray-300">
+              {productName}
+            </span>
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
-            {(['7d', '30d', '90d', '1y'] as const).map((range) => (
-              <button
-                key={range}
-                onClick={() => handleTimeRangeChange(range)}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  timeRange === range
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-          >
-            {exporting ? (
-              <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-            ) : (
-              <Download className="w-4 h-4 text-gray-500" />
-            )}
-          </button>
-          <button
-            onClick={handleRefresh}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4 text-gray-500" />
-          </button>
-          <button
-            onClick={() => setShowDetailedView(!showDetailedView)}
-            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-          >
-            {showDetailedView ? <Eye className="w-4 h-4 text-gray-500" /> : <BarChart3 className="w-4 h-4 text-gray-500" />}
-          </button>
-        </div>
+        <button
+          onClick={handleRefresh}
+          className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          title="Refresh"
+        >
+          <RefreshCw className="w-4 h-4 text-gray-500" />
+        </button>
       </div>
 
-      {/* Stats Cards */}
+      {/* Primary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          title="Total Revenue"
-          value={formatCurrency(data.totalRevenue)}
-          change={data.revenueTrend}
-          icon={<DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />}
+        <StatCard
+          title="Unit Price"
+          value={formatCurrency(product.unitPrice)}
+          subtitle={`SKU: ${product.sku}`}
+          icon={
+            <DollarSign className="w-5 h-5 text-green-600 dark:text-green-400" />
+          }
           color="bg-green-100 dark:bg-green-900/20"
         />
-        <MetricCard
-          title="Total Units Sold"
-          value={formatNumber(data.totalUnits)}
-          change={data.unitsTrend}
-          icon={<ShoppingBag className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
+
+        <StatCard
+          title="Total Stock"
+          value={formatNumber(product.totalStock)}
+          subtitle={
+            product.totalAvailable !== product.totalStock
+              ? `${product.totalAvailable} available`
+              : undefined
+          }
+          icon={
+            <Package className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          }
           color="bg-blue-100 dark:bg-blue-900/20"
-          subtitle={`Across ${data.totalOrders} orders`}
         />
-        <MetricCard
-          title="Avg. Order Value"
-          value={formatCurrency(data.averageOrderValue)}
-          icon={<TrendingUp className="w-5 h-5 text-purple-600 dark:text-purple-400" />}
-          color="bg-purple-100 dark:bg-purple-900/20"
-          subtitle={`Unit price: ${formatCurrency(unitPrice)}`}
-        />
-        <MetricCard
+
+        <StatCard
           title="Average Rating"
-          value={`${data.averageRating.toFixed(1)} ★`}
-          icon={<Star className="w-5 h-5 text-yellow-600 dark:text-yellow-400 fill-current" />}
+          value={
+            effectiveAverageRating > 0
+              ? `${effectiveAverageRating.toFixed(1)} ★`
+              : 'N/A'
+          }
+          subtitle={
+            effectiveReviewCount > 0
+              ? `${effectiveReviewCount} reviews`
+              : 'No reviews yet'
+          }
+          icon={
+            <Star className="w-5 h-5 text-yellow-600 dark:text-yellow-400 fill-current" />
+          }
           color="bg-yellow-100 dark:bg-yellow-900/20"
-          subtitle={`${data.reviewCount} reviews`}
+          hint="Includes pending reviews"
+        />
+
+        <StatCard
+          title="Variants"
+          value={hasVariants ? product.variants.length : '—'}
+          subtitle={hasVariants ? undefined : 'No variants'}
+          icon={
+            <Layers className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+          }
+          color="bg-purple-100 dark:bg-purple-900/20"
         />
       </div>
 
-      {/* Additional Stats - Compact */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Conversion Rate</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">{data.conversionRate.toFixed(1)}%</p>
+      {/* Margin & stock status */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+            Margin
+          </p>
+          {margin != null ? (
+            <>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                {margin.toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {formatCurrency(marginAmount ?? 0)} per unit
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              Cost price not set
+            </p>
+          )}
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Return Rate</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">{data.returnRate.toFixed(1)}%</p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Avg. Unit Price</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(unitPrice)}</p>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-center">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Total Orders</p>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">{data.totalOrders}</p>
-        </div>
-      </div>
 
-      {/* Sales Trend Chart */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-gray-500" />
-            <span className="font-medium text-gray-900 dark:text-white">Sales Trend</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
-              <button
-                onClick={() => setViewType('revenue')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  viewType === 'revenue'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400'
-                }`}
-              >
-                Revenue
-              </button>
-              <button
-                onClick={() => setViewType('units')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  viewType === 'units'
-                    ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400'
-                }`}
-              >
-                Units
-              </button>
-            </div>
-            <select
-              value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value as 'revenue' | 'orders' | 'units')}
-              className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-            >
-              <option value="revenue">Revenue</option>
-              <option value="orders">Orders</option>
-              <option value="units">Units</option>
-            </select>
-          </div>
-        </div>
-        <div className="h-48 flex items-end gap-1">
-          {data.dailySales.slice(-14).map((day, index) => {
-            const maxValue = getMax();
-            const value = getValue(day);
-            const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
-            
-            return (
-              <div key={index} className="flex-1 flex flex-col items-center group relative">
-                <div className="absolute bottom-8 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap">
-                  {viewType === 'revenue' ? formatCurrency(day.revenue) : `${day.units} units`}
-                </div>
-                <div 
-                  className="w-full bg-gradient-to-t from-blue-500 to-blue-400 rounded-t transition-all duration-500 hover:from-blue-600 hover:to-blue-500"
-                  style={{ height: `${Math.max(5, height)}%` }}
-                />
-                <span className="text-[8px] text-gray-400 mt-1 rotate-45 origin-left whitespace-nowrap">
-                  {new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Detailed View */}
-      <AnimatePresence>
-        {showDetailedView && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+            Stock Status
+          </p>
+          <p
+            className={`text-lg font-bold ${
+              stockStatus === 'out_of_stock'
+                ? 'text-red-600 dark:text-red-400'
+                : stockStatus === 'low_stock'
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : 'text-green-600 dark:text-green-400'
+            }`}
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              {/* Monthly Stats */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-gray-500" />
-                  Monthly Revenue
-                </h4>
-                <div className="space-y-2">
-                  {data.monthlyStats.map((month) => (
-                    <div key={month.month} className="flex items-center gap-3">
-                      <span className="text-sm text-gray-500 dark:text-gray-400 w-10">{month.month}</span>
-                      <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-green-500 rounded-full h-2 transition-all"
-                          style={{ width: `${(month.revenue / maxMonthlyRevenue) * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {formatCurrency(month.revenue)}
-                      </span>
-                      <span className="text-xs text-gray-400">{month.units} units</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Top Customers */}
-              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-gray-500" />
-                  Top Customers
-                </h4>
-                <div className="space-y-3">
-                  {data.topCustomers.map((customer) => (
-                    <div key={customer.id} className="flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 p-2 rounded-lg transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white">{customer.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{customer.orders} orders</p>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(customer.totalSpent)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Weekday Performance */}
-      {data.salesByDayOfWeek && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gray-500" />
-            Performance by Day
-          </h4>
-          <div className="grid grid-cols-7 gap-2">
-            {data.salesByDayOfWeek.map((day) => (
-              <div key={day.day} className="text-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <p className="text-xs text-gray-500 dark:text-gray-400">{day.day}</p>
-                <p className="text-sm font-bold text-gray-900 dark:text-white">{formatCurrency(day.revenue)}</p>
-                <p className="text-xs text-gray-400">{day.orders} orders</p>
-              </div>
-            ))}
-          </div>
+            {stockStatus === 'out_of_stock'
+              ? 'Out of Stock'
+              : stockStatus === 'low_stock'
+              ? 'Low Stock'
+              : 'In Stock'}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Reorder at {product.minStock ?? 5} units
+          </p>
         </div>
-      )}
 
-      {/* Revenue by Category */}
-      {data.revenueByCategory && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+            Product State
+          </p>
+          <p
+            className={`text-lg font-bold ${
+              product.isActive
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            {product.isActive ? 'Active' : 'Inactive'}
+          </p>
+          {product.featured && (
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">
+              ★ Featured
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Review distribution */}
+      {reviewStats.total > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <PieChart className="w-4 h-4 text-gray-500" />
-            Revenue by Channel
+            <Star className="w-4 h-4 text-gray-500" />
+            Review Distribution
           </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {data.revenueByCategory.map((item) => (
-              <div key={item.category} className="flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">{item.category}</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {formatCurrency(item.revenue)}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-1">
+          <div className="space-y-2">
+            {[5, 4, 3, 2, 1].map((rating) => {
+              const count =
+                reviewStats.distribution[rating as 1 | 2 | 3 | 4 | 5] || 0;
+              const pct =
+                reviewStats.total > 0
+                  ? (count / reviewStats.total) * 100
+                  : 0;
+              return (
+                <div key={rating} className="flex items-center gap-3">
+                  <span className="text-sm text-gray-500 dark:text-gray-400 w-8">
+                    {rating} ★
+                  </span>
+                  <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div
-                      className="bg-blue-500 rounded-full h-1.5 transition-all"
-                      style={{ width: `${item.percentage}%` }}
+                      className="bg-yellow-400 rounded-full h-2 transition-all"
+                      style={{ width: `${Math.min(pct, 100)}%` }}
                     />
                   </div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400 w-12 text-right">
+                    {count}
+                  </span>
                 </div>
-                <span className="text-xs text-gray-400">{item.percentage}%</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
+
+      {/* Variant breakdown */}
+      {hasVariants && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            <Boxes className="w-4 h-4 text-gray-500" />
+            Variant Breakdown
+          </h4>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-gray-200 dark:border-gray-700">
+                <tr>
+                  <th className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                    Variant
+                  </th>
+                  <th className="text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                    SKU
+                  </th>
+                  <th className="text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                    Price
+                  </th>
+                  <th className="text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                    Cost
+                  </th>
+                  <th className="text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase pb-2">
+                    Available
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                {product.variants.map((v) => (
+                  <tr key={v.id}>
+                    <td className="py-2 text-sm text-gray-900 dark:text-white">
+                      {v.name}
+                      {!v.isActive && (
+                        <span className="ml-2 text-xs text-gray-400">
+                          (inactive)
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 text-xs text-gray-500 dark:text-gray-400 font-mono">
+                      {v.sku}
+                    </td>
+                    <td className="py-2 text-sm text-gray-900 dark:text-white text-right">
+                      {formatCurrency(v.price)}
+                    </td>
+                    <td className="py-2 text-sm text-gray-600 dark:text-gray-400 text-right">
+                      {v.costPrice != null
+                        ? formatCurrency(v.costPrice)
+                        : '—'}
+                    </td>
+                    <td className="py-2 text-sm text-gray-900 dark:text-white text-right">
+                      {v.available}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Explanation of what's not shown */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-start gap-2">
+        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+        <p className="text-xs text-blue-700 dark:text-blue-300">
+          Time-series analytics (daily/monthly sales, revenue trends, top
+          customers, conversion rate, return rate, revenue by channel) are
+          not yet available from the backend. This view shows only the
+          live product, stock, and review data the API currently serves.
+        </p>
+      </div>
     </div>
   );
 }
+
+export default ProductSalesAnalytics;

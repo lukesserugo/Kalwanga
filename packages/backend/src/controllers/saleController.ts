@@ -3,23 +3,23 @@
 import { Request, Response, NextFunction } from 'express';
 import { SaleService } from '../services/saleService.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { createSaleSchema } from '../utils/validators.js';
+import {
+  createSaleSchema,
+  cartCheckoutSchema,
+} from '../utils/validators.js';
 import { prisma } from '../lib/prisma.js';
 import { z } from 'zod';
 
 const saleService = new SaleService();
 
 // ============================================
-// VALIDATION SCHEMAS
+// VALIDATION SCHEMAS (controller-local)
 // ============================================
-
-const cartCheckoutSchema = z.object({
-  cartId: z.string().min(1, 'Cart ID is required'),
-  paymentMethod: z.enum(['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY', 'BANK_TRANSFER', 'GIFT_CARD']),
-  paidAmount: z.number().positive('Paid amount must be positive'),
-  cashRegisterId: z.string().optional(),
-  cashRegisterSessionId: z.string().optional(),
-});
+//
+// The checkout-grade schemas (`createSaleSchema`, `cartCheckoutSchema`)
+// live in `../utils/validators.ts` so that every checkout path (legacy
+// direct sale, cart checkout, POS checkout) validates against the same
+// canonical payment-method list. Do NOT re-declare them here.
 
 const dateRangeSchema = z.object({
   startDate: z.string().datetime().optional(),
@@ -33,13 +33,17 @@ const updateStatusSchema = z.object({
 
 const refundSchema = z.object({
   reason: z.string().optional(),
-  amount: z.number().positive().optional(),
-  items: z.array(z.object({
-    productId: z.string(),
-    variantId: z.string().optional(),
-    quantity: z.number().int().positive(),
-    reason: z.string().optional(),
-  })).optional(),
+  amount: z.number().nonnegative().optional(),
+  items: z
+    .array(
+      z.object({
+        productId: z.string(),
+        variantId: z.string().optional(),
+        quantity: z.number().int().positive(),
+        reason: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 const cancelSchema = z.object({
@@ -52,12 +56,16 @@ const voidSchema = z.object({
 
 const returnSchema = z.object({
   reason: z.string().min(1, 'Reason is required'),
-  items: z.array(z.object({
-    productId: z.string(),
-    variantId: z.string().optional(),
-    quantity: z.number().int().positive(),
-    reason: z.string().optional(),
-  })).optional(),
+  items: z
+    .array(
+      z.object({
+        productId: z.string(),
+        variantId: z.string().optional(),
+        quantity: z.number().int().positive(),
+        reason: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 const emailReceiptSchema = z.object({
@@ -75,24 +83,24 @@ const bulkStatusSchema = z.object({
 
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
-  
-  let businessUnitId = 
-    user?.businessUnitId || 
+
+  let businessUnitId =
+    user?.businessUnitId ||
     user?.businessUnits?.[0]?.businessUnitId ||
     req.body?.businessUnitId ||
     req.query?.businessUnitId;
-  
+
   if (!businessUnitId || businessUnitId === 'default') {
     try {
       const businessUnit = await prisma.businessUnit.findFirst({
         where: { isActive: true },
         orderBy: { createdAt: 'asc' },
       });
-      
+
       if (businessUnit) {
         return businessUnit.id;
       }
-      
+
       let company = await prisma.company.findFirst();
       if (!company) {
         company = await prisma.company.create({
@@ -104,7 +112,7 @@ async function getBusinessUnitId(req: Request): Promise<string> {
           },
         });
       }
-      
+
       const newBusinessUnit = await prisma.businessUnit.create({
         data: {
           name: 'Default Business Unit',
@@ -113,15 +121,53 @@ async function getBusinessUnitId(req: Request): Promise<string> {
           companyId: company.id,
         },
       });
-      
+
       return newBusinessUnit.id;
     } catch (error) {
       console.error('❌ Failed to get/create default business unit:', error);
       throw new AppError('Failed to resolve business unit ID', 500);
     }
   }
-  
+
   return businessUnitId as string;
+}
+
+/**
+ * Extract the idempotency key for this request.
+ *
+ * Source order (first non-empty wins):
+ *   1. `Idempotency-Key` HTTP header (canonical)
+ *   2. `idempotency-key` HTTP header (lowercase variant)
+ *   3. `idempotencyKey` in the request body (SDK / form clients)
+ *
+ * Returns `undefined` when no key is supplied — the flow then behaves
+ * exactly like before (no idempotency, new sale every time).
+ */
+function getIdempotencyKey(req: Request): string | undefined {
+  const headerKey =
+    (req.headers['idempotency-key'] as string | undefined) ??
+    (req.headers['Idempotency-Key'] as string | undefined);
+
+  const bodyKey =
+    (req.body && (req.body.idempotencyKey as string | undefined)) || undefined;
+
+  const raw = headerKey || bodyKey;
+  if (!raw) return undefined;
+
+  const trimmed = String(raw).trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Extract the current user ID from the authenticated request.
+ */
+function getUserId(req: Request): string {
+  const user = (req as any).user;
+  const userId = user?.id || user?.userId;
+  if (!userId) {
+    throw new AppError('User ID is required', 400);
+  }
+  return userId;
 }
 
 // ============================================
@@ -136,7 +182,7 @@ export const saleController = {
   async getAllSales(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      
+
       const {
         page,
         limit,
@@ -235,24 +281,27 @@ export const saleController = {
   /**
    * Create a new sale (legacy direct sale)
    * POST /sales
+   *
+   * Idempotent when the client sends an `Idempotency-Key` header (or
+   * `idempotencyKey` in the body). Retries with the same key return the
+   * original sale; see `SaleService.createSale`.
    */
   async createSale(req: Request, res: Response, next: NextFunction) {
     try {
       const data = createSaleSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       // Get the business unit ID
       const businessUnitId = await getBusinessUnitId(req);
 
-      // Add businessUnitId to the data
+      // ✅ Resolve the idempotency key from header (preferred) or body.
+      const idempotencyKey = getIdempotencyKey(req);
+
+      // Add businessUnitId + idempotencyKey to the data
       const saleData = {
         ...data,
         businessUnitId,
+        idempotencyKey,
       };
 
       const sale = await saleService.createSale(saleData, userId);
@@ -280,17 +329,19 @@ export const saleController = {
   /**
    * Create sale from cart checkout (POS Integration)
    * POST /sales/checkout
+   *
+   * Idempotent when the client sends an `Idempotency-Key` header (or
+   * `idempotencyKey` in the body). Retries with the same key return the
+   * original sale; see `SaleService.createSaleFromCart`.
    */
   async createSaleFromCart(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const validatedData = cartCheckoutSchema.parse(req.body);
+
+      // ✅ Resolve the idempotency key from header (preferred) or body.
+      const idempotencyKey = getIdempotencyKey(req);
 
       const sale = await saleService.createSaleFromCart(
         validatedData.cartId,
@@ -300,6 +351,10 @@ export const saleController = {
           paidAmount: validatedData.paidAmount,
           cashRegisterId: validatedData.cashRegisterId,
           cashRegisterSessionId: validatedData.cashRegisterSessionId,
+          applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
+          tipAmount: validatedData.tipAmount,
+          // ✅ Forward the key so the sale layer persists / dedupes on it.
+          idempotencyKey,
         }
       );
 
@@ -328,17 +383,19 @@ export const saleController = {
   /**
    * Create sale from POS
    * POST /sales/pos
+   *
+   * Alias of `createSaleFromCart` for legacy POS clients. Same
+   * idempotency semantics — header (`Idempotency-Key`) or body
+   * (`idempotencyKey`) is honored.
    */
   async createSaleFromPos(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const validatedData = cartCheckoutSchema.parse(req.body);
+
+      // ✅ Resolve the idempotency key from header (preferred) or body.
+      const idempotencyKey = getIdempotencyKey(req);
 
       const sale = await saleService.createSaleFromCart(
         validatedData.cartId,
@@ -348,6 +405,10 @@ export const saleController = {
           paidAmount: validatedData.paidAmount,
           cashRegisterId: validatedData.cashRegisterId,
           cashRegisterSessionId: validatedData.cashRegisterSessionId,
+          applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
+          tipAmount: validatedData.tipAmount,
+          // ✅ Forward the key so the sale layer persists / dedupes on it.
+          idempotencyKey,
         }
       );
 
@@ -381,12 +442,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { reason, amount, items } = refundSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const refund = await saleService.refundSale(id, userId, reason, amount, items);
 
@@ -418,18 +474,9 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { reason, items } = returnSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
+      const userId = getUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const sale = await saleService.getSaleById(id);
-      if (!sale) {
-        throw new AppError('Sale not found', 404);
-      }
-
+      // The service already validates sale existence and throws 404.
       const result = await saleService.processReturn(id, userId, { reason, items });
 
       res.status(200).json({
@@ -460,12 +507,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { reason } = cancelSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.cancelSale(id, userId, reason);
 
@@ -497,12 +539,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { reason } = voidSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.voidSale(id, userId, reason);
 
@@ -533,12 +570,7 @@ export const saleController = {
   async holdSale(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.holdSale(id, userId);
 
@@ -559,12 +591,7 @@ export const saleController = {
   async resumeSale(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.resumeSale(id, userId);
 
@@ -586,12 +613,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { email } = emailReceiptSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.sendReceiptEmail(id, email, userId);
 
@@ -622,12 +644,7 @@ export const saleController = {
   async resendReceiptEmail(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.resendReceiptEmail(id, userId);
 
@@ -776,7 +793,9 @@ export const saleController = {
       const exportData = sales.map((sale: any) => ({
         receiptNumber: sale.receiptNumber,
         date: sale.saleDate.toISOString(),
-        customer: sale.customer ? `${sale.customer.firstName} ${sale.customer.lastName}` : 'Guest',
+        customer: sale.customer
+          ? `${sale.customer.firstName} ${sale.customer.lastName}`
+          : 'Guest',
         subtotal: sale.subtotal,
         tax: sale.tax,
         discount: sale.discount,
@@ -809,15 +828,30 @@ export const saleController = {
 
       const sales = await saleService.getSalesByDateRange({
         businessUnitId: businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
-      const headers = ['Receipt', 'Date', 'Customer', 'Subtotal', 'Tax', 'Discount', 'Total', 'Payment', 'Status', 'Items'];
+      const headers = [
+        'Receipt',
+        'Date',
+        'Customer',
+        'Subtotal',
+        'Tax',
+        'Discount',
+        'Total',
+        'Payment',
+        'Status',
+        'Items',
+      ];
       const rows = sales.map((sale: any) => [
         sale.receiptNumber,
         sale.saleDate.toISOString().split('T')[0],
-        sale.customer ? `${sale.customer.firstName} ${sale.customer.lastName}` : 'Guest',
+        sale.customer
+          ? `${sale.customer.firstName} ${sale.customer.lastName}`
+          : 'Guest',
         sale.subtotal.toFixed(2),
         sale.tax.toFixed(2),
         sale.discount.toFixed(2),
@@ -827,10 +861,16 @@ export const saleController = {
         sale.items?.length || 0,
       ]);
 
-      const csvContent = [headers.join(','), ...rows.map((row: any[]) => row.join(','))].join('\n');
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row: any[]) => row.join(',')),
+      ].join('\n');
 
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=sales-${new Date().toISOString().split('T')[0]}.csv`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=sales-${new Date().toISOString().split('T')[0]}.csv`
+      );
       res.send(csvContent);
     } catch (error) {
       next(error);
@@ -848,7 +888,9 @@ export const saleController = {
 
       const sales = await saleService.getSalesByDateRange({
         businessUnitId: businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
@@ -873,7 +915,9 @@ export const saleController = {
 
       const sales = await saleService.getSalesByDateRange({
         businessUnitId: businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
@@ -1091,8 +1135,14 @@ export const saleController = {
         businessUnitId: businessUnitId,
       });
 
-      const weekRevenue = weekSales.reduce((sum: number, sale: any) => sum + sale.total, 0);
-      const monthRevenue = monthSales.reduce((sum: number, sale: any) => sum + sale.total, 0);
+      const weekRevenue = weekSales.reduce(
+        (sum: number, sale: any) => sum + sale.total,
+        0
+      );
+      const monthRevenue = monthSales.reduce(
+        (sum: number, sale: any) => sum + sale.total,
+        0
+      );
 
       res.status(200).json({
         success: true,
@@ -1293,7 +1343,10 @@ export const saleController = {
         endDate: now,
       });
 
-      const totalRevenue = sales.reduce((sum: number, sale: any) => sum + sale.total, 0);
+      const totalRevenue = sales.reduce(
+        (sum: number, sale: any) => sum + sale.total,
+        0
+      );
       const totalSales = sales.length;
       const averageTicket = totalSales > 0 ? totalRevenue / totalSales : 0;
 
@@ -1308,8 +1361,14 @@ export const saleController = {
         endDate: previousPeriodEnd,
       });
 
-      const previousRevenue = previousSales.reduce((sum: number, sale: any) => sum + sale.total, 0);
-      const growthRate = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
+      const previousRevenue = previousSales.reduce(
+        (sum: number, sale: any) => sum + sale.total,
+        0
+      );
+      const growthRate =
+        previousRevenue > 0
+          ? ((totalRevenue - previousRevenue) / previousRevenue) * 100
+          : 0;
 
       res.status(200).json({
         success: true,
@@ -1351,7 +1410,10 @@ export const saleController = {
   async updateSalesSettings(req: Request, res: Response, next: NextFunction) {
     try {
       const { companyId } = req.query;
-      const settings = await saleService.updateSalesSettings(req.body, companyId as string);
+      const settings = await saleService.updateSalesSettings(
+        req.body,
+        companyId as string
+      );
       res.status(200).json({
         success: true,
         data: settings,
@@ -1582,12 +1644,7 @@ export const saleController = {
   async bulkUpdateStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { saleIds, status } = bulkStatusSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.bulkUpdateStatus(saleIds, status, userId);
 
@@ -1619,12 +1676,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const updates = req.body;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.updateSale(id, updates, userId);
 
@@ -1646,12 +1698,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { status } = updateStatusSchema.parse(req.body);
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.updateSaleStatus(id, status, userId);
 
@@ -1683,12 +1730,7 @@ export const saleController = {
     try {
       const { id } = req.params;
       const { notes } = req.body;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       if (notes === undefined) {
         throw new AppError('Notes are required', 400);
@@ -1713,12 +1755,7 @@ export const saleController = {
   async deleteSale(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = getUserId(req);
 
       const result = await saleService.deleteSale(id, userId);
 
@@ -1739,15 +1776,10 @@ export const saleController = {
   async bulkDeleteSales(req: Request, res: Response, next: NextFunction) {
     try {
       const { saleIds } = req.body;
-      const user = (req as any).user;
-      const userId = user?.id || user?.userId;
+      const userId = getUserId(req);
 
       if (!saleIds || !Array.isArray(saleIds) || saleIds.length === 0) {
         throw new AppError('Sale IDs are required', 400);
-      }
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
       }
 
       const result = await saleService.bulkDeleteSales(saleIds, userId);
@@ -1761,49 +1793,53 @@ export const saleController = {
       next(error);
     }
   },
-  
+
+  /**
+   * Get abandoned carts
+   * GET /sales/abandoned-carts
+   *
+   * A cart is "abandoned" if it has items and hasn't been updated
+   * since `now - hours`. The `minValue` filter excludes trivial carts.
+   */
   async getAbandonedCarts(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      const { hours = 24, minValue } = req.query;
-      
-      // Calculate the date threshold based on hours
-      const thresholdDate = new Date();
-      thresholdDate.setHours(thresholdDate.getHours() - (parseInt(hours as string) || 24));
-      
-      // Call the service with the parameters it expects
-      const result = await saleService.getAbandonedCarts({
+      const { hours = 24, minValue, page, limit } = req.query;
+
+      // Carts not touched since this moment are abandoned.
+      const olderThan = new Date();
+      olderThan.setHours(
+        olderThan.getHours() - (parseInt(hours as string) || 24)
+      );
+
+      const carts = await saleService.getAbandonedCarts({
         businessUnitId,
-        startDate: thresholdDate,  // Carts older than this date are considered abandoned
-        endDate: new Date(),        // Up to now
+        olderThan,
         minValue: minValue ? parseFloat(minValue as string) : undefined,
       });
-      
-      // The service returns an array directly
-      const carts = Array.isArray(result) ? result : [];
-      
-      // Manual pagination since the service doesn't support it
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-      const startIndex = (page - 1) * limit;
-      const endIndex = startIndex + limit;
-      const paginatedCarts = carts.slice(startIndex, endIndex);
-      
+
+      // The service returns an array directly; paginate in-memory.
+      const safeCarts = Array.isArray(carts) ? carts : [];
+      const pageNum = parseInt(page as string) || 1;
+      const limitNum = parseInt(limit as string) || 10;
+      const startIndex = (pageNum - 1) * limitNum;
+      const endIndex = startIndex + limitNum;
+      const paginatedCarts = safeCarts.slice(startIndex, endIndex);
+
       res.status(200).json({
         success: true,
         data: paginatedCarts,
         pagination: {
-          total: carts.length,
-          page: page,
-          totalPages: Math.ceil(carts.length / limit),
-          limit: limit,
+          total: safeCarts.length,
+          page: pageNum,
+          totalPages: Math.ceil(safeCarts.length / limitNum),
+          limit: limitNum,
         },
       });
     } catch (error) {
       next(error);
     }
-  }
+  },
 };
 
 export default saleController;
-

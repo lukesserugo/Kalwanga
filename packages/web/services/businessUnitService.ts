@@ -1,11 +1,47 @@
 // D:\Projects\Kalwanga\packages\web\services\businessUnitService.ts
 
 import { api } from './api';
-import type { BusinessUnit, User } from '../types';
 
 // ============================================
-// TYPES
+// CANONICAL TYPE IMPORTS
 // ============================================
+//
+// ⚠️ The service MUST NOT redeclare domain models. The canonical
+//    declarations live in `../types/businessUnit`. Every consumer of
+//    this service reads those same types, so the shapes must match.
+//
+// All imports are type-only so the compiler erases them and the
+// runtime cycle
+//   businessUnitService ↔ types/businessUnit
+// never forms.
+
+import type {
+  BusinessUnit,
+  BusinessUnitUser,
+  BusinessUnitStats,
+  BusinessUnitDetails,
+  CreateBusinessUnitDto,
+  UpdateBusinessUnitDto,
+} from '../types/businessUnit';
+
+// Re-export so callers that imported these from
+// `../services/businessUnitService` keep compiling. The canonical
+// declarations remain in `../types/businessUnit`.
+
+export type {
+  BusinessUnit,
+  BusinessUnitUser,
+  BusinessUnitStats,
+  BusinessUnitDetails,
+};
+
+// ============================================
+// LOCAL RESPONSE ENVELOPES
+// ============================================
+//
+// These describe the shape the *service* returns to its callers.
+// They are not domain models — the domain models come from
+// `../types/businessUnit`.
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -26,54 +62,6 @@ export interface BulkDeleteResult {
     softDeleted?: boolean;
   }>;
   totalProcessed: number;
-}
-
-export interface BusinessUnitStats {
-  products: number;
-  inventoryTotal: number;
-  sales: number;
-  totalRevenue: number;
-  totalCustomers: number;
-  totalEmployees: number;
-  lowStockItems: number;
-  outOfStockItems: number;
-  monthlyRevenue: number;
-  monthlySales: number;
-}
-
-export interface BusinessUnitUser {
-  id: string;
-  userId: string;
-  businessUnitId: string;
-  role: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  user?: User;
-}
-
-export interface BusinessUnitDetails {
-  id: string;
-  name: string;
-  code: string;
-  address?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  companyId: string;
-  isActive: boolean;
-  type?: string;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt?: string | null;
-  products: any[];
-  inventory: any[];
-  users: BusinessUnitUser[];
-  counts: {
-    products: number;
-    inventory: number;
-    sales: number;
-    users: number;
-  };
 }
 
 // ============================================
@@ -156,8 +144,41 @@ export function clearBusinessUnitId(): void {
   }
 }
 
+/**
+ * Validate a business unit ID.
+ *
+ * ✅ This is the single source of truth for "what is a valid business
+ * unit ID" on the frontend. It must be used by:
+ *   - every service method that builds a URL containing an ID
+ *   - every component that reads an ID from route params
+ *
+ * It intentionally rejects short route segments like "users", "reports",
+ * "settings", "new", "edit", etc. — none of which are Prisma CUIDs.
+ */
 export function isValidID(id: string): boolean {
   if (!id || id === 'default') return false;
+
+  const RESERVED = new Set([
+    'users',
+    'reports',
+    'settings',
+    'stats',
+    'details',
+    'company',
+    'default',
+    'code',
+    'bulk-delete',
+    'ensure',
+    'test',
+    'new',
+    'edit',
+    'create',
+    'products',
+    'inventory',
+    'sales',
+    'orders',
+  ]);
+  if (RESERVED.has(id.toLowerCase())) return false;
 
   const cuidRegex = /^c[a-z0-9]{24}$/i;
   const uuidRegex =
@@ -223,6 +244,17 @@ function logError(context: string, error: unknown): void {
     url: err?.config?.url,
     params: err?.config?.params,
   });
+}
+
+/**
+ * Central guard: throws a descriptive error if the given value is not
+ * a valid business unit ID. Used by every service method below so that
+ * no invalid ID ever reaches the network layer.
+ */
+function assertValidId(id: string, label = 'business unit ID'): void {
+  if (!id || id === 'default' || !isValidID(id)) {
+    throw new Error(`Invalid ${label}: "${id}"`);
+  }
 }
 
 // ============================================
@@ -335,10 +367,7 @@ function extractPagination(response: unknown): {
 export const businessUnitService = {
   /**
    * Get all business units (paginated).
-   *
-   * ✅ FIXED: Defaults to active-only + most-recent-first so the first
-   *    unit returned is the newest, active, non-deleted unit — matching
-   *    the fallback order in the backend controllers.
+   * Defaults to active-only, newest-first.
    */
   async getAll(params?: {
     page?: number;
@@ -362,11 +391,12 @@ export const businessUnitService = {
 
       if (params?.includeDeleted === true) {
         queryParams.includeDeleted = true;
-        // When explicitly asking for deleted units, don't force isActive
         delete queryParams.isActive;
       }
 
-      const response = await api.get('/business-units', { params: queryParams });
+      const response = await api.get('/business-units', {
+        params: queryParams,
+      });
 
       const data = extractArray<BusinessUnit>(response);
       const pagination = extractPagination(response);
@@ -386,9 +416,7 @@ export const businessUnitService = {
 
   async getById(id: string): Promise<BusinessUnit> {
     try {
-      if (!id || id === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(id, 'business unit ID');
 
       const response = await api.get(`/business-units/${id}`);
       const result = extractData<BusinessUnit>(response);
@@ -404,9 +432,7 @@ export const businessUnitService = {
     }
   },
 
-  async create(
-    data: Partial<BusinessUnit> & { type?: string }
-  ): Promise<BusinessUnit> {
+  async create(data: CreateBusinessUnitDto): Promise<BusinessUnit> {
     try {
       if (!data.name?.trim()) {
         throw new Error('Business unit name is required');
@@ -416,6 +442,9 @@ export const businessUnitService = {
       }
       if (!data.companyId || data.companyId === 'default') {
         throw new Error('Company ID is required');
+      }
+      if (!isValidID(data.companyId)) {
+        throw new Error(`Invalid company ID: "${data.companyId}"`);
       }
 
       const payload: Record<string, any> = {
@@ -445,12 +474,10 @@ export const businessUnitService = {
 
   async update(
     id: string,
-    data: Partial<BusinessUnit> & { type?: string }
+    data: UpdateBusinessUnitDto
   ): Promise<BusinessUnit> {
     try {
-      if (!id || id === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(id, 'business unit ID');
 
       const payload: Record<string, unknown> = {};
       if (data.name !== undefined) payload.name = data.name.trim();
@@ -477,9 +504,7 @@ export const businessUnitService = {
 
   async delete(id: string): Promise<{ message: string }> {
     try {
-      if (!id || id === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(id, 'business unit ID');
 
       const response = await api.delete(`/business-units/${id}`);
 
@@ -508,9 +533,7 @@ export const businessUnitService = {
         throw new Error('At least one business unit ID is required');
       }
 
-      const invalidIds = ids.filter(
-        (id) => id !== 'default' && !isValidID(id)
-      );
+      const invalidIds = ids.filter((id) => !isValidID(id));
       if (invalidIds.length > 0) {
         throw new Error(`Invalid ID format for IDs: ${invalidIds.join(', ')}`);
       }
@@ -545,9 +568,7 @@ export const businessUnitService = {
 
   async getStats(id: string): Promise<BusinessUnitStats> {
     try {
-      if (!id || id === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(id, 'business unit ID');
 
       const response = await api.get(`/business-units/${id}/stats`);
       const result = extractData<BusinessUnitStats>(response);
@@ -589,9 +610,7 @@ export const businessUnitService = {
     businessUnitId: string
   ): Promise<BusinessUnitUser[]> {
     try {
-      if (!businessUnitId || businessUnitId === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(businessUnitId, 'business unit ID');
 
       const response = await api.get(
         `/business-units/${businessUnitId}/users`
@@ -612,9 +631,7 @@ export const businessUnitService = {
     role: string
   ): Promise<BusinessUnitUser> {
     try {
-      if (!businessUnitId || businessUnitId === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(businessUnitId, 'business unit ID');
       if (!userId) {
         throw new Error('User ID is required');
       }
@@ -645,9 +662,7 @@ export const businessUnitService = {
     userId: string
   ): Promise<{ message: string }> {
     try {
-      if (!businessUnitId || businessUnitId === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(businessUnitId, 'business unit ID');
       if (!userId) {
         throw new Error('User ID is required');
       }
@@ -682,6 +697,9 @@ export const businessUnitService = {
       if (!companyId || companyId === 'default') {
         throw new Error('Company ID is required');
       }
+      if (!isValidID(companyId)) {
+        throw new Error(`Invalid company ID: "${companyId}"`);
+      }
 
       const response = await api.get(`/business-units/default/${companyId}`);
       const result = extractData<BusinessUnit>(response);
@@ -708,6 +726,9 @@ export const businessUnitService = {
       if (!companyId || companyId === 'default') {
         throw new Error('Company ID is required');
       }
+      if (!isValidID(companyId)) {
+        throw new Error(`Invalid company ID: "${companyId}"`);
+      }
 
       const response = await api.get(`/business-units/company/${companyId}`);
       return extractArray<BusinessUnit>(response);
@@ -730,6 +751,9 @@ export const businessUnitService = {
       }
       if (!companyId || companyId === 'default') {
         throw new Error('Company ID is required');
+      }
+      if (!isValidID(companyId)) {
+        throw new Error(`Invalid company ID: "${companyId}"`);
       }
 
       const response = await api.post('/business-units/ensure', {
@@ -757,10 +781,6 @@ export const businessUnitService = {
 
   /**
    * Get business unit by code.
-   *
-   * ✅ FIXED: Now calls the correct path-param route
-   *    (`/business-units/code/:code`) instead of the previous query-param
-   *    call (`/business-units/code?code=...`) which always 404'd.
    */
   async getByCode(
     code: string,
@@ -773,7 +793,12 @@ export const businessUnitService = {
 
       const normalizedCode = code.toUpperCase().trim();
       const params: Record<string, string> = {};
-      if (companyId) params.companyId = companyId;
+      if (companyId) {
+        if (!isValidID(companyId)) {
+          throw new Error(`Invalid company ID: "${companyId}"`);
+        }
+        params.companyId = companyId;
+      }
 
       const response = await api.get(
         `/business-units/code/${encodeURIComponent(normalizedCode)}`,
@@ -798,9 +823,7 @@ export const businessUnitService = {
 
   async getWithDetails(id: string): Promise<BusinessUnitDetails> {
     try {
-      if (!id || id === 'default') {
-        throw new Error('Business unit ID is required');
-      }
+      assertValidId(id, 'business unit ID');
 
       const response = await api.get(`/business-units/${id}/details`);
       const result = extractData<BusinessUnitDetails>(response);
@@ -820,7 +843,7 @@ export const businessUnitService = {
         email: result.email || null,
         companyId: result.companyId || '',
         isActive: result.isActive !== undefined ? result.isActive : true,
-        type: result.type || 'STORE',
+        type: result.type || undefined,
         createdAt: result.createdAt || new Date().toISOString(),
         updatedAt: result.updatedAt || new Date().toISOString(),
         deletedAt: result.deletedAt || null,
@@ -831,7 +854,7 @@ export const businessUnitService = {
           products: 0,
           inventory: 0,
           sales: 0,
-          users: 0,
+          userBusinessUnits: 0,
         },
       };
     } catch (error) {
@@ -859,15 +882,13 @@ export const businessUnitService = {
     return this.getById(id);
   },
 
-  async createBusinessUnit(
-    data: Partial<BusinessUnit> & { type?: string }
-  ): Promise<BusinessUnit> {
+  async createBusinessUnit(data: CreateBusinessUnitDto): Promise<BusinessUnit> {
     return this.create(data);
   },
 
   async updateBusinessUnit(
     id: string,
-    data: Partial<BusinessUnit> & { type?: string }
+    data: UpdateBusinessUnitDto
   ): Promise<BusinessUnit> {
     return this.update(id, data);
   },

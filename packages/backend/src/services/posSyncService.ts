@@ -12,6 +12,7 @@ import { InventoryService } from './inventoryService.js';
 import { NotificationService } from './notificationService.js';
 import { realtimeService } from './realtimeService.js';
 import { generateReceiptNumber, calculateTotal } from '../utils/helpers.js';
+import { CANONICAL_PAYMENT_METHODS_SET } from '../utils/validators.js';
 import * as crypto from 'crypto';
 import { logger } from '../lib/logger.js';
 
@@ -28,7 +29,12 @@ interface POSItem {
 }
 
 interface POSCheckoutData {
-  cartId: string;
+  /**
+   * Optional — the POS checkout flow resolves the cart from
+   * `(userId, businessUnitId)` inside `processCheckout`. The controller
+   * passes `''` as a placeholder; the service ignores it.
+   */
+  cartId?: string;
   customerId?: string;
   paymentMethod: string;
   paidAmount: number;
@@ -38,6 +44,13 @@ interface POSCheckoutData {
   cashRegisterSessionId?: string;
   applyLoyaltyPoints?: boolean;
   tipAmount?: number;
+  /**
+   * Optional client-supplied key. When present, a retry with the same
+   * key returns the original sale instead of creating a duplicate.
+   * Propagated to `saleService.createSaleFromCart`, which owns the
+   * uniqueness check against `sales.idempotencyKey`.
+   */
+  idempotencyKey?: string;
 }
 
 interface POSCustomerData {
@@ -114,7 +127,7 @@ export class POSService extends BaseService {
     this.paymentService = new PaymentService();
     this.inventoryService = new InventoryService();
     this.notificationService = new NotificationService();
-    
+
     logger.info('POSService initialized with all dependencies');
   }
 
@@ -143,7 +156,7 @@ export class POSService extends BaseService {
   async getCartDetails(userId: string, businessUnitId: string) {
     try {
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const syncResult = await this.cartService.syncCartWithInventory(
         cart.id,
         businessUnitId
@@ -258,7 +271,7 @@ export class POSService extends BaseService {
   async addItem(userId: string, businessUnitId: string, item: POSItem) {
     try {
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.addItemToCart(
         cart.id,
         item,
@@ -284,7 +297,7 @@ export class POSService extends BaseService {
       }
 
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.addMultipleItemsToCart(
         cart.id,
         items,
@@ -311,7 +324,7 @@ export class POSService extends BaseService {
   ) {
     try {
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.updateCartItemQuantity(
         cart.id,
         itemId,
@@ -333,7 +346,7 @@ export class POSService extends BaseService {
   async removeItem(userId: string, businessUnitId: string, itemId: string) {
     try {
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.removeItemFromCart(cart.id, itemId);
 
       (realtimeService as any).emitCartUpdated?.(updatedCart, businessUnitId);
@@ -354,7 +367,7 @@ export class POSService extends BaseService {
       }
 
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.applyDiscount(cart.id, discount);
 
       (realtimeService as any).emitCartUpdated?.(updatedCart, businessUnitId);
@@ -375,7 +388,7 @@ export class POSService extends BaseService {
       }
 
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.applyLoyaltyPoints(
         cart.id,
         customerId,
@@ -400,7 +413,7 @@ export class POSService extends BaseService {
       }
 
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const updatedCart = await this.cartService.associateCustomer(cart.id, customerId);
 
       (realtimeService as any).emitCartUpdated?.(updatedCart, businessUnitId);
@@ -416,7 +429,19 @@ export class POSService extends BaseService {
   // ============================================
 
   /**
-   * Process POS checkout using CheckoutService
+   * Process POS checkout using CheckoutService.
+   *
+   * The payment method is validated against `CANONICAL_PAYMENT_METHODS_SET`
+   * (the same set the controller and the shared `validators.ts` use) so
+   * `/sales/pos/checkout` accepts exactly the same methods as
+   * `/sales/checkout`. Input is normalized to uppercase before checking.
+   *
+   * Idempotent when `data.idempotencyKey` is provided:
+   *   - Fast path: if a sale already exists with that key, it's returned
+   *     directly without touching the cart or opening a transaction.
+   *   - Otherwise the key is forwarded to `checkoutService.processCheckout`
+   *     → `saleService.createSaleFromCart`, which stores it on the sale
+   *     and collapses concurrent retries via the unique index.
    */
   async processCheckout(userId: string, businessUnitId: string, data: POSCheckoutData) {
     try {
@@ -424,9 +449,45 @@ export class POSService extends BaseService {
         throw new AppError('User and business unit are required', 400);
       }
 
-      const validMethods = ['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY', 'BANK_TRANSFER', 'GIFT_CARD'];
-      if (!validMethods.includes(data.paymentMethod)) {
-        throw new AppError(`Invalid payment method. Must be one of: ${validMethods.join(', ')}`, 400);
+      const normalizedMethod = data.paymentMethod.trim().toUpperCase();
+      if (!CANONICAL_PAYMENT_METHODS_SET.has(normalizedMethod)) {
+        throw new AppError(
+          `Invalid payment method. Must be one of: ${Array.from(
+            CANONICAL_PAYMENT_METHODS_SET
+          ).join(', ')}`,
+          400
+        );
+      }
+
+      // ✅ Idempotency fast path: if this key was already used, return the
+      //    original sale directly. We rehydrate it in the same shape the
+      //    checkout service normally returns (`{ sale, ... }`) so callers
+      //    can consume the response transparently.
+      if (data.idempotencyKey) {
+        const existing = await this.prisma.sale.findUnique({
+          where: { idempotencyKey: data.idempotencyKey },
+          include: {
+            items: {
+              include: {
+                product: true,
+                variant: true,
+              },
+            },
+            payments: true,
+            customer: true,
+          },
+        });
+
+        if (existing) {
+          logger.info(
+            `Idempotent POS checkout: returning existing sale ${existing.id} for key ${data.idempotencyKey}`,
+          );
+          return {
+            sale: existing,
+            cart: null,
+            idempotentReplay: true,
+          };
+        }
       }
 
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
@@ -439,13 +500,15 @@ export class POSService extends BaseService {
         {
           cartId: cart.id,
           customerId: data.customerId,
-          paymentMethod: data.paymentMethod,
+          paymentMethod: normalizedMethod,
           paidAmount: data.paidAmount,
           discount: data.discount,
           notes: data.notes,
           cashRegisterId: data.cashRegisterId,
           cashRegisterSessionId: data.cashRegisterSessionId,
           applyLoyaltyPoints: data.applyLoyaltyPoints,
+          // ✅ Forward the key so the sale layer can persist it.
+          idempotencyKey: data.idempotencyKey,
         },
         userId
       );
@@ -597,7 +660,7 @@ export class POSService extends BaseService {
   }
 
   /**
-   * Get popular products
+   * Get popular products (top sellers over the last 30 days)
    */
   async getPopularProducts(businessUnitId: string, limit: number = 10) {
     try {
@@ -625,7 +688,7 @@ export class POSService extends BaseService {
       });
 
       const productIds = popularItems.map((p: any) => p.productId);
-      
+
       const products = await this.prisma.product.findMany({
         where: {
           id: { in: productIds },
@@ -786,7 +849,7 @@ export class POSService extends BaseService {
   async getSummary(userId: string, businessUnitId: string): Promise<POSSummary> {
     try {
       const cart = await this.cartService.getOrCreateCart(userId, businessUnitId);
-      
+
       const syncResult = await this.cartService.syncCartWithInventory(cart.id, businessUnitId);
 
       const fullCart = await this.prisma.cart.findUnique({
@@ -897,15 +960,15 @@ export class POSService extends BaseService {
       );
 
       const totalCash = sessionsWithSummary.reduce(
-        (sum: number, session: any) => sum + session.cashRegister.currentBalance, 
+        (sum: number, session: any) => sum + session.cashRegister.currentBalance,
         0
       );
       const totalSales = sessionsWithSummary.reduce(
-        (sum: number, session: any) => sum + session.summary.totalSales, 
+        (sum: number, session: any) => sum + session.summary.totalSales,
         0
       );
       const totalRevenue = sessionsWithSummary.reduce(
-        (sum: number, session: any) => sum + session.summary.totalRevenue, 
+        (sum: number, session: any) => sum + session.summary.totalRevenue,
         0
       );
 

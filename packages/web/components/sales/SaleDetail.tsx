@@ -1,21 +1,40 @@
 // src/components/sales/SaleDetail.tsx
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Printer, Download, RefreshCw, DollarSign,
-  User, Calendar, CreditCard, Package, ShoppingBag,
-  FileText, CheckCircle, XCircle, Clock, Loader2,
-  AlertCircle, Truck, MapPin, Phone, Mail, Building,
-  Receipt, Eye, Edit, Trash2, Copy, Share2,
-  TrendingUp, TrendingDown, BarChart3, History,
-  ChevronDown, ChevronRight, MoreVertical,
-  File, Image, Send, Reply, Star, Award
+  ArrowLeft,
+  Printer,
+  Download,
+  RefreshCw,
+  DollarSign,
+  User,
+  Calendar,
+  CreditCard,
+  Package,
+  ShoppingBag,
+  FileText,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Loader2,
+  AlertCircle,
+  Phone,
+  Mail,
+  TrendingDown,
+  History,
+  Send,
+  Award,
 } from 'lucide-react';
 import { saleService } from '../../services/saleService';
-import { customerService } from '../../services/customerService';
 import { toast } from '../../utils/toast-manager';
-import { formatCurrency, formatDate, formatNumber } from '../../utils/formatters';
+import { formatCurrency, formatDate } from '../../utils/formatters';
 
 // ============================================
 // TYPES
@@ -166,27 +185,100 @@ interface SaleData {
 }
 
 // ============================================
+// STATIC MAPS — Tailwind can't see dynamic classes
+// ============================================
+
+const STATUS_MAP: Record<
+  string,
+  { label: string; className: string; icon: React.ElementType }
+> = {
+  COMPLETED: {
+    label: 'Completed',
+    className:
+      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    icon: CheckCircle,
+  },
+  PENDING: {
+    label: 'Pending',
+    className:
+      'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+    icon: Clock,
+  },
+  PROCESSING: {
+    label: 'Processing',
+    className:
+      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    icon: Loader2,
+  },
+  CANCELLED: {
+    label: 'Cancelled',
+    className:
+      'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+    icon: XCircle,
+  },
+  REFUNDED: {
+    label: 'Refunded',
+    className:
+      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    icon: XCircle,
+  },
+  ON_HOLD: {
+    label: 'On Hold',
+    className:
+      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+    icon: Clock,
+  },
+  VOID: {
+    label: 'Void',
+    className:
+      'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+    icon: XCircle,
+  },
+  RETURNED: {
+    label: 'Returned',
+    className:
+      'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    icon: TrendingDown,
+  },
+};
+
+const STAT_CARD_COLORS: Record<string, string> = {
+  blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
+  green:
+    'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
+  yellow:
+    'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
+  red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
+  purple:
+    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+  orange:
+    'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
+  teal: 'bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400',
+  gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
+};
+
+const RETURN_STATUS_STYLES: Record<string, string> = {
+  APPROVED:
+    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+  PENDING:
+    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+};
+const DEFAULT_RETURN_STATUS_STYLE =
+  'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+
+// ============================================
 // SUB-COMPONENTS
 // ============================================
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  const statusMap: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-    COMPLETED: { label: 'Completed', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300', icon: CheckCircle },
-    PENDING: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300', icon: Clock },
-    PROCESSING: { label: 'Processing', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300', icon: Loader2 },
-    CANCELLED: { label: 'Cancelled', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300', icon: XCircle },
-    REFUNDED: { label: 'Refunded', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300', icon: XCircle },
-    ON_HOLD: { label: 'On Hold', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300', icon: Clock },
-    VOID: { label: 'Void', color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300', icon: XCircle },
-    RETURNED: { label: 'Returned', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', icon: TrendingDown },
-  };
-
-  const { label, color, icon: Icon } = statusMap[status] || statusMap.PENDING;
-
+  const config = STATUS_MAP[status] ?? STATUS_MAP.PENDING;
+  const Icon = config.icon;
   return (
-    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${color}`}>
+    <span
+      className={`px-2.5 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 ${config.className}`}
+    >
       <Icon className="w-3 h-3" />
-      {label}
+      {config.label}
     </span>
   );
 };
@@ -198,26 +290,26 @@ const StatCard: React.FC<{
   color: string;
   subtext?: string;
 }> = ({ label, value, icon: Icon, color, subtext }) => {
-  const colorClasses: Record<string, string> = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
-    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400',
-    red: 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    orange: 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400',
-    teal: 'bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400',
-  };
-
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500 dark:text-gray-400">{label}</p>
-        <div className={`p-1.5 rounded-lg ${colorClasses[color] || colorClasses.blue}`}>
+        <div
+          className={`p-1.5 rounded-lg ${
+            STAT_CARD_COLORS[color] || STAT_CARD_COLORS.blue
+          }`}
+        >
           <Icon className="w-4 h-4" />
         </div>
       </div>
-      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
-      {subtext && <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{subtext}</p>}
+      <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+        {value}
+      </p>
+      {subtext && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          {subtext}
+        </p>
+      )}
     </div>
   );
 };
@@ -230,7 +322,7 @@ export function SaleDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const printRef = useRef<HTMLDivElement>(null);
-  
+
   const [sale, setSale] = useState<SaleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -238,42 +330,55 @@ export function SaleDetail() {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [email, setEmail] = useState('');
+  const [refundReason, setRefundReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ============================================
+  // LOAD
+  // ============================================
+
+  const loadSale = useCallback(
+    async (showLoading = true) => {
+      if (!id) return;
+      try {
+        if (showLoading) setLoading(true);
+        else setRefreshing(true);
+
+        const data = await saleService.getSaleById(id);
+        setSale(data);
+      } catch (error) {
+        console.error('Failed to load sale:', error);
+        toast.error('Failed to load sale details');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [id]
+  );
+
   useEffect(() => {
-    if (id) {
-      loadSale();
-    }
-  }, [id]);
+    loadSale(true);
+  }, [loadSale]);
 
-  const loadSale = async (showLoading = true) => {
-    if (!id) return;
-    try {
-      if (showLoading) setLoading(true);
-      if (!showLoading) setRefreshing(true);
-      
-      const data = await saleService.getSaleById(id);
-      setSale(data);
-    } catch (error) {
-      console.error('Failed to load sale:', error);
-      toast.error('Failed to load sale details');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const handleRefresh = () => {
-    loadSale(false);
+  const handleRefresh = useCallback(async () => {
+    await loadSale(false);
     toast.success('Sale refreshed');
-  };
+  }, [loadSale]);
 
-  const handlePrint = () => {
+  // ============================================
+  // PRINT
+  // ============================================
+
+  const handlePrint = useCallback(() => {
     if (!sale) return;
-    
+
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    
+    if (!printWindow) {
+      toast.error('Please allow popups to print receipts');
+      return;
+    }
+
     printWindow.document.write(`
       <html>
         <head>
@@ -307,34 +412,52 @@ export function SaleDetail() {
             <p>Cashier: ${sale.user?.firstName || ''} ${sale.user?.lastName || ''}</p>
           </div>
           <div class="items">
-            ${sale.items.map((item: any) => `
+            ${sale.items
+              .map(
+                (item) => `
               <div class="item">
                 <span class="name">${item.product.name}</span>
                 <span class="qty">x${item.quantity}</span>
                 <span class="price">$${item.total.toFixed(2)}</span>
               </div>
-            `).join('')}
+            `
+              )
+              .join('')}
           </div>
           <div class="total">
             <div class="total-row"><span>Subtotal</span><span>$${sale.subtotal.toFixed(2)}</span></div>
             <div class="total-row"><span>Tax</span><span>$${sale.tax.toFixed(2)}</span></div>
-            ${sale.discount > 0 ? `<div class="total-row"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>` : ''}
+            ${
+              sale.discount > 0
+                ? `<div class="total-row"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>`
+                : ''
+            }
             <div class="total-row grand"><span>Total</span><span>$${sale.total.toFixed(2)}</span></div>
           </div>
           <div class="payment">
             <p><strong>Payment</strong></p>
-            ${sale.payments.map((p: any) => `
-              <p>${p.paymentMethod}: $${p.amount.toFixed(2)}</p>
-            `).join('')}
-            ${sale.changeAmount > 0 ? `<p>Change: $${sale.changeAmount.toFixed(2)}</p>` : ''}
+            ${sale.payments
+              .map(
+                (p) => `<p>${p.paymentMethod}: $${p.amount.toFixed(2)}</p>`
+              )
+              .join('')}
+            ${
+              sale.changeAmount > 0
+                ? `<p>Change: $${sale.changeAmount.toFixed(2)}</p>`
+                : ''
+            }
           </div>
-          ${sale.customer ? `
+          ${
+            sale.customer
+              ? `
             <div class="payment">
               <p><strong>Customer</strong></p>
               <p>${sale.customer.firstName} ${sale.customer.lastName}</p>
               <p>${sale.customer.email || ''}</p>
             </div>
-          ` : ''}
+          `
+              : ''
+          }
           <div class="footer">
             <p>Thank you for your business!</p>
             <p>${sale.businessUnit?.name || ''}</p>
@@ -344,9 +467,13 @@ export function SaleDetail() {
     `);
     printWindow.document.close();
     printWindow.print();
-  };
+  }, [sale]);
 
-  const handleDownloadReceipt = async () => {
+  // ============================================
+  // DOWNLOAD / EMAIL
+  // ============================================
+
+  const handleDownloadReceipt = useCallback(async () => {
     if (!id) return;
     try {
       const blob = await saleService.printReceipt(id);
@@ -363,19 +490,20 @@ export function SaleDetail() {
       console.error('Failed to download receipt:', error);
       toast.error('Failed to download receipt');
     }
-  };
+  }, [id, sale?.receiptNumber]);
 
-  const handleSendEmail = async () => {
+  const handleSendEmail = useCallback(async () => {
     if (!id) return;
-    if (!email) {
+    const trimmed = email.trim();
+    if (!trimmed) {
       toast.error('Please enter an email address');
       return;
     }
-    
+
     setSubmitting(true);
     try {
-      await saleService.sendReceiptEmail(id, email);
-      toast.success(`Receipt sent to ${email}`);
+      await saleService.sendReceiptEmail(id, trimmed);
+      toast.success(`Receipt sent to ${trimmed}`);
       setShowEmailModal(false);
       setEmail('');
       await loadSale(false);
@@ -385,55 +513,75 @@ export function SaleDetail() {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [id, email, loadSale]);
 
-  const handleRefund = async (reason: string, amount?: number) => {
-    if (!id) return;
-    setSubmitting(true);
-    try {
-      const result = await saleService.refundSale(id, reason, amount);
-      toast.success('Sale refunded successfully');
-      setShowRefundModal(false);
-      await loadSale(false);
-    } catch (error) {
-      console.error('Failed to refund sale:', error);
-      toast.error('Failed to refund sale');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // ============================================
+  // REFUND
+  // ============================================
 
-  const getStatusIcon = (status: string) => {
-    const icons: Record<string, React.ElementType> = {
-      COMPLETED: CheckCircle,
-      PENDING: Clock,
-      PROCESSING: Loader2,
-      CANCELLED: XCircle,
-      REFUNDED: XCircle,
-      ON_HOLD: Clock,
-    };
-    return icons[status] || Clock;
-  };
+  const handleRefund = useCallback(
+    async (reason: string, amount?: number) => {
+      if (!id) return;
+      const trimmed = reason.trim();
+      if (!trimmed) {
+        toast.error('Please enter a reason for the refund');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await saleService.refundSale(id, trimmed, amount);
+        toast.success('Sale refunded successfully');
+        setShowRefundModal(false);
+        setRefundReason('');
+        await loadSale(false);
+      } catch (error) {
+        console.error('Failed to refund sale:', error);
+        toast.error('Failed to refund sale');
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [id, loadSale]
+  );
 
-  const getCustomerName = () => {
+  // ============================================
+  // DERIVED
+  // ============================================
+
+  const customerName = useMemo(() => {
     if (!sale?.customer) return 'Guest';
     return `${sale.customer.firstName} ${sale.customer.lastName}`.trim();
-  };
+  }, [sale?.customer]);
 
-  const getCustomerEmail = () => {
-    return sale?.customer?.email || 'N/A';
-  };
+  const customerEmail = sale?.customer?.email || 'N/A';
+  const customerPhone = sale?.customer?.phoneNumber || 'N/A';
 
-  const getCustomerPhone = () => {
-    return sale?.customer?.phoneNumber || 'N/A';
-  };
+  // ============================================
+  // MODAL OPENERS (open with sensible defaults)
+  // ============================================
+
+  const openEmailModal = useCallback(() => {
+    setEmail(sale?.customer?.email || '');
+    setShowEmailModal(true);
+  }, [sale?.customer?.email]);
+
+  const openRefundModal = useCallback(() => {
+    setRefundReason('');
+    setShowRefundModal(true);
+  }, []);
+
+  // ============================================
+  // EARLY RETURNS
+  // ============================================
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-gray-400">Loading sale details...</p>
+          <p className="text-gray-500 dark:text-gray-400">
+            Loading sale details...
+          </p>
         </div>
       </div>
     );
@@ -445,8 +593,12 @@ export function SaleDetail() {
         <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
           <AlertCircle className="w-8 h-8 text-gray-400" />
         </div>
-        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">Sale not found</h3>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">The sale you're looking for doesn't exist.</p>
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+          Sale not found
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">
+          The sale you're looking for doesn't exist.
+        </p>
         <button
           onClick={() => navigate('/sales')}
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -457,8 +609,9 @@ export function SaleDetail() {
     );
   }
 
-  const StatusIcon = getStatusIcon(sale.status);
-  const customerName = getCustomerName();
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
@@ -499,32 +652,36 @@ export function SaleDetail() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            title="Refresh"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+            />
           </button>
           <button
             onClick={handlePrint}
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            title="Print"
           >
             <Printer className="w-4 h-4" />
           </button>
           <button
             onClick={handleDownloadReceipt}
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            title="Download PDF"
           >
             <Download className="w-4 h-4" />
           </button>
-          {sale.customer?.email && (
-            <button
-              onClick={() => setShowEmailModal(true)}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            onClick={openEmailModal}
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            title="Email receipt"
+          >
+            <Send className="w-4 h-4" />
+          </button>
           {(sale.status === 'COMPLETED' || sale.status === 'PENDING') && (
             <button
-              onClick={() => setShowRefundModal(true)}
+              onClick={openRefundModal}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-2 transition-colors text-sm"
             >
               <TrendingDown className="w-4 h-4" />
@@ -555,11 +712,13 @@ export function SaleDetail() {
           value={formatCurrency(sale.tax)}
           icon={FileText}
           color="purple"
-          subtext={`${sale.tax > 0 ? 'Included' : 'No tax'}`}
+          subtext={sale.tax > 0 ? 'Included' : 'No tax'}
         />
         <StatCard
           label="Discount"
-          value={sale.discount > 0 ? `-${formatCurrency(sale.discount)}` : 'None'}
+          value={
+            sale.discount > 0 ? `-${formatCurrency(sale.discount)}` : 'None'
+          }
           icon={TrendingDown}
           color={sale.discount > 0 ? 'green' : 'gray'}
           subtext={sale.discount > 0 ? 'Applied' : 'No discount'}
@@ -569,7 +728,9 @@ export function SaleDetail() {
           value={formatCurrency(sale.changeAmount)}
           icon={CreditCard}
           color="orange"
-          subtext={sale.changeAmount > 0 ? 'Returned to customer' : 'Exact amount'}
+          subtext={
+            sale.changeAmount > 0 ? 'Returned to customer' : 'Exact amount'
+          }
         />
       </div>
 
@@ -581,19 +742,22 @@ export function SaleDetail() {
             Customer Information
           </h3>
           <div className="space-y-2">
-            <p className="text-gray-900 dark:text-white font-medium">{customerName}</p>
+            <p className="text-gray-900 dark:text-white font-medium">
+              {customerName}
+            </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
               <Mail className="w-3.5 h-3.5" />
-              {getCustomerEmail()}
+              {customerEmail}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
               <Phone className="w-3.5 h-3.5" />
-              {getCustomerPhone()}
+              {customerPhone}
             </p>
             {sale.customer?.loyaltyLevel && (
               <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-2">
                 <Award className="w-3.5 h-3.5 text-yellow-500" />
-                {sale.customer.loyaltyLevel} • {sale.customer.loyaltyPoints || 0} points
+                {sale.customer.loyaltyLevel} •{' '}
+                {sale.customer.loyaltyPoints || 0} points
               </p>
             )}
           </div>
@@ -605,7 +769,10 @@ export function SaleDetail() {
           </h3>
           <div className="space-y-2">
             {sale.payments.map((payment) => (
-              <div key={payment.id} className="flex items-center justify-between">
+              <div
+                key={payment.id}
+                className="flex items-center justify-between"
+              >
                 <span className="text-sm text-gray-600 dark:text-gray-400">
                   {payment.paymentMethod}
                 </span>
@@ -616,7 +783,9 @@ export function SaleDetail() {
             ))}
             {sale.changeAmount > 0 && (
               <div className="flex items-center justify-between border-t dark:border-gray-700 pt-2">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Change</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Change
+                </span>
                 <span className="font-medium text-green-600 dark:text-green-400">
                   {formatCurrency(sale.changeAmount)}
                 </span>
@@ -639,34 +808,50 @@ export function SaleDetail() {
             Items ({sale.items.length})
           </h3>
           <span className="text-sm text-gray-500 dark:text-gray-400">
-            Total: {sale.items.reduce((sum, item) => sum + item.quantity, 0)} units
+            Total:{' '}
+            {sale.items.reduce((sum, item) => sum + item.quantity, 0)} units
           </span>
         </div>
         <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[400px] overflow-y-auto">
           {sale.items.map((item) => (
-            <div key={item.id} className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+            <div
+              key={item.id}
+              className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            >
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                   {item.product.images?.[0] ? (
-                    <img src={item.product.images[0]} alt={item.product.name} className="w-full h-full object-cover" />
+                    <img
+                      src={item.product.images[0]}
+                      alt={item.product.name}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
                     <Package className="w-6 h-6 text-gray-400" />
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">{item.product.name}</p>
+                  <p className="font-medium text-gray-900 dark:text-white truncate">
+                    {item.product.name}
+                  </p>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                     <span>SKU: {item.product.sku}</span>
-                    {item.variant && <span>Variant: {item.variant.name}</span>}
+                    {item.variant && (
+                      <span>Variant: {item.variant.name}</span>
+                    )}
                     <span>×{item.quantity}</span>
                     <span>@ {formatCurrency(item.unitPrice)}</span>
                   </div>
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="font-bold text-gray-900 dark:text-white">{formatCurrency(item.total)}</p>
+                <p className="font-bold text-gray-900 dark:text-white">
+                  {formatCurrency(item.total)}
+                </p>
                 {item.discount > 0 && (
-                  <p className="text-xs text-green-600 dark:text-green-400">-{formatCurrency(item.discount)}</p>
+                  <p className="text-xs text-green-600 dark:text-green-400">
+                    -{formatCurrency(item.discount)}
+                  </p>
                 )}
               </div>
             </div>
@@ -675,12 +860,18 @@ export function SaleDetail() {
         <div className="p-4 bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700">
           <div className="space-y-1 max-w-xs ml-auto">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-              <span className="text-gray-900 dark:text-white">{formatCurrency(sale.subtotal)}</span>
+              <span className="text-gray-600 dark:text-gray-400">
+                Subtotal
+              </span>
+              <span className="text-gray-900 dark:text-white">
+                {formatCurrency(sale.subtotal)}
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">Tax</span>
-              <span className="text-gray-900 dark:text-white">{formatCurrency(sale.tax)}</span>
+              <span className="text-gray-900 dark:text-white">
+                {formatCurrency(sale.tax)}
+              </span>
             </div>
             {sale.discount > 0 && (
               <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
@@ -690,7 +881,9 @@ export function SaleDetail() {
             )}
             <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
               <span className="text-gray-900 dark:text-white">Total</span>
-              <span className="text-gray-900 dark:text-white">{formatCurrency(sale.total)}</span>
+              <span className="text-gray-900 dark:text-white">
+                {formatCurrency(sale.total)}
+              </span>
             </div>
           </div>
         </div>
@@ -703,12 +896,14 @@ export function SaleDetail() {
             <FileText className="w-4 h-4 text-gray-500" />
             Notes
           </h4>
-          <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{sale.notes}</p>
+          <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+            {sale.notes}
+          </p>
         </div>
       )}
 
-      {/* Return/Refund History */}
-      {(sale.returns && sale.returns.length > 0) && (
+      {/* Return History */}
+      {sale.returns && sale.returns.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <h4 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -718,7 +913,10 @@ export function SaleDetail() {
           </div>
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
             {sale.returns.map((ret) => (
-              <div key={ret.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
+              <div
+                key={ret.id}
+                className="p-4 flex flex-wrap items-center justify-between gap-3"
+              >
                 <div>
                   <p className="font-medium text-gray-900 dark:text-white">
                     Return #{ret.returnNumber}
@@ -728,11 +926,12 @@ export function SaleDetail() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                    ret.status === 'APPROVED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-                    ret.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
-                    'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                  }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      RETURN_STATUS_STYLES[ret.status] ??
+                      DEFAULT_RETURN_STATUS_STYLE
+                    }`}
+                  >
                     {ret.status}
                   </span>
                   <span className="font-bold text-gray-900 dark:text-white">
@@ -748,7 +947,10 @@ export function SaleDetail() {
       {/* Email Modal */}
       {showEmailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowEmailModal(false)} />
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowEmailModal(false)}
+          />
           <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4">
             <button
               onClick={() => setShowEmailModal(false)}
@@ -756,7 +958,9 @@ export function SaleDetail() {
             >
               <XCircle className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Send Receipt via Email</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Send Receipt via Email
+            </h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -768,7 +972,6 @@ export function SaleDetail() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="customer@email.com"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  defaultValue={sale.customer?.email || ''}
                 />
               </div>
             </div>
@@ -782,10 +985,14 @@ export function SaleDetail() {
               </button>
               <button
                 onClick={handleSendEmail}
-                disabled={submitting || !email}
+                disabled={submitting || !email.trim()}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {submitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
                 Send Receipt
               </button>
             </div>
@@ -796,7 +1003,10 @@ export function SaleDetail() {
       {/* Refund Modal */}
       {showRefundModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowRefundModal(false)} />
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowRefundModal(false)}
+          />
           <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 m-4">
             <button
               onClick={() => setShowRefundModal(false)}
@@ -804,9 +1014,14 @@ export function SaleDetail() {
             >
               <XCircle className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             </button>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Refund Sale</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+              Refund Sale
+            </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Total amount: <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(sale.total)}</span>
+              Total amount:{' '}
+              <span className="font-medium text-gray-900 dark:text-white">
+                {formatCurrency(sale.total)}
+              </span>
             </p>
             <div className="space-y-4">
               <div>
@@ -814,7 +1029,8 @@ export function SaleDetail() {
                   Reason for Refund
                 </label>
                 <textarea
-                  id="refundReason"
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   placeholder="Enter reason for refund..."
@@ -830,14 +1046,15 @@ export function SaleDetail() {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  const reason = (document.getElementById('refundReason') as HTMLTextAreaElement)?.value || 'No reason provided';
-                  handleRefund(reason);
-                }}
-                disabled={submitting}
+                onClick={() => handleRefund(refundReason)}
+                disabled={submitting || !refundReason.trim()}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingDown className="w-4 h-4" />}
+                {submitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <TrendingDown className="w-4 h-4" />
+                )}
                 Process Refund
               </button>
             </div>

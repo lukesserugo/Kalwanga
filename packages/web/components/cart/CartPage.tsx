@@ -2,14 +2,26 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, RefreshCw, Trash2, AlertCircle, X } from 'lucide-react';
+import {
+  ShoppingCart,
+  RefreshCw,
+  Trash2,
+  AlertCircle,
+  X,
+} from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { cartService, Cart } from '../../services/cartService';
+import { guestCartService } from '../../services/guestCartService';
 import { toast } from '../../utils/toast-manager';
-// ✅ Fix: Use default imports since components export default
+
 import CartItemCard from './CartItemCard';
 import CartSummary from './CartSummary';
 import CartSkeleton from './CartSkeleton';
@@ -21,13 +33,24 @@ interface CartPageProps {
 
 export function CartPage({ className = '' }: CartPageProps) {
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
+  const [customerId, setCustomerId] = useState<string | undefined>(
+    undefined,
+  );
   const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0);
+
+  /**
+   * The active cart service. Guests hit `/cart/guest/*`;
+   * authenticated users hit `/cart/*`.
+   */
+  const activeCartService = useMemo(
+    () => (isAuthenticated ? cartService : guestCartService),
+    [isAuthenticated],
+  );
 
   // ============================================
   // FETCH CART
@@ -37,22 +60,27 @@ export function CartPage({ className = '' }: CartPageProps) {
     try {
       setLoading(true);
       setError(null);
-      console.log('🛒 Fetching cart...');
-      
-      const cartData = await cartService.getCart();
-      console.log('📥 Cart data:', cartData);
-      
+
+      const cartData = await activeCartService.getCart();
       setCart(cartData);
-      
+
       if (cartData.customerId) {
         setCustomerId(cartData.customerId);
-        // TODO: Fetch loyalty points from API
-        setLoyaltyPoints(100);
+        // Loyalty points are loaded lazily by CartSummary when the
+        // user opens the loyalty widget. Do not preload here — the
+        // previous code hardcoded a value, which was wrong.
+      } else {
+        setCustomerId(undefined);
+        setLoyaltyPoints(0);
       }
     } catch (error: any) {
       console.error('❌ Failed to fetch cart:', error);
-      if (error?.response?.status === 401) {
-        router.push('/login?redirect=/cart');
+      // Only authenticated carts can expire. Guest carts don't
+      // return 401 on a valid session.
+      if (error?.response?.status === 401 && isAuthenticated) {
+        router.push(
+          `/login?redirect_url=${encodeURIComponent('/cart')}`,
+        );
       } else {
         setError(error?.message || 'Failed to load cart');
         toast.error('Failed to load cart');
@@ -60,127 +88,172 @@ export function CartPage({ className = '' }: CartPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [activeCartService, isAuthenticated, router]);
 
   // ============================================
   // CART OPERATIONS
   // ============================================
 
-  const updateQuantity = useCallback(async (itemId: string, quantity: number) => {
-    if (quantity < 1) return;
-    
-    setUpdating(itemId);
-    try {
-      console.log(`🛒 Updating item ${itemId} quantity to ${quantity}`);
-      const updatedCart = await cartService.updateItemQuantity(itemId, quantity);
-      setCart(updatedCart);
-    } catch (error: any) {
-      console.error('❌ Failed to update quantity:', error);
-      toast.error(error?.message || 'Failed to update quantity');
-      await fetchCart();
-    } finally {
-      setUpdating(null);
-    }
-  }, [fetchCart]);
+  const updateQuantity = useCallback(
+    async (itemId: string, quantity: number) => {
+      if (quantity < 1) return;
 
-  const removeItem = useCallback(async (itemId: string) => {
-    setUpdating(itemId);
-    try {
-      console.log(`🛒 Removing item ${itemId} from cart`);
-      const updatedCart = await cartService.removeItem(itemId);
-      setCart(updatedCart);
-      toast.success('Item removed from cart');
-    } catch (error: any) {
-      console.error('❌ Failed to remove item:', error);
-      toast.error(error?.message || 'Failed to remove item');
-      await fetchCart();
-    } finally {
-      setUpdating(null);
-    }
-  }, [fetchCart]);
+      setUpdating(itemId);
+      try {
+        const updatedCart =
+          await activeCartService.updateItemQuantity(itemId, quantity);
+        setCart(updatedCart);
+      } catch (error: any) {
+        console.error('❌ Failed to update quantity:', error);
+        toast.error(error?.message || 'Failed to update quantity');
+        await fetchCart();
+      } finally {
+        setUpdating(null);
+      }
+    },
+    [activeCartService, fetchCart],
+  );
+
+  const removeItem = useCallback(
+    async (itemId: string) => {
+      setUpdating(itemId);
+      try {
+        const updatedCart =
+          await activeCartService.removeItem(itemId);
+        setCart(updatedCart);
+        toast.success('Item removed from cart');
+        window.dispatchEvent(new CustomEvent('cart:updated'));
+      } catch (error: any) {
+        console.error('❌ Failed to remove item:', error);
+        toast.error(error?.message || 'Failed to remove item');
+        await fetchCart();
+      } finally {
+        setUpdating(null);
+      }
+    },
+    [activeCartService, fetchCart],
+  );
 
   const clearCart = useCallback(async () => {
-    if (!window.confirm('Are you sure you want to clear your entire cart?')) return;
-    
+    if (
+      !window.confirm(
+        'Are you sure you want to clear your entire cart?',
+      )
+    )
+      return;
+
     try {
-      console.log('🛒 Clearing cart');
-      const updatedCart = await cartService.clearCart();
+      const updatedCart = await activeCartService.clearCart();
       setCart(updatedCart);
       toast.success('Cart cleared');
+      window.dispatchEvent(new CustomEvent('cart:updated'));
     } catch (error: any) {
       console.error('❌ Failed to clear cart:', error);
       toast.error(error?.message || 'Failed to clear cart');
     }
-  }, []);
+  }, [activeCartService]);
 
-  const applyDiscount = useCallback(async (code: string) => {
-    try {
-      console.log(`🛒 Applying discount: ${code}`);
-      const updatedCart = await cartService.applyDiscount(parseFloat(code));
-      setCart(updatedCart);
-    } catch (error: any) {
-      console.error('❌ Failed to apply discount:', error);
-      throw error;
-    }
-  }, []);
+  const applyDiscount = useCallback(
+    async (code: string) => {
+      try {
+        const discountValue = parseFloat(code);
+        if (!isNaN(discountValue) && discountValue > 0) {
+          const updatedCart = await activeCartService.applyDiscount(
+            discountValue,
+            'FIXED',
+          );
+          setCart(updatedCart);
+        } else {
+          const updatedCart =
+            await activeCartService.applyPromotion(code);
+          setCart(updatedCart);
+        }
+      } catch (error: any) {
+        console.error('❌ Failed to apply discount:', error);
+        throw error;
+      }
+    },
+    [activeCartService],
+  );
 
-  const applyPromotion = useCallback(async (code: string) => {
-    try {
-      console.log(`🛒 Applying promotion: ${code}`);
-      const updatedCart = await cartService.applyPromotion(code);
-      setCart(updatedCart);
-    } catch (error: any) {
-      console.error('❌ Failed to apply promotion:', error);
-      throw error;
-    }
-  }, []);
+  const applyPromotion = useCallback(
+    async (code: string) => {
+      try {
+        const updatedCart = await activeCartService.applyPromotion(code);
+        setCart(updatedCart);
+      } catch (error: any) {
+        console.error('❌ Failed to apply promotion:', error);
+        throw error;
+      }
+    },
+    [activeCartService],
+  );
 
-  const applyLoyaltyPoints = useCallback(async (points: number) => {
-    if (!customerId) {
-      toast.error('Please associate a customer with this cart');
-      return;
-    }
-    try {
-      console.log(`🛒 Applying ${points} loyalty points`);
-      const updatedCart = await cartService.applyLoyaltyPoints(customerId, points);
-      setCart(updatedCart);
-      setLoyaltyPoints(prev => prev - points);
-    } catch (error: any) {
-      console.error('❌ Failed to apply loyalty points:', error);
-      throw error;
-    }
-  }, [customerId]);
+  const applyLoyaltyPoints = useCallback(
+    async (points: number) => {
+      if (!isAuthenticated) {
+        toast.info('Sign in to use loyalty points');
+        return;
+      }
+      if (!customerId) {
+        toast.error('Please associate a customer with this cart');
+        return;
+      }
+      try {
+        const updatedCart = await cartService.applyLoyaltyPoints(
+          customerId,
+          points,
+        );
+        setCart(updatedCart);
+        setLoyaltyPoints((prev) => Math.max(0, prev - points));
+      } catch (error: any) {
+        console.error('❌ Failed to apply loyalty points:', error);
+        throw error;
+      }
+    },
+    [customerId, isAuthenticated],
+  );
 
   const proceedToCheckout = useCallback(() => {
     if (!cart || cart.items.length === 0) {
       toast.error('Your cart is empty');
       return;
     }
+
+    // Guests are sent through login first so the guest cart can be
+    // merged into the user cart before checkout runs.
+    if (!isAuthenticated) {
+      router.push(
+        `/login?redirect_url=${encodeURIComponent('/checkout')}`,
+      );
+      return;
+    }
+
     router.push('/checkout');
-  }, [cart, router]);
+  }, [cart, isAuthenticated, router]);
 
   // ============================================
   // EFFECTS
   // ============================================
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchCart();
-    } else {
-      router.push('/login?redirect=/cart');
-    }
-  }, [isAuthenticated, fetchCart, router]);
+    fetchCart();
+  }, [fetchCart]);
 
   // ============================================
-  // RENDER
+  // RENDER — loading
   // ============================================
 
   if (loading) {
     return (
-      <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-12 ${className}`}>
+      <div
+        className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-12 ${className}`}
+      >
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between mb-8">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Your Cart</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+              Your Cart
+            </h1>
           </div>
           <CartSkeleton />
         </div>
@@ -188,9 +261,15 @@ export function CartPage({ className = '' }: CartPageProps) {
     );
   }
 
+  // ============================================
+  // RENDER — empty
+  // ============================================
+
   if (!cart || cart.items.length === 0) {
     return (
-      <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-12 ${className}`}>
+      <div
+        className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-12 ${className}`}
+      >
         <div className="max-w-3xl mx-auto px-4">
           <EmptyCart />
         </div>
@@ -198,8 +277,14 @@ export function CartPage({ className = '' }: CartPageProps) {
     );
   }
 
+  // ============================================
+  // RENDER — main
+  // ============================================
+
   return (
-    <div className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-8 sm:py-12 ${className}`}>
+    <div
+      className={`min-h-screen bg-gray-50 dark:bg-gray-900 py-8 sm:py-12 ${className}`}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -209,14 +294,21 @@ export function CartPage({ className = '' }: CartPageProps) {
               Your Cart
               {cart.itemCount > 0 && (
                 <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
-                  ({cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'})
+                  ({cart.itemCount}{' '}
+                  {cart.itemCount === 1 ? 'item' : 'items'})
                 </span>
               )}
             </h1>
             {cart.customer && (
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Customer: {cart.customer.firstName} {cart.customer.lastName}
+                Customer: {cart.customer.firstName}{' '}
+                {cart.customer.lastName}
               </p>
+            )}
+            {!isAuthenticated && (
+              <span className="inline-flex items-center px-2 py-0.5 mt-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                Guest cart
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -245,7 +337,9 @@ export function CartPage({ className = '' }: CartPageProps) {
           <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+              <p className="text-sm text-red-800 dark:text-red-200">
+                {error}
+              </p>
             </div>
             <button
               onClick={() => setError(null)}
@@ -295,6 +389,7 @@ export function CartPage({ className = '' }: CartPageProps) {
               loading={loading}
               customerId={customerId}
               loyaltyPoints={loyaltyPoints}
+              isAuthenticated={isAuthenticated}
             />
           </div>
         </div>
@@ -303,5 +398,4 @@ export function CartPage({ className = '' }: CartPageProps) {
   );
 }
 
-// ✅ Keep default export for backwards compatibility
 export default CartPage;

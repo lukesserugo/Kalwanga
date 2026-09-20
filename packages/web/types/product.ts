@@ -1,9 +1,30 @@
 // D:\Projects\Kalwanga\packages\web\types\product.ts
 
-import { Category as CategoryType } from './category';
-import { BusinessUnit, User } from './user';
-import { Supplier as SupplierType } from './supplier';
-import { Inventory } from './inventory';
+// ============================================
+// CANONICAL IMPORTS
+// ============================================
+//
+// Ownership map — do not deviate:
+//   User         → ./user
+//   Company      → ./user
+//   BusinessUnit → ./businessUnit
+//   Category     → ./category
+//   Supplier     → ./supplier
+//   Inventory    → ./inventory
+//   enums        → ./enums
+//
+// All cross-module imports are `import type` so the compiler erases
+// them and the runtime cycles
+//   product ↔ businessUnit, product ↔ category, product ↔ supplier,
+//   product ↔ inventory
+// never actually load.
+
+import type { BusinessUnit } from './businessUnit';
+import type { User } from './user';
+import type { Category as CategoryType } from './category';
+import type { Supplier as SupplierType } from './supplier';
+import type { Inventory } from './inventory';
+
 import {
   ProductStatus,
   ProductType,
@@ -44,7 +65,17 @@ export interface Product {
   businessUnit?: BusinessUnit | null;
   supplierId?: string | null;
   supplier?: SupplierType | null;
-  inventory?: Inventory[] | null;
+  inventoryId?: string | null;
+
+  /**
+   * ⚠️ Singular relation. The Prisma model declares
+   *     `inventory Inventory? @relation(...)`, so a product has at
+   *     most ONE inventory row referenced here. This is different
+   *     from `ProductVariant.inventory`, which is `Inventory[]`
+   *     because a variant has one row per business unit.
+   */
+  inventory?: Inventory | null;
+
   variants?: ProductVariant[];
   reviews?: ProductReview[];
   tags?: string[];
@@ -77,7 +108,7 @@ export interface ProductSEO {
 }
 
 // ============================================
-// PRODUCT VARIANT (UPDATED)
+// PRODUCT VARIANT
 // ============================================
 
 export interface ProductVariant {
@@ -93,7 +124,14 @@ export interface ProductVariant {
   images?: string[];
   attributes: Record<string, any>;
   isActive: boolean;
+
+  /**
+   * ⚠️ Plural relation on variants. The Prisma model declares
+   *     `inventory Inventory[]` on ProductVariant because a variant
+   *     has one row per business unit.
+   */
   inventory?: Inventory[] | null;
+
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
@@ -212,7 +250,7 @@ export interface RecentlyViewed {
 }
 
 // ============================================
-// BARCODE INTERFACES (NEW)
+// BARCODE INTERFACES
 // ============================================
 
 export interface BarcodeInfo {
@@ -237,7 +275,7 @@ export interface GenerateBarcodeOptions {
 }
 
 // ============================================
-// SEARCH & FILTERS (UPDATED)
+// SEARCH & FILTERS
 // ============================================
 
 export interface ProductSearchParams {
@@ -287,7 +325,7 @@ export interface ApiResponse<T = any> {
 }
 
 // ============================================
-// STATISTICS (UPDATED)
+// STATISTICS
 // ============================================
 
 export interface ProductStatistics {
@@ -463,7 +501,54 @@ export const ProductTypeLabels: Record<ProductType, string> = {
 };
 
 // ============================================
-// TYPE GUARDS
+// INVENTORY HELPERS (internal)
+// ============================================
+//
+// `Product.inventory` is a SINGULAR relation (`Inventory | null`).
+// `ProductVariant.inventory` is a PLURAL relation (`Inventory[] | null`).
+//
+// The two helpers below normalise the two shapes so the rest of this
+// file can sum quantities without branching on the shape every time.
+
+/**
+ * Summarise a product's single inventory row.
+ * Returns zeros when the relation is not populated.
+ */
+function summariseProductInventory(inventory: Inventory | null | undefined): {
+  quantity: number;
+  reserved: number;
+} {
+  if (!inventory) return { quantity: 0, reserved: 0 };
+  return {
+    quantity: inventory.quantity ?? 0,
+    reserved: inventory.reserved ?? 0,
+  };
+}
+
+/**
+ * Summarise a variant's inventory rows (one per business unit).
+ * Returns zeros when the relation is not populated.
+ */
+function summariseVariantInventory(
+  inventory: Inventory[] | null | undefined
+): {
+  quantity: number;
+  reserved: number;
+} {
+  if (!inventory || !Array.isArray(inventory)) {
+    return { quantity: 0, reserved: 0 };
+  }
+  return inventory.reduce(
+    (acc, inv) => ({
+      quantity: acc.quantity + (inv.quantity ?? 0),
+      reserved: acc.reserved + (inv.reserved ?? 0),
+    }),
+    { quantity: 0, reserved: 0 }
+  );
+}
+
+// ============================================
+// STOCK HELPERS
 // ============================================
 
 export function isProductActive(product: Product): boolean {
@@ -471,33 +556,31 @@ export function isProductActive(product: Product): boolean {
 }
 
 export function isProductInStock(product: Product): boolean {
-  // Check product inventory
-  const productStock = product.inventory?.reduce((sum, inv) => sum + inv.quantity, 0) || 0;
-  const productReserved = product.inventory?.reduce((sum, inv) => sum + (inv.reserved || 0), 0) || 0;
-  const productAvailable = productStock - productReserved;
-  
-  // Check variant inventory
+  const { quantity, reserved } = summariseProductInventory(product.inventory);
+  const productAvailable = quantity - reserved;
+
   let variantAvailable = 0;
   if (product.variants && product.variants.length > 0) {
     variantAvailable = product.variants.reduce((sum, variant) => {
-      const variantStock = variant.inventory?.reduce((s, inv) => s + inv.quantity, 0) || variant.stock || 0;
-      const variantReserved = variant.inventory?.reduce((s, inv) => s + (inv.reserved || 0), 0) || 0;
+      const variantInventory = summariseVariantInventory(variant.inventory);
+      const variantStock = variantInventory.quantity || variant.stock || 0;
+      const variantReserved = variantInventory.reserved;
       return sum + (variantStock - variantReserved);
     }, 0);
   }
-  
-  return (productAvailable + variantAvailable) > 0;
+
+  return productAvailable + variantAvailable > 0;
 }
 
 export function isProductLowStock(product: Product): boolean {
-  const totalStock = product.inventory?.reduce((sum, inv) => sum + inv.quantity, 0) || 0;
+  const { quantity } = summariseProductInventory(product.inventory);
   const minStock = product.minStock || 5;
-  return totalStock > 0 && totalStock <= minStock;
+  return quantity > 0 && quantity <= minStock;
 }
 
 export function isProductOutOfStock(product: Product): boolean {
-  const totalStock = product.inventory?.reduce((sum, inv) => sum + inv.quantity, 0) || 0;
-  return totalStock === 0;
+  const { quantity } = summariseProductInventory(product.inventory);
+  return quantity === 0;
 }
 
 export function getProductStockStatus(product: Product): {
@@ -506,16 +589,31 @@ export function getProductStockStatus(product: Product): {
   isLow: boolean;
   isOut: boolean;
 } {
-  const totalStock = product.inventory?.reduce((sum, inv) => sum + inv.quantity, 0) || 0;
+  const { quantity } = summariseProductInventory(product.inventory);
   const minStock = product.minStock || 5;
-  
-  if (totalStock === 0) {
-    return { label: 'Out of Stock', color: 'text-red-600 dark:text-red-400', isLow: false, isOut: true };
+
+  if (quantity === 0) {
+    return {
+      label: 'Out of Stock',
+      color: 'text-red-600 dark:text-red-400',
+      isLow: false,
+      isOut: true,
+    };
   }
-  if (totalStock <= minStock) {
-    return { label: 'Low Stock', color: 'text-yellow-600 dark:text-yellow-400', isLow: true, isOut: false };
+  if (quantity <= minStock) {
+    return {
+      label: 'Low Stock',
+      color: 'text-yellow-600 dark:text-yellow-400',
+      isLow: true,
+      isOut: false,
+    };
   }
-  return { label: 'In Stock', color: 'text-green-600 dark:text-green-400', isLow: false, isOut: false };
+  return {
+    label: 'In Stock',
+    color: 'text-green-600 dark:text-green-400',
+    isLow: false,
+    isOut: false,
+  };
 }
 
 // ============================================
@@ -542,24 +640,32 @@ export function getProductVariantCount(product: Product): number {
 }
 
 export function getProductTotalStock(product: Product): number {
-  const productStock = product.inventory?.reduce((sum, inv) => sum + inv.quantity, 0) || 0;
-  const variantStock = product.variants?.reduce((sum, variant) => {
-    return sum + (variant.inventory?.reduce((s, inv) => s + inv.quantity, 0) || variant.stock || 0);
-  }, 0) || 0;
-  return productStock + variantStock;
+  const { quantity } = summariseProductInventory(product.inventory);
+
+  const variantStock =
+    product.variants?.reduce((sum, variant) => {
+      const variantInventory = summariseVariantInventory(variant.inventory);
+      return sum + (variantInventory.quantity || variant.stock || 0);
+    }, 0) || 0;
+
+  return quantity + variantStock;
 }
 
 export function getProductAvailableStock(product: Product): number {
-  const productStock = product.inventory?.reduce((sum, inv) => sum + (inv.quantity - (inv.reserved || 0)), 0) || 0;
-  const variantStock = product.variants?.reduce((sum, variant) => {
-    const variantInventory = variant.inventory?.reduce((s, inv) => s + (inv.quantity - (inv.reserved || 0)), 0) || 0;
-    return sum + variantInventory;
-  }, 0) || 0;
-  return productStock + variantStock;
+  const { quantity, reserved } = summariseProductInventory(product.inventory);
+  const productAvailable = quantity - reserved;
+
+  const variantAvailable =
+    product.variants?.reduce((sum, variant) => {
+      const v = summariseVariantInventory(variant.inventory);
+      return sum + (v.quantity - v.reserved);
+    }, 0) || 0;
+
+  return productAvailable + variantAvailable;
 }
 
 // ============================================
-// VARIANT UTILITY FUNCTIONS (NEW)
+// VARIANT UTILITY FUNCTIONS
 // ============================================
 
 export function getVariantDisplayName(variant: ProductVariant): string {
@@ -585,12 +691,27 @@ export function getVariantStockStatus(variant: ProductVariant): {
 } {
   const stock = variant.stock || 0;
   if (stock === 0) {
-    return { label: 'Out of Stock', color: 'text-red-600 dark:text-red-400', isLow: false, isOut: true };
+    return {
+      label: 'Out of Stock',
+      color: 'text-red-600 dark:text-red-400',
+      isLow: false,
+      isOut: true,
+    };
   }
   if (stock <= 5) {
-    return { label: 'Low Stock', color: 'text-yellow-600 dark:text-yellow-400', isLow: true, isOut: false };
+    return {
+      label: 'Low Stock',
+      color: 'text-yellow-600 dark:text-yellow-400',
+      isLow: true,
+      isOut: false,
+    };
   }
-  return { label: 'In Stock', color: 'text-green-600 dark:text-green-400', isLow: false, isOut: false };
+  return {
+    label: 'In Stock',
+    color: 'text-green-600 dark:text-green-400',
+    isLow: false,
+    isOut: false,
+  };
 }
 
 export function getVariantAttributeValue(variant: ProductVariant, key: string): any {
@@ -598,16 +719,18 @@ export function getVariantAttributeValue(variant: ProductVariant, key: string): 
 }
 
 // ============================================
-// BARCODE UTILITY FUNCTIONS (NEW)
+// BARCODE UTILITY FUNCTIONS
 // ============================================
 
 export function hasBarcode(product: Product): boolean {
-  return !!(product.barcode);
+  return !!product.barcode;
 }
 
 export function getBarcodeUrl(product: Product): string | undefined {
   if (!product.barcode) return undefined;
-  return `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(product.barcode)}&code=EAN-13&dpi=96`;
+  return `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+    product.barcode
+  )}&code=EAN-13&dpi=96`;
 }
 
 export function getQRCodeUrl(product: Product): string | undefined {
@@ -617,16 +740,20 @@ export function getQRCodeUrl(product: Product): string | undefined {
     sku: product.sku,
     barcode: product.barcode,
   };
-  return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify(data))}&size=150x150`;
+  return `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+    JSON.stringify(data)
+  )}&size=150x150`;
 }
 
 // ============================================
 // PRODUCT SEARCH PARAMS HELPERS
 // ============================================
 
-export function buildProductSearchParams(params: Partial<ProductSearchParams>): URLSearchParams {
+export function buildProductSearchParams(
+  params: Partial<ProductSearchParams>
+): URLSearchParams {
   const searchParams = new URLSearchParams();
-  
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
       if (typeof value === 'boolean') {
@@ -638,7 +765,7 @@ export function buildProductSearchParams(params: Partial<ProductSearchParams>): 
       }
     }
   });
-  
+
   return searchParams;
 }
 
@@ -716,16 +843,18 @@ export function getAverageRating(reviews: ProductReview[]): number {
   return sum / reviews.length;
 }
 
-export function getRatingDistribution(reviews: ProductReview[]): Record<number, number> {
+export function getRatingDistribution(
+  reviews: ProductReview[]
+): Record<number, number> {
   const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   if (!reviews || reviews.length === 0) return distribution;
-  
+
   reviews.forEach((review) => {
     if (review.rating >= 1 && review.rating <= 5) {
       distribution[review.rating] = (distribution[review.rating] || 0) + 1;
     }
   });
-  
+
   return distribution;
 }
 
@@ -733,16 +862,22 @@ export function getReviewStatsFromReviews(reviews: ProductReview[]): ReviewStats
   const distribution = getRatingDistribution(reviews);
   const total = reviews.length;
   const average = total > 0 ? getAverageRating(reviews) : 0;
-  
+
   return {
     average,
     total,
-    distribution: distribution as { 1: number; 2: number; 3: number; 4: number; 5: number },
+    distribution: distribution as {
+      1: number;
+      2: number;
+      3: number;
+      4: number;
+      5: number;
+    },
   };
 }
 
 // ============================================
-// PRODUCT TYPE GUARDS (NEW)
+// PRODUCT TYPE GUARDS
 // ============================================
 
 export function isSimpleProduct(product: Product): boolean {
@@ -766,9 +901,9 @@ export function hasVariants(product: Product): boolean {
 }
 
 export function hasActiveVariants(product: Product): boolean {
-  return !!(product.variants && product.variants.some(v => v.isActive));
+  return !!(product.variants && product.variants.some((v) => v.isActive));
 }
 
 export function getActiveVariants(product: Product): ProductVariant[] {
-  return product.variants?.filter(v => v.isActive) || [];
+  return product.variants?.filter((v) => v.isActive) || [];
 }

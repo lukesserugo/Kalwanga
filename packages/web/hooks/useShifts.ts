@@ -47,6 +47,71 @@ export interface ShiftStats {
 }
 
 // ============================================
+// BUSINESS UNIT RESOLUTION
+// ============================================
+//
+// The registers list must be fetched from the SAME business unit
+// the register was created under, or the query returns zero rows
+// and the UI shows "No registers yet" even though the row exists.
+//
+// The backend's `getBusinessUnitId` resolves:
+//   1. explicit body/query `businessUnitId`
+//   2. the user's primary unit
+//   3. any active unit the user belongs to
+//
+// On CREATE, the modal sends `businessUnitId` in the body, so the
+// register lands in unit X. On FETCH, if we send nothing, the
+// backend falls through to the user's primary unit — which may not
+// be X. Sending the same ID closes the gap.
+
+const BUSINESS_UNIT_STORAGE_KEYS = [
+  'selectedBusinessUnitId',
+  'businessUnitId',
+] as const;
+
+function readStoredBusinessUnitId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+
+  for (const key of BUSINESS_UNIT_STORAGE_KEYS) {
+    try {
+      const value = localStorage.getItem(key);
+      if (
+        value &&
+        value !== 'default' &&
+        value !== 'null' &&
+        value !== 'undefined'
+      ) {
+        return value;
+      }
+    } catch {
+      /* storage unavailable — fall through */
+    }
+  }
+
+  // Fall back to the user object if present
+  try {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      const fromUser =
+        user?.businessUnitId || user?.businessUnits?.[0]?.businessUnitId;
+      if (
+        fromUser &&
+        fromUser !== 'default' &&
+        fromUser !== 'null' &&
+        fromUser !== 'undefined'
+      ) {
+        return fromUser;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return undefined;
+}
+
+// ============================================
 // DEFAULT STATE
 // ============================================
 
@@ -92,25 +157,47 @@ export function useShifts() {
   // ============================================
   // REGISTERS
   // ============================================
+  //
+  // Sends the current business unit ID as a query param so the
+  // backend's `getBusinessUnitId` sees the same value the modal
+  // sent on create. Without this, a user whose primary unit
+  // differs from the selected unit would create a register in one
+  // place and query in another — "created but can't be fetched".
 
-  const fetchRegisters = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const data = await shiftService.getRegisters();
-      setRegisters(Array.isArray(data) ? data : []);
-      return data;
-    } catch (error) {
-      console.error('Failed to fetch registers:', error);
-      setRegisters([]);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const fetchRegisters = useCallback(
+    async (businessUnitId?: string) => {
+      try {
+        setIsLoading(true);
+
+        const effectiveBusinessUnitId =
+          businessUnitId || readStoredBusinessUnitId();
+
+        const data = await shiftService.getRegisters(
+          effectiveBusinessUnitId
+            ? { businessUnitId: effectiveBusinessUnitId }
+            : undefined
+        );
+
+        setRegisters(Array.isArray(data) ? data : []);
+        return data;
+      } catch (error) {
+        console.error('Failed to fetch registers:', error);
+        setRegisters([]);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
 
   // ============================================
   // CURRENT SHIFT
   // ============================================
+  //
+  // The backend endpoint `/shifts/register/current` resolves the
+  // business unit server-side. No param needed — the user's
+  // session already carries it. Kept as-is.
 
   const fetchCurrentShift = useCallback(async () => {
     try {
@@ -127,10 +214,21 @@ export function useShifts() {
   // ============================================
   // STATS
   // ============================================
+  //
+  // Same reasoning as `fetchRegisters` — pass the business unit so
+  // the stats reflect the same scope the register list shows.
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (businessUnitId?: string) => {
     try {
-      const data = await shiftService.getShiftStats();
+      const effectiveBusinessUnitId =
+        businessUnitId || readStoredBusinessUnitId();
+
+      const data = await shiftService.getShiftStats(
+        effectiveBusinessUnitId
+          ? { businessUnitId: effectiveBusinessUnitId }
+          : undefined
+      );
+
       setStats(data || DEFAULT_STATS);
       return data;
     } catch (error) {
@@ -149,10 +247,17 @@ export function useShifts() {
       try {
         setIsLoadingShifts(true);
 
-        // Merge with current state for defaults
         const effectiveScope = params?.scope ?? shiftsScope;
         const effectivePage = params?.page ?? shiftsPage;
         const effectiveLimit = params?.limit ?? DEFAULT_PAGE_SIZE;
+
+        // Resolve the business unit ID the same way `fetchRegisters`
+        // does, unless the caller explicitly provided one.
+        const effectiveBusinessUnitId =
+          params?.businessUnitId ||
+          (effectiveScope === 'businessUnit'
+            ? readStoredBusinessUnitId()
+            : undefined);
 
         const result = await shiftService.getAllShifts({
           page: effectivePage,
@@ -161,7 +266,7 @@ export function useShifts() {
           status: params?.status,
           userId: params?.userId,
           cashRegisterId: params?.cashRegisterId,
-          businessUnitId: params?.businessUnitId,
+          businessUnitId: effectiveBusinessUnitId,
           startDate: params?.startDate,
           endDate: params?.endDate,
         });
@@ -226,6 +331,15 @@ export function useShifts() {
   // ============================================
   // REGISTER CRUD
   // ============================================
+  //
+  // `createRegister` doesn't need to send anything extra — the
+  // modal already passes `businessUnitId` in the payload, and the
+  // backend's `getBusinessUnitId` reads it from `req.body`.
+  //
+  // After create, the caller (RegisterManagement / ShiftsDashboard)
+  // calls `loadData()` which re-fetches. `fetchRegisters` will now
+  // pick up the same business unit from localStorage, closing the
+  // loop.
 
   const createRegister = useCallback(async (data: any) => {
     const result = await shiftService.createRegister(data);

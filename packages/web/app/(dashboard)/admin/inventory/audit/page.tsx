@@ -91,11 +91,11 @@ export default function AuditPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { hasPermission } = usePermission();
-  
+
   // Refs
   const loadingRef = useRef(false);
   const initialLoadRef = useRef(false);
-  
+
   // State
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -127,43 +127,13 @@ export default function AuditPage() {
   const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || '';
   const companyId = user?.companyId || '';
 
-  // Permission check
-  const canViewAudit = 
+  // Permission check — computed as a value, not an early return.
+  // This must run on every render before any hook below uses it.
+  const canViewAudit =
     hasPermission(`${PermissionResource.INVENTORY}:view_audit`) ||
     hasPermission(`${PermissionResource.INVENTORY}:manage`) ||
     user?.role === 'SUPER_ADMIN' ||
     user?.role === 'ADMIN';
-
-  // ============================================
-  // PERMISSION GUARD
-  // ============================================
-
-  if (!canViewAudit) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-          className="text-center"
-        >
-          <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-12 h-12 text-gray-400" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-            You don't have permission to view audit logs.
-          </p>
-          <button
-            onClick={() => router.back()}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Go Back
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
 
   // ============================================
   // DATA LOADING
@@ -176,30 +146,34 @@ export default function AuditPage() {
     }
 
     loadingRef.current = true;
-    
+
     try {
       if (showLoading) setLoading(true);
       if (!showLoading) setRefreshing(true);
-      
+
       const params: any = {
         page: pagination.page,
         limit: pagination.limit,
       };
-      
+
       // Only add businessUnitId if it exists
       if (businessUnitId) params.businessUnitId = businessUnitId;
-      
+
       // Only add companyId if it exists (for stats and filtering)
       if (companyId) params.companyId = companyId;
-      
+
       if (filter.action) params.action = filter.action;
       if (filter.entityType) params.entityType = filter.entityType;
       if (filter.startDate) params.startDate = filter.startDate;
       if (filter.endDate) params.endDate = filter.endDate;
       if (filter.severity) params.severity = filter.severity;
-      
+
       // Fix: Handle hasBarcode properly - convert string to boolean or undefined
-      if (filter.hasBarcode !== undefined && filter.hasBarcode !== null && filter.hasBarcode !== '') {
+      if (
+        filter.hasBarcode !== undefined &&
+        filter.hasBarcode !== null &&
+        filter.hasBarcode !== ''
+      ) {
         params.hasBarcode = filter.hasBarcode === 'true' ? true : false;
       }
       if (searchQuery) params.search = searchQuery;
@@ -207,7 +181,7 @@ export default function AuditPage() {
       console.log('📤 Fetching audit log with params:', params);
 
       const response = await auditService.getAuditLogs(params);
-      
+
       console.log('📥 Audit log response:', response);
 
       setEntries(response.data || []);
@@ -217,16 +191,15 @@ export default function AuditPage() {
         total: response.total || 0,
         totalPages: response.totalPages || 1,
       });
-      
+
       initialLoadRef.current = true;
-      
     } catch (error: any) {
       console.error('Failed to load audit log:', error);
-      
+
       if (error?.response?.status === 404) {
         toast.info('Audit endpoint not available');
         setEntries([]);
-        setPagination(prev => ({
+        setPagination((prev) => ({
           ...prev,
           total: 0,
           totalPages: 1,
@@ -249,7 +222,7 @@ export default function AuditPage() {
       setStats(null);
       return;
     }
-    
+
     if (loadingStats) return;
     setLoadingStats(true);
     try {
@@ -292,15 +265,15 @@ export default function AuditPage() {
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const handleFilterChange = (key: keyof AuditFilters, value: string) => {
-    setFilter(prev => ({ 
-      ...prev, 
-      [key]: value === '' ? undefined : value 
+    setFilter((prev) => ({
+      ...prev,
+      [key]: value === '' ? undefined : value,
     }));
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const handleClearFilters = () => {
@@ -313,7 +286,7 @@ export default function AuditPage() {
       severity: '',
     });
     setSearchQuery('');
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const handleCopyBarcode = async (barcode: string) => {
@@ -333,7 +306,7 @@ export default function AuditPage() {
       const params: any = {
         format: 'csv',
       };
-      
+
       if (businessUnitId) params.businessUnitId = businessUnitId;
       if (companyId) params.companyId = companyId;
       if (filter.action) params.action = filter.action;
@@ -341,13 +314,17 @@ export default function AuditPage() {
       if (filter.startDate) params.startDate = filter.startDate;
       if (filter.endDate) params.endDate = filter.endDate;
       if (filter.severity) params.severity = filter.severity;
-      if (filter.hasBarcode !== undefined && filter.hasBarcode !== null && filter.hasBarcode !== '') {
+      if (
+        filter.hasBarcode !== undefined &&
+        filter.hasBarcode !== null &&
+        filter.hasBarcode !== ''
+      ) {
         params.hasBarcode = filter.hasBarcode === 'true' ? true : false;
       }
       if (searchQuery) params.search = searchQuery;
-      
+
       const blob = await auditService.exportAuditLogs(params);
-      
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -356,7 +333,7 @@ export default function AuditPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Audit log exported successfully');
     } catch (error) {
       console.error('Failed to export audit log:', error);
@@ -367,7 +344,7 @@ export default function AuditPage() {
   };
 
   const handlePageChange = (page: number) => {
-    setPagination(prev => ({ ...prev, page }));
+    setPagination((prev) => ({ ...prev, page }));
   };
 
   const handleViewDetails = (entry: AuditEntry) => {
@@ -386,82 +363,88 @@ export default function AuditPage() {
 
   const getActionColor = (action: string) => {
     const colors: Record<string, string> = {
-      'CREATE': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-      'UPDATE': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-      'DELETE': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-      'VIEW': 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
-      'EXPORT': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
-      'IMPORT': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
-      'APPROVE': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-      'REJECT': 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
-      'BARCODE_GENERATE': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
-      'BARCODE_SCAN': 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
-      'BARCODE_ASSOCIATE': 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
-      'QR_CODE_GENERATE': 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
-      'LOGIN': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-      'LOGOUT': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
-      'DOWNLOAD': 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-300',
+      CREATE: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+      UPDATE: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+      DELETE: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+      VIEW: 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
+      EXPORT: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+      IMPORT: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
+      APPROVE: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+      REJECT: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+      BARCODE_GENERATE: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
+      BARCODE_SCAN: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
+      BARCODE_ASSOCIATE: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
+      QR_CODE_GENERATE: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
+      LOGIN: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+      LOGOUT: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+      DOWNLOAD: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-300',
     };
     return colors[action] || 'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300';
   };
 
   const getActionIcon = (action: string) => {
     const icons: Record<string, React.ReactNode> = {
-      'CREATE': <Plus className="w-4 h-4" />,
-      'UPDATE': <Edit className="w-4 h-4" />,
-      'DELETE': <Trash2 className="w-4 h-4" />,
-      'VIEW': <Eye className="w-4 h-4" />,
-      'EXPORT': <Download className="w-4 h-4" />,
-      'IMPORT': <Plus className="w-4 h-4" />,
-      'APPROVE': <CheckCircle className="w-4 h-4" />,
-      'REJECT': <AlertCircle className="w-4 h-4" />,
-      'BARCODE_GENERATE': <Barcode className="w-4 h-4" />,
-      'BARCODE_SCAN': <Scan className="w-4 h-4" />,
-      'BARCODE_ASSOCIATE': <Link2 className="w-4 h-4" />,
-      'QR_CODE_GENERATE': <QrCode className="w-4 h-4" />,
-      'LOGIN': <User className="w-4 h-4" />,
-      'LOGOUT': <User className="w-4 h-4" />,
-      'DOWNLOAD': <Download className="w-4 h-4" />,
+      CREATE: <Plus className="w-4 h-4" />,
+      UPDATE: <Edit className="w-4 h-4" />,
+      DELETE: <Trash2 className="w-4 h-4" />,
+      VIEW: <Eye className="w-4 h-4" />,
+      EXPORT: <Download className="w-4 h-4" />,
+      IMPORT: <Plus className="w-4 h-4" />,
+      APPROVE: <CheckCircle className="w-4 h-4" />,
+      REJECT: <AlertCircle className="w-4 h-4" />,
+      BARCODE_GENERATE: <Barcode className="w-4 h-4" />,
+      BARCODE_SCAN: <Scan className="w-4 h-4" />,
+      BARCODE_ASSOCIATE: <Link2 className="w-4 h-4" />,
+      QR_CODE_GENERATE: <QrCode className="w-4 h-4" />,
+      LOGIN: <User className="w-4 h-4" />,
+      LOGOUT: <User className="w-4 h-4" />,
+      DOWNLOAD: <Download className="w-4 h-4" />,
     };
     return icons[action] || <Shield className="w-4 h-4" />;
   };
 
   const getActionLabel = (action: string) => {
     const labels: Record<string, string> = {
-      'BARCODE_GENERATE': 'Barcode Generated',
-      'BARCODE_SCAN': 'Barcode Scanned',
-      'BARCODE_ASSOCIATE': 'Barcode Associated',
-      'QR_CODE_GENERATE': 'QR Code Generated',
+      BARCODE_GENERATE: 'Barcode Generated',
+      BARCODE_SCAN: 'Barcode Scanned',
+      BARCODE_ASSOCIATE: 'Barcode Associated',
+      QR_CODE_GENERATE: 'QR Code Generated',
     };
     return labels[action] || action.charAt(0).toUpperCase() + action.slice(1).toLowerCase();
   };
 
   const getSeverityColor = (severity?: string) => {
     const colors: Record<string, string> = {
-      'INFO': 'text-blue-500',
-      'LOW': 'text-green-500',
-      'MEDIUM': 'text-yellow-500',
-      'HIGH': 'text-orange-500',
-      'CRITICAL': 'text-red-500',
+      INFO: 'text-blue-500',
+      LOW: 'text-green-500',
+      MEDIUM: 'text-yellow-500',
+      HIGH: 'text-orange-500',
+      CRITICAL: 'text-red-500',
     };
     return colors[severity || 'INFO'] || 'text-gray-500';
   };
 
   const getSeverityBadge = (severity?: string) => {
     const badges: Record<string, { label: string; color: string }> = {
-      'INFO': { label: 'Info', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
-      'LOW': { label: 'Low', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
-      'MEDIUM': { label: 'Medium', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
-      'HIGH': { label: 'High', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' },
-      'CRITICAL': { label: 'Critical', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
+      INFO: { label: 'Info', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+      LOW: { label: 'Low', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
+      MEDIUM: { label: 'Medium', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' },
+      HIGH: { label: 'High', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' },
+      CRITICAL: { label: 'Critical', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' },
     };
     return badges[severity || 'INFO'] || badges['INFO'];
   };
 
   const hasActiveFilters = () => {
-    return !!(filter.action || filter.entityType || filter.startDate || filter.endDate || 
-      (filter.hasBarcode !== undefined && filter.hasBarcode !== '') || 
-      filter.severity || searchQuery);
+    return !!(
+      filter.action ||
+      filter.entityType ||
+      filter.startDate ||
+      filter.endDate ||
+      (filter.hasBarcode !== undefined && filter.hasBarcode !== '') ||
+      filter.severity ||
+      searchQuery
+    );
   };
 
   const getActiveFilterCount = () => {
@@ -505,7 +488,52 @@ export default function AuditPage() {
   };
 
   // ============================================
-  // RENDER
+  // PERMISSION GUARD
+  // ============================================
+  //
+  // ⚠️ This must come AFTER every hook in this component.
+  //
+  // Previously this guard sat above `loadAuditLog`, `loadStats`,
+  // and the two `useEffect` calls below it. That violated the
+  // Rules of Hooks: on the first render, `canViewAudit` was false
+  // (because `usePermission` hadn't resolved yet), so the guard
+  // returned early and the hooks below it never ran. The moment
+  // `canViewAudit` flipped to true, those hooks ran, React saw a
+  // different hook count, and threw "Rendered more hooks than
+  // during the previous render."
+  //
+  // Moving the guard here — after all hooks but before the JSX —
+  // makes the hook sequence identical on every render.
+
+  if (!canViewAudit) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="text-center"
+        >
+          <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-12 h-12 text-gray-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
+            You don't have permission to view audit logs.
+          </p>
+          <button
+            onClick={() => router.back()}
+            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Go Back
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // LOADING GUARD
   // ============================================
 
   if (loading && entries.length === 0) {
@@ -518,6 +546,10 @@ export default function AuditPage() {
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -628,8 +660,10 @@ export default function AuditPage() {
                   onChange={(e) => handleFilterChange('action', e.target.value)}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  {ACTION_TYPES.map(action => (
-                    <option key={action.value} value={action.value}>{action.label}</option>
+                  {ACTION_TYPES.map((action) => (
+                    <option key={action.value} value={action.value}>
+                      {action.label}
+                    </option>
                   ))}
                 </select>
                 <select
@@ -637,8 +671,10 @@ export default function AuditPage() {
                   onChange={(e) => handleFilterChange('entityType', e.target.value)}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  {ENTITY_TYPES.map(type => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
+                  {ENTITY_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
                   ))}
                 </select>
                 <select
@@ -646,8 +682,10 @@ export default function AuditPage() {
                   onChange={(e) => handleFilterChange('severity', e.target.value)}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  {SEVERITY_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                  {SEVERITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -668,12 +706,18 @@ export default function AuditPage() {
                   />
                 </div>
                 <select
-                  value={filter.hasBarcode !== undefined && filter.hasBarcode !== null ? String(filter.hasBarcode) : ''}
+                  value={
+                    filter.hasBarcode !== undefined && filter.hasBarcode !== null
+                      ? String(filter.hasBarcode)
+                      : ''
+                  }
                   onChange={(e) => handleFilterChange('hasBarcode', e.target.value)}
                   className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  {BARCODE_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                  {BARCODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
                 {hasActiveFilters() && (
@@ -719,7 +763,7 @@ export default function AuditPage() {
               ) : (
                 entries.map((entry) => {
                   const severityBadge = getSeverityBadge(entry.severity);
-                  
+
                   return (
                     <motion.tr
                       key={entry.id}
@@ -729,7 +773,11 @@ export default function AuditPage() {
                       onClick={() => handleViewDetails(entry)}
                     >
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getActionColor(entry.action)}`}>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getActionColor(
+                            entry.action
+                          )}`}
+                        >
                           {getActionIcon(entry.action)}
                           {getActionLabel(entry.action)}
                         </span>
@@ -750,17 +798,19 @@ export default function AuditPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
-                        {renderBarcodeCell(entry)}
-                      </td>
+                      <td className="px-4 py-3">{renderBarcodeCell(entry)}</td>
                       <td className="px-4 py-3">
                         <span className="text-sm text-gray-600 dark:text-gray-400">
                           {Object.keys(entry.changes || {}).length} change(s)
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${severityBadge.color}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${getSeverityColor(entry.severity)}`} />
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${severityBadge.color}`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${getSeverityColor(entry.severity)}`}
+                          />
                           {severityBadge.label}
                         </span>
                       </td>
@@ -823,9 +873,9 @@ export default function AuditPage() {
       <AnimatePresence>
         {showDetailModal && selectedEntry && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div 
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm" 
-              onClick={handleCloseModal} 
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={handleCloseModal}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -861,30 +911,54 @@ export default function AuditPage() {
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Action</p>
-                    <span className={`inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-full text-xs font-medium ${getActionColor(selectedEntry.action)}`}>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Action
+                    </p>
+                    <span
+                      className={`inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 rounded-full text-xs font-medium ${getActionColor(
+                        selectedEntry.action
+                      )}`}
+                    >
                       {getActionIcon(selectedEntry.action)}
                       {getActionLabel(selectedEntry.action)}
                     </span>
                   </div>
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Severity</p>
-                    <span className={`inline-flex items-center gap-1 mt-1 px-2.5 py-1 rounded-full text-xs font-medium ${getSeverityBadge(selectedEntry.severity).color}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${getSeverityColor(selectedEntry.severity)}`} />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Severity
+                    </p>
+                    <span
+                      className={`inline-flex items-center gap-1 mt-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                        getSeverityBadge(selectedEntry.severity).color
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${getSeverityColor(selectedEntry.severity)}`}
+                      />
                       {getSeverityBadge(selectedEntry.severity).label}
                     </span>
                   </div>
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Entity</p>
-                    <p className="font-medium text-gray-900 dark:text-white mt-1">{selectedEntry.entityName}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Entity
+                    </p>
+                    <p className="font-medium text-gray-900 dark:text-white mt-1">
+                      {selectedEntry.entityName}
+                    </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">{selectedEntry.entityType}</p>
                   </div>
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Entity ID</p>
-                    <p className="font-mono text-sm text-gray-600 dark:text-gray-300 mt-1">{selectedEntry.entityId}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Entity ID
+                    </p>
+                    <p className="font-mono text-sm text-gray-600 dark:text-gray-300 mt-1">
+                      {selectedEntry.entityId}
+                    </p>
                   </div>
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">User</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      User
+                    </p>
                     <div className="flex items-center gap-2 mt-1">
                       <User className="w-4 h-4 text-gray-400" />
                       <span className="font-medium text-gray-900 dark:text-white">
@@ -893,7 +967,9 @@ export default function AuditPage() {
                     </div>
                   </div>
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Timestamp</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Timestamp
+                    </p>
                     <div className="flex items-center gap-2 mt-1">
                       <Clock className="w-4 h-4 text-gray-400" />
                       <span className="font-medium text-gray-900 dark:text-white">
@@ -906,7 +982,9 @@ export default function AuditPage() {
                 {/* Barcode Section */}
                 {selectedEntry.barcode && (
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Barcode Information</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Barcode Information
+                    </p>
                     <div className="flex items-center gap-3 mt-2">
                       <Barcode className="w-5 h-5 text-green-500" />
                       <span className="font-mono text-sm text-gray-700 dark:text-gray-300">
@@ -925,7 +1003,9 @@ export default function AuditPage() {
                       </button>
                       <button
                         onClick={() => {
-                          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(JSON.stringify({ barcode: selectedEntry.barcode }))}&size=200x200`;
+                          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(
+                            JSON.stringify({ barcode: selectedEntry.barcode })
+                          )}&size=200x200`;
                           window.open(qrUrl, '_blank');
                         }}
                         className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
@@ -940,7 +1020,9 @@ export default function AuditPage() {
                 {/* IP Address & User Agent */}
                 {(selectedEntry.ipAddress || selectedEntry.userAgent) && (
                   <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">Request Details</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Request Details
+                    </p>
                     {selectedEntry.ipAddress && (
                       <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
                         IP: {selectedEntry.ipAddress}
@@ -971,14 +1053,18 @@ export default function AuditPage() {
                             <div className="min-w-[80px]">
                               <p className="text-xs text-gray-500 dark:text-gray-400">Old Value</p>
                               <p className="text-sm text-gray-600 dark:text-gray-300 font-mono">
-                                {value.old !== undefined && value.old !== null ? String(value.old) : '-'}
+                                {(value as any).old !== undefined && (value as any).old !== null
+                                  ? String((value as any).old)
+                                  : '-'}
                               </p>
                             </div>
                             <ArrowUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
                             <div className="min-w-[80px]">
                               <p className="text-xs text-gray-500 dark:text-gray-400">New Value</p>
                               <p className="text-sm text-green-600 dark:text-green-400 font-mono">
-                                {value.new !== undefined && value.new !== null ? String(value.new) : '-'}
+                                {(value as any).new !== undefined && (value as any).new !== null
+                                  ? String((value as any).new)
+                                  : '-'}
                               </p>
                             </div>
                           </div>
@@ -1014,7 +1100,9 @@ export default function AuditPage() {
                           <body>
                             <div class="container">
                               <h2>${selectedEntry.entityName}</h2>
-                              <img src="https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(selectedEntry.barcode!)}&code=EAN-13&dpi=96" class="barcode-img" />
+                              <img src="https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+                                selectedEntry.barcode!
+                              )}&code=EAN-13&dpi=96" class="barcode-img" />
                               <p>${selectedEntry.barcode}</p>
                             </div>
                             <script>window.onload = function() { window.print(); }</script>

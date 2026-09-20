@@ -15,18 +15,30 @@ import {
 } from '../utils/validators.js';
 
 // ============================================
-// TYPE DEFINITIONS - Use Prisma enum for type safety
+// TYPE DEFINITIONS - Use Prisma enums for type safety
 // ============================================
 
-// Import Prisma enum types
-import { NotificationType as PrismaNotificationType } from '../generated/prisma/index.js';
+import {
+  NotificationType as PrismaNotificationType,
+  NotificationPriority as PrismaNotificationPriority,
+} from '../generated/prisma/index.js';
 
 // ============================================
 // TYPE HELPERS
 // ============================================
 
 /**
- * Map string to Prisma NotificationType enum
+ * Map string to Prisma NotificationType enum.
+ *
+ * The full enum now includes the four extended members that the
+ * notification service writes from its alert paths:
+ *   LOW_STOCK      — low inventory alert
+ *   PURCHASE_ORDER — PO created / needs approval
+ *   SHIFT          — shift started / ended / discrepancy
+ *   RECEIPT        — receipt emailed
+ *
+ * Any string that isn't recognized falls back to INFO, which is
+ * the same behavior as before the enum was extended.
  */
 function mapToNotificationType(type: string): PrismaNotificationType {
   const typeMap: Record<string, PrismaNotificationType> = {
@@ -43,10 +55,35 @@ function mapToNotificationType(type: string): PrismaNotificationType {
     'ERROR': PrismaNotificationType.ERROR,
     'PROMOTION': PrismaNotificationType.PROMOTION,
     'REMINDER': PrismaNotificationType.REMINDER,
+    // Extended members — these are the four the service writes.
+    'LOW_STOCK': PrismaNotificationType.LOW_STOCK,
+    'PURCHASE_ORDER': PrismaNotificationType.PURCHASE_ORDER,
+    'SHIFT': PrismaNotificationType.SHIFT,
+    'RECEIPT': PrismaNotificationType.RECEIPT,
   };
-  
+
   const mapped = type.toUpperCase();
   return typeMap[mapped] || PrismaNotificationType.INFO;
+}
+
+/**
+ * Map string to Prisma NotificationPriority enum.
+ *
+ * Used wherever a request supplies `priority` so the create paths
+ * don't hardcode MEDIUM. Falls back to MEDIUM for unknown values,
+ * which matches the model's default.
+ */
+function mapToPriority(priority?: string): PrismaNotificationPriority {
+  if (!priority) return PrismaNotificationPriority.MEDIUM;
+
+  const map: Record<string, PrismaNotificationPriority> = {
+    LOW: PrismaNotificationPriority.LOW,
+    MEDIUM: PrismaNotificationPriority.MEDIUM,
+    HIGH: PrismaNotificationPriority.HIGH,
+    URGENT: PrismaNotificationPriority.URGENT,
+  };
+
+  return map[priority.toUpperCase()] || PrismaNotificationPriority.MEDIUM;
 }
 
 // ============================================
@@ -68,7 +105,7 @@ export const notificationController = {
       const { page = 1, limit = 20, unreadOnly, type, search } = params;
 
       const where: any = { userId };
-      
+
       if (unreadOnly) where.isRead = false;
       if (type) where.type = mapToNotificationType(type);
       if (search) {
@@ -105,7 +142,7 @@ export const notificationController = {
         return res.status(400).json({
           success: false,
           message: 'Invalid query parameters',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -306,7 +343,7 @@ export const notificationController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -433,8 +470,9 @@ export const notificationController = {
 
       if (!userId) throw new AppError('User required', 400);
 
-      // Map string type to Prisma NotificationType enum
+      // Map string type and priority to Prisma enums
       const notificationType = mapToNotificationType(data.type);
+      const notificationPriority = mapToPriority(data.priority);
 
       // If no userId in request, send to all users in business unit
       let targetUserId = data.userId;
@@ -455,13 +493,14 @@ export const notificationController = {
                 title: data.title,
                 message: data.message,
                 type: notificationType,
-                priority: 'MEDIUM',
+                priority: notificationPriority,
                 link: data.link,
+                data: data.data || null,
                 businessUnitId: targetBusinessUnitId,
                 companyId: data.companyId || companyId,
               },
-            })
-          )
+            }),
+          ),
         );
 
         return res.status(201).json({
@@ -478,8 +517,9 @@ export const notificationController = {
           title: data.title,
           message: data.message,
           type: notificationType,
-          priority: 'MEDIUM',
+          priority: notificationPriority,
           link: data.link,
+          data: data.data || null,
           businessUnitId: targetBusinessUnitId || businessUnitId,
           companyId: data.companyId || companyId,
         },
@@ -495,7 +535,7 @@ export const notificationController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -525,15 +565,17 @@ export const notificationController = {
         try {
           const data = notifications[i];
           const notificationType = mapToNotificationType(data.type);
-          
+          const notificationPriority = mapToPriority(data.priority);
+
           const notification = await prisma.notification.create({
             data: {
               userId: data.userId || userId,
               title: data.title,
               message: data.message,
               type: notificationType,
-              priority: 'MEDIUM',
+              priority: notificationPriority,
               link: data.link,
+              data: data.data || null,
               businessUnitId: data.businessUnitId || businessUnitId,
               companyId: data.companyId || companyId,
             },
@@ -557,7 +599,7 @@ export const notificationController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -607,14 +649,22 @@ export const notificationController = {
       if (data.inApp !== undefined) preferencesData.inAppEnabled = data.inApp;
       // Handle types if needed
       if (data.types) {
-        if (data.types.lowStock !== undefined) preferencesData.lowStockAlerts = data.types.lowStock;
-        if (data.types.sale !== undefined) preferencesData.saleAlerts = data.types.sale;
-        if (data.types.purchaseOrder !== undefined) preferencesData.purchaseOrderAlerts = data.types.purchaseOrder;
-        if (data.types.shift !== undefined) preferencesData.shiftAlerts = data.types.shift;
-        if (data.types.system !== undefined) preferencesData.systemAlerts = data.types.system;
+        if (data.types.lowStock !== undefined)
+          preferencesData.lowStockAlerts = data.types.lowStock;
+        if (data.types.sale !== undefined)
+          preferencesData.saleAlerts = data.types.sale;
+        if (data.types.purchaseOrder !== undefined)
+          preferencesData.purchaseOrderAlerts = data.types.purchaseOrder;
+        if (data.types.shift !== undefined)
+          preferencesData.shiftAlerts = data.types.shift;
+        if (data.types.system !== undefined)
+          preferencesData.systemAlerts = data.types.system;
       }
 
-      const preferences = await notificationService.updatePreferences(userId, preferencesData);
+      const preferences = await notificationService.updatePreferences(
+        userId,
+        preferencesData,
+      );
 
       res.json({
         success: true,
@@ -626,7 +676,7 @@ export const notificationController = {
         return res.status(400).json({
           success: false,
           message: 'Validation error',
-          errors: error.errors.map(e => ({
+          errors: error.errors.map((e) => ({
             field: e.path.join('.'),
             message: e.message,
           })),
@@ -670,6 +720,7 @@ export const notificationController = {
       if (!userId) throw new AppError('User required', 400);
 
       const notificationType = mapToNotificationType(data.type);
+      const notificationPriority = mapToPriority(data.priority);
 
       const notification = await prisma.notification.create({
         data: {
@@ -677,8 +728,9 @@ export const notificationController = {
           title: data.title,
           message: data.message,
           type: notificationType,
-          priority: 'MEDIUM',
+          priority: notificationPriority,
           link: data.link,
+          data: data.data || null,
           businessUnitId: data.businessUnitId,
           companyId: data.companyId,
         },
@@ -700,19 +752,22 @@ export const notificationController = {
    */
   async sendLowStockAlert(req: Request, res: Response, next: NextFunction) {
     try {
-      const { 
-        businessUnitId, 
-        productName, 
-        currentStock, 
-        reorderPoint, 
-        productId, 
-        inventoryId 
+      const {
+        businessUnitId,
+        productName,
+        currentStock,
+        reorderPoint,
+        productId,
+        inventoryId,
       } = req.body;
 
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
       if (!productName) throw new AppError('Product name is required', 400);
-      if (currentStock === undefined) throw new AppError('Current stock is required', 400);
-      if (reorderPoint === undefined) throw new AppError('Reorder point is required', 400);
+      if (currentStock === undefined)
+        throw new AppError('Current stock is required', 400);
+      if (reorderPoint === undefined)
+        throw new AppError('Reorder point is required', 400);
 
       const notifications = await notificationService.sendLowStockAlert(
         businessUnitId,
@@ -720,7 +775,7 @@ export const notificationController = {
         currentStock,
         reorderPoint,
         productId,
-        inventoryId
+        inventoryId,
       );
 
       res.json({
@@ -741,12 +796,13 @@ export const notificationController = {
     try {
       const { businessUnitId, saleId } = req.body;
 
-      if (!businessUnitId) throw new AppError('Business unit ID is required', 400);
+      if (!businessUnitId)
+        throw new AppError('Business unit ID is required', 400);
       if (!saleId) throw new AppError('Sale ID is required', 400);
 
       const notifications = await notificationService.sendSaleNotification(
         businessUnitId,
-        saleId
+        saleId,
       );
 
       res.json({
@@ -808,7 +864,9 @@ export const notificationController = {
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
 
-      res.write(`data: ${JSON.stringify({ type: 'connected', userId })}\n\n`);
+      res.write(
+        `data: ${JSON.stringify({ type: 'connected', userId })}\n\n`,
+      );
 
       const pingInterval = setInterval(() => {
         res.write(`: ping\n\n`);
@@ -816,7 +874,12 @@ export const notificationController = {
 
       const notificationHandler = (notification: any) => {
         if (notification.userId === userId) {
-          res.write(`data: ${JSON.stringify({ type: 'notification', data: notification })}\n\n`);
+          res.write(
+            `data: ${JSON.stringify({
+              type: 'notification',
+              data: notification,
+            })}\n\n`,
+          );
         }
       };
 
@@ -824,7 +887,10 @@ export const notificationController = {
 
       req.on('close', () => {
         clearInterval(pingInterval);
-        notificationService.removeListener('notification', notificationHandler);
+        notificationService.removeListener(
+          'notification',
+          notificationHandler,
+        );
         res.end();
       });
     } catch (error) {
@@ -889,7 +955,8 @@ export const notificationController = {
       const data = req.body;
 
       if (!data.name) throw new AppError('Template name is required', 400);
-      if (!data.subject) throw new AppError('Template subject is required', 400);
+      if (!data.subject)
+        throw new AppError('Template subject is required', 400);
       if (!data.body) throw new AppError('Template body is required', 400);
       if (!data.type) throw new AppError('Template type is required', 400);
 
@@ -966,7 +1033,10 @@ export const notificationController = {
         throw new AppError('Template not found', 404);
       }
 
-      const rendered = notificationService.renderTemplate(template, variables);
+      const rendered = notificationService.renderTemplate(
+        template,
+        variables,
+      );
 
       res.json({
         success: true,
@@ -1028,7 +1098,8 @@ export const notificationController = {
 
       if (!userId) throw new AppError('User required', 400);
 
-      const result = await notificationService.archiveOldNotifications(daysOld);
+      const result =
+        await notificationService.archiveOldNotifications(daysOld);
 
       res.json({
         success: true,
@@ -1112,7 +1183,11 @@ export const notificationController = {
    * Mark notification as unread by notification ID (legacy support)
    * PATCH /notifications/:id/unread
    */
-  async markNotificationAsUnread(req: Request, res: Response, next: NextFunction) {
+  async markNotificationAsUnread(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     return notificationController.markAsUnread(req, res, next);
   },
 };

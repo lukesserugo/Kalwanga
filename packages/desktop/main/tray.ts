@@ -1,23 +1,18 @@
 import { Tray, Menu, BrowserWindow, nativeImage, app } from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export function createTray(mainWindow: BrowserWindow | null): Tray | null {
   try {
     // Create tray icon
     const iconPath = path.join(__dirname, '../assets/tray-icon.png');
     let icon = nativeImage.createFromPath(iconPath);
-    
+
     // If icon doesn't exist, create a fallback icon
     if (icon.isEmpty()) {
-      // Create a simple icon using nativeImage
       icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'));
     }
-    
+
     // Resize icon if needed
     const trayIcon = icon.resize({ width: 16, height: 16 });
     const tray = new Tray(trayIcon);

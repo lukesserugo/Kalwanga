@@ -9,12 +9,61 @@ import { logger } from '../lib/logger.js';
 import Stripe from 'stripe';
 
 // ============================================
+// CANONICAL ENUM VALUES
+// These must stay in sync with prisma/schema.prisma
+// (enum PaymentMethod / enum PaymentStatus / enum PaymentProviderEnum)
+// ============================================
+
+const PAYMENT_METHODS = [
+  'CASH',
+  'CREDIT_CARD',
+  'DEBIT_CARD',
+  'MOBILE_MONEY',
+  'BANK_TRANSFER',
+  'GIFT_CARD',
+  'LOYALTY_POINTS',
+  'CRYPTO',
+  'CHECK',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'PAYSTACK',
+  'SQUARE',
+  'STRIPE',
+] as const;
+
+const PAYMENT_STATUSES = [
+  'PENDING',
+  'PAID',
+  'FAILED',
+  'REFUNDED',
+  'PARTIAL',
+  'PROCESSING',
+  'AUTHORIZED',
+  'DECLINED',
+] as const;
+
+const PAYMENT_PROVIDERS = [
+  'STRIPE',
+  'CASH',
+  'MOBILE_MONEY',
+  'BANK_TRANSFER',
+  'GIFT_CARD',
+  'LOYALTY_POINTS',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'PAYSTACK',
+  'SQUARE',
+] as const;
+
+const PAYMENT_PROVIDER_TYPES = ['ONLINE', 'OFFLINE', 'HYBRID'] as const;
+
+// ============================================
 // VALIDATION SCHEMAS
 // ============================================
 
 const processPaymentSchema = z.object({
   amount: z.number().positive('Amount must be positive'),
-  paymentMethod: z.enum(['CASH', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_MONEY', 'BANK_TRANSFER', 'GIFT_CARD', 'LOYALTY_POINTS', 'CHECK', 'PAYPAL', 'FLUTTERWAVE', 'PAYSTACK', 'SQUARE']),
+  paymentMethod: z.enum(PAYMENT_METHODS),
   saleId: z.string().optional(),
   orderId: z.string().optional(),
   cashRegisterId: z.string().optional(),
@@ -27,7 +76,7 @@ const processPaymentSchema = z.object({
   tipAmount: z.number().min(0).optional(),
   savePaymentMethod: z.boolean().optional(),
   businessUnitId: z.string().optional(),
-  cardNonce: z.string().optional(), // For Square
+  cardNonce: z.string().optional(),
 });
 
 const refundSchema = z.object({
@@ -41,22 +90,26 @@ const getPaymentsSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   businessUnitId: z.string().optional(),
-  status: z.string().optional(),
-  paymentMethod: z.string().optional(),
+  status: z.enum(PAYMENT_STATUSES).optional(),
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
   userId: z.string().optional(),
   saleId: z.string().optional(),
   orderId: z.string().optional(),
 });
 
 const checkoutSessionSchema = z.object({
-  items: z.array(z.object({
-    name: z.string().min(1, 'Item name is required'),
-    price: z.number().positive('Price must be positive'),
-    quantity: z.number().int().positive('Quantity must be positive'),
-    currency: z.string().optional(),
-    description: z.string().optional(),
-    images: z.array(z.string()).optional(),
-  })).min(1, 'At least one item is required'),
+  items: z
+    .array(
+      z.object({
+        name: z.string().min(1, 'Item name is required'),
+        price: z.number().positive('Price must be positive'),
+        quantity: z.number().int().positive('Quantity must be positive'),
+        currency: z.string().optional(),
+        description: z.string().optional(),
+        images: z.array(z.string()).optional(),
+      })
+    )
+    .min(1, 'At least one item is required'),
   customerId: z.string().optional(),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
@@ -68,10 +121,10 @@ const attachPaymentMethodSchema = z.object({
 });
 
 const createProviderSchema = z.object({
-  provider: z.enum(['STRIPE', 'CASH', 'MOBILE_MONEY', 'BANK_TRANSFER', 'GIFT_CARD', 'LOYALTY_POINTS', 'PAYPAL', 'FLUTTERWAVE', 'PAYSTACK', 'SQUARE']),
+  provider: z.enum(PAYMENT_PROVIDERS),
   name: z.string().min(1, 'Provider name is required'),
   code: z.string().min(1, 'Provider code is required'),
-  type: z.enum(['ONLINE', 'OFFLINE', 'HYBRID']),
+  type: z.enum(PAYMENT_PROVIDER_TYPES),
   isActive: z.boolean().optional().default(true),
   isHealthy: z.boolean().optional().default(true),
   configured: z.boolean().optional().default(false),
@@ -80,20 +133,25 @@ const createProviderSchema = z.object({
   currencies: z.array(z.string()).optional().default([]),
   settings: z.record(z.any()).optional(),
   order: z.number().int().min(0).optional().default(0),
-  paymentMethods: z.array(z.object({
-    name: z.string().min(1),
-    code: z.string().min(1),
-    description: z.string().optional(),
-    icon: z.string().optional(),
-    isActive: z.boolean().optional().default(true),
-    requiresRedirect: z.boolean().optional().default(false),
-    isInstant: z.boolean().optional().default(true),
-    minAmount: z.number().min(0).optional(),
-    maxAmount: z.number().min(0).optional(),
-    feePercentage: z.number().min(0).max(100).optional(),
-    feeFixed: z.number().min(0).optional(),
-    order: z.number().int().min(0).optional().default(0),
-  })).optional().default([]),
+  paymentMethods: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        code: z.string().min(1),
+        description: z.string().optional(),
+        icon: z.string().optional(),
+        isActive: z.boolean().optional().default(true),
+        requiresRedirect: z.boolean().optional().default(false),
+        isInstant: z.boolean().optional().default(true),
+        minAmount: z.number().min(0).optional(),
+        maxAmount: z.number().min(0).optional(),
+        feePercentage: z.number().min(0).max(100).optional(),
+        feeFixed: z.number().min(0).optional(),
+        order: z.number().int().min(0).optional().default(0),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
 const updateProviderSchema = createProviderSchema.partial();
@@ -128,14 +186,12 @@ const mpesaSTKPushSchema = z.object({
 const mpesaB2CSchema = z.object({
   phoneNumber: z.string().min(10, 'Phone number is required'),
   amount: z.number().positive('Amount must be positive'),
-  commandId: z.enum(['BusinessPayment', 'SalaryPayment', 'PromotionPayment']).default('BusinessPayment'),
+  commandId: z
+    .enum(['BusinessPayment', 'SalaryPayment', 'PromotionPayment'])
+    .default('BusinessPayment'),
   remarks: z.string().optional(),
   occasion: z.string().optional(),
 });
-
-// ============================================
-// NEW PROVIDER SCHEMAS
-// ============================================
 
 const payPalCaptureSchema = z.object({
   orderId: z.string().min(1, 'Order ID is required'),
@@ -168,21 +224,41 @@ const squareCustomerSchema = z.object({
 });
 
 // ============================================
+// HELPERS
+// ============================================
+
+function zodError(res: Response, error: z.ZodError) {
+  return res.status(400).json({
+    success: false,
+    message: 'Validation error',
+    errors: error.errors.map((e) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    })),
+  });
+}
+
+function requireUserId(req: Request): string {
+  const userId = (req as any).user?.id;
+  if (!userId) {
+    throw new AppError('User ID is required', 401);
+  }
+  return userId;
+}
+
+// ============================================
 // CONTROLLER
 // ============================================
 
 export const paymentController = {
-  /**
-   * POST /payments/create-payment-intent - Create Stripe payment intent
-   */
+  // ============================================
+  // STRIPE / PAYMENT INTENT
+  // ============================================
+
   async createPaymentIntent(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = createPaymentIntentSchema.parse(req.body);
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       const result = await paymentService.createPaymentIntent({
         ...validatedData,
@@ -198,38 +274,27 @@ export const paymentController = {
         message: 'Payment intent created successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payments/mpesa-stk-push - Initiate M-Pesa STK Push payment
-   */
+  // ============================================
+  // M-PESA
+  // ============================================
+
   async initiateMpesaSTKPush(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = mpesaSTKPushSchema.parse(req.body);
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      // Ensure M-Pesa is configured
       if (!mpesaService.isConfigured()) {
-        throw new AppError('M-Pesa is not configured. Please contact support.', 503);
+        throw new AppError(
+          'M-Pesa is not configured. Please contact support.',
+          503
+        );
       }
 
-      // Initiate STK Push
       const result = await mpesaService.initiateSTKPush({
         phoneNumber: validatedData.phoneNumber,
         amount: validatedData.amount,
@@ -238,7 +303,6 @@ export const paymentController = {
         callbackUrl: validatedData.callbackUrl,
       });
 
-      // Create pending payment record
       const payment = await paymentService.createPendingPayment({
         amount: validatedData.amount,
         paymentMethod: 'MOBILE_MONEY',
@@ -257,30 +321,15 @@ export const paymentController = {
 
       res.json({
         success: true,
-        data: {
-          ...result,
-          paymentId: payment.id,
-        },
+        data: { ...result, paymentId: payment.id },
         message: 'M-Pesa STK Push initiated successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * GET /payments/mpesa-status/:transactionId - Query M-Pesa transaction status
-   */
   async queryMpesaStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { transactionId } = req.params;
@@ -294,26 +343,32 @@ export const paymentController = {
         shortcode: process.env.MPESA_SHORTCODE || '174379',
       });
 
-      // Check if payment exists and update status if needed
-      const payment = await paymentService.getPaymentByTransactionId(transactionId);
-      
+      const payment = await paymentService.getPaymentByTransactionId(
+        transactionId
+      );
+
       if (payment && result.ResultCode !== undefined) {
         const status = result.ResultCode === '0' ? 'PAID' : 'FAILED';
         if (payment.status !== status) {
           await paymentService.updatePaymentStatus(payment.id, status, {
             notes: `M-Pesa status: ${result.ResultDesc || 'Status updated'}`,
-            metadata: {
-              mpesaResult: result,
-            },
+            metadata: { mpesaResult: result },
           });
 
-          // Update sale/order if payment succeeded
           if (status === 'PAID') {
             if (payment.saleId) {
-              await paymentService.updateSaleAfterPayment(payment.saleId, payment.amount, payment);
+              await paymentService.updateSaleAfterPayment(
+                payment.saleId,
+                payment.amount,
+                payment
+              );
             }
             if (payment.orderId) {
-              await paymentService.updateOrderAfterPayment(payment.orderId, payment.amount, payment);
+              await paymentService.updateOrderAfterPayment(
+                payment.orderId,
+                payment.amount,
+                payment
+              );
             }
           }
         }
@@ -330,21 +385,18 @@ export const paymentController = {
     }
   },
 
-  /**
-   * POST /payments/mpesa-callback - Handle M-Pesa callback (webhook)
-   */
   async handleMpesaCallback(req: Request, res: Response, next: NextFunction) {
     try {
       logger.info('M-Pesa callback received:', JSON.stringify(req.body));
 
       const result = await mpesaService.handleSTKPushCallback(req.body);
 
-      // Find payment by transaction ID
-      const payment = await paymentService.getPaymentByTransactionId(result.checkoutRequestId);
-      
+      const payment = await paymentService.getPaymentByTransactionId(
+        result.checkoutRequestId
+      );
+
       if (payment) {
         if (result.isSuccess) {
-          // Update payment to PAID
           await paymentService.updatePaymentStatus(payment.id, 'PAID', {
             metadata: {
               mpesaCallback: result.callbackMetadata,
@@ -354,18 +406,23 @@ export const paymentController = {
             notes: `M-Pesa payment successful: ${result.resultDesc}`,
           });
 
-          // Update sale/order if exists
           if (payment.saleId) {
-            await paymentService.updateSaleAfterPayment(payment.saleId, payment.amount, payment);
+            await paymentService.updateSaleAfterPayment(
+              payment.saleId,
+              payment.amount,
+              payment
+            );
           }
           if (payment.orderId) {
-            await paymentService.updateOrderAfterPayment(payment.orderId, payment.amount, payment);
+            await paymentService.updateOrderAfterPayment(
+              payment.orderId,
+              payment.amount,
+              payment
+            );
           }
 
-          // Create notification
           await paymentService.createPaymentNotification(payment, 'succeeded');
         } else {
-          // Update payment to FAILED
           await paymentService.updatePaymentStatus(payment.id, 'FAILED', {
             notes: `M-Pesa payment failed: ${result.resultDesc}`,
             metadata: {
@@ -379,35 +436,23 @@ export const paymentController = {
         }
       }
 
-      // Always respond with success to M-Pesa
-      res.status(200).json({
-        ResultCode: 0,
-        ResultDesc: 'Success',
-      });
+      res.status(200).json({ ResultCode: 0, ResultDesc: 'Success' });
     } catch (error) {
       logger.error('Callback processing error:', error);
-      // Always respond with success to M-Pesa
-      res.status(200).json({
-        ResultCode: 0,
-        ResultDesc: 'Success',
-      });
+      res.status(200).json({ ResultCode: 0, ResultDesc: 'Success' });
     }
   },
 
-  /**
-   * POST /payments/mpesa-b2c - Process M-Pesa B2C payment (Business to Customer)
-   */
   async processMpesaB2C(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = mpesaB2CSchema.parse(req.body);
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      requireUserId(req);
 
       if (!mpesaService.isConfigured()) {
-        throw new AppError('M-Pesa is not configured. Please contact support.', 503);
+        throw new AppError(
+          'M-Pesa is not configured. Please contact support.',
+          503
+        );
       }
 
       const result = await mpesaService.processB2CPayment({
@@ -424,31 +469,19 @@ export const paymentController = {
         message: 'M-Pesa B2C payment initiated successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
   // ============================================
-  // PAYPAL ENDPOINTS
+  // PAYPAL
   // ============================================
 
-  /**
-   * POST /payments/paypal/capture - Capture PayPal order
-   */
   async capturePayPalOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { orderId } = payPalCaptureSchema.parse(req.body);
-      
+
       const result = await paymentService.capturePayPalOrder(orderId);
 
       res.json({
@@ -457,46 +490,37 @@ export const paymentController = {
         message: 'PayPal order captured successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payments/webhook/paypal - PayPal webhook
-   */
   async handlePayPalWebhook(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await paymentService.handlePayPalWebhook(req.body, req.headers as Record<string, string>);
+      const result = await paymentService.handlePayPalWebhook(
+        req.body,
+        req.headers as Record<string, string>
+      );
 
       res.json({ success: true, ...result });
     } catch (error) {
       logger.error('PayPal webhook error:', error);
-      // PayPal expects a 200 response even on error
       res.status(200).json({ status: 'success' });
     }
   },
 
   // ============================================
-  // FLUTTERWAVE ENDPOINTS
+  // FLUTTERWAVE
   // ============================================
 
-  /**
-   * POST /payments/flutterwave/virtual-account - Create Flutterwave virtual account
-   */
-  async createFlutterwaveVirtualAccount(req: Request, res: Response, next: NextFunction) {
+  async createFlutterwaveVirtualAccount(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
     try {
       const validatedData = flutterwaveVirtualAccountSchema.parse(req.body);
-      
+
       const result = await paymentService.createFlutterwaveVirtualAccount({
         email: validatedData.email,
         amount: validatedData.amount,
@@ -510,48 +534,39 @@ export const paymentController = {
         message: 'Virtual account created successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payments/webhook/flutterwave - Flutterwave webhook
-   */
-  async handleFlutterwaveWebhook(req: Request, res: Response, next: NextFunction) {
+  async handleFlutterwaveWebhook(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
     try {
-      const signature = req.headers['verif-hash'] as string || '';
-      
-      const result = await paymentService.handleFlutterwaveWebhook(req.body, signature);
+      const signature = (req.headers['verif-hash'] as string) || '';
+
+      const result = await paymentService.handleFlutterwaveWebhook(
+        req.body,
+        signature
+      );
 
       res.json({ success: true, ...result });
     } catch (error) {
       logger.error('Flutterwave webhook error:', error);
-      // Flutterwave expects a 200 response
       res.status(200).json({ status: 'success' });
     }
   },
 
   // ============================================
-  // PAYSTACK ENDPOINTS
+  // PAYSTACK
   // ============================================
 
-  /**
-   * POST /payments/paystack/verify - Verify Paystack payment
-   */
   async verifyPaystackPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const { reference } = paystackVerifySchema.parse(req.params);
-      
+
       const result = await paymentService.verifyPaystackPayment(reference);
 
       res.json({
@@ -560,54 +575,36 @@ export const paymentController = {
         message: 'Payment verified successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payments/webhook/paystack - Paystack webhook
-   */
   async handlePaystackWebhook(req: Request, res: Response, next: NextFunction) {
     try {
-      const signature = req.headers['x-paystack-signature'] as string || '';
-      
-      const result = await paymentService.handlePaystackWebhook(req.body, signature);
+      const signature = (req.headers['x-paystack-signature'] as string) || '';
+
+      const result = await paymentService.handlePaystackWebhook(
+        req.body,
+        signature
+      );
 
       res.json({ success: true, ...result });
     } catch (error) {
       logger.error('Paystack webhook error:', error);
-      // Paystack expects a 200 response
       res.status(200).send('OK');
     }
   },
 
   // ============================================
-  // SQUARE ENDPOINTS
+  // SQUARE
   // ============================================
 
-  /**
-   * POST /payments/square/payment - Process Square payment
-   */
   async processSquarePayment(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = squarePaymentSchema.parse(req.body);
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      // Process payment via Square through payment service
       const payment = await paymentService.processPayment({
         amount: validatedData.amount,
         paymentMethod: 'SQUARE',
@@ -625,27 +622,15 @@ export const paymentController = {
         message: 'Square payment processed successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payments/square/customer - Create Square customer
-   */
   async createSquareCustomer(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = squareCustomerSchema.parse(req.body);
-      
+
       const result = await paymentService.createSquareCustomer({
         email: validatedData.email,
         name: validatedData.name,
@@ -658,33 +643,24 @@ export const paymentController = {
         message: 'Square customer created successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payments/webhook/square - Square webhook
-   */
   async handleSquareWebhook(req: Request, res: Response, next: NextFunction) {
     try {
-      const signature = req.headers['x-square-hmacsha256-signature'] as string || '';
-      
-      const result = await paymentService.handleSquareWebhook(req.body, signature);
+      const signature =
+        (req.headers['x-square-hmacsha256-signature'] as string) || '';
+
+      const result = await paymentService.handleSquareWebhook(
+        req.body,
+        signature
+      );
 
       res.json({ success: true, ...result });
     } catch (error) {
       logger.error('Square webhook error:', error);
-      // Square expects a 200 response
       res.status(200).send('OK');
     }
   },
@@ -693,15 +669,17 @@ export const paymentController = {
   // PAYMENT PROVIDER MANAGEMENT
   // ============================================
 
-  /**
-   * GET /payment-providers - Get all payment providers
-   */
   async getPaymentProviders(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
-      const businessUnitId = req.query.businessUnitId as string || (req as any).user?.businessUnitId;
+      const businessUnitId =
+        (req.query.businessUnitId as string) ||
+        (req as any).user?.businessUnitId;
 
-      const providers = await paymentService.getPaymentProviders(userId, businessUnitId);
+      const providers = await paymentService.getPaymentProviders(
+        userId,
+        businessUnitId
+      );
 
       res.json({
         success: true,
@@ -713,15 +691,17 @@ export const paymentController = {
     }
   },
 
-  /**
-   * GET /payment-providers/:provider/status - Get provider health status
-   */
   async getProviderStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { provider } = req.params;
-      const businessUnitId = req.query.businessUnitId as string || (req as any).user?.businessUnitId;
+      const businessUnitId =
+        (req.query.businessUnitId as string) ||
+        (req as any).user?.businessUnitId;
 
-      const status = await paymentService.getProviderStatus(provider, businessUnitId);
+      const status = await paymentService.getProviderStatus(
+        provider,
+        businessUnitId
+      );
 
       res.json({
         success: true,
@@ -733,76 +713,99 @@ export const paymentController = {
     }
   },
 
-  /**
-   * POST /payment-providers - Create new provider
-   */
   async createProvider(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = createProviderSchema.parse(req.body);
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      // If provider is Stripe, validate credentials
       if (validatedData.provider === 'STRIPE') {
-        const apiKey = validatedData.config?.apiKey || process.env.STRIPE_SECRET_KEY;
+        const apiKey =
+          (validatedData.config?.apiKey as string) ||
+          process.env.STRIPE_SECRET_KEY;
         if (!apiKey) {
           throw new AppError('Stripe API key is required', 400);
         }
         try {
           const stripe = new Stripe(apiKey, { apiVersion: '2023-10-16' });
           await stripe.balance.retrieve();
-        } catch (error) {
+        } catch {
           throw new AppError('Invalid Stripe API key', 400);
         }
       }
 
-      // If provider is MOBILE_MONEY, check M-Pesa configuration
       if (validatedData.provider === 'MOBILE_MONEY') {
         if (!mpesaService.isConfigured()) {
-          throw new AppError('M-Pesa is not configured. Please set MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET.', 400);
+          throw new AppError(
+            'M-Pesa is not configured. Please set MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET.',
+            400
+          );
         }
       }
 
-      // Validate PayPal configuration
       if (validatedData.provider === 'PAYPAL') {
-        const clientId = validatedData.config?.clientId || process.env.PAYPAL_CLIENT_ID;
-        const clientSecret = validatedData.config?.clientSecret || process.env.PAYPAL_CLIENT_SECRET;
+        const clientId =
+          (validatedData.config?.clientId as string) ||
+          process.env.PAYPAL_CLIENT_ID;
+        const clientSecret =
+          (validatedData.config?.clientSecret as string) ||
+          process.env.PAYPAL_CLIENT_SECRET;
         if (!clientId || !clientSecret) {
-          throw new AppError('PayPal Client ID and Client Secret are required', 400);
+          throw new AppError(
+            'PayPal Client ID and Client Secret are required',
+            400
+          );
         }
       }
 
-      // Validate Flutterwave configuration
       if (validatedData.provider === 'FLUTTERWAVE') {
-        const apiKey = validatedData.config?.apiKey || process.env.FLUTTERWAVE_API_KEY;
-        const publicKey = validatedData.config?.publicKey || process.env.FLUTTERWAVE_PUBLIC_KEY;
+        const apiKey =
+          (validatedData.config?.apiKey as string) ||
+          process.env.FLUTTERWAVE_API_KEY;
+        const publicKey =
+          (validatedData.config?.publicKey as string) ||
+          process.env.FLUTTERWAVE_PUBLIC_KEY;
         if (!apiKey || !publicKey) {
-          throw new AppError('Flutterwave API Key and Public Key are required', 400);
+          throw new AppError(
+            'Flutterwave API Key and Public Key are required',
+            400
+          );
         }
       }
 
-      // Validate Paystack configuration
       if (validatedData.provider === 'PAYSTACK') {
-        const secretKey = validatedData.config?.secretKey || process.env.PAYSTACK_SECRET_KEY;
-        const publicKey = validatedData.config?.publicKey || process.env.PAYSTACK_PUBLIC_KEY;
+        const secretKey =
+          (validatedData.config?.secretKey as string) ||
+          process.env.PAYSTACK_SECRET_KEY;
+        const publicKey =
+          (validatedData.config?.publicKey as string) ||
+          process.env.PAYSTACK_PUBLIC_KEY;
         if (!secretKey || !publicKey) {
-          throw new AppError('Paystack Secret Key and Public Key are required', 400);
+          throw new AppError(
+            'Paystack Secret Key and Public Key are required',
+            400
+          );
         }
       }
 
-      // Validate Square configuration
       if (validatedData.provider === 'SQUARE') {
-        const accessToken = validatedData.config?.accessToken || process.env.SQUARE_ACCESS_TOKEN;
-        const locationId = validatedData.config?.locationId || process.env.SQUARE_LOCATION_ID;
+        const accessToken =
+          (validatedData.config?.accessToken as string) ||
+          process.env.SQUARE_ACCESS_TOKEN;
+        const locationId =
+          (validatedData.config?.locationId as string) ||
+          process.env.SQUARE_LOCATION_ID;
         if (!accessToken || !locationId) {
-          throw new AppError('Square Access Token and Location ID are required', 400);
+          throw new AppError(
+            'Square Access Token and Location ID are required',
+            400
+          );
         }
       }
 
-      const provider = await paymentService.createPaymentProvider(validatedData, userId);
+      const provider = await paymentService.createPaymentProvider(
+        validatedData,
+        userId
+      );
 
       res.status(201).json({
         success: true,
@@ -810,34 +813,22 @@ export const paymentController = {
         message: 'Payment provider created successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * PATCH /payment-providers/:id - Update provider
-   */
   async updateProvider(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const validatedData = updateProviderSchema.parse(req.body);
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
 
-      if (!id) {
-        throw new AppError('Provider ID is required', 400);
-      }
-
-      const provider = await paymentService.updatePaymentProvider(id, validatedData, userId);
+      const provider = await paymentService.updatePaymentProvider(
+        id,
+        validatedData,
+        userId
+      );
 
       res.json({
         success: true,
@@ -845,31 +836,15 @@ export const paymentController = {
         message: 'Payment provider updated successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * DELETE /payment-providers/:id - Delete provider
-   */
   async deleteProvider(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        throw new AppError('Provider ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       await paymentService.deletePaymentProvider(id, userId);
 
@@ -882,20 +857,17 @@ export const paymentController = {
     }
   },
 
-  /**
-   * PATCH /payment-providers/:id/health - Update provider health
-   */
   async updateProviderHealth(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const { isHealthy } = updateProviderHealthSchema.parse(req.body);
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
 
-      if (!id) {
-        throw new AppError('Provider ID is required', 400);
-      }
-
-      const provider = await paymentService.updateProviderHealthWithAudit(id, isHealthy, userId);
+      const provider = await paymentService.updateProviderHealthWithAudit(
+        id,
+        isHealthy,
+        userId
+      );
 
       res.json({
         success: true,
@@ -903,86 +875,84 @@ export const paymentController = {
         message: 'Provider health updated successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payment-providers/:id/configure - Configure provider
-   */
   async configureProvider(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const { config, settings } = configureProviderSchema.parse(req.body);
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        throw new AppError('Provider ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       const provider = await paymentService.getProviderById(id);
       if (!provider) {
         throw new AppError('Provider not found', 404);
       }
 
-      // If configuring Stripe, validate the API key
       if (provider.provider === 'STRIPE' && config?.apiKey) {
         try {
-          const stripe = new Stripe(config.apiKey, { apiVersion: '2023-10-16' });
+          const stripe = new Stripe(config.apiKey as string, {
+            apiVersion: '2023-10-16',
+          });
           await stripe.balance.retrieve();
-        } catch (error) {
+        } catch {
           throw new AppError('Invalid Stripe API key', 400);
         }
       }
 
-      // If configuring MOBILE_MONEY, check M-Pesa configuration
       if (provider.provider === 'MOBILE_MONEY') {
         if (!mpesaService.isConfigured()) {
-          throw new AppError('M-Pesa is not configured. Please set MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET.', 400);
+          throw new AppError(
+            'M-Pesa is not configured. Please set MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET.',
+            400
+          );
         }
       }
 
-      // Validate PayPal configuration
-      if (provider.provider === 'PAYPAL' && config?.clientId && config?.clientSecret) {
-        // Could validate by attempting to get token
-        // For now, just ensure they're provided
-        if (!config.clientId || !config.clientSecret) {
-          throw new AppError('PayPal Client ID and Client Secret are required', 400);
+      if (provider.provider === 'PAYPAL') {
+        if (!config?.clientId || !config?.clientSecret) {
+          throw new AppError(
+            'PayPal Client ID and Client Secret are required',
+            400
+          );
         }
       }
 
-      // Validate Flutterwave configuration
       if (provider.provider === 'FLUTTERWAVE') {
         if (!config?.apiKey || !config?.publicKey) {
-          throw new AppError('Flutterwave API Key and Public Key are required', 400);
+          throw new AppError(
+            'Flutterwave API Key and Public Key are required',
+            400
+          );
         }
       }
 
-      // Validate Paystack configuration
       if (provider.provider === 'PAYSTACK') {
         if (!config?.secretKey || !config?.publicKey) {
-          throw new AppError('Paystack Secret Key and Public Key are required', 400);
+          throw new AppError(
+            'Paystack Secret Key and Public Key are required',
+            400
+          );
         }
       }
 
-      // Validate Square configuration
       if (provider.provider === 'SQUARE') {
         if (!config?.accessToken || !config?.locationId) {
-          throw new AppError('Square Access Token and Location ID are required', 400);
+          throw new AppError(
+            'Square Access Token and Location ID are required',
+            400
+          );
         }
       }
 
-      const updatedProvider = await paymentService.configureProvider(id, config, settings, userId);
+      const updatedProvider = await paymentService.configureProvider(
+        id,
+        config,
+        settings,
+        userId
+      );
 
       res.json({
         success: true,
@@ -990,38 +960,27 @@ export const paymentController = {
         message: 'Provider configured successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * POST /payment-providers/:id/currencies - Add currency to provider
-   */
   async addProviderCurrency(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const { currency, conversionRate } = req.body;
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        throw new AppError('Provider ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       if (!currency) {
         throw new AppError('Currency is required', 400);
       }
 
-      const result = await paymentService.addProviderCurrency(id, currency, conversionRate, userId);
+      const result = await paymentService.addProviderCurrency(
+        id,
+        currency,
+        conversionRate,
+        userId
+      );
 
       res.json({
         success: true,
@@ -1033,17 +992,14 @@ export const paymentController = {
     }
   },
 
-  /**
-   * DELETE /payment-providers/:id/currencies/:currency - Remove currency
-   */
-  async removeProviderCurrency(req: Request, res: Response, next: NextFunction) {
+  async removeProviderCurrency(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
     try {
       const { id, currency } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!id) {
-        throw new AppError('Provider ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       if (!currency) {
         throw new AppError('Currency is required', 400);
@@ -1064,18 +1020,10 @@ export const paymentController = {
   // CORE PAYMENT ENDPOINTS
   // ============================================
 
-  /**
-   * Process payment
-   * POST /payments
-   */
   async processPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = processPaymentSchema.parse(req.body);
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       const payment = await paymentService.processPayment({
         ...validatedData,
@@ -1088,24 +1036,11 @@ export const paymentController = {
         message: 'Payment processed successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * Refund payment
-   * POST /payments/:id/refund
-   */
   async refundPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -1129,24 +1064,11 @@ export const paymentController = {
         message: 'Payment refunded successfully',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * Get payment status
-   * GET /payments/:id
-   */
   async getPaymentStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -1163,28 +1085,20 @@ export const paymentController = {
     }
   },
 
-  /**
-   * Get payment summary
-   * GET /payments/summary
-   */
   async getPaymentSummary(req: Request, res: Response, next: NextFunction) {
     try {
-      const { startDate, endDate, businessUnitId, status, paymentMethod } = req.query;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const { startDate, endDate, businessUnitId, status, paymentMethod } =
+        req.query;
+      const userId = requireUserId(req);
 
       const summary = await paymentService.getPaymentSummary({
         startDate: startDate ? new Date(startDate as string) : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
-        businessUnitId: businessUnitId as string,
-        status: status as string,
-        paymentMethod: paymentMethod as string,
+        businessUnitId: businessUnitId as string | undefined,
+        status: status as any,
+        paymentMethod: paymentMethod as any,
       });
 
-      // ✅ FIXED: Always return a valid response with default values
       if (!summary) {
         return res.json({
           success: true,
@@ -1207,8 +1121,7 @@ export const paymentController = {
         message: 'Payment summary retrieved successfully',
       });
     } catch (error) {
-      // ✅ FIXED: Return a graceful response even on error
-      console.error('Error getting payment summary:', error);
+      logger.warn('getPaymentSummary failed, returning defaults:', error);
       res.status(200).json({
         success: true,
         data: {
@@ -1225,10 +1138,6 @@ export const paymentController = {
     }
   },
 
-  /**
-   * Get all payments
-   * GET /payments
-   */
   async getAllPayments(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedQuery = getPaymentsSchema.parse(req.query);
@@ -1251,12 +1160,12 @@ export const paymentController = {
         limit: limit ? parseInt(limit) : 20,
         startDate: startDate ? new Date(startDate) : undefined,
         endDate: endDate ? new Date(endDate) : undefined,
-        businessUnitId: businessUnitId as string,
-        status: status as string,
-        paymentMethod: paymentMethod as string,
-        userId: userId as string,
-        saleId: saleId as string,
-        orderId: orderId as string,
+        businessUnitId: businessUnitId as string | undefined,
+        status: status as any,
+        paymentMethod: paymentMethod as any,
+        userId: userId as string | undefined,
+        saleId: saleId as string | undefined,
+        orderId: orderId as string | undefined,
       });
 
       res.json({
@@ -1270,28 +1179,20 @@ export const paymentController = {
         },
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * Create checkout session (Stripe)
-   * POST /payments/checkout-session
-   */
+  // ============================================
+  // STRIPE CHECKOUT & CUSTOMER
+  // ============================================
+
   async createCheckoutSession(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = checkoutSessionSchema.parse(req.body);
-      const { items, customerId, successUrl, cancelUrl, metadata } = validatedData;
+      const { items, customerId, successUrl, cancelUrl, metadata } =
+        validatedData;
 
       const session = await paymentService.createCheckoutSession(
         items,
@@ -1307,24 +1208,11 @@ export const paymentController = {
         message: 'Checkout session created',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * Handle Stripe webhook
-   * POST /payments/webhook
-   */
   async handleWebhook(req: Request, res: Response, next: NextFunction) {
     try {
       const signature = req.headers['stripe-signature'] as string;
@@ -1342,43 +1230,31 @@ export const paymentController = {
     }
   },
 
-  /**
-   * Create Stripe customer
-   * POST /payments/customer
-   */
   async createStripeCustomer(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
+      const userId = requireUserId(req);
 
       const result = await paymentService.createStripeCustomer(userId);
 
       res.json({
         success: true,
         data: result,
-        message: result.alreadyExists ? 'Customer already exists' : 'Customer created',
+        message: result.alreadyExists
+          ? 'Customer already exists'
+          : 'Customer created',
       });
     } catch (error) {
       next(error);
     }
   },
 
-  /**
-   * Get customer payment methods
-   * GET /payments/payment-methods
-   */
   async getPaymentMethods(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const paymentMethods = await paymentService.getCustomerPaymentMethods(userId);
+      const paymentMethods = await paymentService.getCustomerPaymentMethods(
+        userId
+      );
 
       res.json({ success: true, data: paymentMethods });
     } catch (error) {
@@ -1386,20 +1262,15 @@ export const paymentController = {
     }
   },
 
-  /**
-   * Attach payment method
-   * POST /payments/payment-methods/attach
-   */
   async attachPaymentMethod(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = (req as any).user?.id;
+      const userId = requireUserId(req);
       const { paymentMethodId } = attachPaymentMethodSchema.parse(req.body);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 400);
-      }
-
-      const paymentMethod = await paymentService.attachPaymentMethod(userId, paymentMethodId);
+      const paymentMethod = await paymentService.attachPaymentMethod(
+        userId,
+        paymentMethodId
+      );
 
       res.json({
         success: true,
@@ -1407,24 +1278,11 @@ export const paymentController = {
         message: 'Payment method attached',
       });
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map(e => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
+      if (error instanceof z.ZodError) return zodError(res, error);
       next(error);
     }
   },
 
-  /**
-   * Detach payment method
-   * DELETE /payments/payment-methods/:id
-   */
   async detachPaymentMethod(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;

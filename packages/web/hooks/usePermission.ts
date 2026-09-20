@@ -1,958 +1,668 @@
-// D:\Projects\Kalwanga\packages\web\hooks\usePermission.ts
-
+// packages/web/hooks/usePermission.ts
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from './useAuth';
-import { api } from '../services/api';
-import { UserRole } from '../types/enums';
-import { PERMISSIONS, ROLE_PERMISSIONS } from '../types/permissions';
-import type { Permission } from '../types/permissions';
+import {
+  businessUnitService,
+  isValidID,
+  getBusinessUnitId,
+} from '../services/businessUnitService';
+import type { BusinessUnit } from '../types/businessUnit';
+import {
+  buildPermissionsFromSet,
+  type UserPermissions,
+} from '../types/permissions';
 
-// ============================================
-// BUSINESS UNIT TYPES
-// ============================================
+// ============================================================
+// CONSTANTS
+// ============================================================
 
-export interface BusinessUnit {
-  id: string;
-  name: string;
-  code: string;
-  type?: string;
-  isActive?: boolean;
-  companyId?: string;
-  companyName?: string;
+const SUPER_ADMIN_ROLES = new Set<string>([
+  'SUPER_ADMIN',
+  'super_admin',
+  'SuperAdmin',
+]);
+
+const WILDCARD_TOKENS = new Set<string>(['*', '*:*', '*:*:*']);
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function isSuperAdminRole(role: string | null | undefined): boolean {
+  if (!role) return false;
+  return SUPER_ADMIN_ROLES.has(role);
 }
 
-export interface BusinessUnitContextType {
-  businessUnits: BusinessUnit[];
-  currentBusinessUnit: BusinessUnit | null;
-  loading: boolean;
-  switchBusinessUnit: (id: string) => Promise<void>;
-  refreshBusinessUnits: () => Promise<void>;
-  hasBusinessUnitAccess: (businessUnitId: string) => boolean;
-  getBusinessUnitById: (id: string) => BusinessUnit | undefined;
+function hasWildcardToken(permissions: readonly string[]): boolean {
+  return permissions.some((p) => WILDCARD_TOKENS.has(p));
 }
 
-export interface UsePermissionReturn {
-  // Loading state
-  isLoading: boolean;
-  
-  // Basic permission checks
-  hasPermission: (permission: string) => boolean;
-  hasAnyPermission: (permissions: string[]) => boolean;
-  hasAllPermissions: (permissions: string[]) => boolean;
-  
-  // Role checks
-  isRole: (role: UserRole | string) => boolean;
-  isAtLeast: (role: UserRole) => boolean;
-  isSuperAdmin: () => boolean;
-  isAdminOrAbove: () => boolean;
-  isManagerOrAbove: () => boolean;
-  isEditorOrAbove: () => boolean;
-  isViewerOrAbove: () => boolean;
-  
-  // Resource-specific permission checks
-  canView: (resource: string) => boolean;
-  canCreate: (resource: string) => boolean;
-  canEdit: (resource: string) => boolean;
-  canDelete: (resource: string) => boolean;
-  canManage: (resource: string) => boolean;
-  canExport: () => boolean;
-  canImport: () => boolean;
-  
-  // Pre-defined permission checks - User Management
-  canManageUsers: () => boolean;
-  canViewUsers: () => boolean;
-  canCreateUsers: () => boolean;
-  canEditUsers: () => boolean;
-  canDeleteUsers: () => boolean;
-  canExportUsers: () => boolean;
-  canActivateUsers: () => boolean;
-  canDeactivateUsers: () => boolean;
-  canUpdateUserRole: () => boolean;
-  
-  // Pre-defined permission checks - Category
-  canManageCategories: () => boolean;
-  canViewCategories: () => boolean;
-  canCreateCategories: () => boolean;
-  canEditCategories: () => boolean;
-  canDeleteCategories: () => boolean;
-  
-  // Pre-defined permission checks - Product
-  canManageProducts: () => boolean;
-  canViewProducts: () => boolean;
-  canCreateProducts: () => boolean;
-  canEditProducts: () => boolean;
-  canDeleteProducts: () => boolean;
-  canExportProducts: () => boolean;
-  canImportProducts: () => boolean;
-  
-  // Pre-defined permission checks - Orders
-  canManageOrders: () => boolean;
-  canViewOrders: () => boolean;
-  canCreateOrders: () => boolean;
-  canEditOrders: () => boolean;
-  canDeleteOrders: () => boolean;
-  canProcessOrders: () => boolean;
-  canCancelOrders: () => boolean;
-  
-  // Pre-defined permission checks - Customers
-  canManageCustomers: () => boolean;
-  canViewCustomers: () => boolean;
-  canCreateCustomers: () => boolean;
-  canEditCustomers: () => boolean;
-  canDeleteCustomers: () => boolean;
-  
-  // Pre-defined permission checks - Inventory
-  canManageInventory: () => boolean;
-  canViewInventory: () => boolean;
-  canCreateInventory: () => boolean;
-  canEditInventory: () => boolean;
-  canDeleteInventory: () => boolean;
-  canAdjustInventory: () => boolean;
-  canTransferInventory: () => boolean;
-  
-  // Pre-defined permission checks - Sales
-  canManageSales: () => boolean;
-  canViewSales: () => boolean;
-  canCreateSales: () => boolean;
-  canEditSales: () => boolean;
-  canDeleteSales: () => boolean;
-  canExportSales: () => boolean;
-  canPrintSales: () => boolean;
-  canEmailSales: () => boolean;
-  
-  // Pre-defined permission checks - Returns
-  canManageReturns: () => boolean;
-  canViewReturns: () => boolean;
-  canCreateReturns: () => boolean;
-  canEditReturns: () => boolean;
-  canDeleteReturns: () => boolean;
-  canApproveReturns: () => boolean;
-  canRejectReturns: () => boolean;
-  canProcessReturns: () => boolean;
-  
-  // Pre-defined permission checks - Refunds
-  canManageRefunds: () => boolean;
-  canViewRefunds: () => boolean;
-  canCreateRefunds: () => boolean;
-  canEditRefunds: () => boolean;
-  canDeleteRefunds: () => boolean;
-  canApproveRefunds: () => boolean;
-  canRejectRefunds: () => boolean;
-  canCompleteRefunds: () => boolean;
-  
-  // Pre-defined permission checks - Invoices
-  canManageInvoices: () => boolean;
-  canViewInvoices: () => boolean;
-  canCreateInvoices: () => boolean;
-  canEditInvoices: () => boolean;
-  canDeleteInvoices: () => boolean;
-  canSendInvoices: () => boolean;
-  canPrintInvoices: () => boolean;
-  canMarkInvoicePaid: () => boolean;
-  canVoidInvoices: () => boolean;
-  canCancelInvoices: () => boolean;
-  
-  // Pre-defined permission checks - Receipts
-  canManageReceipts: () => boolean;
-  canViewReceipts: () => boolean;
-  canCreateReceipts: () => boolean;
-  canEditReceipts: () => boolean;
-  canDeleteReceipts: () => boolean;
-  canPrintReceipts: () => boolean;
-  canEmailReceipts: () => boolean;
-  canVoidReceipts: () => boolean;
-  
-  // Pre-defined permission checks - Payments
-  canManagePayments: () => boolean;
-  canViewPayments: () => boolean;
-  canCreatePayments: () => boolean;
-  canRefundPayments: () => boolean;
-  
-  // Pre-defined permission checks - POS
-  canManagePos: () => boolean;
-  canViewPos: () => boolean;
-  canCreatePos: () => boolean;
-  canPrintPos: () => boolean;
-  
-  // Pre-defined permission checks - Cash Register
-  canManageCashRegister: () => boolean;
-  canViewCashRegister: () => boolean;
-  canOpenCashRegister: () => boolean;
-  canCloseCashRegister: () => boolean;
-  
-  // Pre-defined permission checks - Shifts
-  canManageShifts: () => boolean;
-  canViewShifts: () => boolean;
-  canStartShift: () => boolean;
-  canEndShift: () => boolean;
-  
-  // Pre-defined permission checks - Reports
-  canManageReports: () => boolean;
-  canViewReports: () => boolean;
-  canCreateReports: () => boolean;
-  canExportReports: () => boolean;
-  
-  // Pre-defined permission checks - Analytics
-  canViewAnalytics: () => boolean;
-  canExportAnalytics: () => boolean;
-  
-  // Pre-defined permission checks - Settings
-  canManageSettings: () => boolean;
-  canViewSettings: () => boolean;
-  canEditSettings: () => boolean;
-  
-  // Pre-defined permission checks - Business Units
-  canManageBusinessUnits: () => boolean;
-  canViewBusinessUnits: () => boolean;
-  canCreateBusinessUnits: () => boolean;
-  canEditBusinessUnits: () => boolean;
-  canDeleteBusinessUnits: () => boolean;
-  
-  // Pre-defined permission checks - System
-  canViewSystemLogs: () => boolean;
-  canBackupSystem: () => boolean;
-  canRestoreSystem: () => boolean;
-  
-  // Pre-defined permission checks - Dashboard
-  canViewDashboard: () => boolean;
-  canManageDashboard: () => boolean;
-  
-  // Pre-defined permission checks - Integrations
-  canManageIntegrations: () => boolean;
-  canViewIntegrations: () => boolean;
-  canManageApi: () => boolean;
-  canViewApi: () => boolean;
-  canManageWebhooks: () => boolean;
-  canViewWebhooks: () => boolean;
-  
-  // Utility functions
-  getPermissions: () => string[];
-  getPermissionsByResource: () => Record<string, string[]>;
-  
-  // Business Unit functions
-  getBusinessUnits: () => BusinessUnit[];
-  getCurrentBusinessUnit: () => BusinessUnit | null;
-  switchBusinessUnit: (id: string) => Promise<void>;
-  refreshBusinessUnits: () => Promise<void>;
-  hasBusinessUnitAccess: (businessUnitId: string) => boolean;
-  getBusinessUnitById: (id: string) => BusinessUnit | undefined;
-  isBusinessUnitSelected: () => boolean;
-  getBusinessUnitName: (id: string) => string;
-  
-  // User info
-  user: any;
-  userRole: string;
+/** Stable stringify for permissions array (avoids array ref churn). */
+function permissionsKey(perms: readonly string[]): string {
+  return perms.slice().sort().join('|');
 }
 
-// ============================================
-// BUSINESS UNIT PROVIDER STORAGE KEYS
-// ============================================
+// ============================================================
+// STABLE NAMED CHECKERS
+// ============================================================
+//
+// `safeCan` is ref-backed and stable, so we can safely cache one
+// function per permission string at module scope. This is what
+// makes `canViewSales`, `canManageUsers`, etc. keep the SAME
+// identity across every render — which is what lets components
+// depend on them without triggering re-render loops.
+//
+// The cache stores closures that read the LATEST safeCan via a
+// mutable slot, so a checker created once keeps working after
+// the hook re-renders with new permission state.
+//
+// ⚠️ One process-wide cache is fine because every hook instance
+//    ultimately funnels through the same resolved `safeCan`
+//    semantics. The slot is refreshed on every hook render.
 
-const STORAGE_KEYS = {
-  BUSINESS_UNITS: 'businessUnits',
-  CURRENT_BUSINESS_UNIT: 'businessUnitId',
-  SELECTED_BUSINESS_UNIT: 'selectedBusinessUnitId',
-} as const;
+type SafeCan = (permission: string) => boolean;
 
-// ============================================
-// MAIN HOOK
-// ============================================
+interface CheckerSlot {
+  fn: () => boolean;
+  safeCan: { current: SafeCan };
+}
 
-export function usePermission(): UsePermissionReturn {
-  const { 
-    user, 
-    userRole, 
-    loading: authLoading, 
+const permissionCheckerCache = new Map<string, CheckerSlot>();
+
+function getNamedChecker(permission: string, safeCan: SafeCan): () => boolean {
+  const existing = permissionCheckerCache.get(permission);
+  if (existing) {
+    // Refresh the slot so the closure reads the newest safeCan.
+    existing.safeCan.current = safeCan;
+    return existing.fn;
+  }
+  const slot = { current: safeCan };
+  const fn = () => slot.current(permission);
+  permissionCheckerCache.set(permission, { fn, safeCan: slot });
+  return fn;
+}
+
+// ============================================================
+// HOOK
+// ============================================================
+
+export function usePermission() {
+  // ────────────────────────────────────────────────────────────
+  // FIX #1 — Destructure the AUTHORITATIVE `isSuperAdmin` from
+  // useAuth. useAuth already resolves wildcard + role + cache,
+  // so we don't have to re-derive it here and risk drift.
+  // ────────────────────────────────────────────────────────────
+  const {
+    user,
+    userRole,
+    loading: authLoading,
     can,
-    isSuperAdmin,
-    isAdmin,
-    isManager,
-    isEditor,
-    isViewer
+    isSuperAdmin: authIsSuperAdmin,
   } = useAuth();
-  
+
   const [isClient, setIsClient] = useState(false);
-  
-  // Business Unit State
-  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
-  const [currentBusinessUnit, setCurrentBusinessUnit] = useState<BusinessUnit | null>(null);
-  const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(false);
-  const [businessUnitsLoaded, setBusinessUnitsLoaded] = useState(false);
+  useEffect(() => setIsClient(true), []);
 
-  // Set isClient to true once component mounts (client-side only)
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+  // ────────────────────────────────────────────────────────────
+  // Resolved permission set — keyed by CONTENT, not reference.
+  // ────────────────────────────────────────────────────────────
+  const permissionsArray = useMemo<string[]>(() => {
+    return Array.isArray((user as any)?.permissions)
+      ? ((user as any).permissions as string[])
+      : [];
+  }, [user]);
 
-  // ============================================
-  // BUSINESS UNIT HELPERS
-  // ============================================
+  const permissionsKeyValue = useMemo(
+    () => permissionsKey(permissionsArray),
+    [permissionsArray]
+  );
 
-  const extractBusinessUnits = useCallback((userData: any): BusinessUnit[] => {
-    if (!userData) return [];
+  // Stable-by-content permissions reference. Only changes when
+  // the underlying permission strings actually change.
+  const permissions = useMemo<string[]>(
+    () => permissionsArray,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [permissionsKeyValue]
+  );
 
-    const units: BusinessUnit[] = [];
-    const userAny = userData as any;
+  const userPermissions: UserPermissions = useMemo(
+    () => buildPermissionsFromSet(permissions),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [permissionsKeyValue]
+  );
 
-    // Try multiple sources for business units
+  // ────────────────────────────────────────────────────────────
+  // FIX #2 — SUPER ADMIN
+  //
+  // Prefer the authoritative flag from useAuth, then fall back
+  // to the same checks the hook previously used. The fallbacks
+  // exist so this hook remains correct if it's ever consumed
+  // without useAuth in scope (unit tests, storybook, etc.).
+  // ────────────────────────────────────────────────────────────
+  const isSuperAdmin: boolean = useMemo(() => {
+    // Authoritative source of truth.
+    if (authIsSuperAdmin) return true;
 
-    // 1. From user.businessUnits array
-    if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
-      const extracted = userAny.businessUnits
-        .map((bu: any): BusinessUnit | null => {
-          const id = bu.businessUnitId || bu.id || bu;
-          if (!id || id === 'default' || id === 'default-business-unit') return null;
+    // Defensive fallbacks.
+    if (isSuperAdminRole(userRole)) return true;
+    if (isSuperAdminRole((user as any)?.role)) return true;
+    if (hasWildcardToken(permissions)) return true;
 
-          return {
-            id: id,
-            name: bu.businessUnit?.name || bu.name || bu.businessUnitName || 'Unnamed Business Unit',
-            code: bu.businessUnit?.code || bu.code || '',
-            type: bu.businessUnit?.type || bu.type || '',
-            isActive:
-              bu.businessUnit?.isActive !== undefined
-                ? bu.businessUnit.isActive
-                : bu.isActive !== undefined
-                ? bu.isActive
-                : true,
-            companyId: bu.businessUnit?.companyId || bu.companyId || '',
-            companyName: bu.businessUnit?.company?.name || bu.companyName || '',
-          };
-        })
-        .filter((bu: BusinessUnit | null): bu is BusinessUnit => bu !== null);
+    return false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    authIsSuperAdmin,
+    userRole,
+    (user as any)?.role,
+    permissionsKeyValue,
+  ]);
 
-      units.push(...extracted);
-    }
+  // ────────────────────────────────────────────────────────────
+  // FIX #3 — CANONICAL CHECKER — stable via refs.
+  //
+  // Refs are assigned DURING RENDER (not in effects). Effects
+  // run after paint, which previously left a one-render window
+  // where `safeCan` saw stale values and returned `false` for
+  // SUPER_ADMIN — the source of the "Please Login" flash.
+  //
+  // ⚠️ Assigning refs during render is safe as long as we don't
+  //    READ them during the same render for output. We only read
+  //    them inside callbacks invoked after render.
+  // ────────────────────────────────────────────────────────────
+  const isSuperAdminRef = useRef(isSuperAdmin);
+  const permissionsRef = useRef(permissions);
+  const canRef = useRef(can);
 
-    // 2. From direct businessUnitId
-    if (units.length === 0 && userAny?.businessUnitId) {
-      const id = userAny.businessUnitId;
-      if (id && id !== 'default' && id !== 'default-business-unit') {
-        units.push({
-          id: id,
-          name: userAny.businessUnit?.name || 'Default Business Unit',
-          code: userAny.businessUnit?.code || '',
-          type: userAny.businessUnit?.type || '',
-          isActive: true,
-          companyId: userAny.businessUnit?.companyId || '',
-          companyName: userAny.businessUnit?.company?.name || '',
-        });
-      }
-    }
+  isSuperAdminRef.current = isSuperAdmin;
+  permissionsRef.current = permissions;
+  canRef.current = can;
 
-    // 3. From localStorage
-    if (units.length === 0) {
-      const stored = localStorage.getItem(STORAGE_KEYS.BUSINESS_UNITS);
-      if (stored) {
+  // ────────────────────────────────────────────────────────────
+  // FIX #4 — safeCan short-circuits on the authoritative flag.
+  //
+  // `authIsSuperAdmin` is the same value useAuth uses for its own
+  // `isSuper`. Reading it directly here means we don't depend on
+  // a ref having been refreshed — we get the truth immediately.
+  // ────────────────────────────────────────────────────────────
+  const safeCan = useCallback(
+    (permission: string): boolean => {
+      // 1. Authoritative super-admin short-circuit.
+      if (authIsSuperAdmin) return true;
+
+      // 2. Ref-based short-circuit (covers future mutations).
+      if (isSuperAdminRef.current) return true;
+
+      // 3. Explicit permissions.
+      const perms = permissionsRef.current;
+      if (hasWildcardToken(perms)) return true;
+      if (perms.includes(permission)) return true;
+
+      // 4. Fall through to useAuth's own `can()`.
+      const canFn = canRef.current;
+      if (typeof canFn === 'function') {
         try {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            const extracted = parsed
-              .map((bu: any): BusinessUnit | null => {
-                const id = bu.businessUnitId || bu.id || bu;
-                if (!id || id === 'default' || id === 'default-business-unit') return null;
-                return {
-                  id: id,
-                  name: bu.businessUnit?.name || bu.name || 'Unnamed Business Unit',
-                  code: bu.businessUnit?.code || bu.code || '',
-                  type: bu.businessUnit?.type || bu.type || '',
-                  isActive: true,
-                  companyId: bu.businessUnit?.companyId || bu.companyId || '',
-                  companyName: bu.businessUnit?.company?.name || bu.companyName || '',
-                };
-              })
-              .filter((bu): bu is BusinessUnit => bu !== null);
-            units.push(...extracted);
-          }
-        } catch (e) {
-          console.warn('Failed to parse business units from localStorage:', e);
+          return Boolean(canFn(permission));
+        } catch {
+          return false;
         }
       }
-    }
 
-    // 4. From single localStorage entry
-    if (units.length === 0) {
-      const defaultBU = localStorage.getItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
-      if (defaultBU && defaultBU !== 'default' && defaultBU !== 'default-business-unit') {
-        units.push({
-          id: defaultBU,
-          name: 'Default Business Unit',
-          code: 'DEFAULT',
-          type: 'STORE',
-          isActive: true,
-        });
-      }
-    }
+      return false;
+    },
+    [authIsSuperAdmin]
+  );
 
-    return units;
-  }, []);
+  // ────────────────────────────────────────────────────────────
+  // Business units — guard against repeated fetches
+  // ────────────────────────────────────────────────────────────
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [currentBusinessUnit, setCurrentBusinessUnit] =
+    useState<BusinessUnit | null>(null);
+  const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(false);
 
-  const loadBusinessUnits = useCallback(async (): Promise<void> => {
-    if (!isClient) return;
-    if (!user) {
+  const userId = (user as any)?.id ?? null;
+  const fetchedForUserRef = useRef<string | null>(null);
+
+  const refreshBusinessUnits = useCallback(async () => {
+    if (!isClient || !user) {
       setBusinessUnits([]);
       setCurrentBusinessUnit(null);
-      setBusinessUnitsLoaded(true);
       return;
     }
 
     setLoadingBusinessUnits(true);
-
     try {
-      let units = extractBusinessUnits(user);
-
-      // If SUPER_ADMIN and no units found, fetch from the backend API
-      if (isSuperAdmin && units.length === 0) {
-        try {
-          const response = await api.get<any>('/business-units');
-          const list = Array.isArray(response)
-            ? response
-            : Array.isArray(response?.data)
-            ? response.data
-            : Array.isArray(response?.data?.data)
-            ? response.data.data
-            : [];
-
-          if (list.length > 0) {
-            units = list.map((bu: any) => ({
-              id: bu.id,
-              name: bu.name || 'Unnamed Business Unit',
-              code: bu.code || '',
-              type: bu.type || '',
-              isActive: bu.isActive !== false,
-              companyId: bu.companyId || '',
-              companyName: bu.company?.name || '',
-            }));
-          }
-        } catch (e) {
-          console.warn('Failed to fetch business units from API:', e);
-        }
-      }
+      const result = await businessUnitService.getAll({
+        limit: 100,
+        isActive: true,
+      });
+      const units = result.data;
 
       setBusinessUnits(units);
 
-      // Auto-select a business unit
-      if (units.length > 0) {
-        // Try saved selection first
-        const savedId =
-          localStorage.getItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT) ||
-          localStorage.getItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
+      const savedId = getBusinessUnitId();
+      const chosen =
+        units.find((u) => u.id === savedId && u.isActive !== false) ||
+        units.find((u) => u.isActive !== false) ||
+        units[0] ||
+        null;
 
-        let chosen: BusinessUnit | undefined;
-
-        if (savedId) {
-          chosen = units.find(
-            (bu) => bu.id === savedId && bu.isActive !== false
-          );
+      setCurrentBusinessUnit(chosen);
+      if (chosen) {
+        try {
+          localStorage.setItem('businessUnitId', chosen.id);
+        } catch {
+          /* storage may be unavailable */
         }
-
-        if (!chosen) {
-          chosen = units.find((bu) => bu.isActive !== false);
-        }
-
-        if (!chosen) {
-          chosen = units[0];
-        }
-
-        if (chosen) {
-          setCurrentBusinessUnit(chosen);
-          // ✅ Always write the canonical key that api.ts reads
-          localStorage.setItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT, chosen.id);
-          localStorage.setItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT, chosen.id);
-        }
-
-        // ✅ Always persist the units array (no early returns)
-        localStorage.setItem(
-          STORAGE_KEYS.BUSINESS_UNITS,
-          JSON.stringify(units)
-        );
-      } else {
-        setCurrentBusinessUnit(null);
-        // ✅ Clear any stale businessUnitId so nothing wrong is forwarded
-        localStorage.removeItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT);
       }
-    } catch (error) {
-      console.error('Failed to load business units:', error);
+    } catch (err) {
+      console.error('Failed to load business units:', err);
+      setBusinessUnits([]);
+      setCurrentBusinessUnit(null);
     } finally {
       setLoadingBusinessUnits(false);
-      setBusinessUnitsLoaded(true);
     }
-  }, [isClient, user, isSuperAdmin, extractBusinessUnits]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, userId]);
 
-  // Load business units on mount and when user changes
+  // Fetch once per user; do NOT re-run on every render.
   useEffect(() => {
-    if (isClient && user) {
-      loadBusinessUnits();
-    }
-  }, [isClient, user, loadBusinessUnits]);
+    if (!isClient || !user) return;
+    if (fetchedForUserRef.current === userId) return;
+    fetchedForUserRef.current = userId;
+    refreshBusinessUnits();
+  }, [isClient, userId, user, refreshBusinessUnits]);
 
-  // Listen for business unit changes from other tabs
-  useEffect(() => {
-    if (!isClient) return;
-    
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEYS.CURRENT_BUSINESS_UNIT && e.newValue) {
-        const unit = businessUnits.find(bu => bu.id === e.newValue);
-        if (unit) {
-          setCurrentBusinessUnit(unit);
-          localStorage.setItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT, unit.id);
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [isClient, businessUnits]);
+  const getBusinessUnits = useCallback(() => businessUnits, [businessUnits]);
 
-  // ============================================
-  // BUSINESS UNIT FUNCTIONS
-  // ============================================
+  const getCurrentBusinessUnit = useCallback(
+    () => currentBusinessUnit,
+    [currentBusinessUnit]
+  );
 
-  const getBusinessUnits = useCallback((): BusinessUnit[] => {
-    return businessUnits;
-  }, [businessUnits]);
-
-  const getCurrentBusinessUnit = useCallback((): BusinessUnit | null => {
-    return currentBusinessUnit;
-  }, [currentBusinessUnit]);
-
-  const switchBusinessUnit = useCallback(async (id: string): Promise<void> => {
-    const unit = businessUnits.find(bu => bu.id === id);
-    if (!unit) {
-      throw new Error(`Business unit with ID ${id} not found`);
-    }
-    if (unit.isActive === false) {
-      throw new Error('Business unit is inactive');
-    }
-    
-    try {
-      // Update state
+  const switchBusinessUnit = useCallback(
+    async (id: string) => {
+      if (!isValidID(id)) throw new Error(`Invalid business unit ID: "${id}"`);
+      const unit = businessUnits.find((u) => u.id === id);
+      if (!unit) throw new Error(`Business unit ${id} not found`);
+      if (unit.isActive === false) throw new Error('Business unit is inactive');
       setCurrentBusinessUnit(unit);
-      
-      // Persist to localStorage
-      localStorage.setItem(STORAGE_KEYS.CURRENT_BUSINESS_UNIT, unit.id);
-      localStorage.setItem(STORAGE_KEYS.SELECTED_BUSINESS_UNIT, unit.id);
-      
-      // Dispatch event for other components
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('businessUnitChanged', { 
-          detail: { businessUnitId: unit.id, businessUnit: unit } 
-        }));
-      }
-      
-      // Optionally call API to update user's default
       try {
-        await fetch('/api/user/set-default-business-unit', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          },
-          body: JSON.stringify({ businessUnitId: unit.id }),
-        });
-      } catch (e) {
-        // Silently fail - localStorage persistence is enough
-        console.warn('Failed to update default business unit on server:', e);
+        localStorage.setItem('businessUnitId', id);
+      } catch {
+        /* ignore */
       }
-      
-    } catch (error) {
-      console.error('Failed to switch business unit:', error);
-      throw error;
-    }
-  }, [businessUnits]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('businessUnitChanged', {
+            detail: { businessUnitId: id, businessUnit: unit },
+          })
+        );
+      }
+    },
+    [businessUnits]
+  );
 
-  const refreshBusinessUnits = useCallback(async (): Promise<void> => {
-    // Clear cache
-    localStorage.removeItem(STORAGE_KEYS.BUSINESS_UNITS);
-    setBusinessUnitsLoaded(false);
-    await loadBusinessUnits();
-  }, [loadBusinessUnits]);
+  const hasBusinessUnitAccess = useCallback(
+    (businessUnitId: string) => {
+      if (!isValidID(businessUnitId)) return false;
+      // ✅ Authoritative super-admin check first.
+      if (authIsSuperAdmin) return true;
+      if (isSuperAdminRef.current) return true;
+      return businessUnits.some(
+        (u) => u.id === businessUnitId && u.isActive !== false
+      );
+    },
+    [businessUnits, authIsSuperAdmin]
+  );
 
-  const hasBusinessUnitAccess = useCallback((businessUnitId: string): boolean => {
-    if (!businessUnitId) return false;
-    if (isSuperAdmin) return true;
-    return businessUnits.some(bu => bu.id === businessUnitId && bu.isActive !== false);
-  }, [businessUnits, isSuperAdmin]);
+  const getBusinessUnitById = useCallback(
+    (id: string) => businessUnits.find((u) => u.id === id),
+    [businessUnits]
+  );
 
-  const getBusinessUnitById = useCallback((id: string): BusinessUnit | undefined => {
-    return businessUnits.find(bu => bu.id === id);
-  }, [businessUnits]);
+  const isBusinessUnitSelected = useCallback(
+    () => currentBusinessUnit !== null,
+    [currentBusinessUnit]
+  );
 
-  const isBusinessUnitSelected = useCallback((): boolean => {
-    return currentBusinessUnit !== null;
-  }, [currentBusinessUnit]);
+  const getBusinessUnitName = useCallback(
+    (id: string) =>
+      businessUnits.find((u) => u.id === id)?.name ?? 'Unknown Business Unit',
+    [businessUnits]
+  );
 
-  const getBusinessUnitName = useCallback((id: string): string => {
-    const unit = businessUnits.find(bu => bu.id === id);
-    return unit?.name || 'Unknown Business Unit';
-  }, [businessUnits]);
+  // ────────────────────────────────────────────────────────────
+  // Permission surface
+  // ────────────────────────────────────────────────────────────
+  const hasPermissionExact = useCallback(
+    (perm: string) => (isClient ? safeCan(perm) : false),
+    [isClient, safeCan]
+  );
 
-  // ============================================
-  // EXISTING PERMISSION CHECKS (UNCHANGED)
-  // ============================================
+  const hasPermission = hasPermissionExact;
 
-  // Check if user has a specific permission
-  const hasPermission = useCallback((permission: string): boolean => {
-    if (!isClient) return false;
-    if (!user) return false;
-    return can(permission);
-  }, [isClient, user, can]);
+  const hasAnyPermission = useCallback(
+    (ps: string[]) => (isClient ? ps.some((p) => safeCan(p)) : false),
+    [isClient, safeCan]
+  );
 
-  // Check if user has any of the given permissions
-  const hasAnyPermissionFn = useCallback((permissions: string[]): boolean => {
-    if (!isClient) return false;
-    if (!user) return false;
-    return permissions.some(p => can(p));
-  }, [isClient, user, can]);
+  const hasAllPermissions = useCallback(
+    (ps: string[]) => (isClient ? ps.every((p) => safeCan(p)) : false),
+    [isClient, safeCan]
+  );
 
-  // Check if user has all of the given permissions
-  const hasAllPermissionsFn = useCallback((permissions: string[]): boolean => {
-    if (!isClient) return false;
-    if (!user) return false;
-    return permissions.every(p => can(p));
-  }, [isClient, user, can]);
+  // ────────────────────────────────────────────────────────────
+  // Role helpers
+  //
+  // `isSuperAdmin` uses authIsSuperAdmin as the authoritative
+  // signal, but role comparison still works normally for the
+  // other role tiers.
+  // ────────────────────────────────────────────────────────────
+  const isRole = useCallback(
+    (role: string) => (isClient ? userRole === role : false),
+    [isClient, userRole]
+  );
 
-  // Check if user has a specific role
-  const isRole = useCallback((role: UserRole | string): boolean => {
-    if (!isClient) return false;
-    return userRole === role;
-  }, [isClient, userRole]);
+  const isAdminOrAbove = useCallback(
+    () =>
+      isClient
+        ? authIsSuperAdmin || ['SUPER_ADMIN', 'ADMIN'].includes(userRole)
+        : false,
+    [isClient, userRole, authIsSuperAdmin]
+  );
 
-  // Check if user's role is at least the given level
-  const isAtLeast = useCallback((role: UserRole): boolean => {
-    if (!isClient) return false;
-    const roleLevel: Record<UserRole, number> = {
-      [UserRole.USER]: 0,
-      [UserRole.CASHIER]: 1,
-      [UserRole.VIEWER]: 1,
-      [UserRole.EMPLOYEE]: 2,
-      [UserRole.EDITOR]: 3,
-      [UserRole.MANAGER]: 4,
-      [UserRole.ADMIN]: 5,
-      [UserRole.SUPER_ADMIN]: 6,
-    };
-    
-    const userLevel = roleLevel[userRole as UserRole] || 0;
-    const requiredLevel = roleLevel[role] || 0;
-    return userLevel >= requiredLevel;
-  }, [isClient, userRole]);
+  const isManagerOrAbove = useCallback(
+    () =>
+      isClient
+        ? authIsSuperAdmin ||
+          ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole)
+        : false,
+    [isClient, userRole, authIsSuperAdmin]
+  );
 
-  // Check if user is SUPER_ADMIN
-  const isSuperAdminFn = useCallback((): boolean => {
-    if (!isClient) return false;
-    return isSuperAdmin;
-  }, [isClient, isSuperAdmin]);
+  const isEditorOrAbove = useCallback(
+    () =>
+      isClient
+        ? authIsSuperAdmin ||
+          ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EDITOR'].includes(userRole)
+        : false,
+    [isClient, userRole, authIsSuperAdmin]
+  );
 
-  // Check if user is ADMIN or above
-  const isAdminOrAbove = useCallback((): boolean => {
-    if (!isClient) return false;
-    return isAdmin || isSuperAdmin;
-  }, [isClient, isAdmin, isSuperAdmin]);
+  const isViewerOrAbove = useCallback(
+    () =>
+      isClient
+        ? authIsSuperAdmin ||
+          ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EDITOR', 'VIEWER'].includes(
+            userRole
+          )
+        : false,
+    [isClient, userRole, authIsSuperAdmin]
+  );
 
-  // Check if user is MANAGER or above
-  const isManagerOrAbove = useCallback((): boolean => {
-    if (!isClient) return false;
-    return isManager || isAdmin || isSuperAdmin;
-  }, [isClient, isManager, isAdmin, isSuperAdmin]);
+  const isAtLeast = useCallback(
+    (role: string) => {
+      if (!isClient) return false;
+      // ✅ Super-admin is at least every role.
+      if (authIsSuperAdmin) return true;
 
-  // Check if user is EDITOR or above
-  const isEditorOrAbove = useCallback((): boolean => {
-    if (!isClient) return false;
-    return isEditor || isManager || isAdmin || isSuperAdmin;
-  }, [isClient, isEditor, isManager, isAdmin, isSuperAdmin]);
+      const order = [
+        'USER',
+        'CASHIER',
+        'VIEWER',
+        'EMPLOYEE',
+        'EDITOR',
+        'MANAGER',
+        'ADMIN',
+        'SUPER_ADMIN',
+      ];
+      const me = order.indexOf(userRole);
+      const need = order.indexOf(role);
+      return me >= 0 && need >= 0 && me >= need;
+    },
+    [isClient, userRole, authIsSuperAdmin]
+  );
 
-  // Check if user is VIEWER or above
-  const isViewerOrAbove = useCallback((): boolean => {
-    if (!isClient) return false;
-    return isViewer || isEditor || isManager || isAdmin || isSuperAdmin;
-  }, [isClient, isViewer, isEditor, isManager, isAdmin, isSuperAdmin]);
+  // ────────────────────────────────────────────────────────────
+  // Resource helpers
+  // ────────────────────────────────────────────────────────────
+  const canView = useCallback((r: string) => safeCan(`${r}:view`), [safeCan]);
+  const canCreate = useCallback(
+    (r: string) => safeCan(`${r}:create`),
+    [safeCan]
+  );
+  const canEdit = useCallback(
+    (r: string) => safeCan(`${r}:edit`) || safeCan(`${r}:update`),
+    [safeCan]
+  );
+  const canDelete = useCallback(
+    (r: string) => safeCan(`${r}:delete`),
+    [safeCan]
+  );
+  const canManage = useCallback(
+    (r: string) => safeCan(`${r}:manage`),
+    [safeCan]
+  );
+  const canExport = useCallback(() => safeCan('export:create'), [safeCan]);
+  const canImport = useCallback(() => safeCan('import:create'), [safeCan]);
 
-  // Resource-specific permission checks
-  const canView = useCallback((resource: string): boolean => {
-    if (!isClient) return false;
-    return can(`${resource}:view`) || can(`${resource}:read`);
-  }, [isClient, can]);
+  // ────────────────────────────────────────────────────────────
+  // STABLE NAMED CHECKERS
+  //
+  // Every `canX` below is created via `named(...)`, which returns a
+  // module-cached function whose identity never changes across
+  // renders. Components may safely use these in dependency arrays.
+  //
+  // When the backend catalogue gains a permission, add the matching
+  // `named(...)` call here and add the export to the return object.
+  // ────────────────────────────────────────────────────────────
+  const named = useCallback(
+    (p: string) => getNamedChecker(p, safeCan),
+    [safeCan]
+  );
 
-  const canCreate = useCallback((resource: string): boolean => {
-    if (!isClient) return false;
-    return can(`${resource}:create`);
-  }, [isClient, can]);
+  const canManageUsers = named('user:manage');
+  const canViewUsers = named('user:view');
+  const canCreateUsers = named('user:create');
+  const canEditUsers = named('user:edit');
+  const canDeleteUsers = named('user:delete');
+  const canExportUsers = named('user:export');
+  const canActivateUsers = named('user:activate');
+  const canDeactivateUsers = named('user:deactivate');
+  const canUpdateUserRole = named('user:role:update');
 
-  const canEdit = useCallback((resource: string): boolean => {
-    if (!isClient) return false;
-    return can(`${resource}:edit`) || can(`${resource}:update`);
-  }, [isClient, can]);
+  const canManageCategories = named('category:manage');
+  const canViewCategories = named('category:view');
+  const canCreateCategories = named('category:create');
+  const canEditCategories = named('category:edit');
+  const canDeleteCategories = named('category:delete');
 
-  const canDelete = useCallback((resource: string): boolean => {
-    if (!isClient) return false;
-    return can(`${resource}:delete`);
-  }, [isClient, can]);
+  const canManageProducts = named('product:manage');
+  const canViewProducts = named('product:view');
+  const canCreateProducts = named('product:create');
+  const canEditProducts = named('product:edit');
+  const canDeleteProducts = named('product:delete');
+  const canExportProducts = named('product:export');
+  const canImportProducts = named('product:import');
 
-  const canManage = useCallback((resource: string): boolean => {
-    if (!isClient) return false;
-    return can(`${resource}:manage`);
-  }, [isClient, can]);
+  const canManageOrders = named('order:manage');
+  const canViewOrders = named('order:view');
+  const canCreateOrders = named('order:create');
+  const canEditOrders = named('order:edit');
+  const canDeleteOrders = named('order:delete');
+  const canProcessOrders = named('order:process');
+  const canCancelOrders = named('order:cancel');
 
-  // Check if user can export any data
-  const canExport = useCallback((): boolean => {
-    if (!isClient) return false;
-    if (!user) return false;
-    
-    // Super admin can export anything
-    if (isSuperAdmin) return true;
-    
-    // Check for any export permission
-    const exportPermissions = [
-      PERMISSIONS.PRODUCT_EXPORT,
-      PERMISSIONS.REPORT_EXPORT,
-      PERMISSIONS.SALE_EXPORT,
-      PERMISSIONS.USER_EXPORT,
-      PERMISSIONS.INVENTORY_VIEW,
-    ];
-    
-    return exportPermissions.some(p => can(p));
-  }, [isClient, user, can, isSuperAdmin]);
+  const canManageCustomers = named('customer:manage');
+  const canViewCustomers = named('customer:view');
+  const canCreateCustomers = named('customer:create');
+  const canEditCustomers = named('customer:edit');
+  const canDeleteCustomers = named('customer:delete');
 
-  // Check if user can import data
-  const canImport = useCallback((): boolean => {
-    if (!isClient) return false;
-    if (!user) return false;
-    
-    // Super admin can import anything
-    if (isSuperAdmin) return true;
-    
-    // Check for any import permission
-    const importPermissions = [
-      PERMISSIONS.PRODUCT_IMPORT,
-    ];
-    
-    return importPermissions.some(p => can(p));
-  }, [isClient, user, can, isSuperAdmin]);
+  // ────────────────────────────────────────────────────────────
+  // Inventory — mirrors the backend catalogue at
+  // packages/backend/src/permissions/inventory.ts.
+  // If you add a permission there, add the matching checker here.
+  // ────────────────────────────────────────────────────────────
+  const canManageInventory = named('inventory:manage');
+  const canViewInventory = named('inventory:view');
+  const canCreateInventory = named('inventory:create');
+  const canEditInventory = named('inventory:edit');
+  const canDeleteInventory = named('inventory:delete');
+  const canExportInventory = named('inventory:export');
+  const canImportInventory = named('inventory:import');
+  const canAdjustInventory = named('inventory:adjust');
+  const canTransferInventory = named('inventory:transfer');
+  const canIssueInventory = named('inventory:issue');
+  const canRestockInventory = named('inventory:restock');
+  const canViewInventoryLowStock = named('inventory:view_low_stock');
+  const canViewInventoryReports = named('inventory:view_reports');
+  const canViewInventoryAudit = named('inventory:view_audit');
 
-  // Get all permissions for the current user
-  const getPermissions = useCallback((): string[] => {
-    if (!isClient) return [];
-    if (!user) return [];
-    if (user.permissions && user.permissions.length > 0) {
-      return user.permissions;
-    }
-    return ROLE_PERMISSIONS[userRole as UserRole] || [];
-  }, [isClient, user, userRole]);
+  const canManageSales = named('sale:manage');
+  const canViewSales = named('sale:view');
+  const canCreateSales = named('sale:create');
+  const canEditSales = named('sale:edit');
+  const canDeleteSales = named('sale:delete');
+  const canExportSales = named('sale:export');
+  const canPrintSales = named('sale:print');
+  const canEmailSales = named('sale:email');
 
-  // Get all permissions grouped by resource
-  const getPermissionsByResource = useCallback((): Record<string, string[]> => {
-    if (!isClient) return {};
-    const permissions = getPermissions();
+  const canManageReturns = named('return:manage');
+  const canViewReturns = named('return:view');
+  const canCreateReturns = named('return:create');
+  const canEditReturns = named('return:edit');
+  const canDeleteReturns = named('return:delete');
+  const canApproveReturns = named('return:approve');
+  const canRejectReturns = named('return:reject');
+  const canProcessReturns = named('return:process');
+
+  const canManageRefunds = named('refund:manage');
+  const canViewRefunds = named('refund:view');
+  const canCreateRefunds = named('refund:create');
+  const canEditRefunds = named('refund:edit');
+  const canDeleteRefunds = named('refund:delete');
+  const canApproveRefunds = named('refund:approve');
+  const canRejectRefunds = named('refund:reject');
+  const canCompleteRefunds = named('refund:complete');
+
+  const canManageInvoices = named('invoice:manage');
+  const canViewInvoices = named('invoice:view');
+  const canCreateInvoices = named('invoice:create');
+  const canEditInvoices = named('invoice:edit');
+  const canDeleteInvoices = named('invoice:delete');
+  const canSendInvoices = named('invoice:send');
+  const canPrintInvoices = named('invoice:print');
+  const canMarkInvoicePaid = named('invoice:paid');
+  const canVoidInvoices = named('invoice:void');
+  const canCancelInvoices = named('invoice:cancel');
+
+  const canManageReceipts = named('receipt:manage');
+  const canViewReceipts = named('receipt:view');
+  const canCreateReceipts = named('receipt:create');
+  const canEditReceipts = named('receipt:edit');
+  const canDeleteReceipts = named('receipt:delete');
+  const canPrintReceipts = named('receipt:print');
+  const canEmailReceipts = named('receipt:email');
+  const canVoidReceipts = named('receipt:void');
+
+  const canManagePayments = named('payment:manage');
+  const canViewPayments = named('payment:view');
+  const canCreatePayments = named('payment:create');
+  const canRefundPayments = named('payment:refund');
+
+  const canManagePos = named('pos:manage');
+  const canViewPos = named('pos:view');
+  const canCreatePos = named('pos:create');
+  const canPrintPos = named('pos:print');
+
+  const canManageCashRegister = named('cash_register:manage');
+  const canViewCashRegister = named('cash_register:view');
+  const canOpenCashRegister = named('cash_register:open');
+  const canCloseCashRegister = named('cash_register:close');
+
+  const canManageShifts = named('shift:manage');
+  const canViewShifts = named('shift:view');
+  const canStartShift = named('shift:start');
+  const canEndShift = named('shift:end');
+
+  const canManageReports = named('report:manage');
+  const canViewReports = named('report:view');
+  const canCreateReports = named('report:create');
+  const canExportReports = named('report:export');
+
+  const canViewAnalytics = named('analytics:view');
+  const canExportAnalytics = named('analytics:export');
+
+  const canManageSettings = named('settings:manage');
+  const canViewSettings = named('settings:view');
+  const canEditSettings = named('settings:edit');
+
+  const canManageBusinessUnits = named('business_unit:manage');
+  const canViewBusinessUnits = named('business_unit:view');
+  const canCreateBusinessUnits = named('business_unit:create');
+  const canEditBusinessUnits = named('business_unit:edit');
+  const canDeleteBusinessUnits = named('business_unit:delete');
+
+  const canViewSystemLogs = named('system:logs');
+  const canBackupSystem = named('system:backup');
+  const canRestoreSystem = named('system:restore');
+
+  const canViewDashboard = named('dashboard:view');
+  const canManageDashboard = named('dashboard:manage');
+
+  const canManageIntegrations = named('integration:manage');
+  const canViewIntegrations = named('integration:view');
+  const canManageApi = named('api:manage');
+  const canViewApi = named('api:view');
+  const canManageWebhooks = named('webhook:manage');
+  const canViewWebhooks = named('webhook:view');
+
+  const getPermissions = useCallback(() => permissions, [permissions]);
+
+  const getPermissionsByResource = useCallback(() => {
     const grouped: Record<string, string[]> = {};
-    
-    permissions.forEach(permission => {
-      const [resource, action] = permission.split(':');
-      if (!grouped[resource]) {
-        grouped[resource] = [];
-      }
-      if (!grouped[resource].includes(action)) {
+    for (const p of permissions) {
+      const [resource, action] = p.split(':');
+      if (!resource) continue;
+      if (!grouped[resource]) grouped[resource] = [];
+      if (action && !grouped[resource].includes(action)) {
         grouped[resource].push(action);
       }
-    });
-    
+    }
     return grouped;
-  }, [isClient, getPermissions]);
+  }, [permissions]);
 
-  // ============================================
-  // PRE-DEFINED PERMISSION CHECKS (UNCHANGED)
-  // ============================================
-
-  // User Management
-  const canManageUsers = useCallback((): boolean => can(PERMISSIONS.USER_MANAGE), [can]);
-  const canViewUsers = useCallback((): boolean => can(PERMISSIONS.USER_VIEW), [can]);
-  const canCreateUsers = useCallback((): boolean => can(PERMISSIONS.USER_CREATE), [can]);
-  const canEditUsers = useCallback((): boolean => can(PERMISSIONS.USER_EDIT), [can]);
-  const canDeleteUsers = useCallback((): boolean => can(PERMISSIONS.USER_DELETE), [can]);
-  const canExportUsers = useCallback((): boolean => can(PERMISSIONS.USER_EXPORT), [can]);
-  const canActivateUsers = useCallback((): boolean => can(PERMISSIONS.USER_ACTIVATE), [can]);
-  const canDeactivateUsers = useCallback((): boolean => can(PERMISSIONS.USER_DEACTIVATE), [can]);
-  const canUpdateUserRole = useCallback((): boolean => can(PERMISSIONS.USER_ROLE_UPDATE), [can]);
-
-  // Category
-  const canManageCategories = useCallback((): boolean => can(PERMISSIONS.CATEGORY_MANAGE), [can]);
-  const canViewCategories = useCallback((): boolean => can(PERMISSIONS.CATEGORY_VIEW), [can]);
-  const canCreateCategories = useCallback((): boolean => can(PERMISSIONS.CATEGORY_CREATE), [can]);
-  const canEditCategories = useCallback((): boolean => can(PERMISSIONS.CATEGORY_EDIT), [can]);
-  const canDeleteCategories = useCallback((): boolean => can(PERMISSIONS.CATEGORY_DELETE), [can]);
-
-  // Product
-  const canManageProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_MANAGE), [can]);
-  const canViewProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_VIEW), [can]);
-  const canCreateProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_CREATE), [can]);
-  const canEditProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_EDIT), [can]);
-  const canDeleteProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_DELETE), [can]);
-  const canExportProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_EXPORT), [can]);
-  const canImportProducts = useCallback((): boolean => can(PERMISSIONS.PRODUCT_IMPORT), [can]);
-
-  // Orders
-  const canManageOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_MANAGE), [can]);
-  const canViewOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_VIEW), [can]);
-  const canCreateOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_CREATE), [can]);
-  const canEditOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_EDIT), [can]);
-  const canDeleteOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_DELETE), [can]);
-  const canProcessOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_PROCESS), [can]);
-  const canCancelOrders = useCallback((): boolean => can(PERMISSIONS.ORDER_CANCEL), [can]);
-
-  // Customers
-  const canManageCustomers = useCallback((): boolean => can(PERMISSIONS.CUSTOMER_MANAGE), [can]);
-  const canViewCustomers = useCallback((): boolean => can(PERMISSIONS.CUSTOMER_VIEW), [can]);
-  const canCreateCustomers = useCallback((): boolean => can(PERMISSIONS.CUSTOMER_CREATE), [can]);
-  const canEditCustomers = useCallback((): boolean => can(PERMISSIONS.CUSTOMER_EDIT), [can]);
-  const canDeleteCustomers = useCallback((): boolean => can(PERMISSIONS.CUSTOMER_DELETE), [can]);
-
-  // Inventory
-  const canManageInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_MANAGE), [can]);
-  const canViewInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_VIEW), [can]);
-  const canCreateInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_CREATE), [can]);
-  const canEditInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_EDIT), [can]);
-  const canDeleteInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_DELETE), [can]);
-  const canAdjustInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_ADJUST), [can]);
-  const canTransferInventory = useCallback((): boolean => can(PERMISSIONS.INVENTORY_TRANSFER), [can]);
-
-  // Sales
-  const canManageSales = useCallback((): boolean => can(PERMISSIONS.SALE_MANAGE), [can]);
-  const canViewSales = useCallback((): boolean => can(PERMISSIONS.SALE_VIEW), [can]);
-  const canCreateSales = useCallback((): boolean => can(PERMISSIONS.SALE_CREATE), [can]);
-  const canEditSales = useCallback((): boolean => can(PERMISSIONS.SALE_EDIT), [can]);
-  const canDeleteSales = useCallback((): boolean => can(PERMISSIONS.SALE_DELETE), [can]);
-  const canExportSales = useCallback((): boolean => can(PERMISSIONS.SALE_EXPORT), [can]);
-  const canPrintSales = useCallback((): boolean => can(PERMISSIONS.SALE_PRINT), [can]);
-  const canEmailSales = useCallback((): boolean => can(PERMISSIONS.SALE_EMAIL), [can]);
-
-  // Returns
-  const canManageReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_MANAGE), [can]);
-  const canViewReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_VIEW), [can]);
-  const canCreateReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_CREATE), [can]);
-  const canEditReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_EDIT), [can]);
-  const canDeleteReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_DELETE), [can]);
-  const canApproveReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_APPROVE), [can]);
-  const canRejectReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_REJECT), [can]);
-  const canProcessReturns = useCallback((): boolean => can(PERMISSIONS.RETURN_PROCESS), [can]);
-
-  // Refunds
-  const canManageRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_MANAGE), [can]);
-  const canViewRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_VIEW), [can]);
-  const canCreateRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_CREATE), [can]);
-  const canEditRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_EDIT), [can]);
-  const canDeleteRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_DELETE), [can]);
-  const canApproveRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_APPROVE), [can]);
-  const canRejectRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_REJECT), [can]);
-  const canCompleteRefunds = useCallback((): boolean => can(PERMISSIONS.REFUND_COMPLETE), [can]);
-
-  // Invoices
-  const canManageInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_MANAGE), [can]);
-  const canViewInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_VIEW), [can]);
-  const canCreateInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_CREATE), [can]);
-  const canEditInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_EDIT), [can]);
-  const canDeleteInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_DELETE), [can]);
-  const canSendInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_SEND), [can]);
-  const canPrintInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_PRINT), [can]);
-  const canMarkInvoicePaid = useCallback((): boolean => can(PERMISSIONS.INVOICE_PAID), [can]);
-  const canVoidInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_VOID), [can]);
-  const canCancelInvoices = useCallback((): boolean => can(PERMISSIONS.INVOICE_CANCEL), [can]);
-
-  // Receipts
-  const canManageReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_MANAGE), [can]);
-  const canViewReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_VIEW), [can]);
-  const canCreateReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_CREATE), [can]);
-  const canEditReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_EDIT), [can]);
-  const canDeleteReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_DELETE), [can]);
-  const canPrintReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_PRINT), [can]);
-  const canEmailReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_EMAIL), [can]);
-  const canVoidReceipts = useCallback((): boolean => can(PERMISSIONS.RECEIPT_VOID), [can]);
-
-  // Payments
-  const canManagePayments = useCallback((): boolean => can(PERMISSIONS.PAYMENT_MANAGE), [can]);
-  const canViewPayments = useCallback((): boolean => can(PERMISSIONS.PAYMENT_VIEW), [can]);
-  const canCreatePayments = useCallback((): boolean => can(PERMISSIONS.PAYMENT_CREATE), [can]);
-  const canRefundPayments = useCallback((): boolean => can(PERMISSIONS.PAYMENT_REFUND), [can]);
-
-  // POS
-  const canManagePos = useCallback((): boolean => can(PERMISSIONS.POS_MANAGE), [can]);
-  const canViewPos = useCallback((): boolean => can(PERMISSIONS.POS_VIEW), [can]);
-  const canCreatePos = useCallback((): boolean => can(PERMISSIONS.POS_CREATE), [can]);
-  const canPrintPos = useCallback((): boolean => can(PERMISSIONS.POS_PRINT), [can]);
-
-  // Cash Register
-  const canManageCashRegister = useCallback((): boolean => can(PERMISSIONS.CASH_REGISTER_MANAGE), [can]);
-  const canViewCashRegister = useCallback((): boolean => can(PERMISSIONS.CASH_REGISTER_VIEW), [can]);
-  const canOpenCashRegister = useCallback((): boolean => can(PERMISSIONS.CASH_REGISTER_OPEN), [can]);
-  const canCloseCashRegister = useCallback((): boolean => can(PERMISSIONS.CASH_REGISTER_CLOSE), [can]);
-
-  // Shifts
-  const canManageShifts = useCallback((): boolean => can(PERMISSIONS.SHIFT_MANAGE), [can]);
-  const canViewShifts = useCallback((): boolean => can(PERMISSIONS.SHIFT_VIEW), [can]);
-  const canStartShift = useCallback((): boolean => can(PERMISSIONS.SHIFT_START), [can]);
-  const canEndShift = useCallback((): boolean => can(PERMISSIONS.SHIFT_END), [can]);
-
-  // Reports
-  const canManageReports = useCallback((): boolean => can(PERMISSIONS.REPORT_MANAGE), [can]);
-  const canViewReports = useCallback((): boolean => can(PERMISSIONS.REPORT_VIEW), [can]);
-  const canCreateReports = useCallback((): boolean => can(PERMISSIONS.REPORT_CREATE), [can]);
-  const canExportReports = useCallback((): boolean => can(PERMISSIONS.REPORT_EXPORT), [can]);
-
-  // Analytics
-  const canViewAnalytics = useCallback((): boolean => can(PERMISSIONS.ANALYTICS_VIEW), [can]);
-  const canExportAnalytics = useCallback((): boolean => can(PERMISSIONS.ANALYTICS_EXPORT), [can]);
-
-  // Settings
-  const canManageSettings = useCallback((): boolean => can(PERMISSIONS.SETTINGS_MANAGE), [can]);
-  const canViewSettings = useCallback((): boolean => can(PERMISSIONS.SETTINGS_VIEW), [can]);
-  const canEditSettings = useCallback((): boolean => can(PERMISSIONS.SETTINGS_EDIT), [can]);
-
-  // Business Units
-  const canManageBusinessUnits = useCallback((): boolean => can(PERMISSIONS.BUSINESS_UNIT_MANAGE), [can]);
-  const canViewBusinessUnits = useCallback((): boolean => can(PERMISSIONS.BUSINESS_UNIT_VIEW), [can]);
-  const canCreateBusinessUnits = useCallback((): boolean => can(PERMISSIONS.BUSINESS_UNIT_CREATE), [can]);
-  const canEditBusinessUnits = useCallback((): boolean => can(PERMISSIONS.BUSINESS_UNIT_EDIT), [can]);
-  const canDeleteBusinessUnits = useCallback((): boolean => can(PERMISSIONS.BUSINESS_UNIT_DELETE), [can]);
-
-  // System
-  const canViewSystemLogs = useCallback((): boolean => can(PERMISSIONS.SYSTEM_LOGS), [can]);
-  const canBackupSystem = useCallback((): boolean => can(PERMISSIONS.SYSTEM_BACKUP), [can]);
-  const canRestoreSystem = useCallback((): boolean => can(PERMISSIONS.SYSTEM_RESTORE), [can]);
-
-  // Dashboard
-  const canViewDashboard = useCallback((): boolean => can(PERMISSIONS.DASHBOARD_VIEW), [can]);
-  const canManageDashboard = useCallback((): boolean => can(PERMISSIONS.DASHBOARD_MANAGE), [can]);
-
-  // Integrations
-  const canManageIntegrations = useCallback((): boolean => can(PERMISSIONS.INTEGRATION_MANAGE), [can]);
-  const canViewIntegrations = useCallback((): boolean => can(PERMISSIONS.INTEGRATION_VIEW), [can]);
-  const canManageApi = useCallback((): boolean => can(PERMISSIONS.API_MANAGE), [can]);
-  const canViewApi = useCallback((): boolean => can(PERMISSIONS.API_VIEW), [can]);
-  const canManageWebhooks = useCallback((): boolean => can(PERMISSIONS.WEBHOOK_MANAGE), [can]);
-  const canViewWebhooks = useCallback((): boolean => can(PERMISSIONS.WEBHOOK_VIEW), [can]);
-
-  // ============================================
-  // RETURN
-  // ============================================
+  // IMPORTANT: isLoading should NOT include loadingBusinessUnits,
+  // otherwise POS is stuck on "Checking permissions..." until BUs
+  // finish loading. BUs load async and are not required for the
+  // permission gate.
+  //
+  // ⚠️ Also do NOT wait for `isSuperAdmin` to be true before
+  //    reporting `isLoading: false`. Once auth is settled, the
+  //    permission gate is ready to answer — even if the answer
+  //    is "no". Waiting longer would re-introduce the flash.
+  const isLoading = authLoading || !isClient;
 
   return {
-    // Loading state
-    isLoading: authLoading || !isClient || loadingBusinessUnits,
-    
-    // Basic permission checks
+    isLoading,
+
     hasPermission,
-    hasAnyPermission: hasAnyPermissionFn,
-    hasAllPermissions: hasAllPermissionsFn,
-    
-    // Role checks
+    hasPermissionExact,
+    hasAnyPermission,
+    hasAllPermissions,
+
+    isSuperAdmin,
     isRole,
     isAtLeast,
-    isSuperAdmin: isSuperAdminFn,
     isAdminOrAbove,
     isManagerOrAbove,
     isEditorOrAbove,
     isViewerOrAbove,
-    
-    // Resource-specific permission checks
+
     canView,
     canCreate,
     canEdit,
@@ -960,8 +670,7 @@ export function usePermission(): UsePermissionReturn {
     canManage,
     canExport,
     canImport,
-    
-    // Pre-defined permission checks - User Management
+
     canManageUsers,
     canViewUsers,
     canCreateUsers,
@@ -971,15 +680,13 @@ export function usePermission(): UsePermissionReturn {
     canActivateUsers,
     canDeactivateUsers,
     canUpdateUserRole,
-    
-    // Pre-defined permission checks - Category
+
     canManageCategories,
     canViewCategories,
     canCreateCategories,
     canEditCategories,
     canDeleteCategories,
-    
-    // Pre-defined permission checks - Product
+
     canManageProducts,
     canViewProducts,
     canCreateProducts,
@@ -987,8 +694,7 @@ export function usePermission(): UsePermissionReturn {
     canDeleteProducts,
     canExportProducts,
     canImportProducts,
-    
-    // Pre-defined permission checks - Orders
+
     canManageOrders,
     canViewOrders,
     canCreateOrders,
@@ -996,24 +702,31 @@ export function usePermission(): UsePermissionReturn {
     canDeleteOrders,
     canProcessOrders,
     canCancelOrders,
-    
-    // Pre-defined permission checks - Customers
+
     canManageCustomers,
     canViewCustomers,
     canCreateCustomers,
     canEditCustomers,
     canDeleteCustomers,
-    
-    // Pre-defined permission checks - Inventory
+
+    // ────────────────────────────────────────────────────────────
+    // Inventory — mirrors packages/backend/src/permissions/inventory.ts
+    // ────────────────────────────────────────────────────────────
     canManageInventory,
     canViewInventory,
     canCreateInventory,
     canEditInventory,
     canDeleteInventory,
+    canExportInventory,
+    canImportInventory,
     canAdjustInventory,
     canTransferInventory,
-    
-    // Pre-defined permission checks - Sales
+    canIssueInventory,
+    canRestockInventory,
+    canViewInventoryLowStock,
+    canViewInventoryReports,
+    canViewInventoryAudit,
+
     canManageSales,
     canViewSales,
     canCreateSales,
@@ -1022,8 +735,7 @@ export function usePermission(): UsePermissionReturn {
     canExportSales,
     canPrintSales,
     canEmailSales,
-    
-    // Pre-defined permission checks - Returns
+
     canManageReturns,
     canViewReturns,
     canCreateReturns,
@@ -1032,8 +744,7 @@ export function usePermission(): UsePermissionReturn {
     canApproveReturns,
     canRejectReturns,
     canProcessReturns,
-    
-    // Pre-defined permission checks - Refunds
+
     canManageRefunds,
     canViewRefunds,
     canCreateRefunds,
@@ -1042,8 +753,7 @@ export function usePermission(): UsePermissionReturn {
     canApproveRefunds,
     canRejectRefunds,
     canCompleteRefunds,
-    
-    // Pre-defined permission checks - Invoices
+
     canManageInvoices,
     canViewInvoices,
     canCreateInvoices,
@@ -1054,8 +764,7 @@ export function usePermission(): UsePermissionReturn {
     canMarkInvoicePaid,
     canVoidInvoices,
     canCancelInvoices,
-    
-    // Pre-defined permission checks - Receipts
+
     canManageReceipts,
     canViewReceipts,
     canCreateReceipts,
@@ -1064,75 +773,62 @@ export function usePermission(): UsePermissionReturn {
     canPrintReceipts,
     canEmailReceipts,
     canVoidReceipts,
-    
-    // Pre-defined permission checks - Payments
+
     canManagePayments,
     canViewPayments,
     canCreatePayments,
     canRefundPayments,
-    
-    // Pre-defined permission checks - POS
+
     canManagePos,
     canViewPos,
     canCreatePos,
     canPrintPos,
-    
-    // Pre-defined permission checks - Cash Register
+
     canManageCashRegister,
     canViewCashRegister,
     canOpenCashRegister,
     canCloseCashRegister,
-    
-    // Pre-defined permission checks - Shifts
+
     canManageShifts,
     canViewShifts,
     canStartShift,
     canEndShift,
-    
-    // Pre-defined permission checks - Reports
+
     canManageReports,
     canViewReports,
     canCreateReports,
     canExportReports,
-    
-    // Pre-defined permission checks - Analytics
+
     canViewAnalytics,
     canExportAnalytics,
-    
-    // Pre-defined permission checks - Settings
+
     canManageSettings,
     canViewSettings,
     canEditSettings,
-    
-    // Pre-defined permission checks - Business Units
+
     canManageBusinessUnits,
     canViewBusinessUnits,
     canCreateBusinessUnits,
     canEditBusinessUnits,
     canDeleteBusinessUnits,
-    
-    // Pre-defined permission checks - System
+
     canViewSystemLogs,
     canBackupSystem,
     canRestoreSystem,
-    
-    // Pre-defined permission checks - Dashboard
+
     canViewDashboard,
     canManageDashboard,
-    
-    // Pre-defined permission checks - Integrations
+
     canManageIntegrations,
     canViewIntegrations,
     canManageApi,
     canViewApi,
     canManageWebhooks,
     canViewWebhooks,
-    
-    // Utility functions
+
     getPermissions,
     getPermissionsByResource,
-    
-    // Business Unit functions
+
     getBusinessUnits,
     getCurrentBusinessUnit,
     switchBusinessUnit,
@@ -1141,80 +837,30 @@ export function usePermission(): UsePermissionReturn {
     getBusinessUnitById,
     isBusinessUnitSelected,
     getBusinessUnitName,
-    
-    // User info
+
+    userPermissions,
+
     user,
     userRole,
+    permissions,
   };
 }
 
-// Also export as a named hook for convenience
 export { usePermission as usePermissions };
 
-// Export a convenience hook for components
 export function useCan(permission: string): boolean {
-  const { hasPermission } = usePermission();
-  return hasPermission(permission);
+  const { hasPermissionExact } = usePermission();
+  return hasPermissionExact(permission);
 }
 
-// Export a convenience hook for checking multiple permissions
 export function useCanAny(permissions: string[]): boolean {
   const { hasAnyPermission } = usePermission();
   return hasAnyPermission(permissions);
 }
 
-// Export a convenience hook for checking all permissions
 export function useCanAll(permissions: string[]): boolean {
   const { hasAllPermissions } = usePermission();
   return hasAllPermissions(permissions);
 }
 
-// ============================================
-// BUSINESS UNIT SPECIFIC HOOK
-// ============================================
-
-export function useBusinessUnitContext(): BusinessUnitContextType {
-  const {
-    getBusinessUnits,
-    getCurrentBusinessUnit,
-    switchBusinessUnit,
-    refreshBusinessUnits,
-    hasBusinessUnitAccess,
-    getBusinessUnitById,
-    isLoading,
-  } = usePermission();
-
-  return {
-    businessUnits: getBusinessUnits(),
-    currentBusinessUnit: getCurrentBusinessUnit(),
-    loading: isLoading,
-    switchBusinessUnit,
-    refreshBusinessUnits,
-    hasBusinessUnitAccess,
-    getBusinessUnitById,
-  };
-}
-
-// ============================================
-// BUSINESS UNIT SELECTOR HOOK
-// ============================================
-
-export function useBusinessUnitSelector() {
-  const {
-    getBusinessUnits,
-    getCurrentBusinessUnit,
-    switchBusinessUnit,
-    isBusinessUnitSelected,
-    getBusinessUnitName,
-    isLoading,
-  } = usePermission();
-
-  return {
-    businessUnits: getBusinessUnits(),
-    currentBusinessUnit: getCurrentBusinessUnit(),
-    isSelected: isBusinessUnitSelected(),
-    switchBusinessUnit,
-    getBusinessUnitName,
-    isLoading,
-  };
-}
+export type { BusinessUnit };

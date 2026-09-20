@@ -2,13 +2,11 @@
 
 import { Router } from 'express';
 import { productController } from '../controllers/productController.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { requireInventoryPermission } from '../middleware/inventoryPermissions.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import {
-  createProductSchema,
   updateProductSchema,
-  searchParamsSchema,
   createCategorySchema,
   updateCategorySchema,
   createSupplierSchema,
@@ -26,14 +24,107 @@ import {
 const router = Router();
 
 // ============================================
-// 🔥 AUTHENTICATION MIDDLEWARE
-// All product routes require authentication
+// PUBLIC ROUTES — no auth required
+// ============================================
+//
+// ⚠️ ORDER MATTERS. Express matches top-to-bottom. Every static
+//    sub-path under `/public/*` MUST be declared BEFORE the dynamic
+//    `/public/:id` route, or a request to `/public/categories`
+//    resolves to `getPublicProductById('categories')` and returns
+//    `500 Invalid product ID format`.
+//
+// Everything below `router.use(requireAuth)` inherits the auth
+// middleware and must NOT be relied on for anonymous storefront
+// traffic.
+
+/**
+ * Health check for the products route.
+ * GET /products/health
+ */
+router.get('/health', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Products route is healthy',
+    timestamp: new Date().toISOString(),
+    routesCount: 73,
+  });
+});
+
+/**
+ * Public: list products (auto-hides out-of-stock items).
+ * GET /products/public
+ */
+router.get('/public', productController.getPublicProducts);
+
+/**
+ * Public: categories for the storefront.
+ * GET /products/public/categories
+ *
+ * ⚠️ MUST come before `/public/:id`.
+ */
+router.get(
+  '/public/categories',
+  productController.getPublicCategories,
+);
+
+/**
+ * Public: products inside a public category.
+ * GET /products/public/categories/:id/products
+ *
+ * ⚠️ MUST come before `/public/:id`.
+ */
+router.get(
+  '/public/categories/:id/products',
+  productController.getPublicCategoryProducts,
+);
+
+/**
+ * Public: featured products.
+ * GET /products/public/featured
+ */
+router.get(
+  '/public/featured',
+  productController.getPublicFeatured,
+);
+
+/**
+ * Public: new arrivals.
+ * GET /products/public/new-arrivals
+ */
+router.get(
+  '/public/new-arrivals',
+  productController.getPublicNewArrivals,
+);
+
+/**
+ * Public: search.
+ * GET /products/public/search
+ */
+router.get(
+  '/public/search',
+  productController.getPublicSearch,
+);
+
+/**
+ * Public: single product by id.
+ * GET /products/public/:id
+ *
+ * ⚠️ MUST be the LAST `/public/*` route declared. Anything after
+ *    this is unreachable for anonymous requests.
+ */
+router.get(
+  '/public/:id',
+  productController.getPublicProductById,
+);
+
+// ============================================
+// AUTH — everything below requires a token
 // ============================================
 
 router.use(requireAuth);
 
 // ============================================
-// 🔥 DEBUG ROUTE (Development only)
+// DEBUG (development only)
 // ============================================
 
 if (process.env.NODE_ENV !== 'production') {
@@ -42,994 +133,831 @@ if (process.env.NODE_ENV !== 'production') {
     res.json({
       success: true,
       message: 'Products route is working',
-      user: user ? {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        businessUnitId: user.businessUnitId,
-        companyId: user.companyId,
-      } : null,
+      user: user
+        ? {
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            businessUnitId: user.businessUnitId,
+            companyId: user.companyId,
+          }
+        : null,
       timestamp: new Date().toISOString(),
-      routes: [
-        'GET /products',
-        'GET /products/:id',
-        'GET /products/sku/:sku',
-        'GET /products/barcode/:barcode',
-        'GET /products/check-sku/:sku',
-        'POST /products',
-        'PUT /products/:id',
-        'DELETE /products/:id',
-        'POST /products/:id/unlink-inventory',
-        'GET /products/featured',
-        'GET /products/popular',
-        'GET /products/new-arrivals',
-        'GET /products/search',
-        'GET /products/tags',
-        'GET /products/statistics',
-        'GET /products/no-barcode',
-        'GET /products/:id/related',
-        'POST /products/:id/barcode',
-        'POST /products/barcode/generate',
-        'GET /products/:id/barcode',
-        'GET /products/:id/barcode/image',
-        'GET /products/:id/qrcode',
-        'POST /products/barcode/image',
-        'POST /products/qrcode',
-        'POST /products/:id/barcode/associate',
-        'POST /products/barcode/validate',
-        'POST /products/barcode/bulk-generate',
-        'POST /products/barcode/scan',
-        'POST /products/:id/variants',
-        'POST /products/:id/variants/bulk',
-        'GET /products/:id/variants',
-        'GET /products/variants/:variantId',
-        'GET /products/variants/barcode/:barcode',
-        'GET /products/variants/sku/:sku',
-        'PUT /products/variants/:variantId',
-        'DELETE /products/variants/:variantId',
-        'PATCH /products/variants/:variantId/stock',
-        'POST /products/variants/bulk/delete',
-        'GET /products/:id/reviews',
-        'GET /products/:id/reviews/stats',
-        'GET /products/:id/reviews/export',
-        'POST /products/:id/reviews',
-        'PUT /products/reviews/:reviewId',
-        'DELETE /products/reviews/:reviewId',
-        'PATCH /products/reviews/:reviewId/verify',
-        'POST /products/reviews/:reviewId/helpful',
-        'POST /products/reviews/:reviewId/report',
-        'GET /products/categories',
-        'GET /products/categories/tree',
-        'GET /products/categories/:id',
-        'GET /products/categories/:id/products',
-        'POST /products/categories',
-        'PUT /products/categories/:id',
-        'DELETE /products/categories/:id',
-        'GET /products/suppliers',
-        'GET /products/suppliers/:id',
-        'GET /products/suppliers/:id/products',
-        'POST /products/suppliers',
-        'PUT /products/suppliers/:id',
-        'DELETE /products/suppliers/:id',
-        'POST /products/bulk',
-        'POST /products/bulk/delete',
-        'POST /products/bulk/activate',
-        'POST /products/bulk/deactivate',
-        'POST /products/bulk/update-prices',
-        'POST /products/bulk/update-stock',
-        'POST /products/wishlist/:productId',
-        'GET /products/wishlist',
-        'GET /products/wishlist/:productId/check',
-        'GET /products/wishlist/count',
-        'GET /products/wishlist/ids',
-        'DELETE /products/wishlist',
-        'POST /products/recently-viewed/:productId',
-        'GET /products/recently-viewed',
-        'DELETE /products/recently-viewed',
-        'GET /products/public',
-        'POST /products/compare',
-        'GET /products/export',
-        'POST /products/import',
-        'GET /products/import/template',
-        'GET /products/health',
-      ],
     });
   });
 }
 
 // ============================================
-// 🔥 IMPORTANT: Route Order Matters!
-// Static routes MUST come before dynamic routes
+// AUTHENTICATED ROUTES — static before dynamic
 // ============================================
+//
+// Every static single-segment or multi-segment path (e.g.
+// `/featured`, `/categories/tree`, `/variants/barcode/:barcode`)
+// MUST be declared before any dynamic sibling (`/:id`,
+// `/categories/:id`, `/variants/:variantId`). Otherwise Express
+// resolves the dynamic one first.
 
 // ============================================
-// 🔥 HEALTH CHECK
-// ============================================
-
-/**
- * Health check for products route
- * GET /products/health
- */
-router.get(
-  '/health',
-  requireInventoryPermission('inventory:view'),
-  (req: any, res: any) => {
-    res.json({
-      success: true,
-      message: 'Products route is healthy',
-      timestamp: new Date().toISOString(),
-      routesCount: 73,
-    });
-  }
-);
-
-// ============================================
-// 🔥 SKU CHECK ENDPOINT
+// SKU CHECK
 // ============================================
 
 /**
- * Check if SKU exists
+ * Check if a SKU already exists.
  * GET /products/check-sku/:sku
  * Query: ?businessUnitId=xxx&excludeProductId=xxx
  */
 router.get(
   '/check-sku/:sku',
   requireInventoryPermission('inventory:view'),
-  productController.checkSKUExists
+  productController.checkSKUExists,
 );
 
 // ============================================
-// 🔥 STATIC PRODUCT ENDPOINTS (Must come before /:id)
+// STATIC PRODUCT LISTS
 // ============================================
 
 /**
- * Get all products with filtering and pagination
+ * List products with filtering and pagination.
  * GET /products
  */
 router.get(
   '/',
   requireInventoryPermission('inventory:view'),
-  productController.getAllProducts
+  productController.getAllProducts,
 );
 
 /**
- * Get featured products
+ * Featured products.
  * GET /products/featured
  */
 router.get(
   '/featured',
   requireInventoryPermission('inventory:view'),
-  productController.getFeaturedProducts
+  productController.getFeaturedProducts,
 );
 
 /**
- * Get popular products
+ * Popular products.
  * GET /products/popular
  */
 router.get(
   '/popular',
   requireInventoryPermission('inventory:view'),
-  productController.getPopularProducts
+  productController.getPopularProducts,
 );
 
 /**
- * Get new arrivals
+ * Newly arrived products.
  * GET /products/new-arrivals
  */
 router.get(
   '/new-arrivals',
   requireInventoryPermission('inventory:view'),
-  productController.getNewArrivals
+  productController.getNewArrivals,
 );
 
 /**
- * Search products
+ * Full-text search.
  * GET /products/search
  */
 router.get(
   '/search',
   requireInventoryPermission('inventory:view'),
-  productController.searchProducts
+  productController.searchProducts,
 );
 
 /**
- * Get product tags
+ * Distinct product tags with counts.
  * GET /products/tags
  */
 router.get(
   '/tags',
   requireInventoryPermission('inventory:view'),
-  productController.getTags
+  productController.getTags,
 );
 
 /**
- * Get product statistics
+ * Aggregate product statistics.
  * GET /products/statistics
  */
 router.get(
   '/statistics',
   requireInventoryPermission('inventory:view'),
-  productController.getProductStatistics
+  productController.getProductStatistics,
 );
 
 /**
- * Get products without barcode
+ * Products missing a barcode.
  * GET /products/no-barcode
  */
 router.get(
   '/no-barcode',
   requireInventoryPermission('inventory:view'),
-  productController.getProductsWithoutBarcode
+  productController.getProductsWithoutBarcode,
 );
 
 /**
- * Get public products (auto-hides out of stock)
- * GET /products/public
- * ✅ Public endpoint - no auth required
- */
-router.get(
-  '/public',
-  productController.getPublicProducts
-);
-
-/**
- * Search by SKU - must come before /:id
+ * Look up a product by SKU.
  * GET /products/sku/:sku
  */
 router.get(
   '/sku/:sku',
   requireInventoryPermission('inventory:view'),
-  productController.getProductBySku
+  productController.getProductBySku,
 );
 
 /**
- * Search by barcode - must come before /:id
+ * Look up a product by barcode.
  * GET /products/barcode/:barcode
  */
 router.get(
   '/barcode/:barcode',
   requireInventoryPermission('inventory:view'),
-  productController.getProductByBarcode
+  productController.getProductByBarcode,
 );
 
 // ============================================
-// 🔥 BARCODE STATIC ENDPOINTS (Must come before /:id)
+// BARCODE UTILITIES
 // ============================================
 
 /**
- * Generate unique barcode (without product)
+ * Generate a unique barcode without associating it to a product.
  * POST /products/barcode/generate
  */
 router.post(
   '/barcode/generate',
   requireInventoryPermission('inventory:edit'),
-  productController.generateUniqueBarcode
+  productController.generateUniqueBarcode,
 );
 
 /**
- * Generate barcode image from string
+ * Render a barcode image from a string.
  * POST /products/barcode/image
  */
 router.post(
   '/barcode/image',
   requireInventoryPermission('inventory:view'),
-  productController.generateBarcodeImage
+  productController.generateBarcodeImage,
 );
 
 /**
- * Generate QR code from data
+ * Render a QR code from arbitrary data.
  * POST /products/qrcode
  */
 router.post(
   '/qrcode',
   requireInventoryPermission('inventory:view'),
-  productController.generateQRCode
+  productController.generateQRCode,
 );
 
 /**
- * Validate barcode uniqueness
+ * Check whether a barcode is available.
  * POST /products/barcode/validate
  */
 router.post(
   '/barcode/validate',
   requireInventoryPermission('inventory:view'),
   validateRequest(validateBarcodeSchema),
-  productController.validateBarcode
+  productController.validateBarcode,
 );
 
 /**
- * Bulk generate barcodes
+ * Generate barcodes for a batch of products.
  * POST /products/barcode/bulk-generate
  */
 router.post(
   '/barcode/bulk-generate',
   requireInventoryPermission('inventory:edit'),
-  productController.bulkGenerateBarcodes
+  productController.bulkGenerateBarcodes,
 );
 
 /**
- * Scan barcode
+ * Resolve a barcode (or variant SKU) to a product / variant.
  * POST /products/barcode/scan
  */
 router.post(
   '/barcode/scan',
   requireInventoryPermission('inventory:view'),
-  productController.scanBarcode
+  productController.scanBarcode,
 );
 
 // ============================================
-// 🔥 VARIANT STATIC ENDPOINTS (Must come before /:id)
+// VARIANTS — static paths MUST come first
 // ============================================
+//
+// `/variants/barcode/:barcode` and `/variants/sku/:sku` are
+// two-segment paths; `/variants/:variantId` is one segment. If the
+// dynamic one is declared first, the two-segment lookups are
+// unreachable.
+//
+// Order below: barcode → sku → bulk → :variantId.
 
 /**
- * Get variant by ID
- * GET /products/variants/:variantId
- */
-router.get(
-  '/variants/:variantId',
-  requireInventoryPermission('inventory:view'),
-  productController.getVariantById
-);
-
-/**
- * Get variant by barcode (or SKU)
+ * Variant by barcode.
  * GET /products/variants/barcode/:barcode
  */
 router.get(
   '/variants/barcode/:barcode',
   requireInventoryPermission('inventory:view'),
-  productController.getVariantByBarcode
+  productController.getVariantByBarcode,
 );
 
 /**
- * Get variant by SKU
+ * Variant by SKU.
  * GET /products/variants/sku/:sku
  */
 router.get(
   '/variants/sku/:sku',
   requireInventoryPermission('inventory:view'),
-  productController.getVariantBySku
+  productController.getVariantBySku,
 );
 
 /**
- * Update a variant
+ * Delete variants in bulk.
+ * POST /products/variants/bulk/delete
+ */
+router.post(
+  '/variants/bulk/delete',
+  requireInventoryPermission('inventory:delete'),
+  productController.bulkDeleteVariants,
+);
+
+/**
+ * Variant by id.
+ * GET /products/variants/:variantId
+ */
+router.get(
+  '/variants/:variantId',
+  requireInventoryPermission('inventory:view'),
+  productController.getVariantById,
+);
+
+/**
+ * Update a variant.
  * PUT /products/variants/:variantId
  */
 router.put(
   '/variants/:variantId',
   requireInventoryPermission('inventory:edit'),
   validateRequest(updateVariantSchema),
-  productController.updateVariant
+  productController.updateVariant,
 );
 
 /**
- * Delete a variant
+ * Delete a variant.
  * DELETE /products/variants/:variantId
  */
 router.delete(
   '/variants/:variantId',
   requireInventoryPermission('inventory:delete'),
-  productController.deleteVariant
+  productController.deleteVariant,
 );
 
 /**
- * Update variant stock
+ * Set a variant's stock to an exact quantity.
  * PATCH /products/variants/:variantId/stock
  */
 router.patch(
   '/variants/:variantId/stock',
   requireInventoryPermission('inventory:edit'),
   validateRequest(updateVariantStockSchema),
-  productController.updateVariantStock
-);
-
-/**
- * Bulk delete variants
- * POST /products/variants/bulk/delete
- */
-router.post(
-  '/variants/bulk/delete',
-  requireInventoryPermission('inventory:delete'),
-  productController.bulkDeleteVariants
+  productController.updateVariantStock,
 );
 
 // ============================================
-// 🔥 REVIEW STATIC ENDPOINTS (Must come before /:id)
+// REVIEWS — static single-segment routes
 // ============================================
 
 /**
- * Update product review
+ * Update a review.
  * PUT /products/reviews/:reviewId
  */
 router.put(
   '/reviews/:reviewId',
   requireInventoryPermission('inventory:edit'),
-  productController.updateProductReview
+  productController.updateProductReview,
 );
 
 /**
- * Delete product review
+ * Delete a review.
  * DELETE /products/reviews/:reviewId
  */
 router.delete(
   '/reviews/:reviewId',
   requireInventoryPermission('inventory:delete'),
-  productController.deleteProductReview
+  productController.deleteProductReview,
 );
 
 /**
- * Verify product review
+ * Mark a review as verified.
  * PATCH /products/reviews/:reviewId/verify
  */
 router.patch(
   '/reviews/:reviewId/verify',
   requireInventoryPermission('inventory:edit'),
-  productController.verifyReview
+  productController.verifyReview,
 );
 
 /**
- * Mark review as helpful
+ * Mark a review as helpful.
  * POST /products/reviews/:reviewId/helpful
  */
 router.post(
   '/reviews/:reviewId/helpful',
   requireInventoryPermission('inventory:view'),
-  productController.markReviewHelpful
+  productController.markReviewHelpful,
 );
 
 /**
- * Report review
+ * Report a review.
  * POST /products/reviews/:reviewId/report
  */
 router.post(
   '/reviews/:reviewId/report',
   requireInventoryPermission('inventory:view'),
-  productController.reportReview
+  productController.reportReview,
 );
 
 // ============================================
-// 🔥 CATEGORY STATIC ENDPOINTS (Must come before /:id)
+// CATEGORIES — static paths before dynamic
 // ============================================
 
 /**
- * Get all categories
+ * Category tree (nested).
+ * GET /products/categories/tree
+ *
+ * ⚠️ MUST come before `/categories/:id`.
+ */
+router.get(
+  '/categories/tree',
+  requireInventoryPermission('inventory:view'),
+  productController.getCategoryTree,
+);
+
+/**
+ * All categories for the current BU.
  * GET /products/categories
  */
 router.get(
   '/categories',
   requireInventoryPermission('inventory:view'),
-  productController.getCategories
+  productController.getCategories,
 );
 
 /**
- * Get category tree
- * GET /products/categories/tree
- */
-router.get(
-  '/categories/tree',
-  requireInventoryPermission('inventory:view'),
-  productController.getCategoryTree
-);
-
-/**
- * Create category
+ * Create a category.
  * POST /products/categories
  */
 router.post(
   '/categories',
   requireInventoryPermission('inventory:manage_categories'),
   validateRequest(createCategorySchema),
-  productController.createCategory
+  productController.createCategory,
 );
 
 /**
- * Get category by ID
+ * Products in a category.
+ * GET /products/categories/:id/products
+ *
+ * ⚠️ MUST come before `/categories/:id`.
+ */
+router.get(
+  '/categories/:id/products',
+  requireInventoryPermission('inventory:view'),
+  productController.getCategoryProducts,
+);
+
+/**
+ * Category by id.
  * GET /products/categories/:id
  */
 router.get(
   '/categories/:id',
   requireInventoryPermission('inventory:view'),
-  productController.getCategoryById
+  productController.getCategoryById,
 );
 
 /**
- * Get products by category
- * GET /products/categories/:id/products
- */
-router.get(
-  '/categories/:id/products',
-  requireInventoryPermission('inventory:view'),
-  productController.getCategoryProducts
-);
-
-/**
- * Update category
+ * Update a category.
  * PUT /products/categories/:id
  */
 router.put(
   '/categories/:id',
   requireInventoryPermission('inventory:manage_categories'),
   validateRequest(updateCategorySchema),
-  productController.updateCategory
+  productController.updateCategory,
 );
 
 /**
- * Delete category
+ * Delete a category.
  * DELETE /products/categories/:id
  */
 router.delete(
   '/categories/:id',
   requireInventoryPermission('inventory:manage_categories'),
-  productController.deleteCategory
+  productController.deleteCategory,
 );
 
 // ============================================
-// 🔥 SUPPLIER STATIC ENDPOINTS (Must come before /:id)
+// SUPPLIERS
 // ============================================
 
 /**
- * Get all suppliers
+ * All suppliers for the current company.
  * GET /products/suppliers
  */
 router.get(
   '/suppliers',
   requireInventoryPermission('inventory:view'),
-  productController.getSuppliers
+  productController.getSuppliers,
 );
 
 /**
- * Create supplier
+ * Create a supplier.
  * POST /products/suppliers
  */
 router.post(
   '/suppliers',
   requireInventoryPermission('inventory:manage_suppliers'),
   validateRequest(createSupplierSchema),
-  productController.createSupplier
+  productController.createSupplier,
 );
 
 /**
- * Get supplier by ID
+ * Products for a supplier.
+ * GET /products/suppliers/:id/products
+ *
+ * ⚠️ MUST come before `/suppliers/:id`.
+ */
+router.get(
+  '/suppliers/:id/products',
+  requireInventoryPermission('inventory:view'),
+  productController.getSupplierProducts,
+);
+
+/**
+ * Supplier by id.
  * GET /products/suppliers/:id
  */
 router.get(
   '/suppliers/:id',
   requireInventoryPermission('inventory:view'),
-  productController.getSupplierById
+  productController.getSupplierById,
 );
 
 /**
- * Get products by supplier
- * GET /products/suppliers/:id/products
- */
-router.get(
-  '/suppliers/:id/products',
-  requireInventoryPermission('inventory:view'),
-  productController.getSupplierProducts
-);
-
-/**
- * Update supplier
+ * Update a supplier.
  * PUT /products/suppliers/:id
  */
 router.put(
   '/suppliers/:id',
   requireInventoryPermission('inventory:manage_suppliers'),
   validateRequest(updateSupplierSchema),
-  productController.updateSupplier
+  productController.updateSupplier,
 );
 
 /**
- * Delete supplier
+ * Delete a supplier.
  * DELETE /products/suppliers/:id
  */
 router.delete(
   '/suppliers/:id',
   requireInventoryPermission('inventory:manage_suppliers'),
-  productController.deleteSupplier
+  productController.deleteSupplier,
 );
 
 // ============================================
-// 🔥 BULK OPERATION STATIC ENDPOINTS (Must come before /:id)
+// WISHLIST
 // ============================================
+//
+// `requireAuth` is already applied at the router level above. No
+// per-route override needed.
+//
+// ⚠️ `/wishlist/count` and `/wishlist/ids` are static — they MUST
+//    come before `/wishlist/:productId/check` and
+//    `/wishlist/:productId`.
 
 /**
- * Bulk create products
- * POST /products/bulk
- */
-router.post(
-  '/bulk',
-  requireInventoryPermission('inventory:create'),
-  productController.bulkCreateProducts
-);
-
-/**
- * Bulk delete products
- * POST /products/bulk/delete
- */
-router.post(
-  '/bulk/delete',
-  requireInventoryPermission('inventory:delete'),
-  productController.bulkDeleteProducts
-);
-
-/**
- * Bulk activate products
- * POST /products/bulk/activate
- */
-router.post(
-  '/bulk/activate',
-  requireInventoryPermission('inventory:edit'),
-  productController.bulkActivateProducts
-);
-
-/**
- * Bulk deactivate products
- * POST /products/bulk/deactivate
- */
-router.post(
-  '/bulk/deactivate',
-  requireInventoryPermission('inventory:edit'),
-  productController.bulkDeactivateProducts
-);
-
-/**
- * Bulk update prices
- * POST /products/bulk/update-prices
- */
-router.post(
-  '/bulk/update-prices',
-  requireInventoryPermission('inventory:edit'),
-  productController.bulkUpdatePrices
-);
-
-/**
- * Bulk update stock
- * POST /products/bulk/update-stock
- */
-router.post(
-  '/bulk/update-stock',
-  requireInventoryPermission('inventory:edit'),
-  productController.bulkUpdateStock
-);
-
-// ============================================
-// 🔥 WISHLIST STATIC ENDPOINTS (Must come before /:id)
-// ============================================
-
-/**
- * Get wishlist
- * GET /products/wishlist
- */
-router.get(
-  '/wishlist',
-  requireAuth,
-  productController.getWishlist
-);
-
-/**
- * Get wishlist count
+ * Wishlist count.
  * GET /products/wishlist/count
  */
-router.get(
-  '/wishlist/count',
-  requireAuth,
-  productController.getWishlistCount
-);
+router.get('/wishlist/count', productController.getWishlistCount);
 
 /**
- * Get wishlist product IDs
+ * Just the product ids in the wishlist.
  * GET /products/wishlist/ids
  */
-router.get(
-  '/wishlist/ids',
-  requireAuth,
-  productController.getWishlistProductIds
-);
+router.get('/wishlist/ids', productController.getWishlistProductIds);
 
 /**
- * Clear wishlist
+ * Get the current user's wishlist.
+ * GET /products/wishlist
+ */
+router.get('/wishlist', productController.getWishlist);
+
+/**
+ * Clear the wishlist.
  * DELETE /products/wishlist
  */
-router.delete(
-  '/wishlist',
-  requireAuth,
-  productController.clearWishlist
-);
+router.delete('/wishlist', productController.clearWishlist);
 
 /**
- * Toggle wishlist
- * POST /products/wishlist/:productId
- */
-router.post(
-  '/wishlist/:productId',
-  requireAuth,
-  productController.toggleWishlist
-);
-
-/**
- * Check if in wishlist
+ * Is a product in the wishlist?
  * GET /products/wishlist/:productId/check
  */
 router.get(
   '/wishlist/:productId/check',
-  requireAuth,
-  productController.checkWishlist
+  productController.checkWishlist,
 );
 
+/**
+ * Toggle a product in / out of the wishlist.
+ * POST /products/wishlist/:productId
+ */
+router.post('/wishlist/:productId', productController.toggleWishlist);
+
 // ============================================
-// 🔥 RECENTLY VIEWED STATIC ENDPOINTS (Must come before /:id)
+// RECENTLY VIEWED
 // ============================================
 
 /**
- * Get recently viewed
+ * Recently viewed products for the current user.
  * GET /products/recently-viewed
  */
-router.get(
-  '/recently-viewed',
-  requireAuth,
-  productController.getRecentlyViewed
-);
+router.get('/recently-viewed', productController.getRecentlyViewed);
 
 /**
- * Clear recently viewed
+ * Clear recently viewed.
  * DELETE /products/recently-viewed
  */
 router.delete(
   '/recently-viewed',
-  requireAuth,
-  productController.clearRecentlyViewed
+  productController.clearRecentlyViewed,
 );
 
 /**
- * Add to recently viewed
+ * Record a product view.
  * POST /products/recently-viewed/:productId
  */
 router.post(
   '/recently-viewed/:productId',
-  requireAuth,
-  productController.addRecentlyViewed
+  productController.addRecentlyViewed,
 );
 
 // ============================================
-// 🔥 COMPARE & EXPORT STATIC ENDPOINTS (Must come before /:id)
+// COMPARE / EXPORT / IMPORT
 // ============================================
 
 /**
- * Compare products
+ * Compare multiple products side by side.
  * POST /products/compare
  */
 router.post(
   '/compare',
   requireInventoryPermission('inventory:view'),
-  productController.compareProducts
+  productController.compareProducts,
 );
 
 /**
- * Export products
+ * Export products as CSV / JSON.
  * GET /products/export
  */
 router.get(
   '/export',
   requireInventoryPermission('inventory:view'),
-  productController.exportProducts
+  productController.exportProducts,
 );
 
 /**
- * Import products
+ * Download the CSV import template.
+ * GET /products/import/template
+ *
+ * ⚠️ MUST come before `/import` if `/import` ever gains a dynamic
+ *    sibling. Safe here because `/import` is a POST and this is a GET.
+ */
+router.get(
+  '/import/template',
+  requireInventoryPermission('inventory:view'),
+  productController.downloadImportTemplate,
+);
+
+/**
+ * Import products from a CSV payload.
  * POST /products/import
  */
 router.post(
   '/import',
   requireInventoryPermission('inventory:create'),
-  productController.importProducts
-);
-
-/**
- * Download import template
- * GET /products/import/template
- */
-router.get(
-  '/import/template',
-  requireInventoryPermission('inventory:view'),
-  productController.downloadImportTemplate
+  productController.importProducts,
 );
 
 // ============================================
-// 🔥 DYNAMIC PRODUCT ENDPOINTS (Must come AFTER static routes)
+// DYNAMIC /:id ROUTES — MUST come last
 // ============================================
+//
+// Everything below uses `:id` as the first dynamic segment. If any
+// static single-segment route above were declared after these,
+// Express would resolve them to `getProductById('<static-name>')`.
 
 /**
- * Create a new product
+ * Create a product.
  * POST /products
- * 🔥 NOTE: createProductSchema has .refine() which makes it a ZodEffects type
- * We handle validation inside the controller instead
+ *
+ * ⚠️ `createProductSchema` uses `.refine()`, which produces a
+ *    ZodEffects instance that `validateRequest` cannot consume. The
+ *    controller validates inline instead.
  */
 router.post(
   '/',
   requireInventoryPermission('inventory:create'),
-  productController.createProduct
+  productController.createProduct,
 );
 
 /**
- * Get product by ID
+ * Product by id.
  * GET /products/:id
  */
 router.get(
   '/:id',
   requireInventoryPermission('inventory:view'),
-  productController.getProductById
+  productController.getProductById,
 );
 
 /**
- * Update a product
+ * Update a product.
  * PUT /products/:id
  */
 router.put(
   '/:id',
   requireInventoryPermission('inventory:edit'),
   validateRequest(updateProductSchema),
-  productController.updateProduct
+  productController.updateProduct,
 );
 
 /**
- * Delete a product (soft delete)
+ * Delete a product (soft delete by default).
  * DELETE /products/:id
  */
 router.delete(
   '/:id',
   requireInventoryPermission('inventory:delete'),
-  productController.deleteProduct
+  productController.deleteProduct,
 );
 
 /**
- * Unlink product from inventory
+ * Unlink a product from its inventory without deleting either.
  * POST /products/:id/unlink-inventory
  */
 router.post(
   '/:id/unlink-inventory',
   requireInventoryPermission('inventory:edit'),
-  productController.unlinkProductFromInventory
+  productController.unlinkProductFromInventory,
 );
 
 /**
- * Get related products
+ * Related products.
  * GET /products/:id/related
  */
 router.get(
   '/:id/related',
   requireInventoryPermission('inventory:view'),
-  productController.getRelatedProducts
+  productController.getRelatedProducts,
 );
 
 /**
- * Generate barcode for product
+ * Generate a barcode for a product.
  * POST /products/:id/barcode
  */
 router.post(
   '/:id/barcode',
   requireInventoryPermission('inventory:edit'),
   validateRequest(generateBarcodeSchema),
-  productController.generateBarcode
+  productController.generateBarcode,
 );
 
 /**
- * Get barcode info for product
+ * Get a product's barcode info.
  * GET /products/:id/barcode
  */
 router.get(
   '/:id/barcode',
   requireInventoryPermission('inventory:view'),
-  productController.getProductBarcode
+  productController.getProductBarcode,
 );
 
 /**
- * Get barcode image
+ * Get a product's barcode image.
  * GET /products/:id/barcode/image
  */
 router.get(
   '/:id/barcode/image',
   requireInventoryPermission('inventory:view'),
-  productController.getBarcodeImage
+  productController.getBarcodeImage,
 );
 
 /**
- * Get QR code
+ * Get a product's QR code.
  * GET /products/:id/qrcode
  */
 router.get(
   '/:id/qrcode',
   requireInventoryPermission('inventory:view'),
-  productController.getProductQRCode
+  productController.getProductQRCode,
 );
 
 /**
- * Associate barcode with product
+ * Associate a barcode with a product.
  * POST /products/:id/barcode/associate
  */
 router.post(
   '/:id/barcode/associate',
   requireInventoryPermission('inventory:edit'),
   validateRequest(associateBarcodeSchema),
-  productController.associateBarcode
+  productController.associateBarcode,
 );
 
 /**
- * Add a variant to a product
+ * Add a variant to a product.
  * POST /products/:id/variants
  */
 router.post(
   '/:id/variants',
   requireInventoryPermission('inventory:edit'),
   validateRequest(createVariantSchema),
-  productController.addVariant
+  productController.addVariant,
 );
 
 /**
- * Bulk create variants
+ * Bulk create variants for a product.
  * POST /products/:id/variants/bulk
  */
 router.post(
   '/:id/variants/bulk',
   requireInventoryPermission('inventory:edit'),
   validateRequest(bulkCreateVariantsSchema),
-  productController.bulkCreateVariants
+  productController.bulkCreateVariants,
 );
 
 /**
- * Get product variants
+ * List variants for a product.
  * GET /products/:id/variants
  */
 router.get(
   '/:id/variants',
   requireInventoryPermission('inventory:view'),
-  productController.getProductVariants
+  productController.getProductVariants,
 );
 
 /**
- * Get product reviews
- * GET /products/:id/reviews
- */
-router.get(
-  '/:id/reviews',
-  requireInventoryPermission('inventory:view'),
-  productController.getProductReviews
-);
-
-/**
- * Get review stats
+ * Review stats for a product.
  * GET /products/:id/reviews/stats
+ *
+ * ⚠️ MUST come before `/:id/reviews` — different segment count, but
+ *    declared first for consistency with the rest of the file.
  */
 router.get(
   '/:id/reviews/stats',
   requireInventoryPermission('inventory:view'),
-  productController.getReviewStats
+  productController.getReviewStats,
 );
 
 /**
- * Export product reviews
+ * Export a product's reviews.
  * GET /products/:id/reviews/export
  */
 router.get(
   '/:id/reviews/export',
   requireInventoryPermission('inventory:view'),
-  productController.exportProductReviews
+  productController.exportProductReviews,
 );
 
 /**
- * Create product review
+ * List reviews for a product.
+ * GET /products/:id/reviews
+ */
+router.get(
+  '/:id/reviews',
+  requireInventoryPermission('inventory:view'),
+  productController.getProductReviews,
+);
+
+/**
+ * Create a review for a product.
  * POST /products/:id/reviews
  */
 router.post(
   '/:id/reviews',
   requireInventoryPermission('inventory:view'),
   validateRequest(createProductReviewSchema),
-  productController.createProductReview
+  productController.createProductReview,
 );
 
 // ============================================
-// 🔥 FALLBACK 404 HANDLER FOR PRODUCTS ROUTE
+// FALLBACK 404
 // ============================================
+//
+// Reached only when no route above matched. Kept terse so we don't
+// leak the full route table to unauth'd scanners in production.
 
 router.use((req: any, res: any) => {
   res.status(404).json({
@@ -1038,89 +966,6 @@ router.use((req: any, res: any) => {
     path: req.originalUrl,
     method: req.method,
     timestamp: new Date().toISOString(),
-    availableRoutes: [
-      'GET /products',
-      'GET /products/:id',
-      'GET /products/check-sku/:sku',
-      'GET /products/sku/:sku',
-      'GET /products/barcode/:barcode',
-      'POST /products',
-      'PUT /products/:id',
-      'DELETE /products/:id',
-      'POST /products/:id/unlink-inventory',
-      'GET /products/featured',
-      'GET /products/popular',
-      'GET /products/new-arrivals',
-      'GET /products/public',
-      'GET /products/search',
-      'GET /products/tags',
-      'GET /products/statistics',
-      'GET /products/no-barcode',
-      'GET /products/:id/related',
-      'POST /products/:id/barcode',
-      'POST /products/barcode/generate',
-      'GET /products/:id/barcode',
-      'GET /products/:id/barcode/image',
-      'GET /products/:id/qrcode',
-      'POST /products/barcode/image',
-      'POST /products/qrcode',
-      'POST /products/:id/barcode/associate',
-      'POST /products/barcode/validate',
-      'POST /products/barcode/bulk-generate',
-      'POST /products/barcode/scan',
-      'POST /products/:id/variants',
-      'POST /products/:id/variants/bulk',
-      'GET /products/:id/variants',
-      'GET /products/variants/:variantId',
-      'GET /products/variants/barcode/:barcode',
-      'GET /products/variants/sku/:sku',
-      'PUT /products/variants/:variantId',
-      'DELETE /products/variants/:variantId',
-      'PATCH /products/variants/:variantId/stock',
-      'POST /products/variants/bulk/delete',
-      'GET /products/:id/reviews',
-      'GET /products/:id/reviews/stats',
-      'GET /products/:id/reviews/export',
-      'POST /products/:id/reviews',
-      'PUT /products/reviews/:reviewId',
-      'DELETE /products/reviews/:reviewId',
-      'PATCH /products/reviews/:reviewId/verify',
-      'POST /products/reviews/:reviewId/helpful',
-      'POST /products/reviews/:reviewId/report',
-      'GET /products/categories',
-      'GET /products/categories/tree',
-      'GET /products/categories/:id',
-      'GET /products/categories/:id/products',
-      'POST /products/categories',
-      'PUT /products/categories/:id',
-      'DELETE /products/categories/:id',
-      'GET /products/suppliers',
-      'GET /products/suppliers/:id',
-      'GET /products/suppliers/:id/products',
-      'POST /products/suppliers',
-      'PUT /products/suppliers/:id',
-      'DELETE /products/suppliers/:id',
-      'POST /products/bulk',
-      'POST /products/bulk/delete',
-      'POST /products/bulk/activate',
-      'POST /products/bulk/deactivate',
-      'POST /products/bulk/update-prices',
-      'POST /products/bulk/update-stock',
-      'POST /products/wishlist/:productId',
-      'GET /products/wishlist',
-      'GET /products/wishlist/:productId/check',
-      'GET /products/wishlist/count',
-      'GET /products/wishlist/ids',
-      'DELETE /products/wishlist',
-      'POST /products/recently-viewed/:productId',
-      'GET /products/recently-viewed',
-      'DELETE /products/recently-viewed',
-      'POST /products/compare',
-      'GET /products/export',
-      'POST /products/import',
-      'GET /products/import/template',
-      'GET /products/health',
-    ],
   });
 });
 

@@ -3,6 +3,55 @@
 import { api } from './api';
 import type { Sale, SaleStatus } from '../types/sale';
 
+export type PaymentMethod =
+  | 'CASH'
+  | 'CARD'
+  | 'CREDIT_CARD'
+  | 'DEBIT_CARD'
+  | 'MOBILE_MONEY'
+  | 'MOBILE'
+  | 'MPESA'
+  | 'BANK_TRANSFER'
+  | 'BANK'
+  | 'GIFT_CARD'
+  | 'GIFT'
+  | 'LOYALTY_POINTS'
+  | 'LOYALTY'
+  | 'WALLET'
+  | 'SPLIT'
+  | 'MIXED'
+  | 'OTHER'
+  | 'PAYPAL'
+  | 'FLUTTERWAVE'
+  | 'PAYSTACK'
+  | 'SQUARE'
+  | 'CHECK';
+
+export const PAYMENT_METHODS: readonly PaymentMethod[] = [
+  'CASH',
+  'CARD',
+  'CREDIT_CARD',
+  'DEBIT_CARD',
+  'MOBILE_MONEY',
+  'MOBILE',
+  'MPESA',
+  'BANK_TRANSFER',
+  'BANK',
+  'GIFT_CARD',
+  'GIFT',
+  'LOYALTY_POINTS',
+  'LOYALTY',
+  'WALLET',
+  'SPLIT',
+  'MIXED',
+  'OTHER',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'PAYSTACK',
+  'SQUARE',
+  'CHECK',
+] as const;
+
 // ============================================
 // TYPE DEFINITIONS
 // ============================================
@@ -122,7 +171,7 @@ export interface SalesSettings {
   autoPrintReceipt: boolean;
   emailReceipts: boolean;
   receiptFooter: string;
-  defaultPaymentMethod: string;
+  defaultPaymentMethod: PaymentMethod;
   currencySymbol: string;
   currencyCode: string;
   invoicePrefix: string;
@@ -247,7 +296,7 @@ export interface Cart {
 
 export interface PosCheckoutData {
   cartId: string;
-  paymentMethod: string;
+  paymentMethod: PaymentMethod;
   paidAmount: number;
   customerId?: string;
   discount?: number;
@@ -256,6 +305,13 @@ export interface PosCheckoutData {
   cashRegisterSessionId?: string;
   applyLoyaltyPoints?: boolean;
   tipAmount?: number;
+  /**
+   * Optional. When omitted, no idempotency is applied (same behavior
+   * as before). When provided, retries with the same value return the
+   * original sale instead of creating a duplicate. Use
+   * `saleService.generateIdempotencyKey()` to obtain a value.
+   */
+  idempotencyKey?: string;
 }
 
 export interface PosSummary {
@@ -282,11 +338,109 @@ export interface RegisterStatus {
   closedAt?: string;
 }
 
+export interface PosStats {
+  today: {
+    revenue: number;
+    sales: number;
+    averageTicket: number;
+    itemsSold: number;
+  };
+  cartCount: number;
+  activeSessions: number;
+  lowStockCount: number;
+  pendingOrders: number;
+}
+
+export interface PosTransaction {
+  id: string;
+  receiptNumber: string;
+  total: number;
+  status: string;
+  saleDate: string;
+  customer?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+  user?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+  items: Array<{
+    id: string;
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    total: number;
+    product?: { id: string; name: string; sku: string };
+    variant?: { id: string; name: string; sku: string } | null;
+  }>;
+  payments?: Array<{
+    id: string;
+    paymentMethod: string;
+    amount: number;
+    status: string;
+  }>;
+}
+
+export interface PopularProduct {
+  id: string;
+  name: string;
+  sku: string;
+  unitPrice: number;
+  images: string[];
+  category: string | null;
+  inventory: { available: number } | null;
+  soldCount: number;
+  revenue: number;
+}
+
+// ============================================
+// IDEMPOTENCY HELPERS
+// ============================================
+
+/**
+ * Build an `Idempotency-Key` header object for a request.
+ * Returns `undefined` when no key is supplied so callers can pass the
+ * result straight through to `api.post(..., { headers })` without a
+ * conditional — an undefined headers object is harmless.
+ */
+function idempotencyHeaders(
+  key?: string
+): Record<string, string> | undefined {
+  if (!key) return undefined;
+  const trimmed = String(key).trim();
+  if (!trimmed) return undefined;
+  return { 'Idempotency-Key': trimmed };
+}
+
 // ============================================
 // SALE SERVICE
 // ============================================
 
 export const saleService = {
+  /**
+   * Generate a fresh idempotency key for a new logical operation.
+   * Call once when the user initiates a sale, then reuse the same value
+   * on every retry of that same sale.
+   *
+   * Uses `crypto.randomUUID()` when available (all modern browsers and
+   * Node 16+). Falls back to a time + random hex string otherwise so
+   * the key is always unique enough for the POS use case.
+   */
+  generateIdempotencyKey(): string {
+    const g: any =
+      typeof globalThis !== 'undefined' ? (globalThis as any) : {};
+    if (g.crypto?.randomUUID) {
+      return g.crypto.randomUUID();
+    }
+    const t = Date.now().toString(36);
+    const r = Math.random().toString(36).slice(2, 12);
+    return `pos-${t}-${r}`;
+  },
+
   // ============================================
   // SALES STATISTICS
   // ============================================
@@ -302,7 +456,7 @@ export const saleService = {
   }): Promise<SalesStats> {
     try {
       const response = await api.get<any>('/sales/stats', { params });
-      
+
       if (response && typeof response === 'object') {
         if ('data' in response && response.data) {
           return response.data as SalesStats;
@@ -311,7 +465,7 @@ export const saleService = {
           return response as SalesStats;
         }
       }
-      
+
       return this.getDefaultStats();
     } catch (error) {
       console.error('Failed to fetch sales stats:', error);
@@ -341,7 +495,7 @@ export const saleService = {
       }
       return this.getDefaultTodaySummary();
     } catch (error) {
-      console.error('Failed to fetch today\'s sales summary:', error);
+      console.error("Failed to fetch today's sales summary:", error);
       return this.getDefaultTodaySummary();
     }
   },
@@ -848,11 +1002,13 @@ export const saleService = {
   /**
    * Create sale
    * POST /sales
+   *
+   * Idempotent when `data.idempotencyKey` is provided.
    */
   async createSale(data: {
     customerId?: string;
     items: Array<{ productId: string; variantId?: string; quantity: number; unitPrice: number; discount?: number; notes?: string }>;
-    paymentMethod: string;
+    paymentMethod: PaymentMethod;
     paidAmount: number;
     discount?: number;
     taxRate?: number;
@@ -862,9 +1018,14 @@ export const saleService = {
     cashRegisterSessionId?: string;
     tipAmount?: number;
     loyaltyPointsUsed?: number;
+    /** Optional. Retries with the same value return the original sale. */
+    idempotencyKey?: string;
   }): Promise<Sale> {
     try {
-      const response = await api.post<any>('/sales', data);
+      const { idempotencyKey, ...body } = data;
+      const response = await api.post<any>('/sales', body, {
+        headers: idempotencyHeaders(idempotencyKey),
+      });
       if (response && typeof response === 'object') {
         if ('data' in response && response.data) {
           return response.data;
@@ -881,16 +1042,28 @@ export const saleService = {
   /**
    * Create sale from cart checkout
    * POST /sales/checkout
+   *
+   * Idempotent when `data.idempotencyKey` is provided.
    */
   async createSaleFromCart(data: {
     cartId: string;
-    paymentMethod: string;
+    paymentMethod: PaymentMethod;
     paidAmount: number;
+    customerId?: string;
+    discount?: number;
+    notes?: string;
     cashRegisterId?: string;
     cashRegisterSessionId?: string;
+    applyLoyaltyPoints?: boolean;
+    tipAmount?: number;
+    /** Optional. Retries with the same value return the original sale. */
+    idempotencyKey?: string;
   }): Promise<Sale> {
     try {
-      const response = await api.post<any>('/sales/checkout', data);
+      const { idempotencyKey, ...body } = data;
+      const response = await api.post<any>('/sales/checkout', body, {
+        headers: idempotencyHeaders(idempotencyKey),
+      });
       if (response && typeof response === 'object') {
         if ('data' in response && response.data) {
           return response.data;
@@ -1091,10 +1264,17 @@ export const saleService = {
   /**
    * POS Checkout
    * POST /sales/pos/checkout
+   *
+   * Idempotent when `data.idempotencyKey` is provided. The header is
+   * extracted and sent as `Idempotency-Key`, matching the backend
+   * controller contract.
    */
   async posCheckout(data: PosCheckoutData): Promise<Sale> {
     try {
-      const response = await api.post<any>('/sales/pos/checkout', data);
+      const { idempotencyKey, ...body } = data;
+      const response = await api.post<any>('/sales/pos/checkout', body, {
+        headers: idempotencyHeaders(idempotencyKey),
+      });
       if (response && typeof response === 'object') {
         if ('data' in response && response.data) {
           return response.data;
@@ -1104,6 +1284,66 @@ export const saleService = {
       throw new Error('Invalid response from server');
     } catch (error) {
       console.error('Failed to process POS checkout:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Apply discount to POS cart
+   * POST /sales/pos/cart/discount
+   */
+  async applyPosDiscount(discount: number): Promise<Cart> {
+    try {
+      const response = await api.post<any>('/sales/pos/cart/discount', { discount });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to apply POS discount:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Apply loyalty points to POS cart
+   * POST /sales/pos/cart/loyalty-points
+   */
+  async applyPosLoyaltyPoints(customerId: string, points: number): Promise<Cart> {
+    try {
+      const response = await api.post<any>('/sales/pos/cart/loyalty-points', { customerId, points });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to apply POS loyalty points:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Associate customer with POS cart
+   * POST /sales/pos/cart/customer
+   */
+  async associatePosCustomer(customerId: string): Promise<Cart> {
+    try {
+      const response = await api.post<any>('/sales/pos/cart/customer', { customerId });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      throw new Error('Invalid response from server');
+    } catch (error) {
+      console.error('Failed to associate POS customer:', error);
       throw error;
     }
   },
@@ -1125,6 +1365,64 @@ export const saleService = {
     } catch (error) {
       console.error('Failed to fetch POS summary:', error);
       return this.getDefaultPosSummary();
+    }
+  },
+
+  /**
+   * Get POS statistics
+   * GET /sales/pos/stats
+   */
+  async getPosStats(): Promise<PosStats> {
+    try {
+      const response = await api.get<any>('/sales/pos/stats');
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return {
+        today: { revenue: 0, sales: 0, averageTicket: 0, itemsSold: 0 },
+        cartCount: 0,
+        activeSessions: 0,
+        lowStockCount: 0,
+        pendingOrders: 0,
+      };
+    } catch (error) {
+      console.error('Failed to fetch POS stats:', error);
+      return {
+        today: { revenue: 0, sales: 0, averageTicket: 0, itemsSold: 0 },
+        cartCount: 0,
+        activeSessions: 0,
+        lowStockCount: 0,
+        pendingOrders: 0,
+      };
+    }
+  },
+
+  /**
+   * Get POS transaction history
+   * GET /sales/pos/transactions
+   */
+  async getPosTransactions(params?: { page?: number; limit?: number }): Promise<{
+    data: PosTransaction[];
+    total: number;
+    page: number;
+    totalPages: number;
+    limit: number;
+  }> {
+    try {
+      const response = await api.get<any>('/sales/pos/transactions', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        return response;
+      }
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
+    } catch (error) {
+      console.error('Failed to fetch POS transactions:', error);
+      return { data: [], total: 0, page: 1, totalPages: 0, limit: 20 };
     }
   },
 
@@ -1292,6 +1590,28 @@ export const saleService = {
     }
   },
 
+  /**
+   * Get popular products (top sellers over the last 30 days)
+   * GET /sales/pos/products/popular
+   */
+  async getPopularProducts(params?: { limit?: number }): Promise<PopularProduct[]> {
+    try {
+      const response = await api.get<any>('/sales/pos/products/popular', { params });
+      if (response && typeof response === 'object') {
+        if ('data' in response && response.data) {
+          return response.data;
+        }
+        if (Array.isArray(response)) {
+          return response;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to fetch popular products:', error);
+      return [];
+    }
+  },
+
   // ============================================
   // DEFAULT FALLBACK VALUES
   // ============================================
@@ -1433,7 +1753,7 @@ export const saleService = {
       cashIn: 0,
       cashOut: 0,
     };
-  }
+  },
 };
 
 // Export types for use in other files

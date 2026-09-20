@@ -8,67 +8,86 @@ import { UserRole } from '../generated/prisma/index.js';
 
 const router = Router();
 
+// ⚠️ ORDERING RULES FOR THIS FILE:
+//   1. All static GET routes BEFORE parameterized GET routes.
+//   2. All static POST/PUT/PATCH/DELETE routes BEFORE `/:id` variants.
+//   3. Sub-router mounts (`/pos/*`) grouped together for readability.
+// Violating these will cause `/recent` to match `/:id`, `/receipts` to
+// match `/:id`, etc.
+//
+// ─────────────────────────────────────────────────────────────────
+//  IDEMPOTENCY CONTRACT
+// ─────────────────────────────────────────────────────────────────
+//  The following routes honor an `Idempotency-Key` HTTP header
+//  (or an `idempotencyKey` body field as a fallback):
+//
+//      POST /api/sales
+//      POST /api/sales/checkout
+//      POST /api/sales/pos/checkout
+//
+//  Sending the same key twice within any time window returns the
+//  original sale — no duplicate row, no double inventory decrement,
+//  no double loyalty award. See:
+//      • SaleController.getIdempotencyKey
+//      • PosController.getIdempotencyKey
+//      • SaleService.findSaleByIdempotencyKey / withIdempotency
+//      • sales.idempotencyKey (nullable, unique index)
+//
+//  Routes that do NOT support idempotency (by design):
+//      POST   /api/sales/:id/refund
+//      POST   /api/sales/:id/return
+//      POST   /api/sales/:id/cancel
+//      POST   /api/sales/:id/void
+//      POST   /api/sales/:id/hold
+//      POST   /api/sales/:id/resume
+//      POST   /api/sales/:id/email-receipt
+//      POST   /api/sales/:id/resend-receipt
+//      PATCH  /api/sales/bulk-status
+//      PUT    /api/sales/:id
+//      PATCH  /api/sales/:id/status
+//      PATCH  /api/sales/:id/notes
+//      DELETE /api/sales/:id
+//      DELETE /api/sales/bulk
+//
+//  Those operate on existing sales (state transitions), not on
+//  creation. If you later want retry-safety there, wire them to a
+//  keyed lookup before the write.
+// ─────────────────────────────────────────────────────────────────
+
 // All sale routes require authentication
 router.use(requireAuth);
 
 // ============================================
-// GET endpoints - Basic Sales Operations
+// GET — Static routes (NO parameters)
 // ============================================
 
 /**
  * Get all sales with pagination and filters
  * GET /api/sales
- * Query params: page, limit, search, customerId, userId, startDate, endDate, status, paymentMethod, sortBy, sortOrder, minAmount, maxAmount, includeDeleted
  */
 router.get('/', saleController.getAllSales);
 
 /**
- * Get sale by ID
- * GET /api/sales/:id
- */
-router.get('/:id', saleController.getSaleById);
-
-/**
- * Get sale by receipt number
- * GET /api/sales/receipt/:receiptNumber
- */
-router.get('/receipt/:receiptNumber', saleController.getSaleByReceiptNumber);
-
-/**
- * Get sales by customer
- * GET /api/sales/customer/:customerId
- */
-router.get('/customer/:customerId', saleController.getSalesByCustomer);
-
-/**
  * Get recent sales
  * GET /api/sales/recent
- * Query params: limit (default: 10)
  */
 router.get('/recent', saleController.getRecentSales);
-
-// ============================================
-// GET endpoints - Sales Analytics & Dashboard
-// ============================================
 
 /**
  * Get sales statistics
  * GET /api/sales/stats
- * Query params: startDate, endDate
  */
 router.get('/stats', saleController.getSalesStats);
 
 /**
  * Get sales by date range
  * GET /api/sales/date-range
- * Query params: startDate, endDate (required)
  */
 router.get('/date-range', saleController.getSalesByDateRange);
 
 /**
  * Get daily sales summary
  * GET /api/sales/daily-summary
- * Query params: date (required)
  */
 router.get('/daily-summary', saleController.getDailySalesSummary);
 
@@ -87,115 +106,78 @@ router.get('/dashboard', saleController.getDashboardSalesData);
 /**
  * Get sales analytics
  * GET /api/sales/analytics
- * Query params: startDate, endDate, view (daily|weekly|monthly|hourly)
  */
 router.get('/analytics', saleController.getSalesAnalytics);
 
 /**
  * Get sales forecast
  * GET /api/sales/forecast
- * Query params: days (default: 7)
  */
 router.get('/forecast', saleController.getSalesForecast);
 
 /**
  * Get sales comparison
  * GET /api/sales/compare
- * Query params: period1Start, period1End, period2Start, period2End (all required)
  */
 router.get('/compare', saleController.getSalesComparison);
 
 /**
  * Get sales summary by period
  * GET /api/sales/summary
- * Query params: period (day|week|month|quarter|year), date
  */
 router.get('/summary', saleController.getSalesSummary);
 
 /**
  * Get sales by payment method
  * GET /api/sales/payment-methods
- * Query params: startDate, endDate
  */
 router.get('/payment-methods', saleController.getSalesByPaymentMethod);
 
 /**
- * Get sales by status
- * GET /api/sales/status/:status
- * Query params: page, limit
- */
-router.get('/status/:status', saleController.getSalesByStatus);
-
-/**
  * Get sales with aggregation
  * GET /api/sales/aggregate
- * Query params: startDate, endDate (required), groupBy (hour|day|week|month)
  */
 router.get('/aggregate', saleController.getAggregatedSales);
-
-// ============================================
-// GET endpoints - Sales Management Features
-// ============================================
 
 /**
  * Get sales settings
  * GET /api/sales/settings
- * Query params: companyId
  */
 router.get('/settings', saleController.getSalesSettings);
 
 /**
  * Get abandoned carts
  * GET /api/sales/abandoned-carts
- * Query params: startDate, endDate, minValue
  */
 router.get('/abandoned-carts', saleController.getAbandonedCarts);
 
 /**
- * Get sales by product
- * GET /api/sales/product/:productId
- * Query params: variantId, startDate, endDate, limit
- */
-router.get('/product/:productId', saleController.getSalesByProduct);
-
-/**
- * Get customer sales stats
- * GET /api/sales/customer-stats/:customerId
- */
-router.get('/customer-stats/:customerId', saleController.getCustomerSalesStats);
-
-/**
  * Get sales receipts
  * GET /api/sales/receipts
- * Query params: page, limit
  */
 router.get('/receipts', saleController.getReceipts);
 
 /**
  * Get sales invoices
  * GET /api/sales/invoices
- * Query params: page, limit
  */
 router.get('/invoices', saleController.getInvoices);
 
 /**
  * Get sales returns
  * GET /api/sales/returns
- * Query params: page, limit
  */
 router.get('/returns', saleController.getReturns);
 
 /**
  * Get sales refunds
  * GET /api/sales/refunds
- * Query params: page, limit
  */
 router.get('/refunds', saleController.getRefunds);
 
 /**
  * Export sales
  * GET /api/sales/export
- * Query params: startDate, endDate (required), format (json|csv|excel|pdf)
  */
 router.get(
   '/export',
@@ -203,25 +185,9 @@ router.get(
   saleController.exportSales
 );
 
-// ============================================
-// GET endpoints - Reports & Exports
-// ============================================
-
-/**
- * Get sales report by period
- * GET /api/sales/reports/period
- * Query params: period (daily|weekly|monthly|quarterly|yearly), date
- */
-router.get(
-  '/reports/period',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
-  saleController.getSalesReportByPeriod
-);
-
 /**
  * Export sales to CSV
  * GET /api/sales/export/csv
- * Query params: startDate, endDate
  */
 router.get(
   '/export/csv',
@@ -232,7 +198,6 @@ router.get(
 /**
  * Export sales to Excel
  * GET /api/sales/export/excel
- * Query params: startDate, endDate
  */
 router.get(
   '/export/excel',
@@ -243,7 +208,6 @@ router.get(
 /**
  * Export sales to PDF
  * GET /api/sales/export/pdf
- * Query params: startDate, endDate
  */
 router.get(
   '/export/pdf',
@@ -251,8 +215,18 @@ router.get(
   saleController.exportSalesPdf
 );
 
+/**
+ * Get sales report by period
+ * GET /api/sales/reports/period
+ */
+router.get(
+  '/reports/period',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  saleController.getSalesReportByPeriod
+);
+
 // ============================================
-// GET endpoints - POS Routes (Quick Actions)
+// GET — POS static routes
 // ============================================
 
 /**
@@ -274,147 +248,80 @@ router.get('/pos/cart/details', posController.getCartDetails);
 router.get('/pos/summary', posController.getSummary);
 
 /**
+ * Get POS statistics (today's revenue, cart count, low stock, etc.)
+ * GET /api/sales/pos/stats
+ */
+router.get('/pos/stats', posController.getStats);
+
+/**
+ * Get POS transaction history
+ * GET /api/sales/pos/transactions
+ */
+router.get('/pos/transactions', posController.getTransactions);
+
+/**
  * Get register status
  * GET /api/sales/pos/register/status
  */
 router.get('/pos/register/status', posController.getRegisterStatus);
 
-// ============================================
-// POST endpoints - Create Operations
-// ============================================
-
-/**
- * Create a new sale (legacy direct sale)
- * POST /api/sales
- * Body: items[], customerId, paymentMethod, paidAmount, discount, taxRate, notes, businessUnitId, cashRegisterId, cashRegisterSessionId, tipAmount, loyaltyPointsUsed
- */
-router.post(
-  '/',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  saleController.createSale
-);
-
-/**
- * Create sale from cart checkout
- * POST /api/sales/checkout
- * Body: cartId, paymentMethod, paidAmount, cashRegisterId, cashRegisterSessionId
- */
-router.post(
-  '/checkout',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  saleController.createSaleFromCart
-);
-
-/**
- * Create sale from POS
- * POST /api/sales/pos/checkout
- * Body: cartId, paymentMethod, paidAmount, cashRegisterId, cashRegisterSessionId
- */
-router.post(
-  '/pos/checkout',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  posController.checkout
-);
-
-// ============================================
-// POST endpoints - POS Item Management
-// ============================================
-
-/**
- * Add item to POS cart
- * POST /api/sales/pos/items
- * Body: productId, variantId, quantity, unitPrice, notes
- */
-router.post(
-  '/pos/items',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  posController.addItem
-);
-
-/**
- * Add multiple items to POS cart
- * POST /api/sales/pos/items/bulk
- * Body: items[]
- */
-router.post(
-  '/pos/items/bulk',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  posController.addMultipleItems
-);
-
-// ============================================
-// PUT endpoints - POS Item Management
-// ============================================
-
-/**
- * Update POS cart item
- * PUT /api/sales/pos/items/:itemId
- * Body: quantity, unitPrice, notes
- */
-router.put(
-  '/pos/items/:itemId',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  posController.updateItem
-);
-
-// ============================================
-// DELETE endpoints - POS Item Management
-// ============================================
-
-/**
- * Remove POS cart item
- * DELETE /api/sales/pos/items/:itemId
- */
-router.delete(
-  '/pos/items/:itemId',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  posController.removeItem
-);
-
-/**
- * Clear POS cart
- * DELETE /api/sales/pos/cart
- */
-router.delete(
-  '/pos/cart',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
-  posController.clearCart
-);
-
-// ============================================
-// GET endpoints - POS Customer Management
-// ============================================
-
 /**
  * Search POS customers
  * GET /api/sales/pos/customers/search
- * Query params: query, limit
  */
 router.get('/pos/customers/search', posController.searchCustomers);
+
+/**
+ * Search POS products
+ * GET /api/sales/pos/products/search
+ */
+router.get('/pos/products/search', posController.searchProducts);
+
+/**
+ * Get popular products (top sellers over the last 30 days)
+ * GET /api/sales/pos/products/popular
+ */
+router.get('/pos/products/popular', posController.getPopularProducts);
+
+// ============================================
+// GET — Sub-path routes (have their own params)
+// ============================================
+
+/**
+ * Get sale by receipt number
+ * GET /api/sales/receipt/:receiptNumber
+ */
+router.get('/receipt/:receiptNumber', saleController.getSaleByReceiptNumber);
+
+/**
+ * Get sales by customer
+ * GET /api/sales/customer/:customerId
+ */
+router.get('/customer/:customerId', saleController.getSalesByCustomer);
+
+/**
+ * Get sales by status
+ * GET /api/sales/status/:status
+ */
+router.get('/status/:status', saleController.getSalesByStatus);
+
+/**
+ * Get sales by product
+ * GET /api/sales/product/:productId
+ */
+router.get('/product/:productId', saleController.getSalesByProduct);
+
+/**
+ * Get customer sales stats
+ * GET /api/sales/customer-stats/:customerId
+ */
+router.get('/customer-stats/:customerId', saleController.getCustomerSalesStats);
 
 /**
  * Get POS customer by ID
  * GET /api/sales/pos/customers/:id
  */
 router.get('/pos/customers/:id', posController.getCustomer);
-
-/**
- * Create POS customer
- * POST /api/sales/pos/customers
- * Body: firstName, lastName, email, phoneNumber, address, city, state, zipCode, country
- */
-router.post('/pos/customers', posController.createCustomer);
-
-// ============================================
-// GET endpoints - POS Product Management
-// ============================================
-
-/**
- * Search POS products
- * GET /api/sales/pos/products/search
- * Query params: query, categoryId, limit
- */
-router.get('/pos/products/search', posController.searchProducts);
 
 /**
  * Get product by barcode
@@ -429,44 +336,112 @@ router.get('/pos/products/barcode/:barcode', posController.getProductByBarcode);
 router.get('/pos/products/sku/:sku', posController.getProductBySku);
 
 // ============================================
-// PUT endpoints - Settings & Updates
+// POST — Create operations
 // ============================================
 
 /**
- * Update sales settings
- * PUT /api/sales/settings
- * Body: taxRate, discountEnabled, maxDiscount, loyaltyPointsEnabled, pointsPerDollar, autoPrintReceipt, emailReceipts, receiptFooter, defaultPaymentMethod, currencySymbol, currencyCode, invoicePrefix, receiptPrefix
- * Query params: companyId
+ * Create a new sale (legacy direct sale)
+ * POST /api/sales
+ *
+ * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
  */
-router.put(
-  '/settings',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
-  saleController.updateSalesSettings
+router.post(
+  '/',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  saleController.createSale
 );
-
-// ============================================
-// PATCH endpoints - Bulk Operations
-// ============================================
 
 /**
- * Bulk update sales status
- * PATCH /api/sales/bulk-status
- * Body: saleIds[], status
+ * Create sale from cart checkout
+ * POST /api/sales/checkout
+ *
+ * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
  */
-router.patch(
-  '/bulk-status',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
-  saleController.bulkUpdateStatus
+router.post(
+  '/checkout',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  saleController.createSaleFromCart
+);
+
+/**
+ * Create sale from POS
+ * POST /api/sales/pos/checkout
+ *
+ * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
+ */
+router.post(
+  '/pos/checkout',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.checkout
+);
+
+/**
+ * Add item to POS cart
+ * POST /api/sales/pos/items
+ */
+router.post(
+  '/pos/items',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.addItem
+);
+
+/**
+ * Add multiple items to POS cart
+ * POST /api/sales/pos/items/bulk
+ */
+router.post(
+  '/pos/items/bulk',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.addMultipleItems
+);
+
+/**
+ * Apply discount to POS cart
+ * POST /api/sales/pos/cart/discount
+ */
+router.post(
+  '/pos/cart/discount',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.applyDiscount
+);
+
+/**
+ * Apply loyalty points to POS cart
+ * POST /api/sales/pos/cart/loyalty-points
+ */
+router.post(
+  '/pos/cart/loyalty-points',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.applyLoyaltyPoints
+);
+
+/**
+ * Associate customer with POS cart
+ * POST /api/sales/pos/cart/customer
+ */
+router.post(
+  '/pos/cart/customer',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.associateCustomer
+);
+
+/**
+ * Create POS customer
+ * POST /api/sales/pos/customers
+ */
+router.post(
+  '/pos/customers',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.createCustomer
 );
 
 // ============================================
-// POST endpoints - Sale Actions
+// POST — Sale actions (parameterized)
 // ============================================
 
 /**
  * Process refund
  * POST /api/sales/:id/refund
- * Body: reason, amount, items[]
  */
 router.post(
   '/:id/refund',
@@ -477,7 +452,6 @@ router.post(
 /**
  * Process return
  * POST /api/sales/:id/return
- * Body: reason, items[]
  */
 router.post(
   '/:id/return',
@@ -488,7 +462,6 @@ router.post(
 /**
  * Cancel sale
  * POST /api/sales/:id/cancel
- * Body: reason
  */
 router.post(
   '/:id/cancel',
@@ -499,7 +472,6 @@ router.post(
 /**
  * Void sale
  * POST /api/sales/:id/void
- * Body: reason
  */
 router.post(
   '/:id/void',
@@ -527,14 +499,9 @@ router.post(
   saleController.resumeSale
 );
 
-// ============================================
-// POST endpoints - Receipt & Email
-// ============================================
-
 /**
  * Send receipt email
  * POST /api/sales/:id/email-receipt
- * Body: email
  */
 router.post(
   '/:id/email-receipt',
@@ -553,13 +520,32 @@ router.post(
 );
 
 // ============================================
-// PUT endpoints - Update Sale
+// PUT — Update operations
 // ============================================
+
+/**
+ * Update sales settings
+ * PUT /api/sales/settings
+ */
+router.put(
+  '/settings',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  saleController.updateSalesSettings
+);
+
+/**
+ * Update POS cart item
+ * PUT /api/sales/pos/items/:itemId
+ */
+router.put(
+  '/pos/items/:itemId',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.updateItem
+);
 
 /**
  * Update sale
  * PUT /api/sales/:id
- * Body: any sale fields
  */
 router.put(
   '/:id',
@@ -568,13 +554,22 @@ router.put(
 );
 
 // ============================================
-// PATCH endpoints - Update Sale
+// PATCH — Partial updates
 // ============================================
+
+/**
+ * Bulk update sales status
+ * PATCH /api/sales/bulk-status
+ */
+router.patch(
+  '/bulk-status',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  saleController.bulkUpdateStatus
+);
 
 /**
  * Update sale status
  * PATCH /api/sales/:id/status
- * Body: status
  */
 router.patch(
   '/:id/status',
@@ -585,7 +580,6 @@ router.patch(
 /**
  * Update sale notes
  * PATCH /api/sales/:id/notes
- * Body: notes
  */
 router.patch(
   '/:id/notes',
@@ -594,8 +588,38 @@ router.patch(
 );
 
 // ============================================
-// DELETE endpoints - Delete Sales
+// DELETE — Remove operations
 // ============================================
+
+/**
+ * Clear POS cart
+ * DELETE /api/sales/pos/cart
+ */
+router.delete(
+  '/pos/cart',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.clearCart
+);
+
+/**
+ * Remove POS cart item
+ * DELETE /api/sales/pos/items/:itemId
+ */
+router.delete(
+  '/pos/items/:itemId',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.CASHIER]),
+  posController.removeItem
+);
+
+/**
+ * Bulk delete sales
+ * DELETE /api/sales/bulk
+ */
+router.delete(
+  '/bulk',
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
+  saleController.bulkDeleteSales
+);
 
 /**
  * Delete sale (soft delete)
@@ -605,17 +629,6 @@ router.delete(
   '/:id',
   requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
   saleController.deleteSale
-);
-
-/**
- * Bulk delete sales
- * DELETE /api/sales/bulk
- * Body: saleIds[]
- */
-router.delete(
-  '/bulk',
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
-  saleController.bulkDeleteSales
 );
 
 export default router;

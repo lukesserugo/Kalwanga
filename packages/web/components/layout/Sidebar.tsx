@@ -17,10 +17,7 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   GlobeAltIcon,
-  StarIcon,
   CurrencyDollarIcon,
-  RocketLaunchIcon,
-  QuestionMarkCircleIcon,
   ShieldCheckIcon,
   ChevronDoubleLeftIcon,
   XMarkIcon,
@@ -52,113 +49,24 @@ import {
   BuildingOfficeIcon,
   ShoppingBagIcon,
   PlusIcon,
-  PencilIcon,
-  EyeIcon,
   CheckCircleIcon,
   XCircleIcon,
   ExclamationTriangleIcon,
   ClipboardDocumentCheckIcon,
   InboxIcon,
-  InboxArrowDownIcon,
+  MapPinIcon,
 } from '@heroicons/react/24/outline';
+
+import { useOnboarding } from '../../hooks/useOnboarding';
+import {
+  buildPermissionsFromSet,
+  isSuperAdminRole,
+  type UserPermissions,
+} from '../../types/permissions';
 
 // ============================================
 // TYPES
 // ============================================
-
-interface UserPermissions {
-  canViewDashboard: boolean;
-  canViewCategories: boolean;
-  canManageCategories: boolean;
-  canViewProducts: boolean;
-  canManageProducts: boolean;
-  canViewOrders: boolean;
-  canManageOrders: boolean;
-  canViewCustomers: boolean;
-  canManageCustomers: boolean;
-  canViewInventory: boolean;
-  canManageInventory: boolean;
-  canManageUsers: boolean;
-  canManageSettings: boolean;
-  canExportProducts: boolean;
-  canImportProducts: boolean;
-  canViewSuppliers: boolean;
-  canManageSuppliers: boolean;
-  canViewSales: boolean;
-  canManageSales: boolean;
-  canViewAnalytics: boolean;
-  canManagePos: boolean;
-  canViewReturns: boolean;
-  canManageReturns: boolean;
-  canViewInvoices: boolean;
-  canManageInvoices: boolean;
-  canViewReceipts: boolean;
-  canPrintReceipts: boolean;
-  canViewUsers: boolean;
-  canCreateUsers: boolean;
-  canEditUsers: boolean;
-  canDeleteUsers: boolean;
-  canManageUserRoles: boolean;
-  canManageUserPermissions: boolean;
-  canViewUserActivity: boolean;
-  canExportUsers: boolean;
-  canImportUsers: boolean;
-  canInviteUsers: boolean;
-  canManageUserGroups: boolean;
-  canViewInventoryAudit: boolean;
-  canExportInventory: boolean;
-  canImportInventory: boolean;
-  canAdjustInventory: boolean;
-  canTransferInventory: boolean;
-  canViewLowStock: boolean;
-  canManageStockCount: boolean;
-  canViewInventoryValuation: boolean;
-  canViewInventoryTransactions: boolean;
-  canViewBarcodes: boolean;
-  canManageBarcodes: boolean;
-  canCreateSuppliers: boolean;
-  canEditSuppliers: boolean;
-  canDeleteSuppliers: boolean;
-  canViewSupplierProducts: boolean;
-  canViewSupplierOrders: boolean;
-  canViewBusinessUnits: boolean;
-  canManageBusinessUnits: boolean;
-  canViewCompanies: boolean;
-  canManageCompanies: boolean;
-  canViewCart: boolean;
-  canManageCart: boolean;
-  canCheckout: boolean;
-  canViewCartHistory: boolean;
-  canManageCartSettings: boolean;
-  canViewCheckout: boolean;
-  canManageCheckout: boolean;
-  canViewCheckoutStats: boolean;
-  canManageCheckoutStats: boolean;
-  canViewCheckoutSettings: boolean;
-  canManageCheckoutSettings: boolean;
-  canViewPayments: boolean;
-  canManagePayments: boolean;
-  canViewPaymentStats: boolean;
-  canManagePaymentStats: boolean;
-  canViewPaymentSettings: boolean;
-  canManagePaymentSettings: boolean;
-  canExportPayments: boolean;
-  canRefundPayments: boolean;
-  canViewBookkeeping: boolean;
-  canManageBookkeeping: boolean;
-  canViewJournalEntries: boolean;
-  canCreateJournalEntries: boolean;
-  canViewAccounts: boolean;
-  canManageAccounts: boolean;
-  canViewReports: boolean;
-  canViewShifts: boolean;
-  canManageShifts: boolean;
-  canViewRegisters: boolean;
-  canManageRegisters: boolean;
-  canStartShift: boolean;
-  canEndShift: boolean;
-  canManageCash: boolean;
-}
 
 interface SubLink {
   name: string;
@@ -256,7 +164,6 @@ const shiftSubLinks: SubLink[] = [
   { name: 'Shift History', href: '/admin/shifts/history', icon: DocumentTextIcon, permission: 'canViewShifts' },
   { name: 'Shift Statistics', href: '/admin/shifts/stats', icon: ChartBarIcon, permission: 'canViewShifts' },
   { name: 'Cash Registers', href: '/admin/shifts/registers', icon: RegisterIcon, permission: 'canViewRegisters' },
-  { name: 'Register Management', href: '/admin/shifts/registers/manage', icon: Cog6ToothIcon, permission: 'canManageRegisters' },
   { name: 'Cash Management', href: '/admin/shifts/cash', icon: CurrencyDollarIcon, permission: 'canManageCash' },
 ];
 
@@ -291,7 +198,6 @@ const checkoutSubLinks: SubLink[] = [
 const companySubLinks: SubLink[] = [
   { name: 'All Companies', href: '/admin/companies', icon: BuildingOfficeIcon, permission: 'canViewCompanies' },
   { name: 'Add Company', href: '/admin/companies/new', icon: PlusCircleIcon, permission: 'canManageCompanies' },
-  { name: 'Settings', href: '/admin/companies/settings', icon: Cog6ToothIcon, permission: 'canManageSettings' },
   { name: 'Reports', href: '/admin/companies/reports', icon: ChartBarIcon, permission: 'canViewReports' },
 ];
 
@@ -316,8 +222,8 @@ const userManagementSubLinks: SubLink[] = [
 const catalogSubLinks: SubLink[] = [
   { name: 'All Products', href: '/admin/catalog', icon: CubeIcon, permission: 'canViewProducts' },
   { name: 'Add Product', href: '/admin/catalog/add', icon: PlusIcon, permission: 'canManageProducts' },
-  { name: 'Categories', href: '/admin/catalog/categories', icon: FolderIcon, permission: 'canViewCategories' },
-  { name: 'Suppliers', href: '/admin/catalog/suppliers', icon: TruckIcon, permission: 'canViewSuppliers' },
+  { name: 'Categories', href: '/admin/categories', icon: FolderIcon, permission: 'canViewCategories' },
+  { name: 'Suppliers', href: '/admin/suppliers', icon: TruckIcon, permission: 'canViewSuppliers' },
   { name: 'Import', href: '/admin/catalog/import', icon: DocumentTextIcon, permission: 'canImportProducts' },
   { name: 'Export', href: '/admin/catalog/export', icon: ChartBarIcon, permission: 'canExportProducts' },
   { name: 'Tags', href: '/admin/catalog/tags', icon: HashtagIcon, permission: 'canManageProducts' },
@@ -326,11 +232,12 @@ const catalogSubLinks: SubLink[] = [
 const inventorySubLinks: SubLink[] = [
   { name: 'Dashboard', href: '/admin/inventory', icon: ChartBarIcon, permission: 'canViewInventory' },
   { name: 'Add Item', href: '/admin/inventory/add', icon: PlusCircleIcon, permission: 'canManageInventory' },
-  { name: 'Low Stock', href: '/admin/inventory/low-stock', icon: BellIcon, permission: 'canViewLowStock' },
+  { name: 'Low Stock', href: '/admin/inventory/low-stock', icon: BellIcon, permission: 'canViewInventoryLowStock' },
   { name: 'Transfer', href: '/admin/inventory/transfer', icon: TruckIcon, permission: 'canTransferInventory' },
+  { name: 'Locations', href: '/admin/locations', icon: MapPinIcon, permission: 'canViewInventory' },
   { name: 'Import', href: '/admin/inventory/import', icon: ArrowUpTrayIcon, permission: 'canImportInventory' },
   { name: 'Export', href: '/admin/inventory/export', icon: DocumentArrowDownIcon, permission: 'canExportInventory' },
-  { name: 'Reports', href: '/admin/inventory/reports', icon: ChartPieIcon, permission: 'canViewReports' },
+  { name: 'Reports', href: '/admin/inventory/reports', icon: ChartPieIcon, permission: 'canViewInventoryReports' },
   { name: 'Audit Log', href: '/admin/inventory/audit', icon: ClipboardDocumentListIcon, permission: 'canViewInventoryAudit' },
   { name: 'Stock Count', href: '/admin/inventory/stock-count', icon: CalculatorIcon, permission: 'canManageStockCount' },
   { name: 'Valuation', href: '/admin/inventory/valuation', icon: CurrencyDollarIcon, permission: 'canViewInventoryValuation' },
@@ -338,6 +245,63 @@ const inventorySubLinks: SubLink[] = [
   { name: 'Categories', href: '/admin/inventory/categories', icon: FolderIcon, permission: 'canManageCategories' },
   { name: 'Suppliers', href: '/admin/inventory/suppliers', icon: TruckIcon, permission: 'canManageSuppliers' },
   { name: 'Settings', href: '/admin/inventory/settings', icon: Cog6ToothIcon, permission: 'canManageSettings' },
+];
+
+const locationsSubLinks: SubLink[] = [
+  {
+    name: 'Locations Dashboard',
+    href: '/admin/locations',
+    icon: MapPinIcon,
+    permission: 'canViewInventory',
+  },
+  {
+    name: 'Add Location',
+    href: '/admin/locations/add',
+    icon: PlusCircleIcon,
+    permission: 'canManageInventory',
+  },
+  {
+    name: 'Transfer Stock',
+    href: '/admin/locations/transfer',
+    icon: TruckIcon,
+    permission: 'canTransferInventory',
+  },
+  {
+    name: 'Stock Count',
+    href: '/admin/locations/stock-count',
+    icon: CalculatorIcon,
+    permission: 'canManageStockCount',
+  },
+  {
+    name: 'Import Locations',
+    href: '/admin/locations/import',
+    icon: ArrowUpTrayIcon,
+    permission: 'canImportInventory',
+  },
+  {
+    name: 'Export Locations',
+    href: '/admin/locations/export',
+    icon: DocumentArrowDownIcon,
+    permission: 'canExportInventory',
+  },
+  {
+    name: 'Location Reports',
+    href: '/admin/locations/reports',
+    icon: ChartPieIcon,
+    permission: 'canViewInventoryReports',
+  },
+  {
+    name: 'Location Audit',
+    href: '/admin/locations/audit',
+    icon: ClipboardDocumentListIcon,
+    permission: 'canViewInventoryAudit',
+  },
+  {
+    name: 'Location Settings',
+    href: '/admin/locations/settings',
+    icon: Cog6ToothIcon,
+    permission: 'canManageSettings',
+  },
 ];
 
 const barcodeSubLinks: SubLink[] = [
@@ -365,10 +329,6 @@ const salesSubLinks: SubLink[] = [
   { name: 'Sales Reports', href: '/admin/sales/reports', icon: ChartPieIcon, permission: 'canViewReports' },
   { name: 'Export Sales', href: '/admin/sales/export', icon: DocumentArrowDownIcon, permission: 'canViewSales' },
 ];
-
-// ============================================
-// ORDERS SUB-LINKS  ← NEW SECTION
-// ============================================
 
 const ordersSubLinks: SubLink[] = [
   { name: 'All Orders', href: '/admin/orders', icon: ClipboardDocumentListIcon, permission: 'canViewOrders' },
@@ -399,16 +359,51 @@ const supplierSubLinks: SubLink[] = [
 ];
 
 const bookkeepingSubLinks: SubLink[] = [
-  { name: 'Journal Entries', href: '/admin/bookkeeping', icon: DocumentTextIcon, permission: 'canViewJournalEntries' },
-  { name: 'Accounts', href: '/admin/bookkeeping/accounts', icon: ClipboardDocumentListIcon, permission: 'canViewAccounts' },
-  { name: 'Balance Sheet', href: '/admin/bookkeeping/balance-sheet', icon: ChartBarIcon, permission: 'canViewReports' },
-  { name: 'Income Statement', href: '/admin/bookkeeping/income-statement', icon: ChartPieIcon, permission: 'canViewReports' },
-  { name: 'Trial Balance', href: '/admin/bookkeeping/trial-balance', icon: CalculatorIcon, permission: 'canViewReports' },
+  { name: 'Overview', href: '/admin/bookkeeping', icon: HomeIcon, permission: 'canViewBookkeeping' },
+  { name: 'Chart of Accounts', href: '/admin/bookkeeping/accounts', icon: ClipboardDocumentListIcon, permission: 'canViewAccounts' },
+  { name: 'Journal Entries', href: '/admin/bookkeeping/journal-entries', icon: DocumentTextIcon, permission: 'canViewJournalEntries' },
+  { name: 'Reports', href: '/admin/bookkeeping/reports', icon: ChartPieIcon, permission: 'canViewReports' },
+  { name: 'Balance Sheet', href: '/admin/bookkeeping/reports/balance-sheet', icon: ChartBarIcon, permission: 'canViewReports' },
+  { name: 'Income Statement', href: '/admin/bookkeeping/reports/income-statement', icon: ChartPieIcon, permission: 'canViewReports' },
+  { name: 'Trial Balance', href: '/admin/bookkeeping/reports/trial-balance', icon: CalculatorIcon, permission: 'canViewReports' },
+  { name: 'Settings', href: '/admin/bookkeeping/settings', icon: Cog6ToothIcon, permission: 'canManageSettings' },
 ];
 
 // ============================================
-// DASHBOARD LINKS (with Orders added)
+// NOTIFICATION SUB-LINKS (NEW)
 // ============================================
+//
+// Three destinations, all under `/admin/notifications`:
+//
+//   Inbox        — the main list, filters, bulk actions
+//   Templates    — customize alert content per type
+//   Settings     — per-user channels, quiet hours, frequency
+//
+// All three are visible to any signed-in user with `canViewDashboard`,
+// which is the flag the notifications page already guards on. If you
+// want stricter gating (e.g. only MANAGER+ can edit templates), swap
+// the `permission` on the specific SubLink — nothing else changes.
+
+const notificationSubLinks: SubLink[] = [
+  {
+    name: 'Inbox',
+    href: '/admin/notifications',
+    icon: BellIcon,
+    permission: 'canViewDashboard',
+  },
+  {
+    name: 'Templates',
+    href: '/admin/notifications/templates',
+    icon: DocumentDuplicateIcon,
+    permission: 'canViewDashboard',
+  },
+  {
+    name: 'Settings',
+    href: '/admin/notifications/settings',
+    icon: Cog6ToothIcon,
+    permission: 'canViewDashboard',
+  },
+];
 
 const dashboardLinks: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: ChartBarIcon, permission: 'canViewDashboard' },
@@ -422,123 +417,24 @@ const dashboardLinks: NavItem[] = [
   { name: 'Catalog', href: '/admin/catalog', icon: CubeIcon, permission: 'canViewProducts', subLinks: catalogSubLinks },
   { name: 'Barcodes', href: '/admin/barcodes', icon: QrCodeIcon, permission: 'canViewBarcodes', subLinks: barcodeSubLinks },
   { name: 'Inventory', href: '/admin/inventory', icon: BuildingStorefrontIcon, permission: 'canViewInventory', subLinks: inventorySubLinks },
+  { name: 'Locations', href: '/admin/locations', icon: MapPinIcon, permission: 'canViewInventory', subLinks: locationsSubLinks },
   { name: 'Sales', href: '/admin/sales', icon: CurrencyDollarIcon, permission: 'canViewSales', subLinks: salesSubLinks },
-  // ⬇️ NEW: Orders section between Sales and Customers
   { name: 'Orders', href: '/admin/orders', icon: ClipboardDocumentCheckIcon, permission: 'canViewOrders', subLinks: ordersSubLinks },
   { name: 'Customers', href: '/admin/customers', icon: UserGroupIcon, permission: 'canViewCustomers', subLinks: customersSubLinks },
   { name: 'Suppliers', href: '/admin/suppliers', icon: TruckIcon, permission: 'canViewSuppliers', subLinks: supplierSubLinks },
   { name: 'Users', href: '/admin/users', icon: UsersIcon, permission: 'canViewUsers', subLinks: userManagementSubLinks },
+  // Notifications — expandable group with Inbox / Templates / Settings
+  {
+    name: 'Notifications',
+    href: '/admin/notifications',
+    icon: BellIcon,
+    permission: 'canViewDashboard',
+    subLinks: notificationSubLinks,
+  },
   { name: 'Reports', href: '/admin/reports', icon: ChartPieIcon, permission: 'canViewReports' },
   { name: 'Categories', href: '/admin/categories', icon: FolderIcon, permission: 'canViewCategories' },
   { name: 'Settings', href: '/admin/settings', icon: Cog6ToothIcon, permission: 'canManageSettings' },
 ];
-
-const infoLinks: SubLink[] = [
-  { name: 'Features', href: '/features', icon: StarIcon },
-  { name: 'Pricing', href: '/pricing', icon: CurrencyDollarIcon },
-  { name: 'Demo', href: '/demo', icon: RocketLaunchIcon },
-  { name: 'Help', href: '/help', icon: QuestionMarkCircleIcon },
-  { name: 'Privacy', href: '/privacy', icon: ShieldCheckIcon },
-  { name: 'Terms', href: '/terms', icon: DocumentTextIcon },
-];
-
-// ============================================
-// DEFAULT PERMISSIONS
-// ============================================
-
-const defaultPermissions: UserPermissions = {
-  canViewDashboard: true,
-  canViewCategories: true,
-  canManageCategories: false,
-  canViewProducts: true,
-  canManageProducts: false,
-  canViewOrders: true,
-  canManageOrders: false,
-  canViewCustomers: true,
-  canManageCustomers: false,
-  canViewInventory: true,
-  canManageInventory: false,
-  canViewReports: true,
-  canManageUsers: false,
-  canManageSettings: false,
-  canExportProducts: false,
-  canImportProducts: false,
-  canViewSuppliers: true,
-  canManageSuppliers: false,
-  canViewSales: true,
-  canManageSales: false,
-  canViewAnalytics: true,
-  canManagePos: true,
-  canViewReturns: true,
-  canManageReturns: false,
-  canViewInvoices: true,
-  canManageInvoices: false,
-  canViewReceipts: true,
-  canPrintReceipts: true,
-  canViewUsers: true,
-  canCreateUsers: false,
-  canEditUsers: false,
-  canDeleteUsers: false,
-  canManageUserRoles: false,
-  canManageUserPermissions: false,
-  canViewUserActivity: true,
-  canExportUsers: false,
-  canImportUsers: false,
-  canInviteUsers: false,
-  canManageUserGroups: false,
-  canViewInventoryAudit: true,
-  canExportInventory: false,
-  canImportInventory: false,
-  canAdjustInventory: false,
-  canTransferInventory: false,
-  canViewLowStock: true,
-  canManageStockCount: false,
-  canViewInventoryValuation: true,
-  canViewInventoryTransactions: true,
-  canViewBarcodes: true,
-  canManageBarcodes: false,
-  canCreateSuppliers: true,
-  canEditSuppliers: true,
-  canDeleteSuppliers: false,
-  canViewSupplierProducts: true,
-  canViewSupplierOrders: true,
-  canViewBusinessUnits: true,
-  canManageBusinessUnits: false,
-  canViewCompanies: true,
-  canManageCompanies: false,
-  canViewCart: true,
-  canManageCart: true,
-  canCheckout: true,
-  canViewCartHistory: true,
-  canManageCartSettings: true,
-  canViewCheckout: true,
-  canManageCheckout: true,
-  canViewCheckoutStats: true,
-  canManageCheckoutStats: true,
-  canViewCheckoutSettings: true,
-  canManageCheckoutSettings: true,
-  canViewPayments: true,
-  canManagePayments: true,
-  canViewPaymentStats: true,
-  canManagePaymentStats: true,
-  canViewPaymentSettings: true,
-  canManagePaymentSettings: true,
-  canExportPayments: true,
-  canRefundPayments: true,
-  canViewBookkeeping: true,
-  canManageBookkeeping: false,
-  canViewJournalEntries: true,
-  canCreateJournalEntries: false,
-  canViewAccounts: true,
-  canManageAccounts: false,
-  canViewShifts: true,
-  canManageShifts: false,
-  canViewRegisters: true,
-  canManageRegisters: false,
-  canStartShift: true,
-  canEndShift: true,
-  canManageCash: true,
-};
 
 // ============================================
 // MAIN SIDEBAR COMPONENT
@@ -557,10 +453,37 @@ export default function Sidebar({
   const [expandedSubMenu, setExpandedSubMenu] = useState<string | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  const permissions = useMemo<UserPermissions>(
-    () => ({ ...defaultPermissions, ...userPermissions }),
-    [userPermissions]
-  );
+  const { isRouteBlocked } = useOnboarding();
+
+  const isSuperAdmin = useMemo(() => {
+    if (!user) return false;
+    const meta = user.publicMetadata as Record<string, unknown> | undefined;
+    const unsafe = user.unsafeMetadata as Record<string, unknown> | undefined;
+    const roleFromMeta =
+      typeof meta?.role === 'string' ? meta.role : null;
+    const roleFromUnsafe =
+      typeof unsafe?.role === 'string' ? unsafe.role : null;
+    return (
+      isSuperAdminRole(roleFromMeta) || isSuperAdminRole(roleFromUnsafe)
+    );
+  }, [user]);
+
+  const permissions = useMemo<UserPermissions>(() => {
+    if (isSuperAdmin) {
+      return buildPermissionsFromSet(['*']);
+    }
+    const permissiveDefault = buildPermissionsFromSet(['*']);
+    return { ...permissiveDefault, ...userPermissions };
+  }, [isSuperAdmin, userPermissions]);
+
+  const isLinkVisible = useMemo(() => {
+    return (href: string, permission?: keyof UserPermissions): boolean => {
+      if (isSuperAdmin) return true;
+      if (permission && permissions[permission] === false) return false;
+      if (isRouteBlocked(href)) return false;
+      return true;
+    };
+  }, [isSuperAdmin, permissions, isRouteBlocked]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -603,14 +526,10 @@ export default function Sidebar({
 
   const filteredDashboardLinks = useMemo(
     () =>
-      dashboardLinks.filter((item) => {
-        if (!item.permission) return true;
-        return permissions[item.permission] !== false;
-      }),
-    [permissions]
+      dashboardLinks.filter((item) => isLinkVisible(item.href, item.permission)),
+    [isLinkVisible]
   );
 
-  // Auto-expand the correct submenu based on the current path
   useEffect(() => {
     if (!pathname) return;
 
@@ -619,7 +538,6 @@ export default function Sidebar({
       return;
     }
 
-    // Check the main dashboard links with subLinks first
     for (const link of filteredDashboardLinks) {
       if (!link.subLinks || link.subLinks.length === 0) continue;
       const hasActiveSub = link.subLinks.some((sub) => isActive(sub.href));
@@ -629,7 +547,6 @@ export default function Sidebar({
       }
     }
 
-    // Fallback: match by base path
     const subLinkGroups: Array<{ base: string; menuKey: string }> = [
       { base: '/admin/shifts', menuKey: '/admin/shifts' },
       { base: '/admin/bookkeeping', menuKey: '/admin/bookkeeping' },
@@ -640,8 +557,12 @@ export default function Sidebar({
       { base: '/admin/companies', menuKey: '/admin/companies' },
       { base: '/admin/business-units', menuKey: '/admin/business-units' },
       { base: '/admin/inventory', menuKey: '/admin/inventory' },
+      { base: '/admin/locations', menuKey: '/admin/locations' },
       { base: '/admin/barcodes', menuKey: '/admin/barcodes' },
       { base: '/admin/users', menuKey: '/admin/users' },
+      // Notifications — matches /admin/notifications, /admin/notifications/templates,
+      // /admin/notifications/templates/new, /admin/notifications/settings, etc.
+      { base: '/admin/notifications', menuKey: '/admin/notifications' },
       { base: '/admin/catalog', menuKey: '/admin/catalog' },
       { base: '/admin/sales', menuKey: '/admin/sales' },
       { base: '/admin/orders', menuKey: '/admin/orders' },
@@ -667,6 +588,7 @@ export default function Sidebar({
       <Link
         key={item.href}
         href={item.href}
+        prefetch={false}
         title={isCollapsed ? item.name : undefined}
         className={`group flex items-center ${
           isCollapsed ? 'justify-center' : 'gap-3'
@@ -735,18 +657,14 @@ export default function Sidebar({
     const isItemActive = active || isSubActive;
 
     const visibleSubLinks =
-      item.subLinks?.filter((subLink) => {
-        if (subLink.permission) {
-          return permissions[subLink.permission] !== false;
-        }
-        return true;
-      }) ?? [];
+      item.subLinks?.filter((subLink) =>
+        isLinkVisible(subLink.href, subLink.permission)
+      ) ?? [];
 
     if (visibleSubLinks.length === 0 && !isItemActive) {
       return null;
     }
 
-    // Collapsed mode — show icon with a hover dropdown
     if (isCollapsed) {
       return (
         <div key={item.href} className="relative group">
@@ -781,6 +699,7 @@ export default function Sidebar({
                       <Link
                         key={subLink.href}
                         href={subLink.href}
+                        prefetch={false}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                           subActive
                             ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
@@ -806,7 +725,6 @@ export default function Sidebar({
       );
     }
 
-    // Expanded mode
     return (
       <div key={item.href}>
         <button
@@ -857,6 +775,7 @@ export default function Sidebar({
                 <Link
                   key={subLink.href}
                   href={subLink.href}
+                  prefetch={false}
                   className={`flex items-center gap-3 px-2 py-1.5 rounded-lg transition-all duration-150 text-sm ${
                     subActive
                       ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
@@ -886,21 +805,23 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Desktop Sidebar */}
       <aside
         ref={sidebarRef}
         className={`hidden lg:flex fixed inset-y-0 left-0 z-40 bg-white dark:bg-gray-900 shadow-xl flex-col overflow-y-auto border-r border-gray-200 dark:border-gray-800 transition-all duration-300 ${
           isCollapsed ? 'w-[72px]' : 'w-[280px]'
         }`}
       >
-        {/* Header */}
         <div
           className={`p-2 border-b border-gray-200 dark:border-gray-800 flex-shrink-0 flex items-center ${
             isCollapsed ? 'justify-center' : 'justify-between'
           } w-full`}
         >
           {!isCollapsed ? (
-            <Link href="/" className="flex items-center gap-2 group">
+            <Link
+              href="/"
+              prefetch={false}
+              className="flex items-center gap-2 group"
+            >
               <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-all">
                 <span className="text-white font-bold text-sm">P</span>
               </div>
@@ -934,15 +855,12 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* Navigation */}
         <div className="flex-1 overflow-y-auto py-1 px-1.5 sidebar-scroll">
-          {/* Public Section */}
           <div className="mb-1">
             {renderSectionHeader('Shop')}
             {publicLinks.map((link) => renderNavLink(link))}
           </div>
 
-          {/* Admin Dashboard Section */}
           {isLoaded && isSignedIn && (
             <div className="mb-1">
               {renderSectionHeader('Admin Dashboard')}
@@ -954,15 +872,8 @@ export default function Sidebar({
               })}
             </div>
           )}
-
-          {/* Info Section */}
-          <div className="mb-1">
-            {renderSectionHeader('Information')}
-            {infoLinks.map((link) => renderNavLink(link))}
-          </div>
         </div>
 
-        {/* User profile */}
         <div className="border-t border-gray-200 dark:border-gray-800 p-2 flex-shrink-0">
           {!isCollapsed ? (
             <div className="space-y-1.5">
@@ -990,6 +901,7 @@ export default function Sidebar({
               ) : (
                 <Link
                   href="/sign-in"
+                  prefetch={false}
                   className="w-full flex items-center justify-center px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all duration-200 border border-blue-200 dark:border-blue-800"
                 >
                   <ArrowRightOnRectangleIcon className="w-4 h-4 mr-1.5" />
@@ -1013,6 +925,7 @@ export default function Sidebar({
               ) : (
                 <Link
                   href="/sign-in"
+                  prefetch={false}
                   className="p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all duration-200"
                   title="Sign In"
                 >
@@ -1024,7 +937,6 @@ export default function Sidebar({
         </div>
       </aside>
 
-      {/* Mobile Sidebar */}
       <AnimatePresence>
         {isMobileOpen && (
           <>
@@ -1057,7 +969,6 @@ export default function Sidebar({
               </div>
 
               <div className="flex-1 overflow-y-auto px-3 py-4">
-                {/* Public Links */}
                 <div className="mb-4">
                   <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
                     Shop
@@ -1066,6 +977,7 @@ export default function Sidebar({
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={false}
                       onClick={onToggleMobile}
                       className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${
                         isActive(item.href)
@@ -1082,7 +994,6 @@ export default function Sidebar({
                   ))}
                 </div>
 
-                {/* Admin Links */}
                 {isLoaded && isSignedIn && (
                   <div className="mb-4">
                     <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
@@ -1095,12 +1006,9 @@ export default function Sidebar({
                       const isExpanded = expandedSubMenu === item.href;
 
                       const visibleSubLinks =
-                        item.subLinks?.filter((subLink) => {
-                          if (subLink.permission) {
-                            return permissions[subLink.permission] !== false;
-                          }
-                          return true;
-                        }) ?? [];
+                        item.subLinks?.filter((subLink) =>
+                          isLinkVisible(subLink.href, subLink.permission)
+                        ) ?? [];
 
                       return (
                         <div key={item.href}>
@@ -1135,61 +1043,38 @@ export default function Sidebar({
                               <span className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />
                             )}
                           </button>
-                          {hasSubLinks && isExpanded && visibleSubLinks.length > 0 && (
-                            <div className="ml-6 mt-1 space-y-0.5">
-                              {visibleSubLinks.map((subLink) => (
-                                <Link
-                                  key={subLink.href}
-                                  href={subLink.href}
-                                  onClick={onToggleMobile}
-                                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                                    isActive(subLink.href)
-                                      ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/50'
-                                  }`}
-                                >
-                                  <subLink.icon className="w-4 h-4" />
-                                  <span>{subLink.name}</span>
-                                  {isActive(subLink.href) && (
-                                    <span className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                                  )}
-                                </Link>
-                              ))}
-                            </div>
-                          )}
+                          {hasSubLinks &&
+                            isExpanded &&
+                            visibleSubLinks.length > 0 && (
+                              <div className="ml-6 mt-1 space-y-0.5">
+                                {visibleSubLinks.map((subLink) => (
+                                  <Link
+                                    key={subLink.href}
+                                    href={subLink.href}
+                                    prefetch={false}
+                                    onClick={onToggleMobile}
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
+                                      isActive(subLink.href)
+                                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/50'
+                                    }`}
+                                  >
+                                    <subLink.icon className="w-4 h-4" />
+                                    <span>{subLink.name}</span>
+                                    {isActive(subLink.href) && (
+                                      <span className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />
+                                    )}
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
                         </div>
                       );
                     })}
                   </div>
                 )}
-
-                {/* Info Links */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2 px-3">
-                    Information
-                  </p>
-                  {infoLinks.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={onToggleMobile}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 ${
-                        isActive(item.href)
-                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800/50'
-                      }`}
-                    >
-                      <item.icon className="w-5 h-5" />
-                      <span className="font-medium text-sm">{item.name}</span>
-                      {isActive(item.href) && (
-                        <span className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />
-                      )}
-                    </Link>
-                  ))}
-                </div>
               </div>
 
-              {/* Mobile User Profile */}
               <div className="border-t border-gray-200 dark:border-gray-800 p-4">
                 {isLoaded && isSignedIn ? (
                   <div className="space-y-2">
@@ -1220,6 +1105,7 @@ export default function Sidebar({
                 ) : (
                   <Link
                     href="/sign-in"
+                    prefetch={false}
                     className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all duration-200 border border-blue-200 dark:border-blue-800"
                   >
                     <ArrowRightOnRectangleIcon className="w-5 h-5 mr-2" />
@@ -1232,7 +1118,6 @@ export default function Sidebar({
         )}
       </AnimatePresence>
 
-      {/* Spacer for desktop layout */}
       <div
         className={`hidden lg:block flex-shrink-0 transition-all duration-300 ${
           isCollapsed ? 'w-[72px]' : 'w-[280px]'
@@ -1241,3 +1126,4 @@ export default function Sidebar({
     </>
   );
 }
+
