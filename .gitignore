@@ -21,3 +21,20 @@ packages/backend/prisma/migrations/*.sql
 
 # Expo local state
 .expo/
+
+# ── Database dumps ─────────────────────────────────────────────
+*.dump
+*.sql.bak
+
+# ── User uploads ───────────────────────────────────────────────
+packages/backend/uploads/*
+!packages/backend/uploads/.gitkeep
+
+# ── Lockfile collision ─────────────────────────────────────────
+package-lock.json
+yarn.lock
+
+# ── Stale migration backups ────────────────────────────────────
+migrations_backup_*/
+packages/backend/prisma/migrations_old/
+redundant_migrations/
