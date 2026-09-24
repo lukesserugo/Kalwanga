@@ -1,7 +1,10 @@
+// packages/shared/src/tokens/animation.ts
+
 export const backgroundImage = {
   "brand-gradient": "linear-gradient(to right, #F97316, #EF4444)",
   "brand-gradient-v": "linear-gradient(to bottom, #F97316, #EF4444)",
-  "brand-gradient-radial": "radial-gradient(circle at center, #F97316, #EF4444)",
+  "brand-gradient-radial":
+    "radial-gradient(circle at center, #F97316, #EF4444)",
   "brand-gradient-hero":
     "linear-gradient(135deg, #EA580C 0%, #EF4444 50%, #E11D48 100%)",
 } as const;

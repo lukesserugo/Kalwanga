@@ -9,7 +9,6 @@ const config = getDefaultConfig(projectRoot);
 config.watchFolders = [
   workspaceRoot,
   path.resolve(workspaceRoot, "packages/shared"),
-  path.resolve(workspaceRoot, "packages/tokens"),
 ];
 
 config.resolver.nodeModulesPaths = [
@@ -19,7 +18,6 @@ config.resolver.nodeModulesPaths = [
 
 config.resolver.extraNodeModules = {
   "@pos/shared": path.resolve(workspaceRoot, "packages/shared/src"),
-  "@pos/tokens": path.resolve(workspaceRoot, "packages/tokens/src"),
 };
 
 module.exports = config;

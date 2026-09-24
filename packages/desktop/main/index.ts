@@ -61,6 +61,7 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 // Keep a global reference of the window object
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let isQuitting = false;
 
 // Create the main window
 function createWindow() {
@@ -166,8 +167,10 @@ function createWindow() {
     }
   });
 
-  // Handle window close
+  // Handle window close — hide to tray instead of quitting,
+  // unless the app is actually quitting.
   mainWindow.on('close', (event) => {
+    if (isQuitting) return;
     if (store.get('rememberLastSession') as boolean) {
       event.preventDefault();
       mainWindow?.hide();
@@ -241,10 +244,12 @@ app.whenReady().then(async () => {
     tray = createTray(mainWindow);
     console.log('[debug] after createTray');
 
-    console.log('[debug] before setupIPC');
-    setupIPC(mainWindow, store);
-    console.log('[debug] after setupIPC');
-
+    // ────────────────────────────────────────────
+    // SINGLE setupIPC call. Do not add a second.
+    // Each ipcMain.handle('...') registration must run exactly once
+    // per process; registering twice throws:
+    //   "Attempted to register a second handler for 'X'"
+    // ────────────────────────────────────────────
     console.log('[debug] before setupIPC');
     setupIPC(mainWindow, store);
     console.log('[debug] after setupIPC');
@@ -293,39 +298,32 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
-  logger.info('Application quitting...');
-
-  try {
-    shutdownScanner().then(() => {
-      logger.info('Scanner shut down');
-    }).catch((error) => {
-      logger.error('Error shutting down scanner:', error);
-    });
-  } catch (error) {
-    logger.error('Error initiating scanner shutdown:', error);
-  }
-
-  try {
-    closeSyncService();
-    logger.info('Sync service closed');
-  } catch (error) {
-    logger.error('Error closing sync service:', error);
-  }
-
-  try {
-    closeDatabase();
-    logger.info('Database closed');
-  } catch (error) {
-    logger.error('Error closing database:', error);
-  }
-});
-
 // ============================================
 // PLACE 3: Clean up resources on app quit
 // ============================================
-app.on('before-quit', () => {
+//
+// Single before-quit handler. Any cleanup that must run on quit goes
+// here. Do not add a second handler — 'before-quit' fires once per
+// quit, and duplicated handlers run the same cleanup twice.
+app.on('before-quit', (event) => {
+  if (isQuitting) return;
+  isQuitting = true;
+
   logger.info('Application quitting...');
+
+  // Scanner shutdown is async; run it, then close sync + db synchronously,
+  // then let the default quit behavior proceed.
+  try {
+    shutdownScanner()
+      .then(() => {
+        logger.info('Scanner shut down');
+      })
+      .catch((error) => {
+        logger.error('Error shutting down scanner:', error);
+      });
+  } catch (error) {
+    logger.error('Error initiating scanner shutdown:', error);
+  }
 
   try {
     closeSyncService();
