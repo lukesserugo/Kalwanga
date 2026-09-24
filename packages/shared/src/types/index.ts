@@ -1010,3 +1010,16 @@ export interface Environment {
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?: string;
   NODE_ENV: 'development' | 'production' | 'test';
 }
+
+// ===== Auth =====
+
+// ============================================
+// NOTE
+// ============================================
+// This file used to re-export inferred types from ../schemas and
+// ../common at the bottom. Those blocks were removed because:
+//   1. They duplicated what ./schemas/index.ts already exports.
+//   2. The paths (../../../shared/src/...) were stale after the
+//      package moved from api-contract to shared.
+// Consume those types via '@pos/shared/schemas' or '@pos/shared'.
+// ============================================

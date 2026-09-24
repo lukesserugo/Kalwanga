@@ -1,227 +1,166 @@
-﻿import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from "axios";
+// packages/mobile/services/api.ts
+import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { getApiUrl } from "../utils/helpers";
-import { ApiResponse } from "@pos/shared/types";
+import type { ApiResponse } from "@pos/shared/common";
 
-// Define error response type
-interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: any;
-  timestamp?: string;
-  path?: string;
-}
+/**
+ * The API returns either a success envelope or an error envelope.
+ * Errors are shaped as `{ success: false, data: undefined, message }`
+ * so that callers can branch on `response.success`.
+ */
+type ErrorResponse<T> = {
+  success: false;
+  data: T | undefined;
+  message: string;
+};
+type ApiResult<T> = ApiResponse<T> | ErrorResponse<T>;
+
+/**
+ * Mobile API client.
+ *
+ * NOTE on typing:
+ *   `ApiResponse<T>` from @pos/shared is `{ success, data, message?, timestamp? }`.
+ *   Errors are surfaced as `{ success: false, error: { code, message } }`
+ *   (see @pos/shared/common/response Ã¢â‚¬â€ ApiErrorSchema).
+ *
+ *   We do NOT put an HTTP `status` field on responses; it lives on the
+ *   thrown/rejected value and is exposed via `ApiError.status`.
+ */
+
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api";
+
+const TOKEN_KEY = "clerk_session_token";
 
 class ApiService {
   private api: AxiosInstance;
 
   constructor() {
     this.api = axios.create({
-      baseURL: getApiUrl(),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      timeout: 30000,
+      baseURL: API_BASE_URL,
+      timeout: 30_000,
+      headers: { "Content-Type": "application/json" },
     });
 
-    // Request interceptor - add token
-    this.api.interceptors.request.use(
-      async (config) => {
-        try {
-          // Try to get token from SecureStore
-          let token = await SecureStore.getItemAsync("clerk_session_token");
-          
-          // If no token in SecureStore, try localStorage for web
-          if (!token && Platform.OS === 'web') {
-            token = localStorage.getItem("clerk_session_token");
-          }
-          
-          if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-          }
-        } catch (error) {
-          console.error("Error getting token:", error);
-        }
-        return config;
-      },
-      (error) => Promise.reject(error)
-    );
+    this.api.interceptors.request.use(async (config) => {
+      const token = await this.getToken();
+      if (token && config.headers) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
 
-    // Response interceptor - handle errors
     this.api.interceptors.response.use(
       (response) => response,
-      async (error: AxiosError) => {
-        // Handle network errors
-        if (!error.response) {
-          console.error("Network error:", error.message);
-          return Promise.reject({
-            success: false,
-            error: "Network error. Please check your connection.",
-            message: error.message,
-          });
-        }
+      (error) => {
+        // Normalize the error into the ApiError shape from the contract.
+        const status = error?.response?.status ?? 500;
+        const payload = error?.response?.data;
+        const message =
+          payload?.error?.message ||
+          payload?.message ||
+          error?.message ||
+          "Request failed";
 
-        // Handle unauthorized
-        if (error.response.status === 401) {
-          console.log("Unauthorized, clearing session...");
-          await SecureStore.deleteItemAsync("clerk_session_token");
-          if (Platform.OS === 'web') {
-            localStorage.removeItem("clerk_session_token");
-          }
-          // Redirect to login if needed
-          // You can emit an event or use a navigation ref here
-        }
-
-        // Handle rate limiting
-        if (error.response.status === 429) {
-          console.error("Rate limit exceeded");
-          return Promise.reject({
-            success: false,
-            error: "Too many requests. Please try again later.",
-            status: 429,
-          });
-        }
-
-        // Handle server errors
-        if (error.response.status >= 500) {
-          console.error("Server error:", error.response.data);
-          return Promise.reject({
-            success: false,
-            error: "Server error. Please try again later.",
-            status: error.response.status,
-          });
-        }
-
-        // Return the error response
         return Promise.reject({
-          success: false,
-          ...error.response.data,
-          status: error.response.status,
+          success: false as const,
+          error: { code: String(status), message },
+          status, // kept on the rejected value only, not on ApiResponse
         });
-      }
+      },
     );
   }
 
   private async getToken(): Promise<string | null> {
     try {
-      let token = await SecureStore.getItemAsync("clerk_session_token");
-      if (!token && Platform.OS === 'web') {
-        token = localStorage.getItem("clerk_session_token");
+      let token = await SecureStore.getItemAsync(TOKEN_KEY);
+      if (!token && Platform.OS === "web") {
+        token = localStorage.getItem(TOKEN_KEY);
       }
       return token;
-    } catch (error) {
-      console.error("Error getting token:", error);
+    } catch (err) {
+      console.error("Error getting token:", err);
       return null;
     }
   }
 
   private async setToken(token: string): Promise<void> {
     try {
-      await SecureStore.setItemAsync("clerk_session_token", token);
-      if (Platform.OS === 'web') {
-        localStorage.setItem("clerk_session_token", token);
+      await SecureStore.setItemAsync(TOKEN_KEY, token);
+      if (Platform.OS === "web") {
+        localStorage.setItem(TOKEN_KEY, token);
       }
-    } catch (error) {
-      console.error("Error setting token:", error);
+    } catch (err) {
+      console.error("Error setting token:", err);
     }
   }
 
   private async removeToken(): Promise<void> {
     try {
-      await SecureStore.deleteItemAsync("clerk_session_token");
-      if (Platform.OS === 'web') {
-        localStorage.removeItem("clerk_session_token");
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+      if (Platform.OS === "web") {
+        localStorage.removeItem(TOKEN_KEY);
       }
-    } catch (error) {
-      console.error("Error removing token:", error);
+    } catch (err) {
+      console.error("Error removing token:", err);
     }
   }
 
-  async get<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+  private toErrorResponse<T>(err: any): ErrorResponse<T> {
+    return {
+      success: false,
+      data: undefined,
+      message: err?.error?.message || err?.message || "Request failed",
+    };
+  }
+
+  async get<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>> {
     try {
       const response = await this.api.get<ApiResponse<T>>(url, config);
       return response.data;
-    } catch (error: any) {
-      // If the error is already formatted, return it
-      if (error.success === false) {
-        return error;
-      }
-      // Otherwise, format it
-      return {
-        success: false,
-        error: error.message || "Failed to fetch data",
-        status: error.response?.status || 500,
-      };
+    } catch (err: any) {
+      if (err?.success === false) return this.toErrorResponse<T>(err);
+      return this.toErrorResponse<T>(err);
     }
   }
 
-  async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+  async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResult<T>> {
     try {
       const response = await this.api.post<ApiResponse<T>>(url, data, config);
       return response.data;
-    } catch (error: any) {
-      if (error.success === false) {
-        return error;
-      }
-      return {
-        success: false,
-        error: error.message || "Failed to post data",
-        status: error.response?.status || 500,
-      };
+    } catch (err: any) {
+      return this.toErrorResponse<T>(err);
     }
   }
 
-  async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+  async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResult<T>> {
     try {
       const response = await this.api.put<ApiResponse<T>>(url, data, config);
       return response.data;
-    } catch (error: any) {
-      if (error.success === false) {
-        return error;
-      }
-      return {
-        success: false,
-        error: error.message || "Failed to update data",
-        status: error.response?.status || 500,
-      };
+    } catch (err: any) {
+      return this.toErrorResponse<T>(err);
     }
   }
 
-  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResult<T>> {
     try {
       const response = await this.api.patch<ApiResponse<T>>(url, data, config);
       return response.data;
-    } catch (error: any) {
-      if (error.success === false) {
-        return error;
-      }
-      return {
-        success: false,
-        error: error.message || "Failed to patch data",
-        status: error.response?.status || 500,
-      };
+    } catch (err: any) {
+      return this.toErrorResponse<T>(err);
     }
   }
 
-  async delete<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+  async delete<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>> {
     try {
       const response = await this.api.delete<ApiResponse<T>>(url, config);
       return response.data;
-    } catch (error: any) {
-      if (error.success === false) {
-        return error;
-      }
-      return {
-        success: false,
-        error: error.message || "Failed to delete data",
-        status: error.response?.status || 500,
-      };
+    } catch (err: any) {
+      return this.toErrorResponse<T>(err);
     }
   }
 
-  // Helper methods
   async setAuthToken(token: string): Promise<void> {
     await this.setToken(token);
   }
@@ -233,46 +172,6 @@ class ApiService {
   async isAuthenticated(): Promise<boolean> {
     const token = await this.getToken();
     return !!token;
-  }
-
-  // Upload file with progress
-  async upload<T>(
-    url: string,
-    formData: FormData,
-    onProgress?: (progress: number) => void
-  ): Promise<ApiResponse<T>> {
-    try {
-      const response = await this.api.post<ApiResponse<T>>(url, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-        onUploadProgress: (progressEvent) => {
-          if (onProgress && progressEvent.total) {
-            const progress = (progressEvent.loaded / progressEvent.total) * 100;
-            onProgress(Math.round(progress));
-          }
-        },
-      });
-      return response.data;
-    } catch (error: any) {
-      if (error.success === false) {
-        return error;
-      }
-      return {
-        success: false,
-        error: error.message || "Failed to upload file",
-        status: error.response?.status || 500,
-      };
-    }
-  }
-
-  // Download file
-  async download(url: string, config?: AxiosRequestConfig): Promise<Blob> {
-    const response = await this.api.get(url, {
-      ...config,
-      responseType: 'blob',
-    });
-    return response.data;
   }
 }
 

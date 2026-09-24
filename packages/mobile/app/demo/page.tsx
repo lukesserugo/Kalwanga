@@ -2,8 +2,8 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Activi
 import { useState } from "react";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../hooks/useTheme";
-import { useToast } from "../hooks/useToast";
+import { useTheme } from "../../hooks/useTheme";
+import { useToast } from "../../hooks/useToast";
 
 export default function DemoPage() {
   const { colors } = useTheme();

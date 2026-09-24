@@ -1,20 +1,25 @@
-﻿const { getDefaultConfig } = require('expo/metro-config');
-const path = require('path');
+﻿const { getDefaultConfig } = require("expo/metro-config");
+const path = require("path");
 
-const config = getDefaultConfig(__dirname);
+const projectRoot = __dirname;
+const workspaceRoot = path.resolve(projectRoot, "../..");
+
+const config = getDefaultConfig(projectRoot);
 
 config.watchFolders = [
-  path.resolve(__dirname, '..'),
-  path.resolve(__dirname, '../shared'),
+  workspaceRoot,
+  path.resolve(workspaceRoot, "packages/shared"),
+  path.resolve(workspaceRoot, "packages/tokens"),
 ];
 
 config.resolver.nodeModulesPaths = [
-  path.resolve(__dirname, 'node_modules'),
-  path.resolve(__dirname, '../node_modules'),
+  path.resolve(projectRoot, "node_modules"),
+  path.resolve(workspaceRoot, "node_modules"),
 ];
 
 config.resolver.extraNodeModules = {
-  '@pos/shared': path.resolve(__dirname, '../shared/src'),
+  "@pos/shared": path.resolve(workspaceRoot, "packages/shared/src"),
+  "@pos/tokens": path.resolve(workspaceRoot, "packages/tokens/src"),
 };
 
 module.exports = config;

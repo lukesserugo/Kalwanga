@@ -1,25 +1,22 @@
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
 } from "react-native";
-import { useAuth, useUser } from "@clerk/clerk-expo";
+import { useUser } from "@clerk/clerk-expo";
 import { useState, useEffect, useCallback } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../../hooks/useTheme";
 import { useToast } from "../../hooks/useToast";
 import { useSocket } from "../../hooks/useSocket";
 import { apiService } from "../../services/api";
-import { formatCurrency, formatDate } from "../../utils/helpers";
-import { SalesStats, Sale } from "@pos/shared/types";
+import { formatCurrency, formatDate } from "@pos/shared/utils";
+import type { SalesStats, Sale } from "@pos/shared/types";
 
 export default function DashboardScreen() {
   const { user } = useUser();
-  const { colors } = useTheme();
   const { showToast } = useToast();
   const { socket, isConnected } = useSocket();
 
@@ -34,8 +31,7 @@ export default function DashboardScreen() {
         apiService.get<SalesStats>("/sales/stats"),
         apiService.get<Sale[]>("/sales?limit=5"),
       ]);
-
-      setStats(statsResponse.data);
+      setStats(statsResponse.data ?? null);
       setRecentSales(salesResponse.data || []);
     } catch (error) {
       console.error("Error loading dashboard:", error);
@@ -50,19 +46,15 @@ export default function DashboardScreen() {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  // Socket event listeners
   useEffect(() => {
     if (!socket) return;
-
     socket.on("new-sale", (sale: Sale) => {
       showToast(`New sale: ${sale.receiptNumber}`, "success");
       loadDashboardData();
     });
-
-    socket.on("low-stock-alert", (data) => {
+    socket.on("low-stock-alert", (data: { productId: string }) => {
       showToast(`Low stock alert: ${data.productId}`, "warning");
     });
-
     return () => {
       socket.off("new-sale");
       socket.off("low-stock-alert");
@@ -81,84 +73,95 @@ export default function DashboardScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View className="flex-1 items-center justify-center bg-gray-50 dark:bg-gray-950">
+        <ActivityIndicator size="large" color="#F97316" />
       </View>
     );
   }
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      className="flex-1 bg-gray-50 dark:bg-gray-950"
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#F97316"]} />
       }
     >
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.userInfo}>
-          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>{getInitials()}</Text>
+      <View className="flex-row items-center justify-between px-5 pt-4 pb-2">
+        <View className="flex-row items-center">
+          <View className="w-12 h-12 rounded-full items-center justify-center mr-3 bg-brand-500">
+            <Text className="text-white text-lg font-bold">{getInitials()}</Text>
           </View>
           <View>
-            <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>Welcome back,</Text>
-            <Text style={[styles.userName, { color: colors.text }]}>
+            <Text className="text-xs text-gray-500 dark:text-gray-400">Welcome back,</Text>
+            <Text className="text-base font-semibold text-gray-900 dark:text-white">
               {user?.firstName} {user?.lastName}
             </Text>
           </View>
         </View>
-        <View style={[styles.connectionBadge, { backgroundColor: isConnected ? colors.success + '20' : colors.error + '20' }]}>
-          <View style={[styles.connectionDot, { backgroundColor: isConnected ? colors.success : colors.error }]} />
-          <Text style={[styles.connectionText, { color: isConnected ? colors.success : colors.error }]}>
-            {isConnected ? 'Connected' : 'Offline'}
+        <View
+          className={`flex-row items-center px-2.5 py-1 rounded-xl ${
+            isConnected ? "bg-success-100" : "bg-danger-100"
+          }`}
+        >
+          <View
+            className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+              isConnected ? "bg-success-500" : "bg-danger-500"
+            }`}
+          />
+          <Text
+            className={`text-[11px] font-medium ${
+              isConnected ? "text-success-700" : "text-danger-700"
+            }`}
+          >
+            {isConnected ? "Connected" : "Offline"}
           </Text>
         </View>
       </View>
 
-      {/* Stats Cards */}
-      <View style={styles.statsGrid}>
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>
+      {/* Stats Grid */}
+      <View className="flex-row flex-wrap px-4 pt-2">
+        <View className="w-[46%] m-[2%] p-4 rounded-xl bg-white dark:bg-gray-900 shadow-soft">
+          <Text className="text-2xl font-bold text-brand-500">
             {formatCurrency(stats?.totalRevenue || 0)}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Revenue</Text>
+          <Text className="text-xs mt-1 text-gray-500 dark:text-gray-400">Revenue</Text>
         </View>
-
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.text }]}>
+        <View className="w-[46%] m-[2%] p-4 rounded-xl bg-white dark:bg-gray-900 shadow-soft">
+          <Text className="text-2xl font-bold text-gray-900 dark:text-white">
             {stats?.totalSales || 0}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Sales</Text>
+          <Text className="text-xs mt-1 text-gray-500 dark:text-gray-400">Sales</Text>
         </View>
-
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.success }]}>
+        <View className="w-[46%] m-[2%] p-4 rounded-xl bg-white dark:bg-gray-900 shadow-soft">
+          <Text className="text-2xl font-bold text-success-500">
             {formatCurrency(stats?.averageTicket || 0)}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Avg. Ticket</Text>
+          <Text className="text-xs mt-1 text-gray-500 dark:text-gray-400">Avg. Ticket</Text>
         </View>
-
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.warning }]}>
+        <View className="w-[46%] m-[2%] p-4 rounded-xl bg-white dark:bg-gray-900 shadow-soft">
+          <Text className="text-2xl font-bold text-warning-500">
             {recentSales.length}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Recent Sales</Text>
+          <Text className="text-xs mt-1 text-gray-500 dark:text-gray-400">Recent Sales</Text>
         </View>
       </View>
 
       {/* Recent Sales */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Sales</Text>
+      <View className="px-5 pt-4 pb-5">
+        <View className="flex-row items-center justify-between mb-3">
+          <Text className="text-lg font-semibold text-gray-900 dark:text-white">
+            Recent Sales
+          </Text>
           <TouchableOpacity onPress={() => showToast("View all sales", "info")}>
-            <Text style={[styles.sectionLink, { color: colors.primary }]}>See All</Text>
+            <Text className="text-sm font-medium text-brand-500">See All</Text>
           </TouchableOpacity>
         </View>
 
         {recentSales.length === 0 ? (
-          <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
-            <Ionicons name="receipt-outline" size={48} color={colors.textSecondary} />
-            <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
+          <View className="p-10 rounded-xl items-center bg-white dark:bg-gray-900">
+            <Ionicons name="receipt-outline" size={48} color="#9CA3AF" />
+            <Text className="text-sm mt-3 text-gray-500 dark:text-gray-400">
               No recent sales
             </Text>
           </View>
@@ -166,18 +169,18 @@ export default function DashboardScreen() {
           recentSales.map((sale) => (
             <TouchableOpacity
               key={sale.id}
-              style={[styles.saleItem, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
+              className="flex-row items-center justify-between py-3 border-b border-gray-200 dark:border-gray-800"
               onPress={() => showToast(`Sale ${sale.receiptNumber}`, "info")}
             >
               <View>
-                <Text style={[styles.saleReceipt, { color: colors.text }]}>
+                <Text className="text-[15px] font-medium text-gray-900 dark:text-white">
                   #{sale.receiptNumber}
                 </Text>
-                <Text style={[styles.saleDate, { color: colors.textSecondary }]}>
+                <Text className="text-xs mt-0.5 text-gray-500 dark:text-gray-400">
                   {formatDate(sale.createdAt)}
                 </Text>
               </View>
-              <Text style={[styles.saleTotal, { color: colors.primary }]}>
+              <Text className="text-base font-semibold text-brand-500">
                 {formatCurrency(sale.total)}
               </Text>
             </TouchableOpacity>
@@ -187,130 +190,3 @@ export default function DashboardScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  welcomeText: {
-    fontSize: 13,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  connectionBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  connectionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  connectionText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  statCard: {
-    width: '46%',
-    margin: '2%',
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    fontSize: 13,
-    marginTop: 4,
-  },
-  section: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  sectionLink: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  saleItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  saleReceipt: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  saleDate: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  saleTotal: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyState: {
-    padding: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  emptyStateText: {
-    fontSize: 14,
-    marginTop: 12,
-  },
-});
