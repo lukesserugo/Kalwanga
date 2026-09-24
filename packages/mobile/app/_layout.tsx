@@ -1,4 +1,6 @@
-﻿// packages/mobile/app/_layout.tsx
+// packages/mobile/app/_layout.tsx
+import "../polyfills";
+import { Appearance } from "react-native";
 import { Stack } from "expo-router";
 import { ClerkProvider, ClerkLoaded } from "@clerk/clerk-expo";
 import { StatusBar } from "expo-status-bar";
@@ -11,8 +13,6 @@ import { AuthProvider } from "../contexts/AuthContext";
 import Constants from "expo-constants";
 
 // Import global styles
-import "./global.css";
-
 // Token cache for Clerk
 const tokenCache = {
   async getToken(key: string) {

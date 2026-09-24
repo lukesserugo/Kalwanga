@@ -1,0 +1,139 @@
+// packages/shared/src/tokens/colors.ts
+//
+// Canonical brand + semantic palettes, shared by Web and Mobile.
+//
+// Source of truth: this file.
+// Web consumes it via `packages/web/tailwind.config.js` (via @pos/shared/tokens).
+// Mobile consumes it via plain StyleSheet — the values are identical.
+
+export const colors = {
+  primary: {
+    50: '#eff6ff',
+    100: '#dbeafe',
+    200: '#bfdbfe',
+    300: '#93c5fd',
+    400: '#60a5fa',
+    500: '#3b82f6',
+    600: '#2563eb',
+    700: '#1d4ed8',
+    800: '#1e40af',
+    900: '#1e3a8a',
+    950: '#172554',
+  },
+  secondary: {
+    50: '#f5f3ff',
+    100: '#ede9fe',
+    200: '#ddd6fe',
+    300: '#c4b5fd',
+    400: '#a78bfa',
+    500: '#8b5cf6',
+    600: '#7c3aed',
+    700: '#6d28d9',
+    800: '#5b21b6',
+    900: '#4c1d95',
+    950: '#2e1065',
+  },
+  success: {
+    50: '#f0fdf4',
+    100: '#dcfce7',
+    200: '#bbf7d0',
+    300: '#86efac',
+    400: '#4ade80',
+    500: '#22c55e',
+    600: '#16a34a',
+    700: '#15803d',
+    800: '#166534',
+    900: '#14532d',
+    950: '#052e16',
+  },
+  danger: {
+    50: '#fef2f2',
+    100: '#fee2e2',
+    200: '#fecaca',
+    300: '#fca5a5',
+    400: '#f87171',
+    500: '#ef4444',
+    600: '#dc2626',
+    700: '#b91c1c',
+    800: '#991b1b',
+    900: '#7f1d1d',
+    950: '#450a0a',
+  },
+  warning: {
+    50: '#fffbeb',
+    100: '#fef3c7',
+    200: '#fde68a',
+    300: '#fcd34d',
+    400: '#fbbf24',
+    500: '#f59e0b',
+    600: '#d97706',
+    700: '#b45309',
+    800: '#92400e',
+    900: '#78350f',
+    950: '#451a03',
+  },
+  gray: {
+    50: '#f9fafb',
+    100: '#f3f4f6',
+    200: '#e5e7eb',
+    300: '#d1d5db',
+    400: '#9ca3af',
+    500: '#6b7280',
+    600: '#4b5563',
+    700: '#374151',
+    800: '#1f2937',
+    900: '#111827',
+    950: '#030712',
+  },
+  brand: {
+    50: '#FFF7ED',
+    100: '#FFEDD5',
+    200: '#FED7AA',
+    300: '#FDBA74',
+    400: '#FB923C',
+    500: '#F97316',
+    600: '#EA580C',
+    700: '#C2410C',
+    800: '#9A3412',
+    900: '#7C2D12',
+    950: '#431407',
+  },
+  'brand-accent': {
+    50: '#FEF2F2',
+    100: '#FEE2E2',
+    200: '#FECACA',
+    300: '#FCA5A5',
+    400: '#F87171',
+    500: '#EF4444',
+    600: '#DC2626',
+    700: '#B91C1C',
+    800: '#991B1B',
+    900: '#7F1D1D',
+    950: '#450A0A',
+  },
+} as const;
+
+export type ColorScale = keyof typeof colors;
+export type ColorShade = keyof typeof colors.brand;
+
+// Semantic aliases — the mobile-friendly way to reference brand colors
+// without memorising the numeric scale.
+export const semanticColors = {
+  background: '#FFFFFF',
+  backgroundDark: '#030712',
+  surface: '#FFFFFF',
+  surfaceMuted: '#F9FAFB',
+  surfaceDark: '#111827',
+  surfaceMutedDark: '#1F2937',
+  text: '#111827',
+  textDark: '#F9FAFB',
+  textMuted: '#6B7280',
+  textMutedDark: '#9CA3AF',
+  border: '#E5E7EB',
+  borderDark: '#1F2937',
+  primary: colors.brand[500],       // #F97316
+  primaryDark: colors.brand[600],   // #EA580C
+  danger: colors.danger[500],       // #EF4444
+  success: colors.success[500],     // #22C55E
+  warning: colors.warning[500],     // #F59E0B
+} as const;

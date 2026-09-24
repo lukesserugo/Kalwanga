@@ -13,7 +13,9 @@
     "./validators": "./src/validators/index.ts",
     "./validate": "./src/validate-object.ts",
     "./types": "./src/types/index.ts",
-    "./helpers": "./src/helpers.ts"
+    "./helpers": "./src/helpers.ts",
+    "./tokens": "./src/tokens/index.ts",
+    "./tokens/*": "./src/tokens/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

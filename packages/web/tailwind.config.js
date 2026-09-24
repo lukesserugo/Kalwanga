@@ -9,7 +9,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // ── Existing semantic palettes ────────────────────────
+        // ── Existing semantic palettes ──────────────────────────
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',
@@ -89,7 +89,7 @@ module.exports = {
           950: '#030712',
         },
 
-        // ── Brand palette (orange → red) ──────────────────────
+        // ── Brand palette (orange → red) ────────────────────────
         // The primary accent used across the storefront: CTAs,
         // active nav, prices, focus rings, and gradient headlines.
         // Mirrors Tailwind's default orange scale, exposed under
@@ -176,20 +176,16 @@ module.exports = {
         // Brand-tinted shadow for primary CTAs. Subtle enough to
         // read as elevation on white, warm enough to hint at the
         // gradient beneath.
-        brand:
-          '0 4px 14px 0 rgba(249, 115, 22, 0.25)',
-        'brand-lg':
-          '0 10px 30px -5px rgba(249, 115, 22, 0.35)',
+        brand: '0 4px 14px 0 rgba(249, 115, 22, 0.25)',
+        'brand-lg': '0 10px 30px -5px rgba(249, 115, 22, 0.35)',
       },
 
       backgroundImage: {
         // Named gradient so callers write
         //   `bg-brand-gradient`
         // instead of the long `bg-gradient-to-r from-orange-500 to-red-500`.
-        'brand-gradient':
-          'linear-gradient(to right, #F97316, #EF4444)',
-        'brand-gradient-v':
-          'linear-gradient(to bottom, #F97316, #EF4444)',
+        'brand-gradient': 'linear-gradient(to right, #F97316, #EF4444)',
+        'brand-gradient-v': 'linear-gradient(to bottom, #F97316, #EF4444)',
         'brand-gradient-radial':
           'radial-gradient(circle at center, #F97316, #EF4444)',
         // The hero pattern used on the shop landing, categories
@@ -207,14 +203,12 @@ module.exports = {
         'fade-in': 'fadeIn 0.5s ease-in-out',
         'slide-up': 'slideUp 0.3s ease-out',
         'slide-down': 'slideDown 0.3s ease-out',
-        'pulse-slow':
-          'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         // Used on skeleton loaders and the shimmer badge on the
         // storefront hero.
         shimmer: 'shimmer 2s infinite linear',
         // Cart badge bump — plays when `cart:updated` fires.
-        'badge-pop':
-          'badgePop 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'badge-pop': 'badgePop 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
       },
 
       keyframes: {
