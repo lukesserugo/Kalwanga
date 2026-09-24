@@ -47,6 +47,51 @@ router.use(requireAuth);
 //      * every GET route — reads have no side effects
 //
 //  Those do not need keys.
+//
+// ─────────────────────────────────────────────────────────────────
+//  PROMOTION / LOYALTY ATTRIBUTION
+// ─────────────────────────────────────────────────────────────────
+//  POST /api/pos/checkout accepts optional promotion / loyalty
+//  passthrough fields in the request body, which are persisted on the
+//  resulting `Sale` row so every POS sale self-documents its discount
+//  source:
+//
+//      discountType       PERCENTAGE | FIXED | LOYALTY | MANUAL
+//                         (must be one of the four Prisma enum
+//                          members; inferred by the service when
+//                          omitted; unknown values are dropped by
+//                          the controller before reaching the DB)
+//      promotionCode      the code that was applied, if any
+//      promotionDiscount  the promotion's currency contribution
+//
+//  snake_case aliases (`discount_type`, `promotion_code`,
+//  `promotion_discount`) are also accepted. String numerics for
+//  `promotionDiscount` are coerced.
+//
+//  The loyalty side is already handled by `applyLoyaltyPoints: true`
+//  in the same payload — the service computes `loyaltyPointsUsed` and
+//  `loyaltyDiscount` and persists them on the sale alongside the
+//  promotion columns.
+//
+//  Corresponding columns on `Sale` (Prisma field names):
+//      discountType, promotionCode, promotionDiscount,
+//      loyaltyPointsUsed, loyaltyDiscount
+//
+//  ⚠ `discountType` maps to the Postgres enum `"DiscountType"`,
+//    defined in `prisma/schema.prisma`:
+//
+//        enum DiscountType {
+//          PERCENTAGE
+//          FIXED
+//          LOYALTY
+//          MANUAL
+//        }
+//
+//    Do NOT send values outside this set. The `PromotionType` enum on
+//    the `Promotion` model has additional members
+//    (BUY_X_GET_Y, FREE_SHIPPING, BOGO, BUNDLE, TIERED); those
+//    describe the *shape* of a promotion, not how the resulting
+//    discount is attributed on a `Sale`.
 // ─────────────────────────────────────────────────────────────────
 
 // ============================================
@@ -121,6 +166,11 @@ router.delete(
  * POST /api/pos/checkout
  *
  * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
+ *
+ * Accepts optional promotion / loyalty passthrough fields:
+ *   `discountType` (PERCENTAGE | FIXED | LOYALTY | MANUAL),
+ *   `promotionCode`, `promotionDiscount` — plus their snake_case
+ *   aliases. Persisted on the resulting `Sale` row.
  */
 router.post(
   '/checkout',

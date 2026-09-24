@@ -81,6 +81,9 @@ export function AddToCartButton({
     try {
       await activeCartService.addItem({
         productId,
+        // Backend collapses `null` → `undefined` via its own schema
+        // refinement, but we send `undefined` directly to keep the wire
+        // payload clean and avoid a null-vs-undefined ambiguity.
         variantId: variantId ?? undefined,
         quantity,
       });
@@ -93,6 +96,8 @@ export function AddToCartButton({
     } catch (err: any) {
       console.error('Failed to add to cart:', err);
 
+      // 401 mid-flight (session expired) → bounce to login and stop.
+      // No toast here: the redirect is the user feedback.
       if (
         err?.response?.status === 401 &&
         isAuthenticated &&

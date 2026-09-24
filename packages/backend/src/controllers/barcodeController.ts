@@ -48,6 +48,23 @@ const scanBarcodeSchema = z.object({
   businessUnitId: z.string().optional(),
 });
 
+/**
+ * Write-path scan schema.
+ *
+ * `scanIdempotencyKey` is the caller-supplied dedupe token. When two
+ * transports (USB HID + BLE) fire the same physical scan and drift
+ * past the dispatcher's 250 ms debounce, the second request carries
+ * the same key and the backend short-circuits with a 409.
+ */
+const recordScanSchema = z.object({
+  barcode: z.string().min(1, 'Barcode is required'),
+  businessUnitId: z.string().min(1, 'businessUnitId is required'),
+  quantity: z.number().int().positive().optional().default(1),
+  saleId: z.string().optional(),
+  note: z.string().optional(),
+  scanIdempotencyKey: z.string().min(1).max(128).optional(),
+});
+
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -82,9 +99,9 @@ export const barcodeController = {
     try {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
-      
+
       const result = await barcodeService.getProductBarcode(productId);
-      
+
       res.json({
         success: true,
         data: result,
@@ -102,9 +119,9 @@ export const barcodeController = {
     try {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
-      
+
       const result = await barcodeService.getProductBarcodeInfo(productId);
-      
+
       res.json({
         success: true,
         data: result,
@@ -122,9 +139,9 @@ export const barcodeController = {
     try {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
-      
+
       const result = await barcodeService.generateProductQRCode(productId);
-      
+
       res.json({
         success: true,
         data: result,
@@ -142,9 +159,9 @@ export const barcodeController = {
     try {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
-      
+
       const result = await barcodeService.generateBarcodeImageForProduct(productId);
-      
+
       res.json({
         success: true,
         data: result,
@@ -161,9 +178,9 @@ export const barcodeController = {
   async generateBarcodeImageFromString(req: Request, res: Response, next: NextFunction) {
     try {
       const data = generateBarcodeImageSchema.parse(req.body);
-      
+
       const result = await barcodeService.generateBarcodeImage(data.barcode, data.format);
-      
+
       res.json({
         success: true,
         data: result,
@@ -183,9 +200,9 @@ export const barcodeController = {
   async generateQRCode(req: Request, res: Response, next: NextFunction) {
     try {
       const data = generateQRCodeSchema.parse(req.body);
-      
+
       const result = await barcodeService.generateQRCode(data.data);
-      
+
       res.json({
         success: true,
         data: result,
@@ -205,9 +222,9 @@ export const barcodeController = {
   async generateUniqueBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const options = generateUniqueBarcodeSchema.parse(req.body);
-      
+
       const result = await barcodeService.generateUniqueBarcode(options);
-      
+
       res.status(201).json({
         success: true,
         data: result,
@@ -228,9 +245,9 @@ export const barcodeController = {
   async validateBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const data = validateBarcodeSchema.parse(req.body);
-      
+
       const result = await barcodeService.validateBarcode(data.barcode, data.excludeProductId);
-      
+
       res.json({
         success: true,
         data: result,
@@ -251,9 +268,9 @@ export const barcodeController = {
     try {
       const { barcode } = req.params;
       if (!barcode) throw new AppError('Barcode is required', 400);
-      
+
       const isValid = barcodeService.validateBarcodeFormat(barcode);
-      
+
       res.json({
         success: true,
         data: {
@@ -274,9 +291,9 @@ export const barcodeController = {
   async associateBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const data = associateBarcodeSchema.parse(req.body);
-      
+
       const result = await barcodeService.associateBarcode(data.productId, data.barcode);
-      
+
       res.json({
         success: true,
         data: result,
@@ -298,9 +315,9 @@ export const barcodeController = {
     try {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
-      
+
       const svg = await barcodeService.generateSVGBarcode(productId);
-      
+
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=3600');
       res.send(svg);
@@ -317,9 +334,9 @@ export const barcodeController = {
     try {
       const { receiptNumber } = req.params;
       if (!receiptNumber) throw new AppError('Receipt number is required', 400);
-      
+
       const result = await barcodeService.generateReceiptQRCode(receiptNumber);
-      
+
       res.json({
         success: true,
         data: result,
@@ -336,9 +353,9 @@ export const barcodeController = {
   async generateBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const data = generateBarcodeSchema.parse(req.body);
-      
+
       const result = await barcodeService.generateBarcode(data.productId, data.type);
-      
+
       res.status(201).json({
         success: true,
         data: result,
@@ -360,9 +377,9 @@ export const barcodeController = {
     try {
       const { barcode } = req.params;
       if (!barcode) throw new AppError('Barcode is required', 400);
-      
+
       const product = await barcodeService.getProductByBarcode(barcode);
-      
+
       res.json({
         success: true,
         data: product,
@@ -373,16 +390,59 @@ export const barcodeController = {
   },
 
   /**
-   * Scan barcode
+   * Scan barcode (read-only lookup)
    * POST /barcodes/scan
+   *
+   * Resolves a scanned code to product/variant + inventory and
+   * bumps scan counters. Does NOT decrement inventory — use
+   * /barcodes/record-scan for the write path.
    */
   async scanBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const data = scanBarcodeSchema.parse(req.body);
-      
+
       const result = await barcodeService.scanBarcode(data.barcode, data.businessUnitId);
-      
+
       res.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return handleValidationError(error, res);
+      }
+      next(error);
+    }
+  },
+
+  /**
+   * Record a scanner-driven scan (write path).
+   * POST /barcodes/record-scan
+   *
+   * Decrements inventory and writes an InventoryTransaction row
+   * atomically. When `scanIdempotencyKey` is supplied, a duplicate
+   * request is rejected with 409 before the transaction begins.
+   */
+  async recordScan(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = recordScanSchema.parse(req.body);
+
+      const userId = getUserId(req);
+      if (!userId) {
+        throw new AppError('Authentication required', 401);
+      }
+
+      const result = await barcodeService.recordScan({
+        barcode: data.barcode,
+        businessUnitId: data.businessUnitId,
+        userId,
+        saleId: data.saleId,
+        quantity: data.quantity,
+        note: data.note,
+        scanIdempotencyKey: data.scanIdempotencyKey,
+      });
+
+      res.status(201).json({
         success: true,
         data: result,
       });
@@ -401,7 +461,7 @@ export const barcodeController = {
   async bulkGenerateBarcodes(req: Request, res: Response, next: NextFunction) {
     try {
       const result = await barcodeService.bulkGenerateBarcodes();
-      
+
       res.json({
         success: true,
         data: result,
@@ -420,9 +480,9 @@ export const barcodeController = {
     try {
       const { variantId } = req.params;
       if (!variantId) throw new AppError('Variant ID is required', 400);
-      
+
       const result = await barcodeService.generateVariantBarcode(variantId);
-      
+
       res.json({
         success: true,
         data: result,
@@ -441,7 +501,7 @@ export const barcodeController = {
     try {
       const { variantId } = req.params;
       if (!variantId) throw new AppError('Variant ID is required', 400);
-      
+
       const variant = await prisma.productVariant.findUnique({
         where: { id: variantId },
         select: {
@@ -472,7 +532,7 @@ export const barcodeController = {
           sku: variant.sku || undefined,
         });
         barcode = generated.barcode;
-        
+
         await prisma.productVariant.update({
           where: { id: variantId },
           data: { barcode },
@@ -493,10 +553,8 @@ export const barcodeController = {
       };
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
-      // Get user ID using the helper - works with global Express.Request.user type
       const userId = getUserId(req);
 
-      // Save QR code record to database - use 'CUSTOM' type for variants
       try {
         if (prisma.qRCodeRecord) {
           await prisma.qRCodeRecord.create({
@@ -517,7 +575,6 @@ export const barcodeController = {
         console.warn('Could not save QR code record:', qrError);
       }
 
-      // Save barcode image record
       try {
         if (prisma.barcodeImageRecord) {
           await prisma.barcodeImageRecord.create({
@@ -568,7 +625,7 @@ export const barcodeController = {
     try {
       const { code } = req.params;
       if (!code) throw new AppError('QR code is required', 400);
-      
+
       if (!prisma.qRCodeRecord) {
         throw new AppError('QR code records are not available', 503);
       }
@@ -612,7 +669,6 @@ export const barcodeController = {
         throw new AppError('QR code not found', 404);
       }
 
-      // Increment scan count
       await prisma.qRCodeRecord.update({
         where: { id: qrCode.id },
         data: {
@@ -638,7 +694,7 @@ export const barcodeController = {
     try {
       const { barcode } = req.params;
       if (!barcode) throw new AppError('Barcode is required', 400);
-      
+
       if (!prisma.barcodeImageRecord) {
         throw new AppError('Barcode image records are not available', 503);
       }
@@ -667,7 +723,6 @@ export const barcodeController = {
         throw new AppError('Barcode image not found', 404);
       }
 
-      // Increment scan count
       await prisma.barcodeImageRecord.update({
         where: { id: barcodeImage.id },
         data: {
@@ -693,7 +748,7 @@ export const barcodeController = {
     try {
       const { code } = req.params;
       if (!code) throw new AppError('QR code is required', 400);
-      
+
       if (!prisma.qRCodeRecord) {
         throw new AppError('QR code records are not available', 503);
       }
@@ -721,13 +776,13 @@ export const barcodeController = {
     try {
       const { productId } = req.params;
       if (!productId) throw new AppError('Product ID is required', 400);
-      
+
       if (!prisma.qRCodeRecord) {
         throw new AppError('QR code records are not available', 503);
       }
 
       const qrCodes = await prisma.qRCodeRecord.findMany({
-        where: { 
+        where: {
           productId,
           type: 'PRODUCT',
         },

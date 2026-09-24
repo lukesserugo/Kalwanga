@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
 import { UserRole } from '../generated/prisma/index.js';
+import { verifyToken } from '@clerk/backend';
 
 // ✅ Single source of truth
 import {
@@ -33,123 +34,254 @@ declare global {
   }
 }
 
-// ✅ Re-export so existing importers of `ALL_PERMISSIONS` from this
-//    file keep working. The value now comes from lib/permissions.
+// ✅ Re-export so existing importers keep working.
 export { ALL_PERMISSIONS, WILDCARD };
 
+// ============================================
+// CLERK CONFIG
+// ============================================
+//
+// Read once at module load so a misconfigured deployment fails at
+// boot instead of on the first authenticated request.
+//
+// `@clerk/backend@0.5.x` requires BOTH `secretKey` and `issuer` in
+// VerifyTokenOptions. `issuer` is the full HTTPS URL of your Clerk
+// frontend API — the `iss` claim on every session JWT.
+//
+//   Test:       https://<slug>.clerk.accounts.dev
+//   Production: https://clerk.<yourdomain>
+//
+// Find the exact value in the Clerk dashboard under
+// API Keys → Show JWT verification URL.
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.length === 0) {
+    throw new Error(
+      `[auth] Missing required environment variable: ${name}. ` +
+        `Add it to packages/backend/.env and restart the server.`,
+    );
+  }
+  return value;
+}
+
+const CLERK_SECRET_KEY = requireEnv('CLERK_SECRET_KEY');
+const CLERK_ISSUER = requireEnv('CLERK_ISSUER');
+
+// ============================================
+// TOKEN EXTRACTION
+// ============================================
+
+function extractBearerToken(req: Request): string | null {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  if (!header.startsWith('Bearer ')) return null;
+  const token = header.slice('Bearer '.length).trim();
+  return token.length > 0 ? token : null;
+}
+
+// ============================================
+// AUTH MIDDLEWARE
+// ============================================
+
+/**
+ * Authenticated request handler.
+ *
+ * Flow:
+ *   1. Extract the bearer token. Missing → 401 NO_TOKEN.
+ *   2. Verify the token via Clerk. Invalid → 401 INVALID_TOKEN.
+ *   3. Look up the local user by clerkId. Not found OR inactive
+ *      → 403 USER_NOT_PROVISIONED. We DO NOT auto-create users
+ *      here — provisioning is an explicit admin action.
+ *   4. Resolve permissions via `resolvePermissions`.
+ *   5. Resolve companyId. Missing → 403 NO_COMPANY_ASSIGNED.
+ *      We DO NOT silently attach the user to a fallback company.
+ *   6. Populate req.user and continue.
+ *
+ * Any mutation the user might need to trigger (creating a user,
+ * assigning a company) is an admin operation, not something the
+ * middleware does as a side effect of a random HTTP request.
+ */
 export const authMiddleware = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
-    console.log('🔐 Auth middleware called');
-    console.log('   Method:', req.method);
-    console.log('   URL:', req.url);
+    // ── 1. Extract token ─────────────────────────────────────
+    const token = extractBearerToken(req);
 
-    const authHeader = req.headers.authorization;
-    let token = null;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
-      console.log('   Token present:', token ? 'YES' : 'NO');
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+        code: 'NO_TOKEN',
+      });
     }
 
-    const defaultEmail = 'lukesserugo09@gmail.com';
+    // ── 2. Verify token ──────────────────────────────────────
+    //
+    // `verifyToken` throws on invalid/expired/malformed tokens.
+    // We treat every failure mode identically to avoid leaking
+    // which part of the token was wrong.
+    let clerkUserId: string;
+    try {
+      const payload = await verifyToken(token, {
+        secretKey: CLERK_SECRET_KEY,
+        issuer: CLERK_ISSUER,
+      });
 
-    let user = await prisma.user.findFirst({
-      where: { email: defaultEmail },
+      const sub = payload?.sub;
+      if (typeof sub !== 'string' || sub.length === 0) {
+        throw new Error('Token payload missing `sub`');
+      }
+      clerkUserId = sub;
+    } catch (err) {
+      logger.warn('Token verification failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired token',
+        code: 'INVALID_TOKEN',
+      });
+    }
+
+    // ── 3. Look up local user by clerkId ─────────────────────
+    const user = await prisma.user.findUnique({
+      where: { clerkId: clerkUserId },
       include: {
         businessUnits: {
-          include: { businessUnit: true },
           where: { isActive: true },
+          include: { businessUnit: true },
         },
       },
     });
 
-    if (!user) {
-      console.log('🆕 Creating default SUPER_ADMIN user...');
-      user = await prisma.user.create({
-        data: {
-          clerkId: `clerk_default_${Date.now()}`,
-          email: defaultEmail,
-          firstName: 'Luke',
-          lastName: 'Sserugo',
-          phoneNumber: null,
-          role: UserRole.SUPER_ADMIN,
-          isActive: true,
-          lastLoginAt: new Date(),
-          // ✅ Persist only the role defaults; resolvePermissions will
-          //    expand to ALL + '*' at request time based on role.
-          //    This keeps the row small and future-proof.
-          permissions: [],
-        },
-        include: {
-          businessUnits: {
-            include: { businessUnit: true },
-            where: { isActive: true },
-          },
-        },
+    if (!user || !user.isActive) {
+      logger.warn('User not provisioned', { clerkUserId });
+      return res.status(403).json({
+        success: false,
+        error: 'User not provisioned. Contact an administrator.',
+        code: 'USER_NOT_PROVISIONED',
       });
-      console.log('✅ Default SUPER_ADMIN created:', user.email);
     }
 
-    // ────────────────────────────────────────────────────────────
-    // Resolve permissions through the canonical resolver.
-    // SUPER_ADMIN → [ '*', ...ALL_PERMISSIONS ]
-    // Others     → user.permissions (if any) else role defaults
-    // ────────────────────────────────────────────────────────────
+    // ── 4. Resolve permissions ───────────────────────────────
     const permissions = resolvePermissions({
       role: user.role,
       permissions: Array.isArray(user.permissions) ? user.permissions : [],
     });
 
-    console.log(
-      `✅ Resolved ${permissions.length} permissions for ${user.role}` +
-        (user.role === UserRole.SUPER_ADMIN ? ' (wildcard included)' : '')
-    );
-
-    // ────────────────────────────────────────────────────────────
-    // Resolve companyId (unchanged behaviour, only cosmetic edits)
-    // ────────────────────────────────────────────────────────────
+    // ── 5. Resolve companyId ─────────────────────────────────
     let companyId: string | null = (user as any).companyId ?? null;
 
     if (!companyId && user.businessUnits[0]?.businessUnit) {
       companyId =
-        ((user.businessUnits[0].businessUnit as any).companyId as string | null) ??
-        null;
+        ((user.businessUnits[0].businessUnit as any).companyId as
+          | string
+          | null) ?? null;
     }
 
     if (!companyId) {
-      console.warn(
-        `⚠️  User ${user.email} has no companyId — resolving fallback company`
-      );
-
-      let fallbackCompany = await prisma.company.findFirst({
-        orderBy: { createdAt: 'desc' },
+      logger.warn('User has no companyId', {
+        userId: user.id,
+        email: user.email,
       });
+      return res.status(403).json({
+        success: false,
+        error:
+          'Your account is not associated with a company. Contact an administrator.',
+        code: 'NO_COMPANY_ASSIGNED',
+      });
+    }
 
-      if (!fallbackCompany) {
-        fallbackCompany = await prisma.company.create({
-          data: {
-            name: 'Default Company',
-            email: 'admin@kalwanga.local',
-            phone: '+0000000000',
-            isActive: true,
-          } as any,
-        });
-        console.log('✅ Created fallback Company:', fallbackCompany.id);
-      }
+    // ── 6. Attach to request ─────────────────────────────────
+    req.user = {
+      id: user.id,
+      userId: user.id,
+      clerkId: user.clerkId,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName ?? undefined,
+      lastName: user.lastName ?? undefined,
+      businessUnitId: user.businessUnits[0]?.businessUnitId,
+      businessUnits: user.businessUnits.map((bu) => bu.businessUnitId),
+      companyId,
+      permissions,
+    };
 
-      companyId = fallbackCompany.id;
+    next();
+  } catch (error) {
+    logger.error('Auth middleware error', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      url: req.originalUrl,
+      method: req.method,
+    });
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      code: 'AUTH_ERROR',
+    });
+  }
+};
 
-      await prisma.user
-        .update({
-          where: { id: user.id },
-          data: { companyId: fallbackCompany.id },
-        })
-        .catch((err: any) =>
-          console.warn('⚠️  Could not persist user.companyId:', err?.message || err)
-        );
+export const requireAuth = authMiddleware;
+
+// ============================================
+// OPTIONAL AUTH
+// ============================================
+
+/**
+ * Populates `req.user` if a valid token is present, otherwise
+ * continues without it. Unlike `authMiddleware`, NEVER rejects —
+ * the route decides what to do with an absent user.
+ *
+ * Use this on public endpoints that behave differently for signed-in
+ * users (e.g. showing cart contents, personalised pricing).
+ */
+export const optionalAuth = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  const token = extractBearerToken(req);
+  if (!token) return next();
+
+  try {
+    const payload = await verifyToken(token, {
+      secretKey: CLERK_SECRET_KEY,
+      issuer: CLERK_ISSUER,
+    });
+    const clerkUserId = payload?.sub;
+    if (typeof clerkUserId !== 'string' || clerkUserId.length === 0) {
+      return next();
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { clerkId: clerkUserId },
+      include: {
+        businessUnits: {
+          where: { isActive: true },
+          include: { businessUnit: true },
+        },
+      },
+    });
+
+    if (!user || !user.isActive) return next();
+
+    const permissions = resolvePermissions({
+      role: user.role,
+      permissions: Array.isArray(user.permissions) ? user.permissions : [],
+    });
+
+    let companyId: string | null = (user as any).companyId ?? null;
+    if (!companyId && user.businessUnits[0]?.businessUnit) {
+      companyId =
+        ((user.businessUnits[0].businessUnit as any).companyId as
+          | string
+          | null) ?? null;
     }
 
     req.user = {
@@ -165,26 +297,19 @@ export const authMiddleware = async (
       companyId: companyId ?? undefined,
       permissions,
     };
-
-    console.log(`✅ Authenticated as: ${user.email} (${user.role})`);
-    console.log(`   companyId: ${companyId}`);
-    console.log(`   Permissions: ${permissions.length}`);
-    next();
-  } catch (error) {
-    console.error('❌ Auth middleware error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      code: 'AUTH_ERROR',
+  } catch (err) {
+    logger.debug('optionalAuth: token rejected', {
+      error: err instanceof Error ? err.message : String(err),
     });
   }
+
+  next();
 };
 
-export const requireAuth = authMiddleware;
+// ============================================
+// ROLE / PERMISSION GUARDS
+// ============================================
 
-/**
- * Require an exact role (kept for backwards compatibility).
- */
 export const requireRole = (roles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -207,14 +332,6 @@ export const requireRole = (roles: UserRole[]) => {
   };
 };
 
-/**
- * ✅ New: require a specific permission string. Uses the resolved set
- * from req.user, which already knows about '*' and role defaults.
- *
- * SUPER_ADMIN always passes.
- * Any role with the explicit permission passes.
- * A user with custom permissions passes if the string is present.
- */
 export const requirePermission = (permission: string) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -240,9 +357,6 @@ export const requirePermission = (permission: string) => {
   };
 };
 
-/**
- * Require any one of the given permissions.
- */
 export const requireAnyPermission = (permissions: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -268,12 +382,4 @@ export const requireAnyPermission = (permissions: string[]) => {
 
     next();
   };
-};
-
-export const optionalAuth = async (
-  _req: Request,
-  _res: Response,
-  next: NextFunction
-) => {
-  next();
 };

@@ -9,8 +9,12 @@ import {
   Printer,
   TrendingUp,
   XCircle,
+  Tag,
+  Star,
+  Sparkles,
 } from 'lucide-react';
-import { saleService } from '../../services/saleService';
+import { saleService, DISCOUNT_TYPE_LABELS } from '../../services/saleService';
+import type { DiscountType } from '../../services/saleService';
 import { Table } from '../common/Table';
 import { Pagination } from '../common/Pagination';
 import { Modal } from '../common/Modal';
@@ -40,6 +44,8 @@ interface SaleFilters {
   userId: string;
 }
 
+type DiscountFilter = 'all' | 'discounted';
+
 // ============================================================
 // CONSTANTS — static class maps (Tailwind can't see dynamic
 // strings like `bg-${color}-100`, so we map them explicitly).
@@ -53,6 +59,41 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
 };
 
 const DEFAULT_STATUS_BADGE = 'bg-blue-100 text-blue-700';
+
+// ============================================================
+// SUB-COMPONENTS
+// ============================================================
+
+/**
+ * Compact breakdown hint for the receipt cell of a table row.
+ *
+ * Renders nothing when the sale carries no promotion or loyalty
+ * attribution. Uses `saleService.describeBreakdown` so the wording
+ * matches the receipt and detail page.
+ */
+const BreakdownHint: React.FC<{ sale: Sale }> = ({ sale }) => {
+  if (!saleService.hasBreakdown(sale)) return null;
+
+  const breakdown = saleService.extractBreakdown(sale);
+  const hasPromotion = (breakdown.promotionDiscount ?? 0) > 0;
+  const hasLoyalty = (breakdown.loyaltyPointsUsed ?? 0) > 0;
+  const label = saleService.describeBreakdown(sale);
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+      title={label}
+    >
+      {hasPromotion && (
+        <Tag className="w-3 h-3 text-blue-500 shrink-0" />
+      )}
+      {hasLoyalty && (
+        <Star className="w-3 h-3 text-yellow-500 fill-current shrink-0" />
+      )}
+      <span className="truncate max-w-[180px]">{label}</span>
+    </span>
+  );
+};
 
 // ============================================================
 // COMPONENT
@@ -86,6 +127,8 @@ export function SaleList() {
     todaySales: 0,
   });
   const [showStats, setShowStats] = useState(false);
+  /** Client-side filter — does not hit the backend. */
+  const [discountFilter, setDiscountFilter] = useState<DiscountFilter>('all');
 
   // ============================================================
   // DATA LOADING
@@ -184,33 +227,107 @@ export function SaleList() {
       toast.error('Please allow popups to print receipts');
       return;
     }
+
+    // Build the breakdown lines once so the template stays readable.
+    const breakdown = saleService.extractBreakdown(sale);
+    const promotionDiscount = breakdown.promotionDiscount ?? 0;
+    const promotionCode = breakdown.promotionCode ?? null;
+    const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
+    const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
+
+    const promotionLine =
+      promotionDiscount > 0
+        ? `<tr>
+             <td>Promotion${promotionCode ? ` (${promotionCode})` : ''}</td>
+             <td style="text-align: right;">-$${promotionDiscount.toFixed(2)}</td>
+           </tr>`
+        : '';
+
+    const loyaltyLine =
+      loyaltyPointsUsed > 0
+        ? `<tr>
+             <td>${loyaltyPointsUsed} loyalty points</td>
+             <td style="text-align: right;">-$${loyaltyDiscount.toFixed(2)}</td>
+           </tr>`
+        : '';
+
+    const rawDiscountLine =
+      sale.discount > 0 &&
+      promotionDiscount === 0 &&
+      loyaltyDiscount === 0
+        ? `<tr>
+             <td>Discount</td>
+             <td style="text-align: right;">-$${sale.discount.toFixed(2)}</td>
+           </tr>`
+        : '';
+
     printWindow.document.write(`
       <html>
         <head><title>Receipt #${sale.receiptNumber}</title></head>
-        <body>
+        <body style="font-family: 'Courier New', monospace; padding: 20px; max-width: 320px;">
           <h2>Receipt #${sale.receiptNumber}</h2>
           <p>Date: ${new Date(sale.saleDate).toLocaleString()}</p>
-          <table>
+          <table style="width: 100%;">
             ${
               sale.items
                 ?.map(
                   (item: any) => `
               <tr>
                 <td>${item.product?.name || 'Product'} x${item.quantity}</td>
-                <td>$${item.total.toFixed(2)}</td>
+                <td style="text-align: right;">$${item.total.toFixed(2)}</td>
               </tr>
             `
                 )
                 .join('') || ''
             }
           </table>
-          <h3>Total: $${sale.total.toFixed(2)}</h3>
+          <hr />
+          <table style="width: 100%; font-size: 13px;">
+            <tr>
+              <td>Subtotal</td>
+              <td style="text-align: right;">$${sale.subtotal.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td>Tax</td>
+              <td style="text-align: right;">$${sale.tax.toFixed(2)}</td>
+            </tr>
+            ${promotionLine}
+            ${loyaltyLine}
+            ${rawDiscountLine}
+            <tr style="font-weight: bold; font-size: 16px;">
+              <td>Total</td>
+              <td style="text-align: right;">$${sale.total.toFixed(2)}</td>
+            </tr>
+          </table>
         </body>
       </html>
     `);
     printWindow.document.close();
     printWindow.print();
   }, []);
+
+  // ============================================================
+  // DERIVED
+  // ============================================================
+
+  /**
+   * Applies the client-side "Discounted" filter without touching the
+   * backend. Empty array when `discountFilter === 'all'` is treated
+   * as "no client filter".
+   */
+  const visibleSales = useMemo(() => {
+    if (discountFilter === 'all') return sales;
+    return sales.filter((s) => saleService.hasBreakdown(s));
+  }, [sales, discountFilter]);
+
+  /**
+   * Count of discounted sales on the current page — used for the
+   * filter chip's badge.
+   */
+  const discountedCount = useMemo(
+    () => sales.filter((s) => saleService.hasBreakdown(s)).length,
+    [sales]
+  );
 
   // ============================================================
   // COLUMNS
@@ -230,6 +347,7 @@ export function SaleList() {
             <p className="text-sm text-gray-500">
               {new Date(sale.saleDate).toLocaleString()}
             </p>
+            <BreakdownHint sale={sale} />
           </div>
         ),
       },
@@ -259,18 +377,31 @@ export function SaleList() {
       {
         key: 'total',
         header: 'Total',
-        render: (sale: Sale) => (
-          <div>
-            <p className="font-bold text-gray-900">
-              ${sale.total.toFixed(2)}
-            </p>
-            {sale.discount > 0 && (
-              <p className="text-sm text-green-600">
-                -${sale.discount.toFixed(2)}
+        render: (sale: Sale) => {
+          const breakdown = saleService.extractBreakdown(sale);
+          const hasBreakdown = saleService.hasBreakdown(sale);
+          return (
+            <div>
+              <p className="font-bold text-gray-900">
+                ${sale.total.toFixed(2)}
               </p>
-            )}
-          </div>
-        ),
+              {sale.discount > 0 && (
+                <p className="text-sm text-green-600">
+                  -${sale.discount.toFixed(2)}
+                </p>
+              )}
+              {hasBreakdown &&
+                (breakdown.promotionDiscount ?? 0) > 0 &&
+                (breakdown.loyaltyDiscount ?? 0) > 0 && (
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
+                    {DISCOUNT_TYPE_LABELS[
+                      (breakdown.discountType as DiscountType) ?? 'MANUAL'
+                    ] ?? 'Mixed'}
+                  </p>
+                )}
+            </div>
+          );
+        },
       },
       {
         key: 'payment',
@@ -458,11 +589,50 @@ export function SaleList() {
             <option value="CANCELLED">Cancelled</option>
           </select>
         </div>
+
+        {/* Discount filter chips */}
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+          <Sparkles className="w-3.5 h-3.5 text-gray-400" />
+          <button
+            type="button"
+            onClick={() => setDiscountFilter('all')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              discountFilter === 'all'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => setDiscountFilter('discounted')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              discountFilter === 'discounted'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Tag className="w-3.5 h-3.5" />
+            Discounted
+            {discountedCount > 0 && (
+              <span
+                className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center tabular-nums ${
+                  discountFilter === 'discounted'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-white text-gray-600'
+                }`}
+              >
+                {discountedCount > 99 ? '99+' : discountedCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <Table columns={columns} data={sales} loading={loading} />
+        <Table columns={columns} data={visibleSales} loading={loading} />
         <div className="border-t border-gray-200 p-4">
           <Pagination
             currentPage={pagination.page}
@@ -496,6 +666,12 @@ export function SaleList() {
               <p className="text-sm text-gray-600">
                 Date: {new Date(selectedSale.saleDate).toLocaleString()}
               </p>
+              {saleService.hasBreakdown(selectedSale) && (
+                <p className="text-sm text-gray-600 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                  {saleService.describeBreakdown(selectedSale)}
+                </p>
+              )}
             </div>
           )}
           <div>

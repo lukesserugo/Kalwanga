@@ -1,24 +1,5 @@
 // D:\Projects\Kalwanga\packages\web\types\product.ts
 
-// ============================================
-// CANONICAL IMPORTS
-// ============================================
-//
-// Ownership map — do not deviate:
-//   User         → ./user
-//   Company      → ./user
-//   BusinessUnit → ./businessUnit
-//   Category     → ./category
-//   Supplier     → ./supplier
-//   Inventory    → ./inventory
-//   enums        → ./enums
-//
-// All cross-module imports are `import type` so the compiler erases
-// them and the runtime cycles
-//   product ↔ businessUnit, product ↔ category, product ↔ supplier,
-//   product ↔ inventory
-// never actually load.
-
 import type { BusinessUnit } from './businessUnit';
 import type { User } from './user';
 import type { Category as CategoryType } from './category';

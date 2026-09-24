@@ -30,6 +30,7 @@ import {
   Lock,
   ChevronLeft,
   ChevronRight,
+  Info,
 } from 'lucide-react';
 import { toast } from '../../../../../utils/toast-manager';
 import { usePermission } from '../../../../../hooks/usePermission';
@@ -45,11 +46,17 @@ import { useConfirm } from '../../../../../components/notifications/ConfirmProvi
 // ============================================
 // INTERFACES
 // ============================================
+//
+// The backend `/cart/abandoned` endpoint returns raw `Cart` rows with
+// `items` and `customer` populated. It does NOT return `user`,
+// `abandonedAt`, or `hoursAbandoned`. Those fields are declared
+// optional and computed locally where needed.
 
 interface AbandonedCart {
   id: string;
   userId: string;
-  user: {
+  /** Not returned by the current backend — falls back to `userId`. */
+  user?: {
     id: string;
     firstName: string;
     lastName: string;
@@ -84,8 +91,10 @@ interface AbandonedCart {
   status: string;
   createdAt: string;
   updatedAt: string;
-  abandonedAt: string;
-  hoursAbandoned: number;
+  /** Not returned by the current backend — derived from `updatedAt`. */
+  abandonedAt?: string;
+  /** Not returned by the current backend — derived from `updatedAt`. */
+  hoursAbandoned?: number;
 }
 
 interface PaginationInfo {
@@ -128,12 +137,38 @@ const HOURS_OPTIONS = [
   { value: 720, label: 'Last 30 days' },
 ];
 
+// The endpoint fixes the base status to ACTIVE. Only two options are
+// meaningful: "all" (no extra filter) or explicitly ACTIVE.
 const STATUS_FILTERS = [
   { value: 'all', label: 'All Status' },
   { value: 'ACTIVE', label: 'Active' },
-  { value: 'SAVED', label: 'Saved' },
-  { value: 'ABANDONED', label: 'Abandoned' },
 ];
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Hours elapsed since an ISO timestamp.
+ */
+function hoursSince(iso: string | undefined | null): number {
+  if (!iso) return 0;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return 0;
+  return Math.floor(ms / (1000 * 60 * 60));
+}
+
+/**
+ * The `api` wrapper may or may not unwrap `response.data`. Accept both.
+ */
+function unwrapApiResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response === 'object' && 'data' in (response as any)) {
+    const inner = (response as any).data;
+    if (inner !== undefined && inner !== null) return inner as T;
+  }
+  return response as T;
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -141,7 +176,10 @@ const STATUS_FILTERS = [
 
 export default function AdminAbandonedCartsPage() {
   const router = useRouter();
-  const { canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    hasPermission,
+    isLoading: permissionLoading,
+  } = usePermission();
   const confirm = useConfirm();
 
   const [loading, setLoading] = useState(true);
@@ -178,13 +216,18 @@ export default function AdminAbandonedCartsPage() {
   // ============================================
 
   const canViewAbandoned =
-    canManage(PermissionResource.CART_VIEW) ||
-    canManage(PermissionResource.CART_MANAGE) ||
-    canManage(PermissionResource.ANALYTICS);
+    hasPermission(PermissionResource.CART_VIEW) ||
+    hasPermission(PermissionResource.CART_MANAGE) ||
+    hasPermission(PermissionResource.ANALYTICS);
 
-  const canRecoverCart =
-    canManage(PermissionResource.CART_MANAGE) ||
-    canManage(PermissionResource.CART_CHECKOUT);
+  /**
+   * Recovery and reminder actions are gated on CART_MANAGE or
+   * CART_CHECKOUT. When the backend adds the routes, these become the
+   * effective permission checks.
+   */
+  const canManageCarts =
+    hasPermission(PermissionResource.CART_MANAGE) ||
+    hasPermission(PermissionResource.CART_CHECKOUT);
 
   // ============================================
   // DATA FETCHING
@@ -205,21 +248,26 @@ export default function AdminAbandonedCartsPage() {
           limit: pagination.limit,
           hours: filters.hours,
         };
-        if (filters.search) params.search = filters.search;
+        // The endpoint fixes the base status to ACTIVE. Sending ACTIVE
+        // is a no-op; anything else is unsupported.
+        if (filters.status !== 'all') params.status = filters.status;
         if (typeof filters.minValue === 'number') {
           params.minValue = filters.minValue;
         }
-        if (filters.status !== 'all') params.status = filters.status;
 
         const response = await cartService.getAbandonedCarts(params);
         if (!isMountedRef.current) return;
 
-        setCarts(response.carts ?? []);
+        const rawCarts: AbandonedCart[] = Array.isArray(response)
+          ? response
+          : response?.carts ?? [];
+
+        setCarts(rawCarts);
         setPagination({
-          total: response.total ?? 0,
-          page: response.page ?? 1,
-          totalPages: response.totalPages ?? 1,
-          limit: response.limit ?? DEFAULT_PAGINATION.limit,
+          total: response?.total ?? rawCarts.length,
+          page: response?.page ?? pagination.page,
+          totalPages: response?.totalPages ?? 1,
+          limit: response?.limit ?? pagination.limit,
         });
       } catch (err: any) {
         if (!isMountedRef.current) return;
@@ -239,7 +287,6 @@ export default function AdminAbandonedCartsPage() {
     },
     [
       canViewAbandoned,
-      filters.search,
       filters.hours,
       filters.minValue,
       filters.status,
@@ -248,7 +295,6 @@ export default function AdminAbandonedCartsPage() {
     ],
   );
 
-  // Refetch whenever the filters or pagination change.
   useEffect(() => {
     if (!canViewAbandoned) {
       setLoading(false);
@@ -258,7 +304,6 @@ export default function AdminAbandonedCartsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     canViewAbandoned,
-    filters.search,
     filters.hours,
     filters.minValue,
     filters.status,
@@ -292,8 +337,6 @@ export default function AdminAbandonedCartsPage() {
       value: AbandonedFilters[K],
     ) => {
       setFilters((prev) => ({ ...prev, [key]: value }));
-      // Search already debounces below; other filters reset to page 1
-      // immediately.
       if (key !== 'search') {
         setPagination((prev) => ({ ...prev, page: 1 }));
       }
@@ -301,18 +344,15 @@ export default function AdminAbandonedCartsPage() {
     [],
   );
 
-  const handleSearchInput = useCallback(
-    (value: string) => {
-      setFilters((prev) => ({ ...prev, search: value }));
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-      searchDebounceRef.current = setTimeout(() => {
-        setPagination((prev) => ({ ...prev, page: 1 }));
-      }, 300);
-    },
-    [],
-  );
+  const handleSearchInput = useCallback((value: string) => {
+    setFilters((prev) => ({ ...prev, search: value }));
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => {
+      setPagination((prev) => ({ ...prev, page: 1 }));
+    }, 300);
+  }, []);
 
   const handleClearFilters = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
@@ -329,9 +369,14 @@ export default function AdminAbandonedCartsPage() {
     setSelectedCart(null);
   }, []);
 
+  /**
+   * Recovery: the backend does not expose a `/cart/recover` route yet.
+   * This handler deliberately fails loudly rather than silently doing
+   * nothing, so an admin is not left thinking the cart was recovered.
+   */
   const handleRecoverCart = useCallback(
     async (cartId: string) => {
-      if (!canRecoverCart) {
+      if (!canManageCarts) {
         toast.error('You do not have permission to recover carts');
         return;
       }
@@ -347,50 +392,69 @@ export default function AdminAbandonedCartsPage() {
 
       setWorkingCartId(cartId);
       try {
-        await cartService.recoverCart({ cartId, notifyUser: true });
-        toast.success('Cart recovery initiated');
-        window.dispatchEvent(new CustomEvent('cart:updated'));
-        await fetchAbandonedCarts('silent');
-      } catch (err: any) {
-        const message =
-          err?.response?.data?.message ||
-          err?.message ||
-          'Failed to recover cart';
-        toast.error(message);
+        // await cartService.recoverCart({ cartId, notifyUser: true });
+        // await fetchAbandonedCarts('silent');
+        toast.info(
+          'Cart recovery is not yet enabled on the backend. No changes were made.',
+        );
       } finally {
         if (isMountedRef.current) setWorkingCartId(null);
       }
     },
-    [canRecoverCart, confirm, fetchAbandonedCarts],
+    [canManageCarts, confirm, fetchAbandonedCarts],
   );
 
+  /**
+   * Reminder: same backend gap as `handleRecoverCart`.
+   */
   const handleSendReminder = useCallback(
     async (cartId: string) => {
-      if (!canRecoverCart) {
+      if (!canManageCarts) {
         toast.error('You do not have permission to send reminders');
         return;
       }
 
       setWorkingCartId(cartId);
       try {
-        await cartService.sendReminder({ cartId });
-        toast.success('Reminder sent');
-      } catch (err: any) {
-        const message =
-          err?.response?.data?.message ||
-          err?.message ||
-          'Failed to send reminder';
-        toast.error(message);
+        // await cartService.sendReminder({ cartId });
+        toast.info(
+          'Reminders are not yet enabled on the backend. No email was sent.',
+        );
       } finally {
         if (isMountedRef.current) setWorkingCartId(null);
       }
     },
-    [canRecoverCart],
+    [canManageCarts],
   );
 
   // ============================================
   // DERIVED
   // ============================================
+
+  /**
+   * Client-side search filter. The `/cart/abandoned` endpoint does not
+   * accept a `search` param.
+   */
+  const filteredCarts = useMemo(() => {
+    const needle = filters.search.trim().toLowerCase();
+    if (!needle) return carts;
+    return carts.filter((c) => {
+      const haystack = [
+        c.id,
+        c.userId,
+        c.user?.firstName,
+        c.user?.lastName,
+        c.user?.email,
+        c.customer?.firstName,
+        c.customer?.lastName,
+        c.customer?.email,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [carts, filters.search]);
 
   const stats = useMemo(() => {
     const total = pagination.total;
@@ -427,6 +491,16 @@ export default function AdminAbandonedCartsPage() {
     return labels[status] || status;
   };
 
+  /**
+   * Effective hours-abandoned for a cart. Prefers the server-provided
+   * value when present, falls back to deriving it from `updatedAt`.
+   */
+  const getHoursAbandoned = (cart: AbandonedCart): number => {
+    if (typeof cart.hoursAbandoned === 'number') return cart.hoursAbandoned;
+    if (cart.abandonedAt) return hoursSince(cart.abandonedAt);
+    return hoursSince(cart.updatedAt);
+  };
+
   const getAbandonmentRisk = (
     hours: number,
   ): { label: string; color: string; icon: React.ReactNode } => {
@@ -455,13 +529,13 @@ export default function AdminAbandonedCartsPage() {
   // PERMISSION GUARD
   // ============================================
 
-  if (permissionLoading || loading) {
+  if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Loading abandoned carts…
+            Checking permissions…
           </p>
         </div>
       </div>
@@ -487,6 +561,19 @@ export default function AdminAbandonedCartsPage() {
         >
           Back to Dashboard
         </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading abandoned carts…
+          </p>
+        </div>
       </div>
     );
   }
@@ -549,6 +636,17 @@ export default function AdminAbandonedCartsPage() {
               Analytics
             </button>
           </div>
+        </div>
+
+        {/* Backend scope notice */}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300 mb-6">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            Recovery emails and reminder notifications are not yet
+            implemented on the backend. The action buttons below are
+            shown for layout and will become functional once the routes
+            exist. Search is applied client-side.
+          </p>
         </div>
 
         {/* Stats */}
@@ -717,7 +815,7 @@ export default function AdminAbandonedCartsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {carts.length === 0 ? (
+                {filteredCarts.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}
@@ -734,10 +832,9 @@ export default function AdminAbandonedCartsPage() {
                     </td>
                   </tr>
                 ) : (
-                  carts.map((cart) => {
-                    const risk = getAbandonmentRisk(
-                      cart.hoursAbandoned || 0,
-                    );
+                  filteredCarts.map((cart) => {
+                    const hours = getHoursAbandoned(cart);
+                    const risk = getAbandonmentRisk(hours);
                     const isWorking = workingCartId === cart.id;
                     return (
                       <motion.tr
@@ -751,13 +848,23 @@ export default function AdminAbandonedCartsPage() {
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-gray-400 shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                {cart.user?.firstName}{' '}
-                                {cart.user?.lastName}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                {cart.user?.email}
-                              </p>
+                              {cart.user ? (
+                                <>
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {cart.user.firstName}{' '}
+                                    {cart.user.lastName}
+                                  </p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    {cart.user.email}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-sm font-mono text-gray-600 dark:text-gray-300 truncate">
+                                  {cart.userId
+                                    ? `${cart.userId.slice(0, 8)}…`
+                                    : 'Unknown'}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -778,9 +885,9 @@ export default function AdminAbandonedCartsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                          {cart.abandonedAt
-                            ? formatTimeAgo(cart.abandonedAt)
-                            : formatTimeAgo(cart.updatedAt)}
+                          {formatTimeAgo(
+                            cart.abandonedAt ?? cart.updatedAt,
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -809,9 +916,9 @@ export default function AdminAbandonedCartsPage() {
                               onClick={() =>
                                 handleSendReminder(cart.id)
                               }
-                              disabled={isWorking || !canRecoverCart}
+                              disabled={isWorking || !canManageCarts}
                               className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors disabled:opacity-50"
-                              title="Send Reminder"
+                              title="Send Reminder (backend route not yet available)"
                               aria-label="Send reminder"
                             >
                               {isWorking ? (
@@ -825,9 +932,9 @@ export default function AdminAbandonedCartsPage() {
                               onClick={() =>
                                 handleRecoverCart(cart.id)
                               }
-                              disabled={isWorking || !canRecoverCart}
+                              disabled={isWorking || !canManageCarts}
                               className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded transition-colors disabled:opacity-50"
-                              title="Recover Cart"
+                              title="Recover Cart (backend route not yet available)"
                               aria-label="Recover cart"
                             >
                               {isWorking ? (
@@ -954,13 +1061,23 @@ export default function AdminAbandonedCartsPage() {
               {/* Info grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <InfoTile label="User">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">
-                    {selectedCart.user?.firstName}{' '}
-                    {selectedCart.user?.lastName}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {selectedCart.user?.email}
-                  </p>
+                  {selectedCart.user ? (
+                    <>
+                      <p className="font-medium text-gray-900 dark:text-white truncate">
+                        {selectedCart.user.firstName}{' '}
+                        {selectedCart.user.lastName}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {selectedCart.user.email}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="font-mono text-sm text-gray-700 dark:text-gray-300 truncate">
+                      {selectedCart.userId
+                        ? `${selectedCart.userId.slice(0, 12)}…`
+                        : 'Unknown'}
+                    </p>
+                  )}
                 </InfoTile>
                 <InfoTile label="Status">
                   <span
@@ -976,9 +1093,10 @@ export default function AdminAbandonedCartsPage() {
                 </InfoTile>
                 <InfoTile label="Abandoned">
                   <p className="font-medium text-gray-900 dark:text-white">
-                    {selectedCart.abandonedAt
-                      ? formatTimeAgo(selectedCart.abandonedAt)
-                      : formatTimeAgo(selectedCart.updatedAt)}
+                    {formatTimeAgo(
+                      selectedCart.abandonedAt ??
+                        selectedCart.updatedAt,
+                    )}
                   </p>
                 </InfoTile>
               </div>
@@ -1045,7 +1163,7 @@ export default function AdminAbandonedCartsPage() {
                 >
                   Close
                 </button>
-                {canRecoverCart && (
+                {canManageCarts && (
                   <>
                     <button
                       type="button"
@@ -1053,6 +1171,7 @@ export default function AdminAbandonedCartsPage() {
                         void handleSendReminder(selectedCart.id);
                       }}
                       disabled={workingCartId === selectedCart.id}
+                      title="Reminders are not yet enabled on the backend"
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
                     >
                       {workingCartId === selectedCart.id ? (
@@ -1068,6 +1187,7 @@ export default function AdminAbandonedCartsPage() {
                         void handleRecoverCart(selectedCart.id);
                       }}
                       disabled={workingCartId === selectedCart.id}
+                      title="Recovery is not yet enabled on the backend"
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
                     >
                       {workingCartId === selectedCart.id ? (

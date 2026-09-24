@@ -52,6 +52,51 @@ const router = Router();
 //  Those operate on existing sales (state transitions), not on
 //  creation. If you later want retry-safety there, wire them to a
 //  keyed lookup before the write.
+//
+// ─────────────────────────────────────────────────────────────────
+//  PROMOTION / LOYALTY ATTRIBUTION
+// ─────────────────────────────────────────────────────────────────
+//  The following routes accept optional promotion / loyalty
+//  passthrough fields in the request body, which are persisted on
+//  the resulting `Sale` row so every sale self-documents its
+//  discount source:
+//
+//      POST /api/sales                    (SaleController.createSale)
+//      POST /api/sales/checkout           (SaleController.createSaleFromCart)
+//      POST /api/sales/pos/checkout       (PosController.checkout → SaleService)
+//
+//  Accepted fields (all optional):
+//      discountType       PERCENTAGE | FIXED | LOYALTY | MANUAL
+//                         (must be one of the four Prisma enum members;
+//                          inferred by the service when omitted)
+//      promotionCode      the code that was applied, if any
+//      promotionDiscount  the promotion's currency contribution
+//
+//  snake_case aliases (`discount_type`, `promotion_code`,
+//  `promotion_discount`) are also accepted. String numerics for
+//  `promotionDiscount` are coerced. Unknown `discountType` values
+//  are silently dropped (the service then infers a valid type).
+//
+//  The corresponding columns live on `Sale`:
+//      discountType, promotionCode, promotionDiscount,
+//      loyaltyPointsUsed, loyaltyDiscount
+//
+//  ⚠ `discountType` maps to the Postgres enum `"DiscountType"`,
+//    defined in `prisma/schema.prisma`:
+//
+//        enum DiscountType {
+//          PERCENTAGE
+//          FIXED
+//          LOYALTY
+//          MANUAL
+//        }
+//
+//    Do NOT add values here that aren't in the enum — Postgres will
+//    reject them with "invalid input value for enum DiscountType".
+//    The `PromotionType` enum on the `Promotion` model has additional
+//    members (BUY_X_GET_Y, FREE_SHIPPING, BOGO, BUNDLE, TIERED); those
+//    describe the *shape* of a promotion, not how the resulting
+//    discount is attributed on a `Sale`.
 // ─────────────────────────────────────────────────────────────────
 
 // All sale routes require authentication
@@ -178,6 +223,10 @@ router.get('/refunds', saleController.getRefunds);
 /**
  * Export sales
  * GET /api/sales/export
+ *
+ * JSON export now includes the promotion / loyalty breakdown:
+ *   discountType, promotionCode, promotionDiscount,
+ *   loyaltyPointsUsed, loyaltyDiscount
  */
 router.get(
   '/export',
@@ -188,6 +237,10 @@ router.get(
 /**
  * Export sales to CSV
  * GET /api/sales/export/csv
+ *
+ * The CSV includes the promotion / loyalty breakdown columns
+ * (Discount Type, Promotion Code, Promotion Discount,
+ * Loyalty Points Used, Loyalty Discount).
  */
 router.get(
   '/export/csv',
@@ -344,6 +397,11 @@ router.get('/pos/products/sku/:sku', posController.getProductBySku);
  * POST /api/sales
  *
  * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
+ *
+ * Accepts optional promotion / loyalty passthrough fields:
+ *   `discountType` (PERCENTAGE | FIXED | LOYALTY | MANUAL),
+ *   `promotionCode`, `promotionDiscount` (and their snake_case
+ *   aliases). Persisted on the resulting `Sale` row.
  */
 router.post(
   '/',
@@ -356,6 +414,9 @@ router.post(
  * POST /api/sales/checkout
  *
  * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
+ *
+ * Accepts the same promotion / loyalty passthrough fields as
+ * `POST /api/sales`.
  */
 router.post(
   '/checkout',
@@ -368,6 +429,11 @@ router.post(
  * POST /api/sales/pos/checkout
  *
  * Idempotent via `Idempotency-Key` header (or `idempotencyKey` body field).
+ *
+ * The POS flow goes through `PosController.checkout`, which
+ * delegates to `CheckoutService.processCheckout` →
+ * `SaleService.createSaleFromCart`, so it accepts the same
+ * promotion / loyalty passthrough fields.
  */
 router.post(
   '/pos/checkout',
@@ -398,6 +464,9 @@ router.post(
 /**
  * Apply discount to POS cart
  * POST /api/sales/pos/cart/discount
+ *
+ * A POS discount becomes the cart's `promotionCode` /
+ * `promotionDiscount` at checkout, and is persisted on the sale.
  */
 router.post(
   '/pos/cart/discount',
@@ -408,6 +477,9 @@ router.post(
 /**
  * Apply loyalty points to POS cart
  * POST /api/sales/pos/cart/loyalty-points
+ *
+ * Points applied here are mirrored to `Sale.loyaltyPointsUsed` /
+ * `Sale.loyaltyDiscount` at checkout.
  */
 router.post(
   '/pos/cart/loyalty-points',

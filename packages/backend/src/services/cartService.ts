@@ -13,15 +13,18 @@ import { computeCartTotals, round2 } from '../utils/money.js';
 interface CartItemInput {
   productId: string;
   /**
-   * Accept `null` at the service boundary so any caller (controller, POS
-   * service, bulk route, test) can pass `null` without breaking the type
-   * contract. Collapsed to `undefined` by `normalizeVariantId` before
-   * reaching Prisma.
+   * Accept `null` at the service boundary so any caller (controller,
+   * POS service, bulk route, test) can pass `null` without breaking
+   * the type contract. Collapsed to `undefined` by `normalizeVariantId`
+   * before reaching Prisma.
    */
   variantId?: string | null;
   quantity: number;
   notes?: string;
 }
+
+type CartStatusValue = 'ACTIVE' | 'SAVED' | 'CHECKED_OUT' | 'ABANDONED';
+type CartDiscountTypeValue = 'PERCENTAGE' | 'FIXED';
 
 interface CartResponse {
   id: string;
@@ -29,7 +32,7 @@ interface CartResponse {
   subtotal: number;
   tax: number;
   discount: number;
-  discountType?: 'PERCENTAGE' | 'FIXED';
+  discountType?: CartDiscountTypeValue;
   promotionCode?: string;
   promotionDiscount?: number;
   loyaltyPointsUsed?: number;
@@ -40,7 +43,7 @@ interface CartResponse {
   businessUnitId: string;
   userId: string;
   notes?: string;
-  status: 'ACTIVE' | 'SAVED' | 'CHECKED_OUT' | 'ABANDONED';
+  status: CartStatusValue;
   createdAt: Date;
   updatedAt: Date;
   itemCount: number;
@@ -127,7 +130,7 @@ async function safeEmitEvent(eventName: string, data: any): Promise<void> {
 function ensureCartStatus(cart: any): any {
   return {
     ...cart,
-    status: cart.status || 'ACTIVE',
+    status: (cart?.status as CartStatusValue) || 'ACTIVE',
   };
 }
 
@@ -137,7 +140,7 @@ function ensureCartStatus(cart: any): any {
  *   - `undefined` → "no filter" / "leave unset"
  *   - `null`      → "column IS NULL" / "explicitly clear"
  *
- * The callers who send `null` mean "no variant" — i.e. `undefined`.
+ * Callers who send `null` mean "no variant" — i.e. `undefined`.
  */
 function normalizeVariantId(
   variantId: string | null | undefined,
@@ -158,20 +161,19 @@ function inventoryWhereFor(
   productId: string,
   variantId: string | null | undefined,
   businessUnitId: string,
-) {
+): Prisma.InventoryWhereInput {
   const normalizedVariantId = normalizeVariantId(variantId);
   return {
+    businessUnitId,
     ...(normalizedVariantId
       ? { variant: { id: normalizedVariantId } }
       : { product: { id: productId } }),
-    businessUnitId,
   };
 }
 
 /**
  * Standard `include` shape for cart items. Hoisted so all cart reads
- * return the same projection — the select lists were duplicated across
- * half a dozen methods before.
+ * return the same projection.
  */
 const CART_ITEM_INCLUDE = {
   product: {
@@ -197,6 +199,13 @@ const CART_ITEM_INCLUDE = {
   },
 } as const;
 
+/**
+ * Prisma error code for a unique-constraint violation. Used to make
+ * `getOrCreateCart` race-safe — a concurrent request may create the
+ * cart between our `findFirst` and our `create`.
+ */
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
+
 // ============================================
 // CART SERVICE CLASS
 // ============================================
@@ -206,16 +215,34 @@ export class CartService extends BaseService {
   // READ / CREATE
   // ============================================
 
-  async getOrCreateCart(
+  /**
+   * Read-only cart lookup for the current user + business unit.
+   *
+   * ⚠ This method MUST NOT create a cart. `GET /cart` calls into this
+   *    path. Creating a row on a GET is what produced the 409
+   *    "A record with this value already exists" storm: the shopper
+   *    would already have a cart (often a guest cart that survived
+   *    login), the unique constraint `(userId, businessUnitId)` would
+   *    fire on the redundant INSERT, and every subsequent GET repeated
+   *    the same failure.
+   *
+   * Returns `null` when there is no active cart. Callers are expected
+   * to translate that into an empty synthetic cart — see
+   * `getCartForRequest` below.
+   */
+  async findActiveCart(
     userId: string,
     businessUnitId: string,
-  ): Promise<CartResponse> {
+  ): Promise<CartResponse | null> {
     try {
       if (!userId || !businessUnitId) {
-        throw new AppError('User ID and Business Unit ID are required', 400);
+        throw new AppError(
+          'User ID and Business Unit ID are required',
+          400,
+        );
       }
 
-      let cart: any = await this.prisma.cart.findFirst({
+      const cart = await this.prisma.cart.findFirst({
         where: { userId, businessUnitId, status: 'ACTIVE' },
         include: {
           items: {
@@ -226,7 +253,106 @@ export class CartService extends BaseService {
         },
       });
 
-      if (!cart) {
+      if (!cart) return null;
+
+      return await this.formatCartResponse(
+        ensureCartStatus(cart),
+        businessUnitId,
+      );
+    } catch (error) {
+      this.handleError(error, 'CartService.findActiveCart');
+      throw error;
+    }
+  }
+
+  /**
+   * The handler for `GET /cart`.
+   *
+   * Returns the user's active cart, or an empty synthetic stub when
+   * none exists. Never creates a row. This is the method the cart
+   * controller calls for the read endpoint.
+   *
+   * The synthetic stub is shaped exactly like a real `CartResponse`
+   * so the frontend never has to branch. `id` is the empty string;
+   * callers that try to mutate should treat that as "no cart" and
+   * let the mutation endpoint create one lazily.
+   */
+  async getCartForRequest(
+    userId: string,
+    businessUnitId: string,
+  ): Promise<CartResponse> {
+    const existing = await this.findActiveCart(userId, businessUnitId);
+    if (existing) return existing;
+
+    const now = new Date();
+    return {
+      id: '',
+      items: [],
+      subtotal: 0,
+      tax: 0,
+      discount: 0,
+      total: 0,
+      businessUnitId,
+      userId,
+      status: 'ACTIVE',
+      itemCount: 0,
+      promotionDiscount: 0,
+      loyaltyPointsUsed: 0,
+      loyaltyDiscount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  /**
+   * Find or create the user's active cart.
+   *
+   * Race-safe: if two requests try to create the cart at the same
+   * time, one wins the INSERT and the other reads the winner. The
+   * `(userId, businessUnitId)` unique constraint is what guarantees
+   * this — we just have to stop treating it as a fatal error.
+   *
+   * Callers:
+   *   - every mutation (`addItemToCart`, `applyDiscount`, …) uses this
+   *     to lazily materialize a cart on first write
+   *   - `getCartForRequest` does NOT use this; reads go through
+   *     `findActiveCart` so a GET can never insert
+   */
+  async getOrCreateCart(
+    userId: string,
+    businessUnitId: string,
+  ): Promise<CartResponse> {
+    try {
+      if (!userId || !businessUnitId) {
+        throw new AppError(
+          'User ID and Business Unit ID are required',
+          400,
+        );
+      }
+
+      // Fast path: existing cart.
+      const existing = await this.prisma.cart.findFirst({
+        where: { userId, businessUnitId, status: 'ACTIVE' },
+        include: {
+          items: {
+            include: CART_ITEM_INCLUDE,
+            orderBy: { createdAt: 'asc' },
+          },
+          customer: true,
+        },
+      });
+
+      if (existing) {
+        return await this.formatCartResponse(
+          ensureCartStatus(existing),
+          businessUnitId,
+        );
+      }
+
+      // Slow path: create. A concurrent request may have created the
+      // cart between our find and our create — catch P2002 and re-read.
+      let cart: any;
+      try {
         cart = await this.prisma.cart.create({
           data: {
             userId,
@@ -240,6 +366,7 @@ export class CartService extends BaseService {
           include: {
             items: {
               include: CART_ITEM_INCLUDE,
+              orderBy: { createdAt: 'asc' },
             },
             customer: true,
           },
@@ -248,19 +375,82 @@ export class CartService extends BaseService {
         console.log(
           `✅ Cart created for user ${userId} in business unit ${businessUnitId}`,
         );
+      } catch (error: any) {
+        if (error?.code === PRISMA_UNIQUE_VIOLATION) {
+          // Lost the race. Re-read; the winner's row is our row.
+          cart = await this.prisma.cart.findFirst({
+            where: { userId, businessUnitId, status: 'ACTIVE' },
+            include: {
+              items: {
+                include: CART_ITEM_INCLUDE,
+                orderBy: { createdAt: 'asc' },
+              },
+              customer: true,
+            },
+          });
+
+          if (!cart) {
+            // The constraint fired but the row isn't there — most
+            // likely a soft-deleted or non-ACTIVE cart holding the
+            // unique key. Fall back to reactivating it.
+            const anyCart = await this.prisma.cart.findFirst({
+              where: { userId, businessUnitId },
+              include: {
+                items: {
+                  include: CART_ITEM_INCLUDE,
+                  orderBy: { createdAt: 'asc' },
+                },
+                customer: true,
+              },
+            });
+
+            if (anyCart && anyCart.status !== 'ACTIVE') {
+              cart = await this.prisma.cart.update({
+                where: { id: anyCart.id },
+                data: { status: 'ACTIVE' },
+                include: {
+                  items: {
+                    include: CART_ITEM_INCLUDE,
+                    orderBy: { createdAt: 'asc' },
+                  },
+                  customer: true,
+                },
+              });
+            } else {
+              throw new AppError(
+                'Cart creation conflicted with another request and the cart could not be reloaded. Please retry.',
+                409,
+              );
+            }
+          }
+        } else {
+          throw error;
+        }
       }
 
-      const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, businessUnitId);
+      return await this.formatCartResponse(
+        ensureCartStatus(cart),
+        businessUnitId,
+      );
     } catch (error) {
       this.handleError(error, 'CartService.getOrCreateCart');
       throw error;
     }
   }
 
+  /**
+   * Fetch a cart by its id.
+   *
+   * ⚠ The response is always enriched against the CART'S OWN business
+   *    unit, not the caller's. The `businessUnitId` parameter is kept
+   *    on the signature only for API compatibility — an admin in BU-A
+   *    fetching a cart from BU-B used to see inventory numbers
+   *    computed against BU-A. `availableStock` and `isInStock` were
+   *    wrong on every line.
+   */
   async getCartById(
     cartId: string,
-    businessUnitId?: string,
+    _businessUnitId?: string,
   ): Promise<CartResponse> {
     try {
       if (!cartId) {
@@ -282,10 +472,10 @@ export class CartService extends BaseService {
         throw new AppError('Cart not found', 404);
       }
 
-      const cartWithStatus = ensureCartStatus(cart);
+      // Enrichment must use the cart's own BU. See the method JSDoc.
       return await this.formatCartResponse(
-        cartWithStatus,
-        businessUnitId || cart.businessUnitId,
+        ensureCartStatus(cart),
+        cart.businessUnitId,
       );
     } catch (error) {
       this.handleError(error, 'CartService.getCartById');
@@ -322,7 +512,10 @@ export class CartService extends BaseService {
   async getCartCount(userId: string, businessUnitId: string): Promise<number> {
     try {
       if (!userId || !businessUnitId) {
-        throw new AppError('User ID and Business Unit ID are required', 400);
+        throw new AppError(
+          'User ID and Business Unit ID are required',
+          400,
+        );
       }
 
       const cart = await this.prisma.cart.findFirst({
@@ -339,6 +532,132 @@ export class CartService extends BaseService {
     } catch (error) {
       this.handleError(error, 'CartService.getCartCount');
       throw error;
+    }
+  }
+
+  // ============================================
+  // GUEST → USER MERGE
+  // ============================================
+
+  /**
+   * Merge a guest cart into the authenticated user's cart.
+   *
+   * Called from `POST /cart/merge-guest` after login. Idempotent: a
+   * second call for the same pair is a no-op.
+   *
+   * Resolution:
+   *   1. Load the guest cart.
+   *   2. If the guest cart already belongs to this user (i.e. it was
+   *      adopted earlier), do nothing.
+   *   3. If the user has no active cart, reassign the guest cart to
+   *      them — one row, no item copy.
+   *   4. Otherwise, add each guest line into the user's cart, summing
+   *      quantities on matching (product, variant) pairs, then mark
+   *      the guest cart ABANDONED.
+   *
+   * The transaction runs at serializable isolation so a concurrent
+   * `addItemToCart` cannot slip an item between the read and the
+   * write.
+   */
+  async mergeGuestCartIntoUserCart(
+    guestCartId: string,
+    userId: string,
+  ): Promise<void> {
+    if (!guestCartId || !userId) return;
+
+    try {
+      await this.prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const guestCart = await tx.cart.findUnique({
+            where: { id: guestCartId },
+            include: { items: true },
+          });
+
+          if (!guestCart) return;
+          if (guestCart.userId === userId) return;
+          if (guestCart.status !== 'ACTIVE') return;
+
+          const businessUnitId = guestCart.businessUnitId;
+
+          const userCart = await tx.cart.findFirst({
+            where: { userId, businessUnitId, status: 'ACTIVE' },
+            include: { items: true },
+          });
+
+          // Case 3: no user cart → adopt the guest cart wholesale.
+          if (!userCart) {
+            await tx.cart.update({
+              where: { id: guestCart.id },
+              data: { userId },
+            });
+            return;
+          }
+
+          // Case 4: merge line items into the user's cart.
+          for (const item of guestCart.items) {
+            const existing = await tx.cartItem.findFirst({
+              where: {
+                cartId: userCart.id,
+                productId: item.productId,
+                variantId: item.variantId ?? null,
+              },
+            });
+
+            if (existing) {
+              const nextQuantity = existing.quantity + item.quantity;
+              await tx.cartItem.update({
+                where: { id: existing.id },
+                data: {
+                  quantity: nextQuantity,
+                  total: round2(nextQuantity * existing.unitPrice),
+                },
+              });
+            } else {
+              await tx.cartItem.create({
+                data: {
+                  cartId: userCart.id,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  total: item.total,
+                  notes: item.notes,
+                },
+              });
+            }
+          }
+
+          // Empty the guest cart and mark it abandoned so it can't be
+          // reused as a guest cart, but its audit trail survives.
+          await tx.cartItem.deleteMany({
+            where: { cartId: guestCart.id },
+          });
+
+          await tx.cart.update({
+            where: { id: guestCart.id },
+            data: {
+              status: 'ABANDONED',
+              subtotal: 0,
+              tax: 0,
+              discount: 0,
+              total: 0,
+            },
+          });
+
+          await this.recalculateCart(
+            tx,
+            userCart.id,
+            businessUnitId,
+          );
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
+      );
+    } catch (error) {
+      // Merge failure is non-fatal for the login flow. Log and let
+      // the caller continue.
+      console.warn('Failed to merge guest cart into user cart:', error);
     }
   }
 
@@ -408,7 +727,7 @@ export class CartService extends BaseService {
           if (variantId) {
             const variant = await tx.productVariant.findUnique({
               where: { id: variantId },
-              select: { isActive: true, price: true },
+              select: { isActive: true, price: true, productId: true },
             });
 
             if (!variant) {
@@ -417,17 +736,30 @@ export class CartService extends BaseService {
             if (!variant.isActive) {
               throw new AppError('Variant is not active', 400);
             }
+            if (variant.productId !== data.productId) {
+              throw new AppError(
+                'Variant does not belong to the given product',
+                400,
+              );
+            }
             unitPrice = variant.price;
           }
 
           // Availability check inside the transaction.
           const inventory = await tx.inventory.findFirst({
-            where: inventoryWhereFor(data.productId, variantId, businessUnitId),
+            where: inventoryWhereFor(
+              data.productId,
+              variantId,
+              businessUnitId,
+            ),
             select: { id: true, quantity: true, reserved: true },
           });
 
           const availableStock = inventory
-            ? Math.max(0, (inventory.quantity || 0) - (inventory.reserved || 0))
+            ? Math.max(
+                0,
+                (inventory.quantity || 0) - (inventory.reserved || 0),
+              )
             : 0;
 
           if (availableStock < data.quantity) {
@@ -494,7 +826,10 @@ export class CartService extends BaseService {
           });
 
           const cartWithStatus = ensureCartStatus(updatedCart);
-          return await this.formatCartResponse(cartWithStatus, businessUnitId);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            businessUnitId,
+          );
         },
       );
     } catch (error) {
@@ -505,9 +840,7 @@ export class CartService extends BaseService {
 
   /**
    * Bulk add. Each item is validated in its own sub-transaction so a
-   * failure on item N does not roll back items 1..N-1. This matches
-   * the previous behavior and lets the caller decide how to handle
-   * partial success.
+   * failure on item N does not roll back items 1..N-1.
    */
   async addMultipleItemsToCart(
     cartId: string,
@@ -571,13 +904,15 @@ export class CartService extends BaseService {
           }
 
           if (cartItem.cartId !== cartId) {
-            throw new AppError('Cart item does not belong to this cart', 400);
+            throw new AppError(
+              'Cart item does not belong to this cart',
+              400,
+            );
           }
 
           if (quantity <= 0) {
             await tx.cartItem.delete({ where: { id: itemId } });
           } else {
-            // Reject inactive products/variants at update time.
             if (cartItem.product.isActive === false) {
               throw new AppError('Product is no longer active', 400);
             }
@@ -608,7 +943,6 @@ export class CartService extends BaseService {
               );
             }
 
-            // Server-authoritative unit price again.
             const serverUnitPrice =
               cartItem.variant?.price ?? cartItem.product.unitPrice ?? 0;
 
@@ -636,7 +970,10 @@ export class CartService extends BaseService {
           });
 
           const cartWithStatus = ensureCartStatus(updatedCart);
-          return await this.formatCartResponse(cartWithStatus, businessUnitId);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            businessUnitId,
+          );
         },
       );
     } catch (error) {
@@ -661,7 +998,10 @@ export class CartService extends BaseService {
           }
 
           if (cartItem.cartId !== cartId) {
-            throw new AppError('Cart item does not belong to this cart', 400);
+            throw new AppError(
+              'Cart item does not belong to this cart',
+              400,
+            );
           }
 
           await tx.cartItem.delete({ where: { id: itemId } });
@@ -752,7 +1092,7 @@ export class CartService extends BaseService {
   async applyDiscount(
     cartId: string,
     discount: number,
-    discountType: 'PERCENTAGE' | 'FIXED' = 'FIXED',
+    discountType: CartDiscountTypeValue = 'FIXED',
   ): Promise<CartResponse> {
     try {
       if (discount < 0) {
@@ -826,7 +1166,10 @@ export class CartService extends BaseService {
           });
 
           if (!promotion) {
-            throw new AppError('Invalid or expired promotion code', 400);
+            throw new AppError(
+              'Invalid or expired promotion code',
+              400,
+            );
           }
 
           let discountAmount = 0;
@@ -887,9 +1230,9 @@ export class CartService extends BaseService {
    *
    * IMPORTANT: this method decrements `Customer.loyaltyPoints` at the
    * moment of redemption. If the cart is later cleared or abandoned
-   * without a sale, the points are NOT restored. That is the current
-   * product decision — a checkout that fails after this call should
-   * reverse the redemption via a compensating `LoyaltyHistory` entry.
+   * without a sale, the points are NOT restored. A checkout that
+   * fails after this call should reverse the redemption via a
+   * compensating `LoyaltyHistory` entry.
    */
   async applyLoyaltyPoints(
     cartId: string,
@@ -898,7 +1241,10 @@ export class CartService extends BaseService {
   ): Promise<CartResponse> {
     try {
       if (!customerId || points <= 0) {
-        throw new AppError('Valid customer ID and points are required', 400);
+        throw new AppError(
+          'Valid customer ID and points are required',
+          400,
+        );
       }
 
       return await this.prisma.$transaction(
@@ -924,7 +1270,10 @@ export class CartService extends BaseService {
           // 1 point = $0.10. Cap at 50% of subtotal.
           const discountFromPoints = round2(points * 0.1);
           const maxDiscount = round2(cart.subtotal * 0.5);
-          const actualDiscount = Math.min(discountFromPoints, maxDiscount);
+          const actualDiscount = Math.min(
+            discountFromPoints,
+            maxDiscount,
+          );
           const actualPointsUsed = Math.ceil(actualDiscount / 0.1);
 
           await tx.customer.update({
@@ -1014,14 +1363,20 @@ export class CartService extends BaseService {
       });
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        cart.businessUnitId,
+      );
     } catch (error) {
       this.handleError(error, 'CartService.associateCustomer');
       throw error;
     }
   }
 
-  async updateCartNotes(cartId: string, notes?: string): Promise<CartResponse> {
+  async updateCartNotes(
+    cartId: string,
+    notes?: string,
+  ): Promise<CartResponse> {
     try {
       const cart = await this.prisma.cart.update({
         where: { id: cartId },
@@ -1035,7 +1390,10 @@ export class CartService extends BaseService {
       });
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        cart.businessUnitId,
+      );
     } catch (error) {
       this.handleError(error, 'CartService.updateCartNotes');
       throw error;
@@ -1089,12 +1447,16 @@ export class CartService extends BaseService {
 
             if (!inventory) {
               issues.push(
-                `No inventory record for ${(item as any).product?.name ?? item.productId}`,
+                `No inventory record for ${
+                  (item as any).product?.name ?? item.productId
+                }`,
               );
               await tx.cartItem.delete({ where: { id: item.id } });
             } else if (available === 0) {
               issues.push(
-                `Out of stock: ${(item as any).product?.name ?? item.productId}`,
+                `Out of stock: ${
+                  (item as any).product?.name ?? item.productId
+                }`,
               );
               await tx.cartItem.delete({ where: { id: item.id } });
             } else if (available < item.quantity) {
@@ -1136,7 +1498,10 @@ export class CartService extends BaseService {
       });
 
       const cartWithStatus = ensureCartStatus(cart);
-      return await this.formatCartResponse(cartWithStatus, cart.businessUnitId);
+      return await this.formatCartResponse(
+        cartWithStatus,
+        cart.businessUnitId,
+      );
     } catch (error) {
       this.handleError(error, 'CartService.saveCartForLater');
       throw error;
@@ -1219,7 +1584,10 @@ export class CartService extends BaseService {
           );
 
           const cartWithStatus = ensureCartStatus(updatedCart);
-          return await this.formatCartResponse(cartWithStatus, businessUnitId);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            businessUnitId,
+          );
         },
       );
     } catch (error) {
@@ -1246,7 +1614,11 @@ export class CartService extends BaseService {
           }
 
           const sourceCart = await tx.cart.findFirst({
-            where: { userId: fromUserId, businessUnitId, status: 'ACTIVE' },
+            where: {
+              userId: fromUserId,
+              businessUnitId,
+              status: 'ACTIVE',
+            },
           });
 
           if (!sourceCart) {
@@ -1254,7 +1626,11 @@ export class CartService extends BaseService {
           }
 
           let targetCart: any = await tx.cart.findFirst({
-            where: { userId: toUserId, businessUnitId, status: 'ACTIVE' },
+            where: {
+              userId: toUserId,
+              businessUnitId,
+              status: 'ACTIVE',
+            },
           });
 
           if (targetCart) {
@@ -1272,7 +1648,8 @@ export class CartService extends BaseService {
               });
 
               if (existingItem) {
-                const newQuantity = existingItem.quantity + item.quantity;
+                const newQuantity =
+                  existingItem.quantity + item.quantity;
                 await tx.cartItem.update({
                   where: { id: existingItem.id },
                   data: {
@@ -1334,7 +1711,10 @@ export class CartService extends BaseService {
           });
 
           const cartWithStatus = ensureCartStatus(transferredCart);
-          return await this.formatCartResponse(cartWithStatus, businessUnitId);
+          return await this.formatCartResponse(
+            cartWithStatus,
+            businessUnitId,
+          );
         },
       );
     } catch (error) {
@@ -1431,14 +1811,19 @@ export class CartService extends BaseService {
             });
 
             if (cartItem.quantity === split.quantity) {
-              await tx.cartItem.delete({ where: { id: split.cartItemId } });
+              await tx.cartItem.delete({
+                where: { id: split.cartItemId },
+              });
             } else {
-              const remainingQuantity = cartItem.quantity - split.quantity;
+              const remainingQuantity =
+                cartItem.quantity - split.quantity;
               await tx.cartItem.update({
                 where: { id: split.cartItemId },
                 data: {
                   quantity: remainingQuantity,
-                  total: round2(remainingQuantity * cartItem.unitPrice),
+                  total: round2(
+                    remainingQuantity * cartItem.unitPrice,
+                  ),
                 },
               });
             }
@@ -1530,7 +1915,10 @@ export class CartService extends BaseService {
     return settings;
   }
 
-  async updateCartSettings(businessUnitId: string, data: any): Promise<any> {
+  async updateCartSettings(
+    businessUnitId: string,
+    data: any,
+  ): Promise<any> {
     const settings = await this.prisma.cartSettings.update({
       where: { businessUnitId },
       data: { ...data, updatedAt: new Date() },
@@ -1565,7 +1953,9 @@ export class CartService extends BaseService {
         limit = 10,
       } = params;
       const skip = (page - 1) * limit;
-      const cutoffDate = new Date(Date.now() - hours * 60 * 60 * 1000);
+      const cutoffDate = new Date(
+        Date.now() - hours * 60 * 60 * 1000,
+      );
 
       const where: any = {
         businessUnitId,
@@ -1622,30 +2012,36 @@ export class CartService extends BaseService {
 
       const where: any = { businessUnitId };
       if (startDate) where.createdAt = { gte: startDate };
-      if (endDate) where.createdAt = { ...where.createdAt, lte: endDate };
+      if (endDate) {
+        where.createdAt = { ...where.createdAt, lte: endDate };
+      }
 
-      const [totalCarts, cartItems, cartValues, activeCarts, abandonedCarts] =
-        await Promise.all([
-          this.prisma.cart.count({ where }),
-          this.prisma.cartItem.aggregate({
-            where: { cart: where },
-            _avg: { quantity: true },
-          }),
-          this.prisma.cart.aggregate({
-            where,
-            _avg: { total: true },
-          }),
-          this.prisma.cart.count({
-            where: { ...where, status: 'ACTIVE' },
-          }),
-          this.prisma.cart.count({
-            where: { ...where, status: 'ABANDONED' },
-          }),
-        ]);
+      const [
+        totalCarts,
+        cartItems,
+        cartValues,
+        activeCarts,
+        abandonedCarts,
+      ] = await Promise.all([
+        this.prisma.cart.count({ where }),
+        this.prisma.cartItem.aggregate({
+          where: { cart: where },
+          _avg: { quantity: true },
+        }),
+        this.prisma.cart.aggregate({
+          where,
+          _avg: { total: true },
+        }),
+        this.prisma.cart.count({
+          where: { ...where, status: 'ACTIVE' },
+        }),
+        this.prisma.cart.count({
+          where: { ...where, status: 'ABANDONED' },
+        }),
+      ]);
 
       const averageItems = cartItems._avg.quantity || 0;
       const averageValue = cartValues._avg.total || 0;
-      // Conversion = non-active carts (checked out) ÷ total carts.
       const checkedOut = totalCarts - activeCarts - abandonedCarts;
       const conversionRate =
         totalCarts > 0 ? (checkedOut / totalCarts) * 100 : 0;
@@ -1815,11 +2211,11 @@ export class CartService extends BaseService {
     const totals = computeCartTotals(lines, cartDiscount);
 
     // Sync every line's stored unitPrice and total to the server value.
-    // Do this unconditionally — it's cheap and it guarantees no stale
-    // price survives a recalc.
     for (let i = 0; i < items.length; i++) {
       const serverUnitPrice = lines[i].unitPrice;
-      const serverLineTotal = round2(serverUnitPrice * items[i].quantity);
+      const serverLineTotal = round2(
+        serverUnitPrice * items[i].quantity,
+      );
 
       if (
         items[i].unitPrice !== serverUnitPrice ||
@@ -1864,6 +2260,11 @@ export class CartService extends BaseService {
    * isInStock). Runs one inventory query per line — acceptable for
    * POS carts which are small. If carts ever grow large, replace this
    * with a single grouped query.
+   *
+   * ⚠ The `businessUnitId` parameter determines which BU's inventory
+   *    the enrichment reads against. Callers must pass the CART's own
+   *    BU, not the caller's. See `getCartById` for the fix that
+   *    enforces this for the admin-fetch path.
    */
   private async formatCartResponse(
     cart: any,
@@ -1895,7 +2296,10 @@ export class CartService extends BaseService {
             isInStock = availableStock > 0;
           }
         } catch (error) {
-          console.warn('Failed to get inventory for cart item:', error);
+          console.warn(
+            'Failed to get inventory for cart item:',
+            error,
+          );
         }
 
         return {
@@ -1928,7 +2332,8 @@ export class CartService extends BaseService {
       }),
     );
 
-    const status = (cart.status as string) || 'ACTIVE';
+    const status = ((cart.status as string) ||
+      'ACTIVE') as CartStatusValue;
 
     return {
       id: cart.id,
@@ -1936,7 +2341,8 @@ export class CartService extends BaseService {
       subtotal: cart.subtotal,
       tax: cart.tax,
       discount: cart.discount,
-      discountType: cart.discountType || undefined,
+      discountType:
+        (cart.discountType as CartDiscountTypeValue) || undefined,
       promotionCode: cart.promotionCode || undefined,
       promotionDiscount: cart.promotionDiscount || 0,
       loyaltyPointsUsed: cart.loyaltyPointsUsed || 0,
@@ -1947,7 +2353,7 @@ export class CartService extends BaseService {
       businessUnitId: cart.businessUnitId,
       userId: cart.userId,
       notes: cart.notes || undefined,
-      status: status as 'ACTIVE' | 'SAVED' | 'CHECKED_OUT' | 'ABANDONED',
+      status,
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
       itemCount: items.reduce(
@@ -1959,3 +2365,4 @@ export class CartService extends BaseService {
 }
 
 export default CartService;
+

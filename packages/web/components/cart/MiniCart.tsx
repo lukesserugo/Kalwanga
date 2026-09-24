@@ -17,10 +17,7 @@ import {
   ArrowRight,
   Loader2,
 } from 'lucide-react';
-import {
-  cartService,
-  type Cart,
-} from '../../services/cartService';
+import { cartService, type Cart } from '../../services/cartService';
 import { guestCartService } from '../../services/guestCartService';
 import { useAuth } from '../../hooks/useAuth';
 import { formatCurrency } from '../../utils/formatters';
@@ -73,8 +70,7 @@ export function MiniCart({ className = '' }: MiniCartProps) {
     async (itemId: string) => {
       setWorkingId(itemId);
       try {
-        const updatedCart =
-          await activeCartService.removeItem(itemId);
+        const updatedCart = await activeCartService.removeItem(itemId);
         if (!isMountedRef.current) return;
         setCart(updatedCart);
         toast.success('Item removed');

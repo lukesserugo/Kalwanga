@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\sales\POS\POS.tsx
-
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -7,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { CartItems } from './CartItems';
 import { QuickActions } from './QuickActions';
 import { ShiftManagerModal } from './ShiftManagerModal';
-import { PaymentSection } from '../../checkout/PaymentSection';
+import { CheckoutModal } from './CheckoutModal';
+import { CustomerSearchModal } from './CustomerSearchModal';
 import { categoryService } from '../../../services/categoryService';
 import {
   ShoppingCart,
@@ -15,19 +14,14 @@ import {
   Search,
   Scan,
   Users,
-  DollarSign,
   Percent,
   CreditCard,
-  Printer,
   Clock,
   AlertCircle,
   Package,
   User,
   LogOut,
-  Settings,
-  RefreshCw,
   Plus,
-  Minus,
   Trash2,
   Loader2,
   CheckCircle,
@@ -43,13 +37,7 @@ import {
   FileText,
   Grid,
   List,
-  Filter,
-  Tag,
-  BarChart3,
   Lock,
-  StopCircle,
-  ArrowLeft,
-  ExternalLink,
 } from 'lucide-react';
 import { cartService } from '../../../services/cartService';
 import { checkoutService } from '../../../services/checkoutService';
@@ -163,6 +151,21 @@ export interface HeldOrderType {
   customerId?: string;
 }
 
+/**
+ * Variant shape returned by the POS-aware barcode endpoint when the
+ * scanned code matched a `ProductVariant.barcode`. Carries the exact
+ * id / sku / price needed to add the right line item to the cart
+ * without a second lookup.
+ */
+export interface MatchedVariantType {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  barcode?: string | null;
+  attributes?: Record<string, any>;
+}
+
 export interface ProductType {
   id: string;
   name: string;
@@ -190,6 +193,24 @@ export interface ProductType {
   weight?: number;
   isActive?: boolean;
   isDigital?: boolean;
+
+  /**
+   * Populated by the POS-aware barcode endpoint
+   * (`GET /sales/pos/products/barcode/:barcode`). `'PRODUCT'` when the
+   * scan hit `Product.barcode`; `'VARIANT'` when it fell through to
+   * `ProductVariant.barcode`. Undefined on every non-scan product
+   * fetch (search, listing, detail).
+   */
+  matchType?: 'PRODUCT' | 'VARIANT';
+
+  /**
+   * The exact variant the scan resolved to. `null` when `matchType`
+   * is `'PRODUCT'` or when the caller didn't go through the barcode
+   * endpoint. When set, the POS UI passes its `id` to
+   * `handleAddItem(..., variantId)` so the correct variant line is
+   * added to the cart.
+   */
+  matchedVariant?: MatchedVariantType | null;
 }
 
 export interface CategoryType {
@@ -200,7 +221,7 @@ export interface CategoryType {
 }
 
 // ============================================
-// TYPE GUARDS & HELPERS
+// HELPERS
 // ============================================
 
 function normalizeProduct(product: any): ProductType {
@@ -220,6 +241,15 @@ function normalizeProduct(product: any): ProductType {
     weight: product.weight,
     isActive: product.isActive,
     isDigital: product.isDigital,
+
+    // ── Scan-resolution metadata ────────────────────────────────
+    // Only present when the payload came from the POS-aware barcode
+    // endpoint. Undefined for every other product fetch.
+    matchType:
+      product.matchType === 'PRODUCT' || product.matchType === 'VARIANT'
+        ? product.matchType
+        : undefined,
+    matchedVariant: product.matchedVariant ?? null,
   };
 }
 
@@ -241,10 +271,6 @@ function normalizeCustomer(customer: any): CustomerType {
   };
 }
 
-/**
- * Normalizes whatever shape categoryService returns into CategoryType.
- * Handles `description: null` (the source of the TS2345 error).
- */
 function normalizeCategory(cat: any): CategoryType {
   return {
     id: cat.id,
@@ -265,11 +291,6 @@ function extractReceiptNumber(result: any): string | undefined {
   );
 }
 
-/**
- * Generate a fresh idempotency key for a new logical checkout. Prefers
- * the saleService helper (so the whole app uses one implementation);
- * falls back to a local generator if the helper is somehow missing.
- */
 function createIdempotencyKey(): string {
   const svc = saleService as any;
   if (typeof svc?.generateIdempotencyKey === 'function') {
@@ -283,7 +304,7 @@ function createIdempotencyKey(): string {
 // ============================================
 // MODULE-SCOPE CONSTANTS
 // ============================================
-// Hoisted out of the component so it isn't recreated on every render.
+
 const POS_FALLBACK_ROLES = new Set<string>(['ADMIN', 'MANAGER', 'CASHIER']);
 
 // ============================================
@@ -293,10 +314,6 @@ const POS_FALLBACK_ROLES = new Set<string>(['ADMIN', 'MANAGER', 'CASHIER']);
 export function POS() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
-
-  // `permissions` added to the destructure — used as a stable
-  // dependency for the permission memos below (instead of
-  // `hasPermissionExact`, whose identity flips when isClient flips).
   const { hasPermissionExact, isSuperAdmin, permissions } = usePermission();
 
   const canProcessSales = useMemo(() => {
@@ -307,26 +324,10 @@ export function POS() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin, user, permissions]);
 
-  const canViewCustomers = useMemo(
-    () =>
-      isSuperAdmin ||
-      hasPermissionExact(`${PermissionResource.CUSTOMER}:view`),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSuperAdmin, permissions]
-  );
-
   const canCreateCustomers = useMemo(
     () =>
       isSuperAdmin ||
       hasPermissionExact(`${PermissionResource.CUSTOMER}:create`),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSuperAdmin, permissions]
-  );
-
-  const canViewInventory = useMemo(
-    () =>
-      isSuperAdmin ||
-      hasPermissionExact(`${PermissionResource.INVENTORY}:view`),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isSuperAdmin, permissions]
   );
@@ -340,7 +341,6 @@ export function POS() {
   const [processing, setProcessing] = useState<boolean>(false);
 
   // Modal / UI state
-  const [showPayment, setShowPayment] = useState<boolean>(false);
   const [showCustomerSearch, setShowCustomerSearch] = useState<boolean>(false);
   const [showDiscount, setShowDiscount] = useState<boolean>(false);
   const [showReceipt, setShowReceipt] = useState<boolean>(false);
@@ -348,6 +348,7 @@ export function POS() {
   const [showProductDetail, setShowProductDetail] = useState<boolean>(false);
   const [showQuickAdd, setShowQuickAdd] = useState<boolean>(false);
   const [showHeldOrders, setShowHeldOrders] = useState<boolean>(false);
+  const [showCheckout, setShowCheckout] = useState<boolean>(false);
 
   // Discount state
   const [discountAmount, setDiscountAmount] = useState<number>(0);
@@ -366,9 +367,6 @@ export function POS() {
 
   // Customer state
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerType | null>(null);
-  const [customers, setCustomers] = useState<CustomerType[]>([]);
-  const [customerSearchQuery, setCustomerSearchQuery] = useState<string>('');
-  const [isCustomerSearching, setIsCustomerSearching] = useState<boolean>(false);
 
   // Product state
   const [selectedProduct, setSelectedProduct] = useState<ProductType | null>(null);
@@ -385,7 +383,6 @@ export function POS() {
   const [notes, setNotes] = useState<string>('');
 
   // UI prefs
-  const [taxRate, setTaxRate] = useState<number>(0.08);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -396,17 +393,18 @@ export function POS() {
   // ─────────────────────────────────────────
   // IDEMPOTENCY
   // ─────────────────────────────────────────
-  // One key per logical checkout. Created on first attempt, reused on
-  // every retry, cleared on success. Kept in a ref so that re-renders
-  // (including the ones triggered by `processing` toggling) never
-  // regenerate it.
+  //
+  // The POS owns the idempotency key for the checkout attempt:
+  //   - Lazily generated the first time CheckoutModal asks for one.
+  //   - Reused across every render while the attempt is in flight.
+  //   - Cleared only on success (handleCheckoutComplete) or on an
+  //     explicit abandon (handleCheckoutCancel).
+  //
+  // See the backend contract:
+  //   posController.getIdempotencyKey / saleService.findSaleByIdempotencyKey
+
   const pendingIdempotencyKeyRef = useRef<string | null>(null);
 
-  /**
-   * Return the idempotency key for the current checkout attempt,
-   * generating one if this is the first try. Same value is returned on
-   * every retry of the same logical operation.
-   */
   const getIdempotencyKey = useCallback((): string => {
     if (!pendingIdempotencyKeyRef.current) {
       pendingIdempotencyKeyRef.current = createIdempotencyKey();
@@ -414,12 +412,6 @@ export function POS() {
     return pendingIdempotencyKeyRef.current;
   }, []);
 
-  /**
-   * Forget the current key so the next checkout gets a fresh one.
-   * Called after a successful checkout, and whenever the operator
-   * explicitly abandons the current attempt (e.g. the payment modal
-   * is dismissed without completing).
-   */
   const clearIdempotencyKey = useCallback((): void => {
     pendingIdempotencyKeyRef.current = null;
   }, []);
@@ -430,20 +422,6 @@ export function POS() {
 
   const goToSalesList = useCallback(() => {
     router.push('/admin/sales');
-  }, [router]);
-
-  const goToSalesDashboard = useCallback(() => {
-    router.push('/admin/sales/dashboard');
-  }, [router]);
-
-  const goToShiftsDashboard = useCallback(() => {
-    setShowShiftManager(false);
-    router.push('/admin/shifts');
-  }, [router]);
-
-  const goToRegisters = useCallback(() => {
-    setShowShiftManager(false);
-    router.push('/admin/shifts/registers');
   }, [router]);
 
   // ============================================
@@ -577,7 +555,7 @@ export function POS() {
   }, []);
 
   // ============================================
-  // CATEGORIES (FIXED)
+  // CATEGORIES
   // ============================================
 
   const loadCategories = async () => {
@@ -586,11 +564,7 @@ export function POS() {
         limit: 100,
         isActive: true,
       });
-
-      // Normalize Category → CategoryType so `description: null`
-      // becomes `undefined`. Fixes TS2345.
       const normalized: CategoryType[] = (data ?? []).map(normalizeCategory);
-
       setCategories(normalized);
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -605,8 +579,8 @@ export function POS() {
   const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'C') {
       e.preventDefault();
-      if (cart?.items?.length > 0) {
-        setShowPayment(true);
+      if (cart?.items?.length > 0 && currentShift) {
+        setShowCheckout(true);
       }
     }
     if (e.ctrlKey && e.shiftKey && e.key === 'H') {
@@ -622,7 +596,7 @@ export function POS() {
       setShowShiftManager(true);
     }
     if (e.key === 'Escape') {
-      setShowPayment(false);
+      setShowCheckout(false);
       setShowDiscount(false);
       setShowCustomerSearch(false);
       setShowReceipt(false);
@@ -708,6 +682,18 @@ export function POS() {
   // ============================================
   // BARCODE SCANNING
   // ============================================
+  //
+  // The barcode endpoint used here MUST resolve both
+  // `Product.barcode` and `ProductVariant.barcode` — the same
+  // surface `POST /barcodes/record-scan` accepts. The web
+  // `productService.getProductByBarcode` is expected to call
+  // `GET /sales/pos/products/barcode/:barcode`, which routes
+  // through `posService.getProductByBarcode` on the backend and
+  // returns a `{ matchType, matchedVariant }` payload.
+  //
+  // When `matchType === 'VARIANT'`, `matchedVariant.id` is passed
+  // straight to `handleAddItem`, so the correct variant line goes
+  // into the cart at the variant's price — not the parent product's.
 
   const handleBarcodeScan = async (barcode: string) => {
     if (!barcode) return;
@@ -719,13 +705,26 @@ export function POS() {
     setScanning(true);
     try {
       const product = await productService.getProductByBarcode(barcode);
-      if (product) {
-        const normalizedProduct = normalizeProduct(product);
-        await handleAddItem(normalizedProduct);
-        toast.success(`${normalizedProduct.name} added via barcode`);
-      } else {
+
+      if (!product) {
         toast.error('Product not found with this barcode');
+        return;
       }
+
+      const normalizedProduct = normalizeProduct(product);
+
+      // If the backend resolved a variant, add THAT variant.
+      // Otherwise fall through to the product-level line.
+      const matchedVariantId = normalizedProduct.matchedVariant?.id;
+
+      await handleAddItem(normalizedProduct, 1, matchedVariantId);
+
+      const successMessage =
+        matchedVariantId && normalizedProduct.matchedVariant
+          ? `${normalizedProduct.name} (${normalizedProduct.matchedVariant.name}) added via barcode`
+          : `${normalizedProduct.name} added via barcode`;
+
+      toast.success(successMessage);
     } catch (error) {
       console.error('Barcode scan failed:', error);
       toast.error('Failed to scan barcode');
@@ -776,27 +775,6 @@ export function POS() {
     } catch (error: any) {
       console.error('Failed to add item:', error);
       toast.error(error.message || 'Failed to add item to cart');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleAddMultipleItems = async (
-    items: Array<{ productId: string; quantity: number; variantId?: string }>
-  ) => {
-    if (!currentShift) {
-      toast.warning('Please open a shift first');
-      return;
-    }
-
-    try {
-      setProcessing(true);
-      const updatedCart = await cartService.addMultipleItems(items);
-      setCart(updatedCart);
-      toast.success(`${items.length} items added to cart`);
-    } catch (error: any) {
-      console.error('Failed to add items:', error);
-      toast.error(error.message || 'Failed to add items to cart');
     } finally {
       setProcessing(false);
     }
@@ -937,6 +915,48 @@ export function POS() {
     }
   };
 
+  /**
+   * Called by QuickActions → PriceOverrideModal with the resulting
+   * override. The current backend has no per-item price-override
+   * endpoint, so we translate the override into a cart-level discount
+   * equal to the price delta × the requested quantity.
+   *
+   * When a per-item override endpoint lands, this should switch to
+   * calling it directly and drop the cart-level workaround.
+   */
+  const handlePriceOverride = useCallback(
+    async (data: {
+      productName: string;
+      originalPrice: number;
+      newPrice: number;
+      reason: string;
+    }) => {
+      const delta = Math.max(0, data.originalPrice - data.newPrice);
+      if (delta <= 0) {
+        toast.warning('Override produces no discount');
+        return;
+      }
+
+      const existingDiscount = cart?.discount ?? 0;
+      const newDiscountTotal = existingDiscount + delta;
+
+      try {
+        setProcessing(true);
+        const updatedCart = await cartService.applyDiscount(newDiscountTotal);
+        setCart(updatedCart);
+        toast.success(
+          `Price override applied: -${formatCurrency(delta)} (${data.reason})`
+        );
+      } catch (error: any) {
+        console.error('Failed to apply price override:', error);
+        toast.error(error.message || 'Failed to apply price override');
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [cart?.discount]
+  );
+
   // ============================================
   // HOLD ORDER OPERATIONS
   // ============================================
@@ -1028,8 +1048,6 @@ export function POS() {
       }
       await loadCart();
       setShowCustomerSearch(false);
-      setCustomerSearchQuery('');
-      setCustomers([]);
     } catch (error: any) {
       console.error('Failed to select customer:', error);
       toast.error(error.message || 'Failed to select customer');
@@ -1038,101 +1056,23 @@ export function POS() {
     }
   };
 
-  const handleCustomerSearch = async (query: string) => {
-    setCustomerSearchQuery(query);
-    if (query.length < 2) {
-      setCustomers([]);
-      setIsCustomerSearching(false);
-      return;
-    }
-
-    setIsCustomerSearching(true);
-    try {
-      const results = await customerService.searchCustomers({
-        query,
-        limit: 10,
-      });
-      const normalizedResults = results.map(normalizeCustomer);
-      setCustomers(normalizedResults);
-    } catch (error) {
-      console.error('Customer search failed:', error);
-      toast.error('Failed to search customers');
-    } finally {
-      setIsCustomerSearching(false);
-    }
-  };
-
-  const handleCreateCustomer = async (customerData: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phoneNumber: string;
-  }) => {
-    try {
-      setProcessing(true);
-      const customer = await customerService.createCustomer({
-        ...customerData,
-        companyId: user?.companyId || '',
-      });
-      const normalizedCustomer = normalizeCustomer(customer);
-      await handleSelectCustomer(normalizedCustomer);
-      toast.success('Customer created successfully');
-    } catch (error: any) {
-      console.error('Failed to create customer:', error);
-      toast.error(error.message || 'Failed to create customer');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   // ============================================
-  // CHECKOUT OPERATIONS
+  // CHECKOUT (delegated to CheckoutModal)
   // ============================================
 
-  const handlePaymentComplete = async (paymentMethod: string, details: any) => {
-    if (!currentShift) {
-      toast.warning('Please open a shift first');
-      throw new Error('No active shift');
-    }
-    if (!cart?.items?.length) {
-      toast.warning('Cart is empty');
-      throw new Error('Cart is empty');
-    }
-
-    const paidAmount =
-      paymentMethod === 'CASH'
-        ? Number(details?.paidAmount) || cart.total || 0
-        : cart.total || 0;
-
-    try {
-      setProcessing(true);
-
-      // ✅ Resolve (or create) the idempotency key for this checkout.
-      //    On retry after a network failure, the SAME key is reused, so
-      //    the server returns the original sale instead of creating a
-      //    duplicate.
-      const idempotencyKey = getIdempotencyKey();
-
-      const result = await checkoutService.processCheckout({
-        cartId: cart.id,
-        customerId: selectedCustomer?.id,
-        paymentMethod,
-        paidAmount,
-        discount: cart.discount || 0,
-        notes: notes || details?.notes || '',
-        cashRegisterId: currentShift.cashRegisterId,
-        cashRegisterSessionId: currentShift.id,
-        applyLoyaltyPoints: paymentMethod === 'LOYALTY_POINTS',
-        // ✅ Forward the key so the sale layer persists / dedupes on it.
-        idempotencyKey,
-      });
-
-      // ✅ Checkout succeeded — clear the key so the NEXT sale gets a
-      //    fresh one.
+  /**
+   * Called by CheckoutModal after `checkoutService.processCheckout`
+   * resolves. The modal owns the network call, method selection,
+   * loyalty validation, and idempotency-key forwarding — this handler
+   * only reacts to the result: show the receipt, print it, reset the
+   * cart, clear the key so the NEXT sale gets a fresh one.
+   */
+  const handleCheckoutComplete = useCallback(
+    async (result: any, _method: string, _details: any) => {
       clearIdempotencyKey();
 
       setReceiptData(result);
-      setShowPayment(false);
+      setShowCheckout(false);
       toast.success('Checkout completed successfully!');
 
       const receiptNumber = extractReceiptNumber(result);
@@ -1144,34 +1084,21 @@ export function POS() {
       setSelectedCustomer(null);
       setNotes('');
       setShowReceipt(true);
-    } catch (error: any) {
-      // ✅ Keep the key on failure so a retry is idempotent. The next
-      //    click of "Checkout" will reuse the same value. The key is
-      //    discarded if the operator abandons (see handlePaymentCancel).
-      console.error('Checkout failed:', error);
-      toast.error(error.message || 'Checkout failed');
-      throw error;
-    } finally {
-      setProcessing(false);
-    }
-  };
+    },
+    [clearIdempotencyKey]
+  );
 
   /**
-   * Dismiss the payment modal without completing the sale.
-   *
-   * Two behaviors, both correct:
-   *   - If we're mid-flight (processing === true), we leave the key
-   *     alone — the in-flight request will either succeed (and clear
-   *     it) or fail (and the retry path keeps it).
-   *   - Otherwise (idle modal, user just changed their mind), clear the
-   *     key so the next checkout is a fresh logical operation.
+   * Called when the operator dismisses CheckoutModal without a
+   * successful checkout. When the modal is mid-flight, the modal
+   * itself guards against this — so by the time we're here, the
+   * operator has explicitly abandoned the attempt and the key can be
+   * cleared.
    */
-  const handlePaymentCancel = () => {
-    if (!processing) {
-      clearIdempotencyKey();
-    }
-    setShowPayment(false);
-  };
+  const handleCheckoutCancel = useCallback(() => {
+    clearIdempotencyKey();
+    setShowCheckout(false);
+  }, [clearIdempotencyKey]);
 
   // ============================================
   // RECEIPT OPERATIONS
@@ -1204,6 +1131,29 @@ export function POS() {
 
     const saleDate =
       sale.saleDate || sale.createdAt || new Date().toISOString();
+
+    const breakdown = saleService.extractBreakdown(sale);
+    const promotionDiscount = breakdown.promotionDiscount ?? 0;
+    const promotionCode = breakdown.promotionCode ?? null;
+    const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
+    const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
+
+    const promotionLine =
+      promotionDiscount > 0
+        ? `<div class="row discount-line"><span>Promotion${
+            promotionCode ? ` (${promotionCode})` : ''
+          }</span><span>-$${promotionDiscount.toFixed(2)}</span></div>`
+        : '';
+
+    const loyaltyLine =
+      loyaltyPointsUsed > 0
+        ? `<div class="row discount-line"><span>${loyaltyPointsUsed} loyalty points</span><span>-$${loyaltyDiscount.toFixed(2)}</span></div>`
+        : '';
+
+    const rawDiscountLine =
+      sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
+        ? `<div class="row discount-line"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>`
+        : '';
 
     return `
       <!DOCTYPE html>
@@ -1271,7 +1221,9 @@ export function POS() {
           <div class="totals">
             <div class="row"><span>Subtotal</span><span>$${(sale.subtotal || 0).toFixed(2)}</span></div>
             <div class="row"><span>Tax (${sale.taxRate || 0}%)</span><span>$${(sale.tax || 0).toFixed(2)}</span></div>
-            ${sale.discount > 0 ? `<div class="row discount-line"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>` : ''}
+            ${promotionLine}
+            ${loyaltyLine}
+            ${rawDiscountLine}
             <div class="row grand-total">
               <span>TOTAL</span>
               <span>$${(sale.total || 0).toFixed(2)}</span>
@@ -1342,29 +1294,32 @@ export function POS() {
   // CALCULATIONS
   // ============================================
 
-  const calculateTotals = useMemo(() => {
-    if (!cart)
-      return {
-        subtotal: 0,
-        tax: 0,
-        discount: 0,
-        total: 0,
-        itemCount: 0,
-        totalItems: 0,
-      };
-
-    const subtotal =
-      cart.items?.reduce((sum: number, item: any) => sum + item.total, 0) || 0;
-    const tax = subtotal * taxRate;
-    const discount = cart.discount || 0;
-    const total = subtotal + tax - discount;
-    const itemCount = cart.items?.length || 0;
-    const totalItems =
-      cart.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) ||
-      0;
-
-    return { subtotal, tax, discount, total, itemCount, totalItems };
-  }, [cart, taxRate]);
+  /**
+   * Derived totals — sourced directly from the server-side cart.
+   *
+   * The cart is the single source of truth for subtotal, tax,
+   * discount, and total: the backend computes them whenever items,
+   * discounts, or customer loyalty are applied. Local arithmetic
+   * here would drift (e.g. if the tenant's tax rate differs from the
+   * POS default), so we mirror the cart verbatim.
+   *
+   * Item counts are derived client-side from `cart.items` since the
+   * cart payload doesn't carry them.
+   */
+  const totals = useMemo(() => {
+    const items: any[] = Array.isArray(cart?.items) ? cart.items : [];
+    return {
+      subtotal: cart?.subtotal ?? 0,
+      tax: cart?.tax ?? 0,
+      discount: cart?.discount ?? 0,
+      total: cart?.total ?? 0,
+      itemCount: items.length,
+      totalItems: items.reduce(
+        (sum: number, item: any) => sum + (item.quantity || 0),
+        0
+      ),
+    };
+  }, [cart]);
 
   // ============================================
   // RENDER HELPERS
@@ -1459,8 +1414,6 @@ export function POS() {
       </div>
     );
   }
-
-  const totals = calculateTotals;
 
   // ============================================
   // MAIN RENDER
@@ -1614,11 +1567,7 @@ export function POS() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        <div
-          className={`flex-1 flex flex-col transition-all duration-300 ${
-            sidebarCollapsed ? 'ml-0' : 'ml-0'
-          }`}
-        >
+        <div className="flex-1 flex flex-col">
           {/* Search Bar */}
           <div className="bg-white dark:bg-gray-800 shadow-sm p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
             <div className="flex flex-col sm:flex-row gap-2">
@@ -2076,7 +2025,7 @@ export function POS() {
                   <span className="hidden sm:inline">Clear</span>
                 </button>
                 <button
-                  onClick={() => setShowPayment(true)}
+                  onClick={() => setShowCheckout(true)}
                   className="px-4 sm:px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium transition-colors text-sm"
                   disabled={
                     cart?.items?.length === 0 || processing || !currentShift
@@ -2094,7 +2043,7 @@ export function POS() {
           </div>
         </div>
 
-        {/* Quick Actions Sidebar (FIXED: only supported props) */}
+        {/* Quick Actions Sidebar */}
         <div
           className={`w-56 sm:w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0 transition-all duration-300 ${
             sidebarCollapsed ? 'hidden' : ''
@@ -2105,13 +2054,14 @@ export function POS() {
             onViewSales={goToSalesList}
             onOpenCustomerSearch={() => setShowCustomerSearch(true)}
             onOpenHeldOrders={() => setShowHeldOrders(true)}
+            onPriceOverride={handlePriceOverride}
             heldOrdersCount={holdOrders.length}
           />
         </div>
       </div>
 
       {/* ============================================ */}
-      {/* SHIFT MANAGER (standalone component)          */}
+      {/* SHIFT MANAGER                                  */}
       {/* ============================================ */}
       <ShiftManagerModal
         isOpen={showShiftManager}
@@ -2120,53 +2070,49 @@ export function POS() {
       />
 
       {/* ============================================ */}
-      {/* PAYMENT MODAL (using PaymentSection)          */}
+      {/* CUSTOMER SEARCH MODAL (extracted)               */}
       {/* ============================================ */}
-      {showPayment && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between z-10">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handlePaymentCancel}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Back"
-                >
-                  <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                </button>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <CreditCard className="w-5 h-5 text-blue-500" />
-                    Complete Payment
-                  </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {cart?.items?.length || 0} item
-                    {(cart?.items?.length || 0) !== 1 ? 's' : ''} ·{' '}
-                    {formatCurrency(totals.total)}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={handlePaymentCancel}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
+      <CustomerSearchModal
+        isOpen={showCustomerSearch}
+        onClose={() => setShowCustomerSearch(false)}
+        onSelectCustomer={(customer) => {
+          const normalized = normalizeCustomer(customer);
+          handleSelectCustomer(normalized);
+        }}
+      />
 
-            <div className="p-6">
-              <PaymentSection
-                total={totals.total}
-                currency="USD"
-                onPaymentComplete={handlePaymentComplete}
-                onPaymentCancel={handlePaymentCancel}
-                isProcessing={processing}
-                customerLoyaltyPoints={selectedCustomer?.loyaltyPoints || 0}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ============================================ */}
+      {/* CHECKOUT MODAL (single source of truth)        */}
+      {/* ============================================ */}
+      <CheckoutModal
+        isOpen={showCheckout}
+        onClose={() => setShowCheckout(false)}
+        onCancel={handleCheckoutCancel}
+        total={totals.total}
+        currency="USD"
+        cartId={cart?.id}
+        customer={
+          selectedCustomer
+            ? {
+                id: selectedCustomer.id,
+                firstName: selectedCustomer.firstName,
+                lastName: selectedCustomer.lastName,
+                email: selectedCustomer.email,
+                loyaltyPoints: selectedCustomer.loyaltyPoints,
+              }
+            : null
+        }
+        discount={cart?.discount || 0}
+        shift={
+          currentShift
+            ? { id: currentShift.id, cashRegisterId: currentShift.cashRegisterId }
+            : null
+        }
+        notes={notes}
+        idempotencyKey={getIdempotencyKey()}
+        isProcessing={processing}
+        onPaymentComplete={handleCheckoutComplete}
+      />
 
       {/* Discount Modal */}
       {showDiscount && (
@@ -2283,123 +2229,6 @@ export function POS() {
               >
                 Apply Discount
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Customer Search Modal */}
-      {showCustomerSearch && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Find Customer
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Search for an existing customer or create a new one
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowCustomerSearch(false);
-                  setCustomerSearchQuery('');
-                  setCustomers([]);
-                }}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 flex-1 overflow-y-auto">
-              <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="Search by name, email, or phone..."
-                  value={customerSearchQuery}
-                  onChange={(e) => handleCustomerSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  autoFocus
-                />
-                {isCustomerSearching && (
-                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                    <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-                  </div>
-                )}
-              </div>
-              {customers.length > 0 ? (
-                <div className="space-y-2">
-                  {customers.map((customer) => (
-                    <div
-                      key={customer.id}
-                      className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex flex-wrap items-center justify-between gap-2"
-                      onClick={() => handleSelectCustomer(customer)}
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-white">
-                          {customer.firstName} {customer.lastName}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                          <span className="flex items-center gap-1">
-                            <Mail className="w-3 h-3" /> {customer.email}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3" />{' '}
-                            {customer.phoneNumber}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Loyalty Points
-                        </p>
-                        <p className="font-bold text-blue-600 dark:text-blue-400">
-                          {customer.loyaltyPoints || 0}
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          Spent: {formatCurrency(customer.totalSpent || 0)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : customerSearchQuery.length >= 2 &&
-                !isCustomerSearching ? (
-                <div className="text-center py-8">
-                  <Users className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                  <p className="text-gray-500 dark:text-gray-400">
-                    No customers found
-                  </p>
-                  {canCreateCustomers && (
-                    <button
-                      className="mt-2 text-blue-600 dark:text-blue-400 hover:underline"
-                      onClick={() => {
-                        const firstName = prompt('Enter first name:');
-                        const lastName = prompt('Enter last name:');
-                        const email = prompt('Enter email:');
-                        const phoneNumber = prompt('Enter phone number:');
-                        if (firstName && lastName && email && phoneNumber) {
-                          handleCreateCustomer({
-                            firstName,
-                            lastName,
-                            email,
-                            phoneNumber,
-                          });
-                        }
-                      }}
-                    >
-                      Create New Customer
-                    </button>
-                  )}
-                </div>
-              ) : !customerSearchQuery ? (
-                <div className="text-center py-8 text-gray-400 dark:text-gray-500">
-                  <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                  <p>Type at least 2 characters to search</p>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
@@ -2637,7 +2466,36 @@ export function POS() {
                     {formatCurrency(receiptData.tax)}
                   </span>
                 </div>
-                {receiptData.discount > 0 && (
+                {saleService.hasBreakdown(receiptData) && (
+                  <>
+                    {(saleService.extractBreakdown(receiptData).promotionDiscount ?? 0) > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-green-600 dark:text-green-400">
+                          Promotion
+                          {saleService.extractBreakdown(receiptData).promotionCode && (
+                            <code className="ml-1 px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/40 text-[10px] font-mono">
+                              {saleService.extractBreakdown(receiptData).promotionCode}
+                            </code>
+                          )}
+                        </span>
+                        <span className="text-green-600 dark:text-green-400">
+                          -{formatCurrency(saleService.extractBreakdown(receiptData).promotionDiscount ?? 0)}
+                        </span>
+                      </div>
+                    )}
+                    {(saleService.extractBreakdown(receiptData).loyaltyPointsUsed ?? 0) > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-green-600 dark:text-green-400">
+                          {saleService.extractBreakdown(receiptData).loyaltyPointsUsed} loyalty points
+                        </span>
+                        <span className="text-green-600 dark:text-green-400">
+                          -{formatCurrency(saleService.extractBreakdown(receiptData).loyaltyDiscount ?? 0)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {receiptData.discount > 0 && !saleService.hasBreakdown(receiptData) && (
                   <div className="flex justify-between text-sm">
                     <span className="text-green-600 dark:text-green-400">
                       Discount
@@ -2692,7 +2550,7 @@ export function POS() {
                   onClick={() => printReceipt(receiptData)}
                   className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 text-sm"
                 >
-                  <Printer className="w-4 h-4" /> Print
+                  <Receipt className="w-4 h-4" /> Print
                 </button>
                 {receiptData.customer?.email && (
                   <button

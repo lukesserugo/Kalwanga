@@ -14,14 +14,8 @@ const router = Router();
 // ============================================
 //
 // Mirrors `CANONICAL_PAYMENT_METHODS` in
-// `../controllers/checkoutController.ts` and `../utils/validators.ts`.
-// Kept local to the route file to avoid a circular import; the three
-// must stay in sync. Any change to the backend-wide set should be
-// applied here too.
-//
-// The route-level schema accepts the full canonical set. The service
-// normalizes aliases (CARD → CREDIT_CARD, MPESA → MOBILE_MONEY, …)
-// before writing to the Prisma `PaymentMethod` enum.
+// `../controllers/checkoutController.ts` and
+// `../services/checkoutService.ts`. The three must stay in sync.
 
 const CANONICAL_PAYMENT_METHODS = [
   'CASH',
@@ -63,27 +57,40 @@ const paymentMethodSchema = z
   });
 
 // ============================================
-// VALIDATION SCHEMAS
+// DISCOUNT TYPE
 // ============================================
 
+const DISCOUNT_TYPE_VALUES = [
+  'PERCENTAGE',
+  'FIXED',
+  'LOYALTY',
+  'MANUAL',
+  'BUY_X_GET_Y',
+  'FREE_SHIPPING',
+  'BOGO',
+  'BUNDLE',
+  'TIERED',
+] as const;
+
+// ============================================
+// VALIDATION SCHEMAS
+// ============================================
+//
+// ⚠ Each of these schemas MUST stay in lock-step with its counterpart
+// in `../controllers/checkoutController.ts` and
+// `../services/checkoutService.ts`.
+
 /**
- * Create-checkout body schema.
+ * Create-checkout body schema (offline / POS).
  *
- * ⚠ This schema MUST stay in lock-step with `checkoutSchema` in
- * `../controllers/checkoutController.ts`. The controller parses
- * `req.body` a second time with its own copy of this schema, and the
- * two previously drifted:
+ * ⚠ The route-level schema is deliberately NOT applied by
+ * `validateRequest` on the two create endpoints. The controller runs
+ * its own `.parse()` and the two schemas must match exactly. Running
+ * `validateRequest` here would double-parse and produce a transformed
+ * body that the controller then fails to recognize.
  *
- *   • the controller accepted `idempotencyKey`, this one did not
- *   • the controller accepted the full canonical payment-method set,
- *     this one only accepted a narrow enum
- *   • the controller accepted `paidAmount: 0` (loyalty-only and
- *     fully-discounted checkouts), this one required `.positive()`
- *
- * Because `validateRequest(...)` runs FIRST, the stricter route-level
- * schema was rejecting valid payloads before the controller ever saw
- * them. Keeping the two identical removes the drift and the source of
- * the "Required (undefined)" 400s.
+ * Kept here so the schema lives next to the route for reference and
+ * so a future contributor can see the canonical shape.
  */
 const createCheckoutSchema = z.object({
   cartId: z.string().min(1, 'Cart ID is required'),
@@ -102,8 +109,71 @@ const createCheckoutSchema = z.object({
   customerPhone: z.string().optional(),
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
-  // Idempotency guard for double-submit. Same key = same sale returned.
   idempotencyKey: z.string().uuid().optional(),
+
+  // Gateway-specific (used by the online path, harmless on the
+  // offline path — the service ignores what it doesn't need).
+  returnUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+  cardNonce: z.string().optional(),
+  paymentMethodId: z.string().optional(),
+
+  // Gift-card specific. The frontend sends the code under both
+  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
+  // name); the service reads either.
+  giftCardCode: z.string().optional(),
+  gatewayId: z.string().optional(),
+
+  // Promotion / loyalty passthrough
+  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
+  promotionCode: z.string().nullable().optional(),
+  promotionDiscount: z.number().min(0).optional(),
+});
+
+/**
+ * Online-checkout body schema (gateway-backed).
+ *
+ * Same canonical fields as `createCheckoutSchema` MINUS `paidAmount`
+ * (the server computes it), PLUS the gateway-specific passthroughs:
+ *   - returnUrl / cancelUrl   for redirect-based providers
+ *   - cardNonce               for Square
+ *   - paymentMethodId         for server-side Stripe confirmation
+ *   - giftCardCode / gatewayId for Gift Card redemption
+ *
+ * The controller's `onlineCheckoutSchema` is the authoritative gate;
+ * this copy exists to keep the two schemas side-by-side and to catch
+ * drift in code review.
+ */
+const onlineCheckoutSchema = z.object({
+  cartId: z.string().min(1, 'Cart ID is required'),
+  customerId: z.string().optional(),
+  paymentMethod: paymentMethodSchema,
+  discount: z.number().min(0, 'Discount cannot be negative').optional(),
+  notes: z.string().optional(),
+  applyLoyaltyPoints: z.boolean().default(false),
+  businessUnitId: z.string().optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().optional(),
+  customerName: z.string().optional(),
+  customerAddress: z.string().optional(),
+  idempotencyKey: z.string().uuid().optional(),
+
+  // Gateway-specific
+  returnUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+  cardNonce: z.string().optional(),
+  paymentMethodId: z.string().optional(),
+
+  // Gift-card specific. The frontend sends the code under both
+  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
+  // name); the service reads either.
+  giftCardCode: z.string().optional(),
+  gatewayId: z.string().optional(),
+
+  // Promotion / loyalty passthrough
+  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
+  promotionCode: z.string().nullable().optional(),
+  promotionDiscount: z.number().min(0).optional(),
 });
 
 const getCheckoutsSchema = z.object({
@@ -147,9 +217,9 @@ const voidCheckoutSchema = z.object({
  * Add-item body schema.
  *
  * ⚠ `unitPrice` is intentionally NOT accepted. The server looks up
- * the authoritative price from `Product.unitPrice` /
- * `ProductVariant.price`. Accepting it from the client was a fraud
- * vector. Kept identical to the controller's `addItemSchema`.
+ * the authoritative price from `Product.unitPrice` / `ProductVariant.price`.
+ * Accepting it from the client was a fraud vector. Kept identical to
+ * the controller's `addItemSchema`.
  */
 const addItemSchema = z.object({
   productId: z.string().min(1, 'Product ID is required'),
@@ -183,36 +253,69 @@ const exportCheckoutsSchema = z.object({
 // ⚠ ROUTE ORDER MATTERS.
 //
 // Express matches routes in the order they are registered. Any
-// literal-prefix route (`/summary/...`, `/stats/...`, `/history`,
-// `/payment-methods`, `/settings`, `/export`, `/customer/...`,
-// `/receipt/...`) MUST be registered BEFORE the `/:id` wildcard,
-// otherwise `/:id` will swallow the literal segment as if it were
-// an ID and the more specific handler will never run.
-//
-// The previous version of this file registered `/:id` before
-// `/summary/:cartId`, so `GET /checkout/summary/<cartId>` was
-// matched by the `/:id` handler with `id = 'summary'`, which then
-// failed to find a sale and returned a 404. The summary route has
-// now been moved above `/:id` and given its own handler shape.
+// literal-prefix route (`/online`, `/summary/...`, `/stats/...`,
+// `/history`, `/payment-methods`, `/settings`, `/export`,
+// `/customer/...`, `/receipt/...`) MUST be registered BEFORE the
+// `/:id` wildcard, otherwise `/:id` will swallow the literal segment
+// as if it were an ID and the more specific handler will never run.
+
+// ============================================
+// CREATE
+// ============================================
+
+/**
+ * POST /checkout/online
+ * Create a gateway-backed checkout.
+ *
+ * Creates a PENDING Sale + PENDING Payment, calls the payment
+ * gateway, and returns a `nextAction` telling the frontend what to do
+ * next:
+ *
+ *   CONFIRM_STRIPE   → confirm the PaymentIntent with Stripe.js
+ *   REDIRECT         → window.location.href = url
+ *   AWAIT_STK_PUSH   → poll GET /checkout/:saleId until COMPLETED
+ *   OFFLINE          → show the "awaiting confirmation" screen
+ *   NONE             → sale already completed (idempotent replay)
+ *
+ * ⚠ This route MUST be registered before `/:id` so Express doesn't
+ *   match `online` as a sale ID.
+ *
+ * ⚠ Validation is performed by the controller's own
+ *   `onlineCheckoutSchema` parse. We deliberately do NOT run
+ *   `validateRequest` here because the middleware's Zod parse
+ *   produces a transformed object (paymentMethod uppercased,
+ *   applyLoyaltyPoints defaulted) and the controller then re-parses
+ *   that transformed shape with the raw schema — a double-parse that
+ *   has been the source of the "Required (undefined)" 400s.
+ *
+ * @auth Required (any authenticated user — this is the public web
+ *       checkout)
+ */
+router.post(
+  '/online',
+  requireAuth,
+  checkoutController.createOnlineCheckout,
+);
 
 /**
  * POST /checkout
- * Create a new checkout from cart.
+ * Create a new checkout from cart (offline / POS / cash).
  *
- * Body is validated here AND again in the controller. The two schemas
- * are identical, so a payload that passes this middleware is
- * guaranteed to pass the controller's re-parse. The controller's
- * parse remains the authoritative gate (it also runs when the route
- * is invoked from internal callers that bypass this router).
+ * ⚠ Validation is performed by the controller's own `checkoutSchema`
+ *   parse. We deliberately do NOT run `validateRequest` here — see
+ *   the note on the `/online` route above.
  *
  * @auth Required
  */
 router.post(
   '/',
   requireAuth,
-  validateRequest(createCheckoutSchema),
   checkoutController.createCheckout,
 );
+
+// ============================================
+// LIST / READ
+// ============================================
 
 /**
  * GET /checkout
@@ -338,11 +441,6 @@ router.get(
  * in registration order, and `/:id` would happily accept the literal
  * segment `summary` as an ID, breaking this endpoint.
  *
- * The controller's `getCheckoutSummary` handler reads `req.params.id`
- * OR `req.params.cartId` — the fallback lets the same handler serve
- * both `GET /checkout/:id/summary` (id-first) and
- * `GET /checkout/summary/:cartId` (cart-first) without duplication.
- *
  * @auth Required
  */
 router.get(
@@ -350,6 +448,13 @@ router.get(
   requireAuth,
   checkoutController.getCheckoutSummary,
 );
+
+// ============================================
+// PARAMETERIZED ROUTES
+// ============================================
+//
+// ⚠ Everything below this line uses a `/:id` or `/:saleId` wildcard.
+//   Never register a literal-prefix route after this point.
 
 /**
  * GET /checkout/:id
@@ -426,7 +531,13 @@ router.put(
 
 /**
  * POST /checkout/:id/pay
- * Process payment for checkout.
+ * Process an ADDITIONAL payment for a checkout (split / partial).
+ *
+ * ⚠ This is NOT the gateway-call entry point. The initial card /
+ *   PayPal / Flutterwave / Paystack / Mobile Money charge happens on
+ *   `POST /checkout/online`. Use this route only to record a second
+ *   tender against the same sale.
+ *
  * @auth Required
  */
 router.post(

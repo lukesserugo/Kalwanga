@@ -39,6 +39,7 @@ import {
   Award,
   Shield,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 import { toast } from '../../../../../utils/toast-manager';
 import { usePermission } from '../../../../../hooks/usePermission';
@@ -54,6 +55,14 @@ import {
 // ============================================
 // INTERFACES
 // ============================================
+//
+// The backend `GET /cart/analytics` returns exactly six fields:
+//   totalCarts, activeCarts, abandonedCarts,
+//   averageItems, averageValue, conversionRate
+//
+// The additional fields below are declared for forward compatibility
+// and are guarded at every use site. When the backend adds them, the
+// UI lights up automatically.
 
 interface CartAnalytics {
   totalCarts: number;
@@ -62,8 +71,9 @@ interface CartAnalytics {
   averageItems: number;
   averageValue: number;
   conversionRate: number;
-  todayCarts: number;
-  todayRevenue: number;
+  // Not currently returned by the backend:
+  todayCarts?: number;
+  todayRevenue?: number;
   weeklyTrend?: WeeklyTrend[];
   categoryBreakdown?: CategoryBreakdown[];
   statusBreakdown?: StatusBreakdown[];
@@ -101,7 +111,7 @@ interface RecentActivity {
 
 interface ExportOptions {
   format: 'csv' | 'excel' | 'json' | 'pdf';
-  metrics: string[];
+  metrics?: string[];
   dateRange: string;
   startDate?: string;
   endDate?: string;
@@ -124,6 +134,62 @@ const DATE_RANGES = [
   { value: 'custom', label: 'Custom Range' },
 ];
 
+/**
+ * Translate a named range into concrete start/end dates.
+ *
+ * The backend `GET /cart/analytics` accepts only `startDate` and
+ * `endDate` — it has no `period` parameter. Sending `period=week` was
+ * silently ignored, so every request returned the same all-time data.
+ */
+function resolveDateRange(
+  range: string,
+  customStart?: string,
+  customEnd?: string,
+): { startDate: Date | null; endDate: Date | null } {
+  const now = new Date();
+
+  if (range === 'custom') {
+    if (!customStart || !customEnd) return { startDate: null, endDate: null };
+    return {
+      startDate: new Date(customStart),
+      endDate: new Date(customEnd),
+    };
+  }
+
+  const start = new Date(now);
+  const end = new Date(now);
+
+  switch (range) {
+    case 'today':
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'yesterday': {
+      start.setDate(start.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setDate(end.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      break;
+    }
+    case 'week':
+      start.setDate(start.getDate() - 7);
+      break;
+    case 'month':
+      start.setMonth(start.getMonth() - 1);
+      break;
+    case 'quarter':
+      start.setMonth(start.getMonth() - 3);
+      break;
+    case 'year':
+      start.setFullYear(start.getFullYear() - 1);
+      break;
+    default:
+      start.setDate(start.getDate() - 7);
+  }
+
+  return { startDate: start, endDate: end };
+}
+
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE:
     'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -142,11 +208,14 @@ const STATUS_LABELS: Record<string, string> = {
   ABANDONED: 'Abandoned',
 };
 
+// NOTE: the backend `POST /cart/analytics/export` currently produces
+// CSV regardless of the `format` field. Non-CSV options are shown
+// disabled so the UI does not promise a file type it cannot deliver.
 const EXPORT_FORMATS = [
-  { value: 'csv', label: 'CSV', color: 'text-emerald-500' },
-  { value: 'excel', label: 'Excel', color: 'text-green-500' },
-  { value: 'json', label: 'JSON', color: 'text-blue-500' },
-  { value: 'pdf', label: 'PDF', color: 'text-red-500' },
+  { value: 'csv', label: 'CSV', color: 'text-emerald-500', supported: true },
+  { value: 'excel', label: 'Excel', color: 'text-green-500', supported: false },
+  { value: 'json', label: 'JSON', color: 'text-blue-500', supported: false },
+  { value: 'pdf', label: 'PDF', color: 'text-red-500', supported: false },
 ] as const;
 
 const AVAILABLE_METRICS = [
@@ -175,13 +244,25 @@ const EMPTY_ANALYTICS: CartAnalytics = {
   todayRevenue: 0,
 };
 
+function unwrapApiResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response === 'object' && 'data' in (response as any)) {
+    const inner = (response as any).data;
+    if (inner !== undefined && inner !== null) return inner as T;
+  }
+  return response as T;
+}
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function CartAnalyticsPage() {
   const router = useRouter();
-  const { canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    hasPermission,
+    isLoading: permissionLoading,
+  } = usePermission();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -223,9 +304,9 @@ export default function CartAnalyticsPage() {
   // ============================================
 
   const canViewAnalytics =
-    canManage(PermissionResource.ANALYTICS) ||
-    canManage(PermissionResource.CART_MANAGE) ||
-    canManage(PermissionResource.CART_VIEW);
+    hasPermission(PermissionResource.ANALYTICS) ||
+    hasPermission(PermissionResource.CART_MANAGE) ||
+    hasPermission(PermissionResource.CART_VIEW);
 
   // ============================================
   // DATA FETCHING
@@ -241,31 +322,45 @@ export default function CartAnalyticsPage() {
       try {
         setError(null);
 
-        const params: Record<string, unknown> = {};
-        if (dateRange === 'custom') {
-          if (!customStartDate || !customEndDate) {
-            // Don't fetch until both dates are chosen.
-            return;
+        const { startDate, endDate } = resolveDateRange(
+          dateRange,
+          customStartDate,
+          customEndDate,
+        );
+
+        // Custom range with incomplete dates: show a hint rather than
+        // fetching (the backend would return all-time data).
+        if (!startDate || !endDate) {
+          if (isMountedRef.current) {
+            setAnalytics(EMPTY_ANALYTICS);
+            setLoading(false);
+            setRefreshing(false);
           }
-          params.startDate = new Date(customStartDate).toISOString();
-          params.endDate = new Date(customEndDate).toISOString();
-        } else {
-          params.period = dateRange;
+          return;
         }
 
-        const response = await api.get<CartAnalytics>(
-          '/cart/analytics',
-          { params },
-        );
+        const params = {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+        };
+
+        const response = await api.get('/cart/analytics', { params });
         if (!isMountedRef.current) return;
 
-        // Handle both `{ ...analytics }` and `{ data: { ...analytics } }`.
-        const payload =
-          response && typeof response === 'object' && 'totalCarts' in response
-            ? (response as CartAnalytics)
-            : (response as unknown as { data: CartAnalytics })?.data;
+        const payload = unwrapApiResponse<Partial<CartAnalytics>>(response);
 
-        setAnalytics({ ...EMPTY_ANALYTICS, ...(payload ?? {}) });
+        // Backend aggregates use `_avg` and `_count`, which can be
+        // `null` when the set is empty. Coerce every numeric field.
+        setAnalytics({
+          ...EMPTY_ANALYTICS,
+          ...(payload ?? {}),
+          totalCarts: Number(payload?.totalCarts ?? 0),
+          activeCarts: Number(payload?.activeCarts ?? 0),
+          abandonedCarts: Number(payload?.abandonedCarts ?? 0),
+          averageItems: Number(payload?.averageItems ?? 0),
+          averageValue: Number(payload?.averageValue ?? 0),
+          conversionRate: Number(payload?.conversionRate ?? 0),
+        });
       } catch (err: any) {
         if (!isMountedRef.current) return;
         console.error('Failed to fetch cart analytics:', err);
@@ -322,30 +417,35 @@ export default function CartAnalyticsPage() {
     setError(null);
 
     try {
+      const { startDate, endDate } = resolveDateRange(
+        exportDateRange,
+        exportStartDate,
+        exportEndDate,
+      );
+
+      if (!startDate || !endDate) {
+        toast.error('Please select both start and end dates');
+        setExportLoading(false);
+        return;
+      }
+
       const payload: ExportOptions = {
-        format: exportFormat,
+        // The backend currently produces CSV regardless of `format`.
+        // We always request CSV to keep the wire payload honest.
+        format: 'csv',
         metrics: selectedMetrics,
         dateRange: exportDateRange,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
         includeCharts,
         includeSummary,
         includeDetailedData,
       };
 
-      if (exportDateRange === 'custom') {
-        if (!exportStartDate || !exportEndDate) {
-          toast.error('Please select both start and end dates');
-          setExportLoading(false);
-          return;
-        }
-        payload.startDate = exportStartDate;
-        payload.endDate = exportEndDate;
-      }
-
       const blob = await cartService.exportAnalytics(payload);
-      const extension = exportFormat === 'excel' ? 'xlsx' : exportFormat;
       downloadFile(
         blob,
-        `cart-analytics-${new Date().toISOString().split('T')[0]}.${extension}`,
+        `cart-analytics-${new Date().toISOString().split('T')[0]}.csv`,
       );
 
       toast.success('Export downloaded');
@@ -363,7 +463,6 @@ export default function CartAnalyticsPage() {
     }
   }, [
     selectedMetrics,
-    exportFormat,
     exportDateRange,
     exportStartDate,
     exportEndDate,
@@ -375,9 +474,11 @@ export default function CartAnalyticsPage() {
 
   const handleOpenExportModal = useCallback(() => {
     setExportDateRange(dateRange);
-    setExportStartDate(customStartDate);
-    setExportEndDate(customEndDate);
+    // Only carry over custom dates when the primary view is on `custom`.
+    setExportStartDate(dateRange === 'custom' ? customStartDate : '');
+    setExportEndDate(dateRange === 'custom' ? customEndDate : '');
     setSelectedMetrics(AVAILABLE_METRICS.map((m) => m.id));
+    setExportFormat('csv');
     setShowExportModal(true);
   }, [dateRange, customStartDate, customEndDate]);
 
@@ -406,31 +507,31 @@ export default function CartAnalyticsPage() {
     toast.success('Analytics refreshed');
   }, [fetchAnalytics]);
 
-  const handleDateRangeChange = useCallback(
-    (value: string) => {
-      setDateRange(value);
-      if (value === 'custom') {
-        const end = new Date();
-        const start = new Date();
-        start.setDate(start.getDate() - 30);
-        setCustomStartDate(start.toISOString().split('T')[0]);
-        setCustomEndDate(end.toISOString().split('T')[0]);
-      }
-    },
-    [],
-  );
+  const handleDateRangeChange = useCallback((value: string) => {
+    setDateRange(value);
+    if (value === 'custom') {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      setCustomStartDate(start.toISOString().split('T')[0]);
+      setCustomEndDate(end.toISOString().split('T')[0]);
+    }
+  }, []);
 
   // ============================================
   // DERIVED
   // ============================================
 
+  /**
+   * Fallback conversion rate when the backend returns 0 but the other
+   * counters are non-zero. Matches the backend formula exactly:
+   *   (total - active - abandoned) / total * 100
+   */
   const completionRate = useMemo(() => {
     if (!analytics || analytics.totalCarts <= 0) return 0;
-    return (
-      ((analytics.totalCarts - analytics.abandonedCarts) /
-        analytics.totalCarts) *
-      100
-    );
+    const checkedOut =
+      analytics.totalCarts - analytics.activeCarts - analytics.abandonedCarts;
+    return (checkedOut / analytics.totalCarts) * 100;
   }, [analytics]);
 
   const trendData = useMemo(() => {
@@ -446,10 +547,8 @@ export default function CartAnalyticsPage() {
   // ============================================
 
   const getTrendIcon = (value: number) => {
-    if (value > 0)
-      return <ArrowUp className="w-4 h-4 text-emerald-500" />;
-    if (value < 0)
-      return <ArrowDown className="w-4 h-4 text-red-500" />;
+    if (value > 0) return <ArrowUp className="w-4 h-4 text-emerald-500" />;
+    if (value < 0) return <ArrowDown className="w-4 h-4 text-red-500" />;
     return <Minus className="w-4 h-4 text-gray-400" />;
   };
 
@@ -459,17 +558,20 @@ export default function CartAnalyticsPage() {
     return 'text-gray-500 dark:text-gray-400';
   };
 
+  const customRangeIncomplete =
+    dateRange === 'custom' && (!customStartDate || !customEndDate);
+
   // ============================================
   // PERMISSION GUARD
   // ============================================
 
-  if (permissionLoading || loading) {
+  if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Loading analytics…
+            Checking permissions…
           </p>
         </div>
       </div>
@@ -495,6 +597,37 @@ export default function CartAnalyticsPage() {
         >
           Back to Dashboard
         </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading analytics…
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (customRangeIncomplete) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+            <Calendar className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Pick a Date Range
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400">
+              Select both a start and end date to view analytics.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -597,6 +730,17 @@ export default function CartAnalyticsPage() {
               Export
             </button>
           </div>
+        </div>
+
+        {/* Backend-scope notice */}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300 mb-6">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            The backend provides six core metrics (carts, average value,
+            conversion rate). Trend charts, category breakdowns, status
+            breakdowns, and recent-activity feeds are placeholders until a
+            richer analytics endpoint is available.
+          </p>
         </div>
 
         {/* Error */}
@@ -703,21 +847,32 @@ export default function CartAnalyticsPage() {
                 icon={Percent}
                 iconColor="text-purple-500"
                 accent="text-purple-600 dark:text-purple-400"
-                hint={`${analytics.activeCarts} completed`}
+                hint={
+                  analytics.totalCarts > 0
+                    ? `${Math.max(
+                        0,
+                        analytics.totalCarts -
+                          analytics.activeCarts -
+                          analytics.abandonedCarts,
+                      )} completed`
+                    : 'No data'
+                }
               />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               <MetricCard
                 label="Average Items"
-                value={analytics.averageItems.toFixed(1)}
+                value={Number(analytics.averageItems ?? 0).toFixed(1)}
                 icon={Package}
                 iconColor="text-amber-500"
                 hint="Items per cart"
               />
               <MetricCard
                 label="Average Value"
-                value={formatCurrency(analytics.averageValue)}
+                value={formatCurrency(
+                  Number(analytics.averageValue ?? 0),
+                )}
                 icon={DollarSign}
                 iconColor="text-emerald-500"
                 accent="text-emerald-600 dark:text-emerald-400"
@@ -725,7 +880,7 @@ export default function CartAnalyticsPage() {
               />
               <MetricCard
                 label="Today's Carts"
-                value={formatNumber(analytics.todayCarts || 0)}
+                value={formatNumber(analytics.todayCarts ?? 0)}
                 icon={Calendar}
                 iconColor="text-indigo-500"
                 accent="text-indigo-600 dark:text-indigo-400"
@@ -733,7 +888,7 @@ export default function CartAnalyticsPage() {
               />
               <MetricCard
                 label="Today's Revenue"
-                value={formatCurrency(analytics.todayRevenue || 0)}
+                value={formatCurrency(analytics.todayRevenue ?? 0)}
                 icon={TrendingUp}
                 iconColor="text-amber-500"
                 accent="text-amber-600 dark:text-amber-400"
@@ -845,8 +1000,8 @@ export default function CartAnalyticsPage() {
             ) : (
               <EmptyPanel
                 icon={LineChart}
-                title="No trend data"
-                description="Weekly trend data is not available for this period."
+                title="Trend data not available"
+                description="The backend does not currently return weekly trend data. Once an analytics endpoint exposes it, this panel will populate automatically."
               />
             )}
 
@@ -894,42 +1049,48 @@ export default function CartAnalyticsPage() {
         {viewMode === 'details' && (
           <div className="space-y-6">
             {analytics.recentActivity &&
-              analytics.recentActivity.length > 0 && (
-                <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-indigo-500" />
-                    Recent Activity
-                  </h3>
-                  <div className="space-y-3">
-                    {analytics.recentActivity.map((activity, index) => (
-                      <div
-                        key={activity.id ?? index}
-                        className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
-                      >
-                        <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center flex-shrink-0">
-                          <User className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                            {activity.userName || 'Unknown User'}
-                          </p>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            {activity.action}
-                          </p>
-                          {activity.details && (
-                            <p className="text-xs text-gray-400 truncate">
-                              {activity.details}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
-                          {formatDate(activity.timestamp)}
-                        </div>
+            analytics.recentActivity.length > 0 ? (
+              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-indigo-500" />
+                  Recent Activity
+                </h3>
+                <div className="space-y-3">
+                  {analytics.recentActivity.map((activity, index) => (
+                    <div
+                      key={activity.id ?? index}
+                      className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                    >
+                      <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                        <User className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                       </div>
-                    ))}
-                  </div>
-                </section>
-              )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {activity.userName || 'Unknown User'}
+                        </p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                          {activity.action}
+                        </p>
+                        {activity.details && (
+                          <p className="text-xs text-gray-400 truncate">
+                            {activity.details}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap">
+                        {formatDate(activity.timestamp)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <EmptyPanel
+                icon={Activity}
+                title="Recent activity not available"
+                description="The backend does not currently expose a recent cart activity feed."
+              />
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <InsightCard
@@ -1012,7 +1173,7 @@ export default function CartAnalyticsPage() {
             {dateRange === 'custom' &&
               customStartDate &&
               customEndDate &&
-              ` • ${new Date(customStartDate).toLocaleDateString()} – ${new Date(exportEndDate || customEndDate).toLocaleDateString()}`}
+              ` • ${new Date(customStartDate).toLocaleDateString()} – ${new Date(customEndDate).toLocaleDateString()}`}
           </p>
         </div>
       </div>
@@ -1053,7 +1214,7 @@ export default function CartAnalyticsPage() {
                       Export Analytics
                     </h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Export cart analytics data in various formats
+                      Export cart analytics data as CSV
                     </p>
                   </div>
                 </div>
@@ -1076,46 +1237,63 @@ export default function CartAnalyticsPage() {
                       Export Format
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {EXPORT_FORMATS.map((format) => (
-                        <button
-                          key={format.value}
-                          type="button"
-                          onClick={() =>
-                            setExportFormat(
-                              format.value as ExportOptions['format'],
-                            )
-                          }
-                          className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 ${
-                            exportFormat === format.value
-                              ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
-                              : 'border-gray-200 dark:border-gray-600 hover:border-orange-300 dark:hover:border-orange-500'
-                          }`}
-                          aria-pressed={exportFormat === format.value}
-                        >
-                          <span
-                            className={`text-lg font-bold ${format.color}`}
-                          >
-                            {format.value.toUpperCase()}
-                          </span>
-                          <span
-                            className={`text-sm font-medium ${
-                              exportFormat === format.value
-                                ? 'text-orange-600 dark:text-orange-400'
-                                : 'text-gray-600 dark:text-gray-400'
+                      {EXPORT_FORMATS.map((format) => {
+                        const isSelected = exportFormat === format.value;
+                        const isDisabled = !format.supported;
+                        return (
+                          <button
+                            key={format.value}
+                            type="button"
+                            disabled={isDisabled}
+                            onClick={() =>
+                              !isDisabled &&
+                              setExportFormat(
+                                format.value as ExportOptions['format'],
+                              )
+                            }
+                            className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 ${
+                              isDisabled
+                                ? 'opacity-40 cursor-not-allowed border-gray-200 dark:border-gray-700'
+                                : isSelected
+                                ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
+                                : 'border-gray-200 dark:border-gray-600 hover:border-orange-300 dark:hover:border-orange-500'
                             }`}
+                            aria-pressed={isSelected}
+                            title={
+                              isDisabled
+                                ? 'Not yet supported by the backend'
+                                : undefined
+                            }
                           >
-                            {format.label}
-                          </span>
-                        </button>
-                      ))}
+                            <span
+                              className={`text-lg font-bold ${format.color}`}
+                            >
+                              {format.value.toUpperCase()}
+                            </span>
+                            <span
+                              className={`text-sm font-medium ${
+                                isSelected
+                                  ? 'text-orange-600 dark:text-orange-400'
+                                  : 'text-gray-600 dark:text-gray-400'
+                              }`}
+                            >
+                              {format.label}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
+                    <p className="text-xs text-gray-400 mt-2">
+                      Only CSV is currently produced by the backend. Other
+                      formats are disabled.
+                    </p>
                   </div>
 
                   {/* Metrics */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Select Metrics
+                        Include Metrics
                       </label>
                       <button
                         type="button"
@@ -1234,10 +1412,10 @@ export default function CartAnalyticsPage() {
                       />
                       <CheckboxOption
                         label="Include Charts"
-                        hint="(PDF only)"
+                        hint="(not yet supported)"
                         checked={includeCharts}
                         onChange={setIncludeCharts}
-                        disabled={exportFormat !== 'pdf'}
+                        disabled
                       />
                     </div>
                   </div>

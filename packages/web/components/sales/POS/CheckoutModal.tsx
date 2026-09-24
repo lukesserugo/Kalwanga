@@ -1,4 +1,3 @@
-// packages/web/components/sales/POS/CheckoutModal.tsx
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -13,10 +12,18 @@ import {
   CheckCircle,
   AlertCircle,
   User,
-  Percent,
-  Receipt,
+  Tag,
+  Sparkles,
 } from 'lucide-react';
 import { checkoutService } from '../../../services/checkoutService';
+import {
+  saleService,
+  LOYALTY_POINT_VALUE,
+  MAX_LOYALTY_DISCOUNT_FRACTION,
+  isDiscountType,
+  getDiscountTypeLabel,
+} from '../../../services/saleService';
+import type { DiscountType } from '../../../services/saleService';
 import { toast } from '../../../utils/toast-manager';
 import { formatCurrency } from '../../../utils/formatters';
 
@@ -41,6 +48,14 @@ export interface CheckoutCustomer {
 export interface CheckoutShift {
   id: string;
   cashRegisterId: string;
+}
+
+export interface CheckoutDetails {
+  paidAmount?: number;
+  changeAmount?: number;
+  notes?: string;
+  reference?: string;
+  loyaltyPointsUsed?: number;
 }
 
 export interface CheckoutModalProps {
@@ -69,18 +84,29 @@ export interface CheckoutModalProps {
   notes?: string;
 
   /**
-   * Optional client-supplied idempotency key. When provided, it is sent
-   * as the `Idempotency-Key` header to the backend, and retries with
-   * the same value return the original sale instead of creating a
-   * duplicate. When omitted, the request behaves exactly as before —
-   * no idempotency, new sale on every call.
+   * Promotion / loyalty passthrough.
+   *
+   * `discountType` is typed as the 4-member Prisma `DiscountType`
+   * enum — the same union `posController.posCheckoutSchema` enforces
+   * with Zod. If the caller needs to pass a string that isn't a
+   * member (e.g. from a URL parameter), narrow it first.
+   */
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+
+  /**
+   * Optional caller-owned idempotency key. When provided, the modal
+   * forwards it to the backend as the `Idempotency-Key` header; a
+   * retry with the same key returns the original sale.
    *
    * Lifecycle belongs to the caller:
-   *   - The caller generates a key when the operator initiates a sale.
-   *   - The same key is passed to every retry of that sale.
-   *   - The caller clears the key after a successful checkout.
+   *   - Caller generates a key when the operator initiates a sale.
+   *   - Same key on every retry of that sale.
+   *   - Caller clears the key after a successful checkout.
+   *   - Caller clears the key when the operator abandons the attempt.
    *
-   * This component only forwards it; it never generates or clears it.
+   * The modal forwards it verbatim. It never generates or clears it.
    */
   idempotencyKey?: string;
 
@@ -88,20 +114,17 @@ export interface CheckoutModalProps {
    * Called after checkout succeeds.
    * Receives the raw result from checkoutService.processCheckout.
    */
-  onPaymentComplete: (result: any, method: CheckoutPaymentMethod, details: CheckoutDetails) => void | Promise<void>;
+  onPaymentComplete: (
+    result: any,
+    method: CheckoutPaymentMethod,
+    details: CheckoutDetails
+  ) => void | Promise<void>;
 
   /** Called when the user cancels / closes the modal. */
   onCancel?: () => void;
 
   /** External processing lock (e.g. from a parent that owns the request). */
   isProcessing?: boolean;
-}
-
-export interface CheckoutDetails {
-  paidAmount?: number;
-  changeAmount?: number;
-  notes?: string;
-  reference?: string;
 }
 
 // ============================================
@@ -142,6 +165,22 @@ const PAYMENT_METHODS: MethodConfig[] = [
   },
 ];
 
+/**
+ * Canonical payment-method list for the POS route.
+ * Mirrors `CANONICAL_PAYMENT_METHODS_SET` in the backend.
+ */
+const CANONICAL_METHODS_SET = new Set<string>([
+  'CASH',
+  'CREDIT_CARD',
+  'DEBIT_CARD',
+  'MOBILE_MONEY',
+  'BANK_TRANSFER',
+  'GIFT_CARD',
+  'LOYALTY_POINTS',
+  'CHECK',
+  'CARD',
+]);
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -156,6 +195,9 @@ export function CheckoutModal({
   discount = 0,
   shift = null,
   notes: initialNotes = '',
+  discountType = null,
+  promotionCode = null,
+  promotionDiscount = 0,
   idempotencyKey,
   onPaymentComplete,
   onCancel,
@@ -170,12 +212,8 @@ export function CheckoutModal({
 
   const processing = externalProcessing || internalProcessing;
 
-  // Reset internal state every time the modal opens, so a prior
-  // session never leaks into the next one.
-  //
-  // NOTE: we deliberately do NOT touch `idempotencyKey` here. That
-  // value is owned by the parent and must survive open/close cycles
-  // within the same logical checkout attempt.
+  // Reset internal state every time the modal opens.
+  // Deliberately does NOT touch `idempotencyKey` — the parent owns it.
   useEffect(() => {
     if (isOpen) {
       setMethod('CASH');
@@ -203,17 +241,52 @@ export function CheckoutModal({
 
   const cashInsufficient = method === 'CASH' && paidNumber < total;
 
+  /**
+   * Points required to cover the total, at the backend's conversion
+   * rate. `LOYALTY_POINT_VALUE = 0.1` means 1 point = $0.10, so a
+   * $25.00 total requires 250 points.
+   *
+   * The backend additionally caps the discount at 50% of the total
+   * (`MAX_LOYALTY_DISCOUNT_FRACTION`), so a customer with 999 points
+   * on a $10 total can only redeem 50 points. We mirror that cap
+   * here so the "required" number matches what the backend will
+   * actually consume.
+   */
   const loyaltyPointsRequired = useMemo(() => {
     if (method !== 'LOYALTY_POINTS') return 0;
-    // Adjust the divisor if your loyalty program differs.
-    // Convention here: 1 point = $0.01.
-    return Math.ceil(total * 100);
+    const maxDiscountByFraction = total * MAX_LOYALTY_DISCOUNT_FRACTION;
+    const maxPointsByFraction = Math.floor(
+      maxDiscountByFraction / LOYALTY_POINT_VALUE
+    );
+    const pointsByValue = Math.ceil(total / LOYALTY_POINT_VALUE);
+    return Math.min(pointsByValue, maxPointsByFraction);
   }, [method, total]);
 
   const loyaltyInsufficient = useMemo(() => {
     if (method !== 'LOYALTY_POINTS') return false;
     return (customer?.loyaltyPoints ?? 0) < loyaltyPointsRequired;
   }, [method, customer?.loyaltyPoints, loyaltyPointsRequired]);
+
+  /**
+   * Preview of what the backend will persist on the sale. Uses the
+   * same `describeBreakdown` helper the receipt footer and sale
+   * detail page use, so the wording stays consistent.
+   *
+   * `discountType` is included so the preview reflects what the
+   * backend will actually attribute. When it's `null`, the backend's
+   * `inferDiscountType` runs and the resulting type is decided from
+   * the discount amounts — the preview here can't know that ahead of
+   * time, so we don't try.
+   */
+  const breakdownPreview = useMemo(() => {
+    if (!saleService.hasBreakdown({ promotionDiscount })) {
+      return null;
+    }
+    return saleService.describeBreakdown({
+      promotionDiscount,
+      promotionCode,
+    });
+  }, [promotionDiscount, promotionCode]);
 
   // ============================================
   // HANDLERS
@@ -225,19 +298,21 @@ export function CheckoutModal({
     onClose();
   }, [processing, onCancel, onClose]);
 
-  const handleQuickCash = useCallback(
-    (amount: number) => {
-      setPaidAmount(amount.toFixed(2));
-      setError(null);
-    },
-    []
-  );
+  const handleQuickCash = useCallback((amount: number) => {
+    setPaidAmount(amount.toFixed(2));
+    setError(null);
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
 
     if (!shift) {
       setError('Please open a shift before processing a sale.');
+      return;
+    }
+
+    if (!CANONICAL_METHODS_SET.has(method)) {
+      setError(`Unsupported payment method: ${method}`);
       return;
     }
 
@@ -251,8 +326,18 @@ export function CheckoutModal({
       return;
     }
 
-    const effectivePaidAmount =
-      method === 'CASH' ? paidNumber : total;
+    // Zero is legitimate for non-cash methods (loyalty-only /
+    // fully-discounted). For cash we've already validated
+    // paidNumber >= total. Never coerce with `|| total`.
+    const effectivePaidAmount = method === 'CASH' ? paidNumber : total;
+
+    // Guard the enum before forwarding. If the parent passed a
+    // legacy string that isn't a Prisma enum member, drop it — the
+    // backend infers a valid type instead.
+    const safeDiscountType: DiscountType | null =
+      discountType !== null && discountType !== undefined && isDiscountType(discountType)
+        ? discountType
+        : null;
 
     try {
       setInternalProcessing(true);
@@ -267,10 +352,15 @@ export function CheckoutModal({
         cashRegisterId: shift.cashRegisterId,
         cashRegisterSessionId: shift.id,
         applyLoyaltyPoints: method === 'LOYALTY_POINTS',
-        // ✅ Forward the caller-owned key so the backend persists /
-        //    dedupes on it. When undefined, the request is unchanged
-        //    from the pre-idempotency behavior.
+        // Forward the caller-owned key so the backend persists /
+        // dedupes on it. When undefined, behavior is unchanged.
         idempotencyKey,
+        // Forward the promotion passthrough. `null` means "let the
+        // backend infer". `undefined` and `null` are treated the
+        // same by the backend's `readPromotionFields`.
+        discountType: safeDiscountType,
+        promotionCode: promotionCode ?? undefined,
+        promotionDiscount: promotionDiscount || undefined,
       });
 
       const details: CheckoutDetails = {
@@ -278,6 +368,8 @@ export function CheckoutModal({
         changeAmount: method === 'CASH' ? changeAmount : 0,
         notes: notes.trim() || undefined,
         reference: reference.trim() || undefined,
+        loyaltyPointsUsed:
+          method === 'LOYALTY_POINTS' ? loyaltyPointsRequired : undefined,
       };
 
       await onPaymentComplete(result, method, details);
@@ -304,6 +396,10 @@ export function CheckoutModal({
     reference,
     changeAmount,
     idempotencyKey,
+    discountType,
+    promotionCode,
+    promotionDiscount,
+    loyaltyPointsRequired,
     onPaymentComplete,
   ]);
 
@@ -390,6 +486,24 @@ export function CheckoutModal({
             </div>
           )}
 
+          {/* Promotion preview */}
+          {breakdownPreview && (
+            <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+              <Sparkles className="w-4 h-4 flex-shrink-0" />
+              <span className="font-medium">{breakdownPreview}</span>
+              {promotionCode && (
+                <code className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-[11px] font-mono">
+                  {promotionCode}
+                </code>
+              )}
+              {isDiscountType(discountType) && (
+                <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">
+                  {getDiscountTypeLabel(discountType)}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Shift missing warning */}
           {!shift && (
             <div className="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg px-3 py-2">
@@ -407,8 +521,7 @@ export function CheckoutModal({
               {PAYMENT_METHODS.map((m) => {
                 const Icon = m.icon;
                 const active = method === m.id;
-                const disabled =
-                  m.id === 'LOYALTY_POINTS' && !customer;
+                const disabled = m.id === 'LOYALTY_POINTS' && !customer;
                 return (
                   <button
                     key={m.id}
@@ -554,6 +667,20 @@ export function CheckoutModal({
                   }`}
                 >
                   {customer?.loyaltyPoints ?? 0}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">
+                  Conversion
+                </span>
+                <span className="text-gray-900 dark:text-white tabular-nums">
+                  1 pt = {formatCurrency(LOYALTY_POINT_VALUE)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 pt-1 border-t border-gray-200 dark:border-gray-600">
+                <span>Max discount</span>
+                <span className="tabular-nums">
+                  {formatCurrency(total * MAX_LOYALTY_DISCOUNT_FRACTION)}
                 </span>
               </div>
             </div>

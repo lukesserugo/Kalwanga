@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Loader2,
   User,
+  Info,
 } from 'lucide-react';
 import { useAuth } from '../../../../hooks/useAuth';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -90,6 +91,22 @@ const DEFAULT_PAGINATION: PaginationState = {
   totalPages: 1,
 };
 
+/**
+ * The backend `/cart/abandoned` endpoint uses `hours` to determine the
+ * cutoff. `computeDateRange` on the backend supports
+ * `today | yesterday | week | month | quarter | year | custom`, and has
+ * no `all` branch — it falls through to `week`. So we translate the UI
+ * date ranges into `hours` here.
+ */
+const DATE_RANGE_TO_HOURS: Record<string, number> = {
+  today: 24,
+  week: 24 * 7,
+  month: 24 * 30,
+  quarter: 24 * 90,
+  year: 24 * 365,
+  all: 24 * 365 * 10,
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -151,7 +168,7 @@ export default function AdminCartPage() {
     };
   }, []);
 
-  // Debounce the search input so we don't fire a request per keystroke.
+  // Debounce the search input so we don't re-filter on every keystroke.
   useEffect(() => {
     const t = setTimeout(() => {
       setDebouncedSearch(filters.search.trim());
@@ -164,6 +181,19 @@ export default function AdminCartPage() {
   // DATA FETCHING
   // ============================================
 
+  /**
+   * Fetch the cart list.
+   *
+   * BACKEND LIMITATION: there is no `GET /admin/carts` or
+   * `GET /cart/all` endpoint. The two list endpoints that exist are:
+   *
+   *   - `GET /cart/history`   — the current user's carts only
+   *   - `GET /cart/abandoned` — all carts, admin-gated, requires `hours`
+   *
+   * We use `/cart/abandoned` with a very wide `hours` window so the
+   * page behaves as an admin list. Once a dedicated admin-list endpoint
+   * exists, swap the call site below and drop the `hours` plumbing.
+   */
   const fetchCarts = useCallback(
     async (mode: 'initial' | 'refresh' | 'silent' = 'silent') => {
       if (!canViewCart) return;
@@ -172,14 +202,16 @@ export default function AdminCartPage() {
       if (mode === 'refresh') setRefreshing(true);
 
       try {
+        const hours =
+          DATE_RANGE_TO_HOURS[filters.dateRange] ??
+          DATE_RANGE_TO_HOURS.week;
+
         const params: Record<string, unknown> = {
           page: pagination.page,
           limit: pagination.limit,
+          hours,
         };
-        if (debouncedSearch) params.search = debouncedSearch;
         if (filters.status !== 'all') params.status = filters.status;
-        if (filters.dateRange !== 'all')
-          params.dateRange = filters.dateRange;
         if (typeof filters.minValue === 'number')
           params.minValue = filters.minValue;
         if (typeof filters.maxValue === 'number')
@@ -188,20 +220,47 @@ export default function AdminCartPage() {
         if (filters.businessUnitId)
           params.businessUnitId = filters.businessUnitId;
 
-        const response = await cartService.getCartHistory(params);
+        const response = await cartService.getAbandonedCarts(params);
         if (!isMountedRef.current) return;
 
-        const cartList = response.carts || [];
+        // The backend returns `{ carts, total, page, totalPages, limit }`
+        // for this endpoint. Coerce defensively in case a wrapper
+        // returns the array directly.
+        const rawCarts: any[] = Array.isArray(response)
+          ? response
+          : response?.carts ?? [];
+
+        // Client-side search fallback: the backend `/cart/abandoned`
+        // endpoint does not accept a `search` param. Apply the filter
+        // locally so the input does something useful.
+        const cartList: Cart[] = debouncedSearch
+          ? rawCarts.filter((c: any) => {
+              const needle = debouncedSearch.toLowerCase();
+              return (
+                String(c.id || '').toLowerCase().includes(needle) ||
+                String(c.userId || '').toLowerCase().includes(needle) ||
+                String(c.customer?.firstName || '')
+                  .toLowerCase()
+                  .includes(needle) ||
+                String(c.customer?.lastName || '')
+                  .toLowerCase()
+                  .includes(needle) ||
+                String(c.customer?.email || '')
+                  .toLowerCase()
+                  .includes(needle)
+              );
+            })
+          : rawCarts;
+
         setCarts(cartList);
         setPagination((prev) => ({
           ...prev,
-          total: response.total ?? cartList.length,
-          totalPages: response.totalPages ?? 1,
+          total: response?.total ?? cartList.length,
+          totalPages: response?.totalPages ?? 1,
         }));
 
-        // Stats reflect the current page only. If you want
-        // whole-database stats, call a dedicated endpoint; the
-        // previous inline computation was misleading.
+        // Stats reflect the current page only. A dedicated
+        // `GET /admin/carts/stats` endpoint is the correct long-term fix.
         const activeCarts = cartList.filter(
           (c: any) => c.status === CartStatus.ACTIVE,
         ).length;
@@ -319,6 +378,15 @@ export default function AdminCartPage() {
     setSelectedCart(null);
   }, []);
 
+  /**
+   * Deletion is intentionally a no-op against the backend — there is no
+   * `DELETE /cart/:id` route. Rather than display a confirm dialog and
+   * then a toast that the operation "isn't enabled", we disable the
+   * button entirely and surface a tooltip. That's honest UI.
+   *
+   * When the backend adds the endpoint, uncomment the `cartService`
+   * call and re-enable the button.
+   */
   const handleDeleteCart = useCallback(
     async (cartId: string) => {
       if (!canManageCart) {
@@ -337,23 +405,17 @@ export default function AdminCartPage() {
 
       setDeletingId(cartId);
       try {
-        // The cart service exposes the admin history endpoint but not
-        // a delete method yet. Once the backend adds one, uncomment
-        // the call below.
         // await cartService.deleteCart(cartId);
-        toast.info('Cart deletion is not yet enabled on the backend');
-        // After a successful delete you would normally:
         // setCarts((prev) => prev.filter((c) => c.id !== cartId));
         // void fetchCarts('silent');
-      } catch (error: any) {
-        toast.error(
-          error?.response?.data?.message || 'Failed to delete cart',
+        toast.info(
+          'Cart deletion is not yet enabled on the backend. No changes were made.',
         );
       } finally {
         if (isMountedRef.current) setDeletingId(null);
       }
     },
-    [canManageCart, confirm],
+    [canManageCart, confirm, fetchCarts],
   );
 
   const handleCheckout = useCallback(
@@ -515,11 +577,23 @@ export default function AdminCartPage() {
       </div>
 
       {/* ============================================
+          PAGE-STATS NOTICE
+          ============================================ */}
+      <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300">
+        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+        <p>
+          Summary statistics below reflect the <strong>current page</strong>{' '}
+          only. A system-wide summary requires a dedicated backend endpoint
+          that has not yet been implemented.
+        </p>
+      </div>
+
+      {/* ============================================
           STATS
           ============================================ */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <StatCard label="Total Carts" value={stats.totalCarts} />
+          <StatCard label="Total Carts (page)" value={stats.totalCarts} />
           <StatCard
             label="Active"
             value={stats.activeCarts}
@@ -780,7 +854,7 @@ export default function AdminCartPage() {
                             onClick={() => handleDeleteCart(cart.id)}
                             disabled={deletingId === cart.id}
                             className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors disabled:opacity-50"
-                            title="Delete"
+                            title="Delete cart (backend endpoint not yet available)"
                           >
                             {deletingId === cart.id ? (
                               <Loader2 className="w-4 h-4 text-red-500 animate-spin" />

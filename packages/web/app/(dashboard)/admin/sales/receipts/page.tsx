@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\sales\receipts\page.tsx
+// packages/web/app/(dashboard)/admin/sales/receipts/page.tsx
 
 'use client';
 
@@ -25,33 +25,45 @@ import {
   Package,
   FileText,
   Calendar,
-  Filter,
   Mail,
   Send,
-  FileSpreadsheet,
   Receipt as ReceiptIcon,
   CreditCard,
-  Banknote,
-  Wallet,
-  Smartphone,
-  Gift,
-  Building,
   User,
   Phone,
   Mail as MailIcon,
   Copy,
   Check,
-  Share2,
+  Tag,
+  Star,
+  Sparkles,
 } from 'lucide-react';
-import { saleService } from '../../../../../services/saleService';
-import { formatCurrency, formatDate, formatDateTime } from '../../../../../utils/formatters';
+import {
+  saleService,
+  getDiscountTypeLabel,
+} from '../../../../../services/saleService';
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+} from '../../../../../utils/formatters';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
-import { FilePdf } from '../../../../../components/icons/FilePdf';
 
 // ============================================
 // INTERFACES
 // ============================================
+
+type ReceiptPaymentMethod =
+  | 'CASH'
+  | 'CREDIT_CARD'
+  | 'DEBIT_CARD'
+  | 'MOBILE_MONEY'
+  | 'BANK_TRANSFER'
+  | 'GIFT_CARD'
+  | 'LOYALTY_POINTS'
+  | 'CRYPTO'
+  | 'CHECK';
 
 interface ReceiptItem {
   id: string;
@@ -80,13 +92,7 @@ interface Receipt {
   total: number;
   paidAmount: number;
   changeAmount: number;
-  paymentMethod:
-    | 'CASH'
-    | 'CREDIT_CARD'
-    | 'DEBIT_CARD'
-    | 'MOBILE_MONEY'
-    | 'BANK_TRANSFER'
-    | 'GIFT_CARD';
+  paymentMethod: ReceiptPaymentMethod;
   status: 'issued' | 'sent' | 'printed' | 'cancelled' | 'void';
   notes?: string;
   createdAt: string;
@@ -103,6 +109,15 @@ interface Receipt {
   cashierId?: string;
   terminalId?: string;
   receiptType: 'sale' | 'refund' | 'return';
+
+  // ── Promotion / loyalty breakdown ─────────────────────────
+  // Mirrors the five audit columns on `Sale`. Optional so receipts
+  // created before the migration still type-check.
+  discountType?: string | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+  loyaltyPointsUsed?: number;
+  loyaltyDiscount?: number;
 }
 
 interface ReceiptFilters {
@@ -123,14 +138,7 @@ interface ReceiptStats {
   void: number;
   totalAmount: number;
   averageAmount: number;
-  byPaymentMethod: {
-    CASH: number;
-    CREDIT_CARD: number;
-    DEBIT_CARD: number;
-    MOBILE_MONEY: number;
-    BANK_TRANSFER: number;
-    GIFT_CARD: number;
-  };
+  byPaymentMethod: Record<string, number>;
 }
 
 // ============================================
@@ -138,19 +146,22 @@ interface ReceiptStats {
 // ============================================
 
 /** Map backend payment method to a receipt payment method. */
-function normalizePaymentMethod(raw: string): Receipt['paymentMethod'] {
+function normalizePaymentMethod(raw: string): ReceiptPaymentMethod {
   const value = (raw || 'CASH').toUpperCase();
-  if (
-    value === 'CASH' ||
-    value === 'CREDIT_CARD' ||
-    value === 'DEBIT_CARD' ||
-    value === 'MOBILE_MONEY' ||
-    value === 'BANK_TRANSFER' ||
-    value === 'GIFT_CARD'
-  ) {
-    return value as Receipt['paymentMethod'];
+  switch (value) {
+    case 'CASH':
+    case 'CREDIT_CARD':
+    case 'DEBIT_CARD':
+    case 'MOBILE_MONEY':
+    case 'BANK_TRANSFER':
+    case 'GIFT_CARD':
+    case 'LOYALTY_POINTS':
+    case 'CRYPTO':
+    case 'CHECK':
+      return value as ReceiptPaymentMethod;
+    default:
+      return 'CASH';
   }
-  return 'CASH';
 }
 
 /** Map backend sale status to a receipt status. */
@@ -158,15 +169,13 @@ function normalizeReceiptStatus(raw: string): Receipt['status'] {
   const value = (raw || 'COMPLETED').toUpperCase();
   switch (value) {
     case 'COMPLETED':
-      return 'issued';
     case 'PROCESSING':
     case 'PENDING':
       return 'issued';
     case 'CANCELLED':
       return 'cancelled';
-    case 'VOIDED':
     case 'VOID':
-      return 'void';
+    case 'VOIDED':
     case 'REFUNDED':
     case 'RETURNED':
       return 'void';
@@ -175,7 +184,14 @@ function normalizeReceiptStatus(raw: string): Receipt['status'] {
   }
 }
 
-/** Map a raw sale object (from saleService) → Receipt shape used by this page. */
+/**
+ * Map a raw sale object (from saleService) → Receipt shape used by
+ * this page.
+ *
+ * Uses `saleService.extractBreakdown()` to pull the five promotion /
+ * loyalty audit fields off the sale, so the receipt carries the same
+ * breakdown every other view does.
+ */
 function saleToReceipt(sale: any): Receipt {
   const items: ReceiptItem[] = (sale.items || []).map((item: any) => ({
     id: item.id,
@@ -190,6 +206,7 @@ function saleToReceipt(sale: any): Receipt {
 
   const payment = sale.payments?.[0] || {};
   const customer = sale.customer || {};
+  const breakdown = saleService.extractBreakdown(sale);
 
   return {
     id: sale.id,
@@ -241,6 +258,13 @@ function saleToReceipt(sale: any): Receipt {
         : sale.status === 'RETURNED'
         ? 'return'
         : 'sale',
+
+    // Breakdown
+    discountType: breakdown.discountType ?? null,
+    promotionCode: breakdown.promotionCode ?? null,
+    promotionDiscount: breakdown.promotionDiscount ?? 0,
+    loyaltyPointsUsed: breakdown.loyaltyPointsUsed ?? 0,
+    loyaltyDiscount: breakdown.loyaltyDiscount ?? 0,
   };
 }
 
@@ -252,10 +276,12 @@ function StatCard({
   title,
   value,
   color,
+  subtext,
 }: {
   title: string;
   value: number | string;
   color: string;
+  subtext?: string;
 }) {
   const colors: Record<string, string> = {
     brand: 'text-brand-600 dark:text-brand-400',
@@ -277,6 +303,11 @@ function StatCard({
       >
         {value}
       </p>
+      {subtext && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+          {subtext}
+        </p>
+      )}
     </div>
   );
 }
@@ -290,7 +321,7 @@ function PaymentMethodBadge({
   count: number;
   label?: string;
 }) {
-  const displayLabel = label || method.replace('_', ' ').toUpperCase();
+  const displayLabel = label || method.replace(/_/g, ' ').toUpperCase();
   const color = getPaymentMethodColor(method);
 
   return (
@@ -335,6 +366,10 @@ const getPaymentMethodColor = (method: string): string => {
       'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
     GIFT_CARD:
       'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
+    LOYALTY_POINTS:
+      'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
+    CRYPTO: 'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
+    CHECK: 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
   };
   return (
     colors[method] ||
@@ -352,7 +387,7 @@ const getReceiptTypeLabel = (type: string): string => {
 };
 
 const getStatusIcon = (status: string) => {
-  const icons: Record<string, any> = {
+  const icons: Record<string, React.ElementType> = {
     issued: CheckCircle,
     sent: Send,
     printed: Printer,
@@ -395,6 +430,9 @@ export default function ReceiptsPage() {
       MOBILE_MONEY: 0,
       BANK_TRANSFER: 0,
       GIFT_CARD: 0,
+      LOYALTY_POINTS: 0,
+      CRYPTO: 0,
+      CHECK: 0,
     },
   });
 
@@ -477,11 +515,7 @@ export default function ReceiptsPage() {
         if (filters.status !== 'all') {
           switch (filters.status) {
             case 'issued':
-              params.status = 'COMPLETED';
-              break;
             case 'sent':
-              params.status = 'COMPLETED';
-              break;
             case 'printed':
               params.status = 'COMPLETED';
               break;
@@ -494,7 +528,19 @@ export default function ReceiptsPage() {
           }
         }
 
-        const response = await saleService.getAllSales(params);
+        // ✅ Parallel: page rows + server-side aggregates.
+        const [response, aggregates] = await Promise.all([
+          saleService.getAllSales(params),
+          saleService
+            .getSalesStats({
+              startDate: params.startDate,
+              endDate: params.endDate,
+            })
+            .catch((err) => {
+              console.warn('Failed to fetch sales aggregates:', err);
+              return null;
+            }),
+        ]);
 
         const rawSales: any[] = (response as any).data || [];
         const mapped: Receipt[] = rawSales.map(saleToReceipt);
@@ -503,47 +549,49 @@ export default function ReceiptsPage() {
         setTotalReceipts((response as any).total || mapped.length);
         setTotalPages((response as any).totalPages || 1);
 
-        // ✅ FIXED: Explicitly typed reduce parameters
-        const totalAmount = mapped.reduce(
+        // Per-status counts stay page-level (backend aggregates don't
+        // include them). Total amount and average come from the
+        // server-side aggregate when available, otherwise fall back
+        // to the page sum.
+        const pageTotal = mapped.reduce(
           (sum: number, receipt: Receipt) => sum + (receipt.total || 0),
           0
         );
+        const serverTotalRevenue = (aggregates as any)?.totalRevenue ?? null;
+        const serverTotalSales = (aggregates as any)?.totalSales ?? null;
+
+        const byPaymentMethod: Record<string, number> = {
+          CASH: 0,
+          CREDIT_CARD: 0,
+          DEBIT_CARD: 0,
+          MOBILE_MONEY: 0,
+          BANK_TRANSFER: 0,
+          GIFT_CARD: 0,
+          LOYALTY_POINTS: 0,
+          CRYPTO: 0,
+          CHECK: 0,
+        };
+        mapped.forEach((r) => {
+          if (byPaymentMethod[r.paymentMethod] !== undefined) {
+            byPaymentMethod[r.paymentMethod] += 1;
+          }
+        });
 
         const computed: ReceiptStats = {
           total: (response as any).total || mapped.length,
-          issued: mapped.filter((receipt: Receipt) => receipt.status === 'issued')
-            .length,
-          sent: mapped.filter((receipt: Receipt) => receipt.status === 'sent')
-            .length,
-          printed: mapped.filter((receipt: Receipt) => receipt.status === 'printed')
-            .length,
-          cancelled: mapped.filter(
-            (receipt: Receipt) => receipt.status === 'cancelled'
-          ).length,
-          void: mapped.filter((receipt: Receipt) => receipt.status === 'void')
-            .length,
-          totalAmount,
-          averageAmount: mapped.length > 0 ? totalAmount / mapped.length : 0,
-          byPaymentMethod: {
-            CASH: mapped.filter(
-              (receipt: Receipt) => receipt.paymentMethod === 'CASH'
-            ).length,
-            CREDIT_CARD: mapped.filter(
-              (receipt: Receipt) => receipt.paymentMethod === 'CREDIT_CARD'
-            ).length,
-            DEBIT_CARD: mapped.filter(
-              (receipt: Receipt) => receipt.paymentMethod === 'DEBIT_CARD'
-            ).length,
-            MOBILE_MONEY: mapped.filter(
-              (receipt: Receipt) => receipt.paymentMethod === 'MOBILE_MONEY'
-            ).length,
-            BANK_TRANSFER: mapped.filter(
-              (receipt: Receipt) => receipt.paymentMethod === 'BANK_TRANSFER'
-            ).length,
-            GIFT_CARD: mapped.filter(
-              (receipt: Receipt) => receipt.paymentMethod === 'GIFT_CARD'
-            ).length,
-          },
+          issued: mapped.filter((r) => r.status === 'issued').length,
+          sent: mapped.filter((r) => r.status === 'sent').length,
+          printed: mapped.filter((r) => r.status === 'printed').length,
+          cancelled: mapped.filter((r) => r.status === 'cancelled').length,
+          void: mapped.filter((r) => r.status === 'void').length,
+          totalAmount: serverTotalRevenue ?? pageTotal,
+          averageAmount:
+            serverTotalSales && serverTotalRevenue
+              ? serverTotalRevenue / serverTotalSales
+              : mapped.length > 0
+              ? pageTotal / mapped.length
+              : 0,
+          byPaymentMethod,
         };
         setStats(computed);
       } catch (error: any) {
@@ -591,29 +639,21 @@ export default function ReceiptsPage() {
 
   const handleSendEmail = async () => {
     if (!selectedReceipt) return;
+    const target = (emailAddress || selectedReceipt.customerEmail || '').trim();
+    if (!target) {
+      toast.error('Please enter an email address');
+      return;
+    }
 
     try {
       setProcessing(true);
-      const res = await fetch(
-        `${
-          process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-        }/sales/${selectedReceipt.saleId}/email-receipt`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: emailAddress || selectedReceipt.customerEmail,
-          }),
-        }
-      );
-      if (!res.ok) throw new Error('Failed to send receipt email');
-      toast.success(
-        `Receipt sent to ${emailAddress || selectedReceipt.customerEmail}`
-      );
+      await saleService.sendReceiptEmail(selectedReceipt.saleId, target);
+      toast.success(`Receipt sent to ${target}`);
       setShowEmailModal(false);
       setEmailAddress('');
       fetchReceipts(true);
     } catch (error: any) {
+      console.error('Failed to send receipt email:', error);
       toast.error(error.message || 'Failed to send receipt email');
     } finally {
       setProcessing(false);
@@ -624,14 +664,17 @@ export default function ReceiptsPage() {
     try {
       setProcessing(true);
       const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        const receiptHTML = generateReceiptHTML(receipt);
-        printWindow.document.write(receiptHTML);
-        printWindow.document.close();
-        printWindow.print();
+      if (!printWindow) {
+        toast.error('Please allow popups to print receipts');
+        return;
       }
+      const receiptHTML = generateReceiptHTML(receipt);
+      printWindow.document.write(receiptHTML);
+      printWindow.document.close();
+      printWindow.print();
       toast.success('Receipt sent to printer');
     } catch (error: any) {
+      console.error('Failed to print receipt:', error);
       toast.error(error.message || 'Failed to print receipt');
     } finally {
       setProcessing(false);
@@ -642,13 +685,16 @@ export default function ReceiptsPage() {
     try {
       setDownloadingPdf(true);
       const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(generateReceiptHTML(receipt));
-        printWindow.document.close();
-        setTimeout(() => printWindow.print(), 300);
+      if (!printWindow) {
+        toast.error('Please allow popups to prepare the PDF');
+        return;
       }
+      printWindow.document.write(generateReceiptHTML(receipt));
+      printWindow.document.close();
+      setTimeout(() => printWindow.print(), 300);
       toast.success('Receipt ready to save as PDF');
     } catch (error: any) {
+      console.error('Failed to prepare receipt PDF:', error);
       toast.error(error.message || 'Failed to prepare receipt PDF');
     } finally {
       setDownloadingPdf(false);
@@ -656,23 +702,43 @@ export default function ReceiptsPage() {
   };
 
   /**
-   * ✅ FIXED: Use status 'VOID' (not 'VOIDED') to match the SaleStatus type.
-   * The backend controller maps this correctly.
+   * Void a receipt.
+   *
+   * Uses `saleService.voidSale` — the backend method that
+   * sets `Sale.status = 'VOID'` and **appends** the reason to the
+   * existing notes instead of replacing them.
+   *
+   * If `voidSale` isn't available on the web service, we fall back to
+   * `updateSale` with a merged notes string so we never clobber
+   * pre-existing notes.
    */
   const handleVoidReceipt = async () => {
     if (!selectedReceipt || !voidReason.trim()) return;
 
     try {
       setProcessing(true);
-      await saleService.updateSale(selectedReceipt.saleId, {
-        status: 'VOID' as any,
-        notes: voidReason,
-      } as any);
+
+      const svc = saleService as any;
+      if (typeof svc.voidSale === 'function') {
+        await svc.voidSale(selectedReceipt.saleId, voidReason.trim());
+      } else {
+        // Merge notes instead of replacing them.
+        const existing = (selectedReceipt.notes || '').trim();
+        const appended = existing
+          ? `${existing}\nVoided: ${voidReason.trim()}`
+          : `Voided: ${voidReason.trim()}`;
+        await saleService.updateSale(selectedReceipt.saleId, {
+          status: 'VOID',
+          notes: appended,
+        } as any);
+      }
+
       toast.success('Receipt voided successfully');
       setShowVoidModal(false);
       setVoidReason('');
       fetchReceipts(true);
     } catch (error: any) {
+      console.error('Failed to void receipt:', error);
       toast.error(error.message || 'Failed to void receipt');
     } finally {
       setProcessing(false);
@@ -686,11 +752,32 @@ export default function ReceiptsPage() {
     toast.success('Receipt number copied');
   };
 
+  /**
+   * Export all receipts in the current date range.
+   *
+   * Uses the server-side export so the whole result set is included,
+   * not just the current page.
+   */
   const handleExport = async () => {
     try {
       setExporting(true);
 
-      // ✅ FIXED: Explicitly typed map parameters
+      const startDate = filters.startDate || undefined;
+      const endDate = filters.endDate || undefined;
+
+      const result = await saleService.exportSales({
+        startDate,
+        endDate,
+        format: 'csv',
+      });
+
+      const rowsData: any[] = (result as any)?.data || [];
+
+      if (rowsData.length === 0) {
+        toast.error('No receipts to export');
+        return;
+      }
+
       const headers = [
         'Receipt',
         'Date',
@@ -698,23 +785,40 @@ export default function ReceiptsPage() {
         'Subtotal',
         'Tax',
         'Discount',
+        'Discount Type',
+        'Promotion Code',
+        'Promotion Discount',
+        'Loyalty Points Used',
+        'Loyalty Discount',
         'Total',
         'Payment',
         'Status',
         'Items',
       ];
-      const rows = receipts.map((receipt: Receipt) => [
-        receipt.receiptNumber,
-        new Date(receipt.createdAt).toISOString().split('T')[0],
-        receipt.customerName,
-        receipt.subtotal.toFixed(2),
-        receipt.tax.toFixed(2),
-        receipt.discount.toFixed(2),
-        receipt.total.toFixed(2),
-        receipt.paymentMethod,
-        receipt.status,
-        receipt.items.length,
-      ]);
+      const rows = rowsData.map((receipt: any) => {
+        const breakdown = saleService.extractBreakdown(receipt);
+        return [
+          receipt.receiptNumber || receipt.id || '',
+          receipt.date ||
+            (receipt.saleDate
+              ? new Date(receipt.saleDate).toISOString().split('T')[0]
+              : ''),
+          receipt.customer || 'Guest',
+          (receipt.subtotal || 0).toFixed(2),
+          (receipt.tax || 0).toFixed(2),
+          (receipt.discount || 0).toFixed(2),
+          breakdown.discountType ?? '',
+          breakdown.promotionCode ?? '',
+          (breakdown.promotionDiscount ?? 0).toFixed(2),
+          String(breakdown.loyaltyPointsUsed ?? 0),
+          (breakdown.loyaltyDiscount ?? 0).toFixed(2),
+          (receipt.total || 0).toFixed(2),
+          receipt.paymentMethod || 'N/A',
+          receipt.status || 'COMPLETED',
+          String(receipt.items || receipt.itemsCount || 0),
+        ];
+      });
+
       const csv = [
         headers.join(','),
         ...rows.map((row: (string | number)[]) => row.join(',')),
@@ -725,11 +829,14 @@ export default function ReceiptsPage() {
       const a = document.createElement('a');
       a.href = url;
       a.download = `receipts-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
 
       toast.success('Receipts exported successfully');
     } catch (error: any) {
+      console.error('Failed to export receipts:', error);
       toast.error(error.message || 'Failed to export receipts');
     } finally {
       setExporting(false);
@@ -741,6 +848,32 @@ export default function ReceiptsPage() {
   // ============================================
 
   const generateReceiptHTML = (receipt: Receipt): string => {
+    const promotionDiscount = receipt.promotionDiscount ?? 0;
+    const promotionCode = receipt.promotionCode ?? null;
+    const loyaltyPointsUsed = receipt.loyaltyPointsUsed ?? 0;
+    const loyaltyDiscount = receipt.loyaltyDiscount ?? 0;
+
+    const promotionLabel = receipt.discountType
+      ? getDiscountTypeLabel(receipt.discountType) || 'Promotion'
+      : 'Promotion';
+
+    const promotionLine =
+      promotionDiscount > 0
+        ? `<div class="row discount-line"><span>${promotionLabel}${
+            promotionCode ? ` (${promotionCode})` : ''
+          }</span><span>-$${promotionDiscount.toFixed(2)}</span></div>`
+        : '';
+
+    const loyaltyLine =
+      loyaltyPointsUsed > 0
+        ? `<div class="row discount-line"><span>${loyaltyPointsUsed} loyalty points</span><span>-$${loyaltyDiscount.toFixed(2)}</span></div>`
+        : '';
+
+    const rawDiscountLine =
+      receipt.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
+        ? `<div class="row discount-line"><span>Discount</span><span>-$${receipt.discount.toFixed(2)}</span></div>`
+        : '';
+
     return `
       <!DOCTYPE html>
       <html>
@@ -774,6 +907,7 @@ export default function ReceiptsPage() {
             .footer .thankyou { font-size: 14px; font-weight: bold; color: #333; margin-bottom: 4px; }
             .payment-info { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc; }
             .barcode { text-align: center; margin: 10px 0; font-size: 18px; letter-spacing: 2px; }
+            .discount-line { color: #e74c3c; }
           </style>
         </head>
         <body>
@@ -817,13 +951,9 @@ export default function ReceiptsPage() {
             <div class="row"><span>Tax</span><span>$${receipt.tax.toFixed(
               2
             )}</span></div>
-            ${
-              receipt.discount > 0
-                ? `<div class="row" style="color:#e74c3c;"><span>Discount</span><span>-$${receipt.discount.toFixed(
-                    2
-                  )}</span></div>`
-                : ''
-            }
+            ${promotionLine}
+            ${loyaltyLine}
+            ${rawDiscountLine}
             <div class="row grand-total">
               <span>TOTAL</span>
               <span>$${receipt.total.toFixed(2)}</span>
@@ -924,7 +1054,7 @@ export default function ReceiptsPage() {
               ) : (
                 <Download className="w-4 h-4" />
               )}
-              Export
+              Export All
             </button>
           </div>
         </div>
@@ -932,11 +1062,36 @@ export default function ReceiptsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
           <StatCard title="Total" value={stats.total} color="brand" />
-          <StatCard title="Issued" value={stats.issued} color="success" />
-          <StatCard title="Sent" value={stats.sent} color="brand" />
-          <StatCard title="Printed" value={stats.printed} color="brand-accent" />
-          <StatCard title="Cancelled" value={stats.cancelled} color="warning" />
-          <StatCard title="Void" value={stats.void} color="gray" />
+          <StatCard
+            title="Issued"
+            value={stats.issued}
+            color="success"
+            subtext="current page"
+          />
+          <StatCard
+            title="Sent"
+            value={stats.sent}
+            color="brand"
+            subtext="current page"
+          />
+          <StatCard
+            title="Printed"
+            value={stats.printed}
+            color="brand-accent"
+            subtext="current page"
+          />
+          <StatCard
+            title="Cancelled"
+            value={stats.cancelled}
+            color="warning"
+            subtext="current page"
+          />
+          <StatCard
+            title="Void"
+            value={stats.void}
+            color="gray"
+            subtext="current page"
+          />
           <StatCard
             title="Total Amount"
             value={formatCurrency(stats.totalAmount)}
@@ -957,6 +1112,9 @@ export default function ReceiptsPage() {
           <div className="card-brand p-4">
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
               Payment Methods
+              <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">
+                (current page)
+              </span>
             </p>
             <div className="grid grid-cols-3 gap-2">
               <PaymentMethodBadge
@@ -1055,136 +1213,149 @@ export default function ReceiptsPage() {
           <>
             <div className="space-y-4">
               <AnimatePresence>
-                {receipts.map((receipt: Receipt, index: number) => (
-                  <motion.div
-                    key={receipt.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
-                  >
-                    <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-success-600 dark:text-success-400 tabular-nums">
-                          #{receipt.receiptNumber}
-                        </span>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {formatDate(receipt.createdAt)}
-                        </span>
-                        <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                          {getReceiptTypeLabel(receipt.receiptType)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            receipt.status
-                          )} flex items-center gap-1`}
-                        >
-                          <StatusIcon status={receipt.status} />
-                          {receipt.status.charAt(0).toUpperCase() +
-                            receipt.status.slice(1)}
-                        </span>
-                        <span className="font-bold text-gray-900 dark:text-white tabular-nums">
-                          {formatCurrency(receipt.total)}
-                        </span>
-                      </div>
-                    </div>
+                {receipts.map((receipt: Receipt, index: number) => {
+                  const hasBreakdown =
+                    (receipt.promotionDiscount ?? 0) > 0 ||
+                    (receipt.loyaltyPointsUsed ?? 0) > 0;
 
-                    <div className="p-6">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                            <span className="flex items-center gap-1">
-                              <User className="w-4 h-4" />
-                              {receipt.customerName || 'Guest'}
+                  return (
+                    <motion.div
+                      key={receipt.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
+                    >
+                      <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-success-600 dark:text-success-400 tabular-nums">
+                            #{receipt.receiptNumber}
+                          </span>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">
+                            {formatDate(receipt.createdAt)}
+                          </span>
+                          <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+                            {getReceiptTypeLabel(receipt.receiptType)}
+                          </span>
+                          {hasBreakdown && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 rounded-full text-xs">
+                              <Sparkles className="w-3 h-3" />
+                              Discounted
                             </span>
-                            <span className="flex items-center gap-1">
-                              <MailIcon className="w-4 h-4" />
-                              {receipt.customerEmail || 'N/A'}
-                            </span>
-                            <span className="flex items-center gap-1 tabular-nums">
-                              <Package className="w-4 h-4" />
-                              {receipt.items.length} items
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(
-                                receipt.paymentMethod
-                              )} flex items-center gap-1`}
-                            >
-                              {receipt.paymentMethod
-                                .replace('_', ' ')
-                                .toUpperCase()}
-                            </span>
-                            {receipt.cashierName && (
-                              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                                Cashier: {receipt.cashierName}
-                              </span>
-                            )}
-                            {receipt.terminalId && (
-                              <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                                Terminal: {receipt.terminalId}
-                              </span>
-                            )}
-                          </div>
+                          )}
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedReceipt(receipt);
-                              setShowDetailModal(true);
-                            }}
-                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                              receipt.status
+                            )} flex items-center gap-1`}
                           >
-                            <Eye className="w-4 h-4" />
-                            Details
-                          </button>
-                          <button
-                            onClick={() => handlePrintReceipt(receipt)}
-                            disabled={processing}
-                            className="px-3 py-1.5 text-brand-accent-600 dark:text-brand-accent-400 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
-                          >
-                            <Printer className="w-4 h-4" />
-                            Print
-                          </button>
-                          <button
-                            onClick={() => handleDownloadPdf(receipt)}
-                            disabled={downloadingPdf}
-                            className="px-3 py-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
-                          >
-                            <FilePdf className="w-4 h-4" />
-                            PDF
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedReceipt(receipt);
-                              setEmailAddress(receipt.customerEmail || '');
-                              setShowEmailModal(true);
-                            }}
-                            className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                          >
-                            <Mail className="w-4 h-4" />
-                            Email
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleCopyReceiptNumber(receipt.receiptNumber)
-                            }
-                            className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                          >
-                            {copied ? (
-                              <Check className="w-4 h-4" />
-                            ) : (
-                              <Copy className="w-4 h-4" />
-                            )}
-                          </button>
+                            <StatusIcon status={receipt.status} />
+                            {receipt.status.charAt(0).toUpperCase() +
+                              receipt.status.slice(1)}
+                          </span>
+                          <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                            {formatCurrency(receipt.total)}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+
+                      <div className="p-6">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                              <span className="flex items-center gap-1">
+                                <User className="w-4 h-4" />
+                                {receipt.customerName || 'Guest'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MailIcon className="w-4 h-4" />
+                                {receipt.customerEmail || 'N/A'}
+                              </span>
+                              <span className="flex items-center gap-1 tabular-nums">
+                                <Package className="w-4 h-4" />
+                                {receipt.items.length} items
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentMethodColor(
+                                  receipt.paymentMethod
+                                )} flex items-center gap-1`}
+                              >
+                                {receipt.paymentMethod
+                                  .replace(/_/g, ' ')
+                                  .toUpperCase()}
+                              </span>
+                              {receipt.cashierName && (
+                                <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+                                  Cashier: {receipt.cashierName}
+                                </span>
+                              )}
+                              {receipt.terminalId && (
+                                <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+                                  Terminal: {receipt.terminalId}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              onClick={() => {
+                                setSelectedReceipt(receipt);
+                                setShowDetailModal(true);
+                              }}
+                              className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                            >
+                              <Eye className="w-4 h-4" />
+                              Details
+                            </button>
+                            <button
+                              onClick={() => handlePrintReceipt(receipt)}
+                              disabled={processing}
+                              className="px-3 py-1.5 text-brand-accent-600 dark:text-brand-accent-400 hover:bg-brand-accent-50 dark:hover:bg-brand-accent-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
+                            >
+                              <Printer className="w-4 h-4" />
+                              Print
+                            </button>
+                            <button
+                              onClick={() => handleDownloadPdf(receipt)}
+                              disabled={downloadingPdf}
+                              className="px-3 py-1.5 text-danger-600 dark:text-danger-400 hover:bg-danger-50 dark:hover:bg-danger-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 disabled:opacity-50 focus-ring"
+                            >
+                              <FileText className="w-4 h-4" />
+                              PDF
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedReceipt(receipt);
+                                setEmailAddress(receipt.customerEmail || '');
+                                setShowEmailModal(true);
+                              }}
+                              className="px-3 py-1.5 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                            >
+                              <Mail className="w-4 h-4" />
+                              Email
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleCopyReceiptNumber(receipt.receiptNumber)
+                              }
+                              className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                              title="Copy receipt number"
+                            >
+                              {copied ? (
+                                <Check className="w-4 h-4" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </div>
 
@@ -1259,6 +1430,7 @@ export default function ReceiptsPage() {
             onDownloadPdf={() => handleDownloadPdf(selectedReceipt)}
             onVoid={() => {
               setShowDetailModal(false);
+              setVoidReason('');
               setShowVoidModal(true);
             }}
             canManage={canManageReceipts}
@@ -1329,6 +1501,16 @@ function DetailModal({
   processing,
   downloadingPdf,
 }: DetailModalProps) {
+  const promotionDiscount = receiptData.promotionDiscount ?? 0;
+  const promotionCode = receiptData.promotionCode ?? null;
+  const loyaltyPointsUsed = receiptData.loyaltyPointsUsed ?? 0;
+  const loyaltyDiscount = receiptData.loyaltyDiscount ?? 0;
+  const hasBreakdown = promotionDiscount > 0 || loyaltyPointsUsed > 0;
+
+  const promotionLabel = receiptData.discountType
+    ? getDiscountTypeLabel(receiptData.discountType) || 'Promotion'
+    : 'Promotion';
+
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
@@ -1388,7 +1570,9 @@ function DetailModal({
                       <span>
                         {item.productName} × {item.quantity}
                       </span>
-                      <span className="tabular-nums">{formatCurrency(item.total)}</span>
+                      <span className="tabular-nums">
+                        {formatCurrency(item.total)}
+                      </span>
                     </div>
                   ))}
                 {receiptData.items.length > 5 && (
@@ -1401,29 +1585,62 @@ function DetailModal({
               <div className="space-y-1">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
-                  <span className="tabular-nums">{formatCurrency(receiptData.subtotal)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(receiptData.subtotal)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Tax</span>
-                  <span className="tabular-nums">{formatCurrency(receiptData.tax)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(receiptData.tax)}
+                  </span>
                 </div>
-                {receiptData.discount > 0 && (
-                  <div className="flex justify-between text-sm text-success-600 tabular-nums">
+                {promotionDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                    <span>
+                      {promotionLabel}
+                      {promotionCode ? ` (${promotionCode})` : ''}
+                    </span>
+                    <span className="tabular-nums">
+                      -{formatCurrency(promotionDiscount)}
+                    </span>
+                  </div>
+                )}
+                {loyaltyPointsUsed > 0 && (
+                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
+                    <span className="tabular-nums">
+                      {loyaltyPointsUsed} loyalty points
+                    </span>
+                    <span className="tabular-nums">
+                      -{formatCurrency(loyaltyDiscount)}
+                    </span>
+                  </div>
+                )}
+                {receiptData.discount > 0 && !hasBreakdown && (
+                  <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
                     <span>Discount</span>
-                    <span>-{formatCurrency(receiptData.discount)}</span>
+                    <span className="tabular-nums">
+                      -{formatCurrency(receiptData.discount)}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span className="tabular-nums">{formatCurrency(receiptData.total)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(receiptData.total)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Paid</span>
-                  <span className="tabular-nums">{formatCurrency(receiptData.paidAmount)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(receiptData.paidAmount)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Change</span>
-                  <span className="tabular-nums">{formatCurrency(receiptData.changeAmount)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(receiptData.changeAmount)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Payment</span>
@@ -1432,6 +1649,50 @@ function DetailModal({
               </div>
             </div>
           </div>
+
+          {/* Breakdown summary */}
+          {hasBreakdown && (
+            <section
+              className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 space-y-1.5"
+              aria-label="Discount breakdown"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-brand-500" />
+                Discount Breakdown
+              </p>
+
+              {promotionDiscount > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <Tag className="w-3.5 h-3.5 text-brand-500 shrink-0" />
+                    <span>{promotionLabel}</span>
+                    {promotionCode && (
+                      <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[10px] font-mono tabular-nums">
+                        {promotionCode}
+                      </code>
+                    )}
+                  </span>
+                  <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
+                    -{formatCurrency(promotionDiscount)}
+                  </span>
+                </div>
+              )}
+
+              {loyaltyPointsUsed > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <Star className="w-3.5 h-3.5 text-warning-500 fill-current shrink-0" />
+                    <span className="tabular-nums">
+                      {loyaltyPointsUsed} loyalty points
+                    </span>
+                  </span>
+                  <span className="tabular-nums font-medium text-success-600 dark:text-success-400 shrink-0">
+                    -{formatCurrency(loyaltyDiscount)}
+                  </span>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Info */}
           <div className="grid grid-cols-2 gap-4">
@@ -1495,7 +1756,7 @@ function DetailModal({
               {downloadingPdf ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <FilePdf className="w-4 h-4" />
+                <FileText className="w-4 h-4" />
               )}
               {downloadingPdf ? 'Preparing...' : 'PDF'}
             </button>
@@ -1632,6 +1893,7 @@ function VoidModal({
         </h3>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
           Are you sure you want to void receipt #{receiptData.receiptNumber}?
+          The reason will be appended to the sale notes.
         </p>
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1641,7 +1903,7 @@ function VoidModal({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-danger-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-danger-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
             placeholder="Enter reason for voiding..."
             required
           />

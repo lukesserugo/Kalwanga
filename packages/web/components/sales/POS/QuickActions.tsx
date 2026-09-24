@@ -1,5 +1,3 @@
-// D:\Projects\Kalwanga\packages\web\components\sales\POS\QuickActions.tsx
-
 'use client';
 
 import React, { useState } from 'react';
@@ -37,6 +35,18 @@ interface PriceOverrideData {
 interface QuickActionsProps {
   onRefresh?: () => void;
   onViewSales?: () => void;
+  /**
+   * Called when the operator confirms a price override.
+   *
+   * The POS is responsible for translating the override into whatever
+   * the current backend supports (today: a cart-level discount via
+   * `cartService.applyDiscount`; when a per-item endpoint lands:
+   * a direct mutation).
+   *
+   * When this prop is omitted, confirming the modal shows a warning
+   * toast instead of a misleading success toast — the caller owns the
+   * feature, so a missing handler is a wiring bug, not a silent no-op.
+   */
   onPriceOverride?: (data: PriceOverrideData) => void;
   onShiftAction?: (action: string, data?: any) => void;
   onReprintReceipt?: (receiptNumber: string) => void;
@@ -88,12 +98,6 @@ export function QuickActions({
     }
   };
 
-  /**
-   * "Held Orders":
-   * - If POS provides an override, defer to it (keeps the inline panel option).
-   * - Otherwise, navigate to the real Orders page filtered to ON_HOLD,
-   *   for consistency with the rest of the admin experience.
-   */
   const handleHeldOrders = () => {
     if (onOpenHeldOrders) {
       onOpenHeldOrders();
@@ -102,19 +106,10 @@ export function QuickActions({
     router.push('/admin/orders?status=ON_HOLD');
   };
 
-  /**
-   * "View All Orders": navigates to /admin/orders (unfiltered).
-   */
   const handleViewAllOrders = () => {
     router.push('/admin/orders');
   };
 
-  /**
-   * "Add Customer":
-   * - Prefer delegating to POS's CustomerSearchModal for the fast
-   *   attach-customer-to-cart flow.
-   * - Otherwise, navigate to the real customer creation page.
-   */
   const handleAddCustomer = () => {
     if (onOpenCustomerSearch) {
       onOpenCustomerSearch();
@@ -127,18 +122,10 @@ export function QuickActions({
     router.push('/admin/customers');
   };
 
-  /**
-   * "Quick Product":
-   * Navigates to the real Add Product page which creates products
-   * from inventory (the canonical flow in this app).
-   */
   const handleQuickProduct = () => {
     router.push('/admin/catalog/add');
   };
 
-  /**
-   * "Manage Shift": navigates to the real Shift Management dashboard.
-   */
   const handleManageShift = () => {
     if (onShiftAction) {
       onShiftAction('open-dashboard');
@@ -155,6 +142,37 @@ export function QuickActions({
     router.push('/admin/catalog');
   };
 
+  /**
+   * Confirming the price override modal.
+   *
+   * If a handler is wired, defer to it — the POS owns the backend
+   * translation. Otherwise, surface a warning so the operator knows
+   * the override was not applied.
+   */
+  const handlePriceOverrideConfirm = (data: PriceOverrideData) => {
+    if (onPriceOverride) {
+      onPriceOverride(data);
+      setIsPriceModalOpen(false);
+      showToast('Price override applied', 'success');
+      return;
+    }
+
+    // No handler wired — surface the mistake instead of a false
+    // success message.
+    showToast(
+      'Price override is not connected in this view. Please contact support.',
+      'warning'
+    );
+    setIsPriceModalOpen(false);
+  };
+
+  const handleReprintConfirm = (receiptNumber: string) => {
+    if (onReprintReceipt) {
+      onReprintReceipt(receiptNumber);
+    }
+    setIsReceiptModalOpen(false);
+  };
+
   // ============================================
   // RENDER
   // ============================================
@@ -168,7 +186,6 @@ export function QuickActions({
         </h3>
 
         <div className="space-y-2">
-          {/* ✅ Add Customer — POS CustomerSearchModal, else create page */}
           <QuickActionButton
             icon={Users}
             label="Add Customer"
@@ -176,8 +193,6 @@ export function QuickActions({
             color="blue"
           />
 
-          {/* ✅ Held Orders — navigates to /admin/orders?status=ON_HOLD
-              (or delegates to POS's onOpenHeldOrders if provided) */}
           <QuickActionButton
             icon={Clock}
             label={`Held Orders (${heldOrdersCount})`}
@@ -187,7 +202,6 @@ export function QuickActions({
             trailingIcon={ExternalLink}
           />
 
-          {/* ✅ View All Orders — navigates to /admin/orders */}
           <QuickActionButton
             icon={ClipboardList}
             label="All Orders"
@@ -196,8 +210,6 @@ export function QuickActions({
             trailingIcon={ExternalLink}
           />
 
-          {/* ✅ Quick Product — navigates to /admin/catalog/add
-              (creates a product from inventory) */}
           <QuickActionButton
             icon={Package}
             label="Quick Product"
@@ -220,7 +232,6 @@ export function QuickActions({
             color="gray"
           />
 
-          {/* ✅ View Customers — navigates to /admin/customers */}
           <QuickActionButton
             icon={ListOrdered}
             label="View Customers"
@@ -229,7 +240,6 @@ export function QuickActions({
             trailingIcon={ExternalLink}
           />
 
-          {/* ✅ View Catalog — navigates to /admin/catalog */}
           <QuickActionButton
             icon={PlusSquare}
             label="View Catalog"
@@ -245,7 +255,6 @@ export function QuickActions({
             color="blue"
           />
 
-          {/* ✅ Manage Shift — navigates to /admin/shifts */}
           <QuickActionButton
             icon={Settings}
             label="Manage Shift"
@@ -254,7 +263,6 @@ export function QuickActions({
             trailingIcon={ExternalLink}
           />
 
-          {/* ✅ Manage Registers — navigates to /admin/shifts/registers */}
           <QuickActionButton
             icon={Building}
             label="Manage Registers"
@@ -316,27 +324,17 @@ export function QuickActions({
         </div>
       </div>
 
-      {/* ============================================ */}
-      {/* MODALS (only the ones without dedicated pages) */}
-      {/* ============================================ */}
-
+      {/* Modals */}
       <PriceOverrideModal
         isOpen={isPriceModalOpen}
         onClose={() => setIsPriceModalOpen(false)}
-        onConfirm={(data: PriceOverrideData) => {
-          if (onPriceOverride) onPriceOverride(data);
-          setIsPriceModalOpen(false);
-          showToast('Price override applied', 'success');
-        }}
+        onConfirm={handlePriceOverrideConfirm}
       />
 
       <ReprintReceiptModal
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
-        onReprint={(receiptNumber: string) => {
-          if (onReprintReceipt) onReprintReceipt(receiptNumber);
-          setIsReceiptModalOpen(false);
-        }}
+        onReprint={handleReprintConfirm}
       />
     </>
   );

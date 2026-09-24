@@ -46,14 +46,18 @@ import {
   type Cart,
 } from '../../../../../services/cartService';
 import { checkoutService } from '../../../../../services/checkoutService';
-import {
-  formatCurrency,
-} from '../../../../../utils/formatters';
+import { formatCurrency } from '../../../../../utils/formatters';
 
 // ============================================
 // INTERFACES
 // ============================================
 
+/**
+ * Shape of the response from `POST /checkout` as consumed by this page.
+ * Mirrors the backend's checkout result envelope. `changeAmount` may
+ * appear at the top level, on `sale`, or on `receipt`; the renderer
+ * checks all three.
+ */
 interface CheckoutResponse {
   sale: {
     id: string;
@@ -99,6 +103,12 @@ interface CashRegisterOption {
   name: string;
 }
 
+interface CashRegisterSession {
+  id: string;
+  cashRegisterId: string;
+  status: string;
+}
+
 // ============================================
 // PAYMENT METHODS
 // ============================================
@@ -122,13 +132,32 @@ const CUSTOMER_SEARCH_DEBOUNCE_MS = 300;
 const MIN_CUSTOMER_SEARCH_LENGTH = 2;
 
 // ============================================
+// HELPERS
+// ============================================
+
+/**
+ * The `api` wrapper may or may not unwrap `response.data`. Accept both.
+ */
+function unwrapApiResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response === 'object' && 'data' in (response as any)) {
+    const inner = (response as any).data;
+    if (inner !== undefined && inner !== null) return inner as T;
+  }
+  return response as T;
+}
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function AdminCartCheckoutPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    hasPermission,
+    isLoading: permissionLoading,
+  } = usePermission();
 
   const cartId = searchParams.get('cartId');
 
@@ -152,17 +181,19 @@ export default function AdminCartCheckoutPage() {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isSearchingCustomers, setIsSearchingCustomers] = useState(false);
   const [notes, setNotes] = useState('');
-  const [tipAmount, setTipAmount] = useState('');
   const [cashRegisterId, setCashRegisterId] = useState('');
   const [cashRegisterSessionId, setCashRegisterSessionId] = useState('');
   const [cashRegisters, setCashRegisters] = useState<
     CashRegisterOption[]
   >([]);
+  const [loadingRegisterSession, setLoadingRegisterSession] =
+    useState(false);
 
   const isMountedRef = useRef(true);
   const customerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+
   /**
    * One idempotency key per page visit. Retries reuse it so a network
    * flake or a double-click never produces two sales.
@@ -183,9 +214,20 @@ export default function AdminCartCheckoutPage() {
   // PERMISSIONS
   // ============================================
 
+  const isAdminLevel =
+    hasPermission(PermissionResource.CART_MANAGE) ||
+    hasPermission(PermissionResource.CART_VIEW_HISTORY);
+
   const canCheckout =
-    canManage(PermissionResource.CART_CHECKOUT) ||
-    canManage(PermissionResource.CART_MANAGE);
+    hasPermission(PermissionResource.CART_CHECKOUT) || isAdminLevel;
+
+  /**
+   * Fetching an arbitrary cart by ID is gated to
+   * SUPER_ADMIN | ADMIN | MANAGER on the backend. If the current user
+   * can checkout but not read other users' carts, we fall back to
+   * their own active cart.
+   */
+  const canReadArbitraryCart = isAdminLevel;
 
   // ============================================
   // DATA FETCHING
@@ -196,12 +238,15 @@ export default function AdminCartCheckoutPage() {
       setLoading(true);
       setError(null);
 
-      // When the admin came from the cart list, they passed a
-      // specific cartId. When they came from the "Checkout" button in
-      // the admin header, no cartId is present — the admin's own
-      // active cart is used.
-      const cartData = cartId
-        ? await cartService.getCartById(cartId)
+      // When the admin came from the cart list they passed a specific
+      // cartId. When they came from the "Checkout" button in the admin
+      // header, no cartId is present — the admin's own active cart is
+      // used. If they passed a cartId but lack cross-cart read access,
+      // we also fall back to their own cart (the backend would 403
+      // anyway).
+      const useExplicitCart = Boolean(cartId) && canReadArbitraryCart;
+      const cartData = useExplicitCart
+        ? await cartService.getCartById(cartId as string)
         : await cartService.getCart();
 
       if (!isMountedRef.current) return;
@@ -215,14 +260,8 @@ export default function AdminCartCheckoutPage() {
           '/cash-registers',
         );
         if (!isMountedRef.current) return;
-        const list = Array.isArray(response)
-          ? response
-          : Array.isArray(
-              (response as unknown as { data: CashRegisterOption[] })?.data,
-            )
-          ? (response as unknown as { data: CashRegisterOption[] }).data
-          : [];
-        setCashRegisters(list);
+        const list = unwrapApiResponse<CashRegisterOption[]>(response);
+        setCashRegisters(Array.isArray(list) ? list : []);
       } catch (err) {
         console.warn('Failed to fetch cash registers:', err);
       }
@@ -230,15 +269,12 @@ export default function AdminCartCheckoutPage() {
       // Preload the customer if the cart already has one
       if (cartData.customerId) {
         try {
-          const customer = await api.get<Customer>(
+          const response = await api.get(
             `/customers/${cartData.customerId}`,
           );
           if (!isMountedRef.current) return;
-          const payload =
-            customer && typeof customer === 'object' && 'id' in customer
-              ? customer
-              : (customer as unknown as { data: Customer })?.data;
-          if (payload) {
+          const payload = unwrapApiResponse<Customer>(response);
+          if (payload && typeof payload.id === 'string') {
             setSelectedCustomer(payload);
             setCustomerId(payload.id);
             setCustomerSearch(
@@ -261,15 +297,74 @@ export default function AdminCartCheckoutPage() {
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
-  }, [cartId]);
+  }, [cartId, canReadArbitraryCart]);
 
   useEffect(() => {
-    if (!permissionLoading && canCheckout) {
+    if (permissionLoading) return;
+    if (canCheckout) {
       void fetchCart();
-    } else if (!permissionLoading && !canCheckout) {
+    } else {
       setLoading(false);
     }
   }, [permissionLoading, canCheckout, fetchCart]);
+
+  // ============================================
+  // CASH REGISTER SESSION
+  // ============================================
+  //
+  // A CASH checkout against a register needs the register's *active*
+  // session so the sale reconciles against the drawer. We fetch it as
+  // soon as the cashier picks a register, and we only send a
+  // `cashRegisterSessionId` that the backend will accept.
+
+  useEffect(() => {
+    if (!cashRegisterId) {
+      setCashRegisterSessionId('');
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSession = async () => {
+      try {
+        setLoadingRegisterSession(true);
+        const response = await api.get(
+          `/cash-registers/${cashRegisterId}/sessions?status=OPEN`,
+        );
+        if (cancelled || !isMountedRef.current) return;
+
+        const payload = unwrapApiResponse<CashRegisterSession[] | CashRegisterSession>(response);
+        const sessions = Array.isArray(payload)
+          ? payload
+          : payload
+          ? [payload]
+          : [];
+        const active = sessions.find((s) => s.status === 'OPEN');
+
+        if (active) {
+          setCashRegisterSessionId(active.id);
+        } else {
+          setCashRegisterSessionId('');
+          toast.warning(
+            'Selected cash register has no open session. The sale will be recorded without a drawer reconciliation.',
+          );
+        }
+      } catch (err) {
+        if (cancelled || !isMountedRef.current) return;
+        console.warn('Failed to load cash register session:', err);
+        setCashRegisterSessionId('');
+      } finally {
+        if (!cancelled && isMountedRef.current) {
+          setLoadingRegisterSession(false);
+        }
+      }
+    };
+
+    void loadSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [cashRegisterId]);
 
   // ============================================
   // CUSTOMER SEARCH
@@ -285,18 +380,12 @@ export default function AdminCartCheckoutPage() {
 
     try {
       setIsSearchingCustomers(true);
-      const response = await api.get<Customer[]>(
+      const response = await api.get(
         `/customers/search?q=${encodeURIComponent(trimmed)}`,
       );
       if (!isMountedRef.current) return;
-      const list = Array.isArray(response)
-        ? response
-        : Array.isArray(
-            (response as unknown as { data: Customer[] })?.data,
-          )
-        ? (response as unknown as { data: Customer[] }).data
-        : [];
-      setCustomers(list);
+      const list = unwrapApiResponse<Customer[]>(response);
+      setCustomers(Array.isArray(list) ? list : []);
       setShowCustomerDropdown(true);
     } catch (err) {
       if (!isMountedRef.current) return;
@@ -357,14 +446,21 @@ export default function AdminCartCheckoutPage() {
         return;
       }
 
+      const totalDue = cart.total ?? 0;
       const paidAmountNum = parseFloat(paidAmount);
-      if (isNaN(paidAmountNum) || paidAmountNum <= 0) {
+      if (!Number.isFinite(paidAmountNum) || paidAmountNum < 0) {
         toast.error('Please enter a valid paid amount');
         return;
       }
 
-      const totalDue = cart.total ?? 0;
-      if (paidAmountNum < totalDue) {
+      // A loyalty-only checkout legitimately tenders $0 because the
+      // balance is covered by the customer's points. Every other
+      // payment method must tender at least the total.
+      const isLoyaltyOnly =
+        paymentMethod === 'LOYALTY_POINTS' &&
+        (cart.loyaltyDiscount ?? 0) > 0;
+
+      if (!isLoyaltyOnly && paidAmountNum < totalDue) {
         toast.error(
           `Paid amount (${formatCurrency(
             paidAmountNum,
@@ -373,9 +469,10 @@ export default function AdminCartCheckoutPage() {
         return;
       }
 
-      const tipAmountNum = tipAmount ? parseFloat(tipAmount) : 0;
-      if (isNaN(tipAmountNum) || tipAmountNum < 0) {
-        toast.error('Please enter a valid tip amount');
+      if (isLoyaltyOnly && paidAmountNum > 0 && paidAmountNum < totalDue) {
+        toast.error(
+          'Loyalty-only checkouts must tender 0, or tender enough to cover the full total.',
+        );
         return;
       }
 
@@ -388,13 +485,17 @@ export default function AdminCartCheckoutPage() {
       setError(null);
 
       try {
-        // `paidAmount` in the payload is the amount TENDERED, not the
-        // total. The backend computes change and validates sufficiency.
+        // `paidAmount` is the amount TENDERED, not the total. The
+        // backend computes change and validates sufficiency.
+        //
+        // NOTE: `tipAmount` is intentionally not sent — the backend
+        // `checkoutSchema` does not declare it and no downstream service
+        // reads it. Tips are outside the current checkout contract.
         const result = await checkoutService.processCheckout({
           cartId: cart.id,
           customerId: customerId || undefined,
           paymentMethod: paymentMethod as any,
-          paidAmount: paidAmountNum,
+          paidAmount: isLoyaltyOnly ? 0 : paidAmountNum,
           notes: notes.trim() || undefined,
           cashRegisterId: cashRegisterId || undefined,
           cashRegisterSessionId:
@@ -441,7 +542,6 @@ export default function AdminCartCheckoutPage() {
     [
       cart,
       paidAmount,
-      tipAmount,
       paymentMethod,
       customerId,
       notes,
@@ -473,19 +573,37 @@ export default function AdminCartCheckoutPage() {
     [router],
   );
 
+  /**
+   * Start a fresh sale.
+   *
+   * CRITICAL: after a successful checkout the cart identified by
+   * `cartId` is now CHECKED_OUT. Re-fetching that same cart would show
+   * the completed sale, not a new empty cart. We clear the URL param so
+   * the next `fetchCart` call resolves the admin's own active cart,
+   * and we rotate the idempotency key so a subsequent checkout is a
+   * distinct submission.
+   */
   const handleNewSale = useCallback(() => {
     setSuccess(false);
     setCheckoutResult(null);
     setPaymentMethod('CASH');
     setPaidAmount('');
     setNotes('');
-    setTipAmount('');
     setCustomerId('');
     setSelectedCustomer(null);
     setCustomerSearch('');
+    setCashRegisterId('');
+    setCashRegisterSessionId('');
     idempotencyKeyRef.current = null;
-    void fetchCart();
-  }, [fetchCart]);
+
+    // Drop the `cartId` query param and re-fetch.
+    router.replace('/admin/cart/checkout');
+    // `router.replace` is async; trigger a fetch against the (now
+    // param-less) URL after a tick so `searchParams` has updated.
+    setTimeout(() => {
+      void fetchCart();
+    }, 0);
+  }, [router, fetchCart]);
 
   // ============================================
   // HELPERS
@@ -496,8 +614,18 @@ export default function AdminCartCheckoutPage() {
     return method?.label ?? value;
   }, []);
 
+  const isLoyaltyOnly = useMemo(
+    () =>
+      paymentMethod === 'LOYALTY_POINTS' &&
+      (cart?.loyaltyDiscount ?? 0) > 0,
+    [paymentMethod, cart?.loyaltyDiscount],
+  );
+
   const changeAmount = useMemo(() => {
     if (!cart) return 0;
+    // Tips are not part of the current backend contract, so change is
+    // purely `tendered - total`. If tips are added later, subtract them
+    // here as well.
     const paid = parseFloat(paidAmount) || 0;
     return Math.max(0, paid - (cart.total ?? 0));
   }, [cart, paidAmount]);
@@ -507,17 +635,36 @@ export default function AdminCartCheckoutPage() {
     [cart?.items],
   );
 
+  /**
+   * Quick-tender chips. Deduped, sorted, capped at three values.
+   */
+  const quickTenderAmounts = useMemo(() => {
+    if (!cart) return [] as number[];
+    const total = cart.total ?? 0;
+    const candidates = [
+      total,
+      Math.ceil(total / 10) * 10,
+      Math.ceil(total / 50) * 50,
+      Math.ceil(total / 100) * 100,
+    ];
+    const unique = Array.from(
+      new Set(candidates.filter((v) => v >= total && v > 0)),
+    );
+    unique.sort((a, b) => a - b);
+    return unique.slice(0, 3);
+  }, [cart]);
+
   // ============================================
   // RENDER — LOADING / PERMISSION
   // ============================================
 
-  if (permissionLoading || loading) {
+  if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Loading checkout…
+            Checking permissions…
           </p>
         </div>
       </div>
@@ -544,6 +691,19 @@ export default function AdminCartCheckoutPage() {
         >
           Back to Dashboard
         </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading checkout…
+          </p>
+        </div>
       </div>
     );
   }
@@ -601,7 +761,10 @@ export default function AdminCartCheckoutPage() {
               <SummaryTile
                 label="Change"
                 value={formatCurrency(
-                  receipt?.changeAmount ?? sale.changeAmount ?? 0,
+                  receipt?.changeAmount ??
+                    sale.changeAmount ??
+                    checkoutResult.changeAmount ??
+                    0,
                 )}
                 accent="text-emerald-600 dark:text-emerald-400"
               />
@@ -900,7 +1063,8 @@ export default function AdminCartCheckoutPage() {
                   onChange={(e) =>
                     setCashRegisterId(e.target.value)
                   }
-                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white"
+                  disabled={loadingRegisterSession}
+                  className="w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white disabled:opacity-50"
                 >
                   <option value="">Select Cash Register</option>
                   {cashRegisters.map((register) => (
@@ -909,6 +1073,21 @@ export default function AdminCartCheckoutPage() {
                     </option>
                   ))}
                 </select>
+                {loadingRegisterSession && (
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Loading register session…
+                  </p>
+                )}
+                {!loadingRegisterSession &&
+                  cashRegisterId &&
+                  !cashRegisterSessionId && (
+                    <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      No open session on this register — the sale will
+                      not be reconciled against a drawer.
+                    </p>
+                  )}
               </section>
             )}
 
@@ -1023,52 +1202,37 @@ export default function AdminCartCheckoutPage() {
                   <input
                     type="number"
                     step="0.01"
-                    min={cart.total}
+                    min={0}
                     value={paidAmount}
                     onChange={(e) => setPaidAmount(e.target.value)}
-                    className="w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white tabular-nums"
+                    disabled={isLoyaltyOnly}
+                    className="w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white tabular-nums disabled:opacity-60"
                     required
                     inputMode="decimal"
                   />
                 </div>
-                <div className="mt-1.5 flex gap-1">
-                  {[cart.total, Math.ceil(cart.total / 10) * 10, Math.ceil(cart.total / 50) * 50].filter((v, i, arr) => v >= cart.total && arr.indexOf(v) === i).slice(0, 3).map((amount) => (
-                    <button
-                      key={amount}
-                      type="button"
-                      onClick={() => setPaidAmount(String(amount))}
-                      className="px-2 py-0.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-400"
-                    >
-                      {formatCurrency(amount)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tip */}
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Tip (Optional)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={tipAmount}
-                    onChange={(e) => setTipAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full pl-8 pr-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 tabular-nums"
-                    inputMode="decimal"
-                  />
-                </div>
+                {isLoyaltyOnly ? (
+                  <p className="mt-1.5 text-xs text-indigo-600 dark:text-indigo-400">
+                    Covered by loyalty points — no cash tender required.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 flex gap-1">
+                    {quickTenderAmounts.map((amount) => (
+                      <button
+                        key={amount}
+                        type="button"
+                        onClick={() => setPaidAmount(String(amount))}
+                        className="px-2 py-0.5 text-xs rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-600 dark:text-gray-400"
+                      >
+                        {formatCurrency(amount)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Change */}
-              {changeAmount > 0 && (
+              {!isLoyaltyOnly && changeAmount > 0 && (
                 <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
                   <div className="flex justify-between text-sm">
                     <span className="text-emerald-700 dark:text-emerald-300">

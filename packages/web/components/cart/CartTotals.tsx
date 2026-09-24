@@ -16,6 +16,17 @@ export interface CartTotalsProps {
   loyaltyDiscount?: number;
   isTaxInclusive?: boolean;
   taxRate?: number;
+  /**
+   * When `false` (the default), this component trusts `total` as the
+   * authoritative grand total. The backend `Cart.total` already
+   * includes tax and applies all discounts, and no shipping is
+   * modelled server-side.
+   *
+   * When `true`, `shippingCost` is added on top of `total` to produce a
+   * client-only estimated grand total. This exists for preview screens
+   * that want to show a shipping estimate — it is NOT the final
+   * checkout amount.
+   */
   alwaysShowShipping?: boolean;
 }
 
@@ -69,7 +80,12 @@ export function CartTotals({
     finalShippingCost > 0 ||
     (freeShippingActive && !isEligibleForFreeShipping);
 
-  const grandTotal = safeTotal + finalShippingCost;
+  // `Cart.total` is the server-authoritative grand total. Only add
+  // shipping when the caller explicitly opts into a client-side
+  // estimate — otherwise we'd double-count.
+  const grandTotal = alwaysShowShipping
+    ? safeTotal + finalShippingCost
+    : safeTotal;
 
   const amountUntilFreeShipping =
     freeShippingActive && !isEligibleForFreeShipping
@@ -121,7 +137,14 @@ export function CartTotals({
 
       {showShippingLine && (
         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600 pb-2">
-          <span>Shipping</span>
+          <span>
+            Shipping
+            {alwaysShowShipping && (
+              <span className="text-2xs text-gray-400 ml-1">
+                (estimate)
+              </span>
+            )}
+          </span>
           <span className="tabular-nums">
             {isEligibleForFreeShipping ? (
               <span className="text-success-600 dark:text-success-400">

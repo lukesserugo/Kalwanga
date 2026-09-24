@@ -2,296 +2,329 @@
 
 import { api } from './api';
 import type { Sale } from '../types/sale';
-import type { PaymentMethod } from './saleService';
-import { paymentService } from './paymentService';
 import type { Payment } from '../types/payment';
+import type { PaymentMethod } from './saleService';
 
 export type { PaymentMethod } from './saleService';
 
-// Re-export the idempotency helper so callers can `import {
-// newIdempotencyKey } from '@/services/checkoutService'` without
-// pulling in the whole cart service.
 export { newIdempotencyKey } from './cartService';
 
+import type {
+  DiscountType,
+  CanonicalPaymentMethod,
+  CheckoutSaleStatus,
+  CheckoutPaymentStatus,
+
+  CheckoutData,
+  AddCheckoutItemRequest,
+  UpdateCheckoutItemRequest,
+  ProcessCheckoutPaymentRequest,
+  ApplyCheckoutDiscountRequest,
+  EmailCheckoutReceiptRequest,
+  CancelCheckoutRequest,
+  VoidCheckoutRequest,
+  UpdateCheckoutRequest,
+  GetCheckoutsQuery,
+  GetCheckoutHistoryQuery,
+  GetCustomerCheckoutHistoryQuery,
+  GetCheckoutStatsQuery,
+  ExportCheckoutsQuery,
+  ExportCheckoutDataQuery,
+
+  CheckoutPagination,
+  CheckoutListResponse,
+  CheckoutSingleResponse,
+  CheckoutReceipt,
+  CheckoutReceiptItem,
+  CheckoutResponse,
+  CheckoutWithPaymentResponse,
+  CheckoutSummary,
+  CheckoutSummaryItem,
+  CheckoutStats,
+  PaymentMethodOption,
+  CheckoutSettings,
+  CheckoutSettingsUpdate,
+  CheckoutSettingsResponse,
+  CheckoutExportJsonResponse,
+
+  ValidateCheckoutRequest,
+  ValidateCheckoutResponse,
+  CalculateTotalsRequest,
+  CalculateTotalsResponse,
+} from '../types/checkout';
+
+export type {
+  DiscountType,
+  CanonicalPaymentMethod,
+  CheckoutSaleStatus,
+  CheckoutPaymentStatus,
+  CheckoutData,
+  AddCheckoutItemRequest,
+  UpdateCheckoutItemRequest,
+  ProcessCheckoutPaymentRequest,
+  ApplyCheckoutDiscountRequest,
+  EmailCheckoutReceiptRequest,
+  CancelCheckoutRequest,
+  VoidCheckoutRequest,
+  UpdateCheckoutRequest,
+  GetCheckoutsQuery,
+  GetCheckoutHistoryQuery,
+  GetCustomerCheckoutHistoryQuery,
+  GetCheckoutStatsQuery,
+  ExportCheckoutsQuery,
+  ExportCheckoutDataQuery,
+  CheckoutPagination,
+  CheckoutListResponse,
+  CheckoutSingleResponse,
+  CheckoutReceipt,
+  CheckoutReceiptItem,
+  CheckoutResponse,
+  CheckoutWithPaymentResponse,
+  CheckoutSummary,
+  CheckoutSummaryItem,
+  CheckoutStats,
+  PaymentMethodOption,
+  CheckoutSettings,
+  CheckoutSettingsUpdate,
+  CheckoutSettingsResponse,
+  CheckoutExportJsonResponse,
+  ValidateCheckoutRequest,
+  ValidateCheckoutResponse,
+  CalculateTotalsRequest,
+  CalculateTotalsResponse,
+};
+
 // ============================================
-// TYPES FOR CHECKOUT OPERATIONS
+// MOBILE MONEY PROVIDER (backend routing hint)
+// ============================================
+//
+// The backend supports three mobile-money providers, all of which
+// arrive as `paymentMethod: 'MOBILE_MONEY'`:
+//
+//   MPESA   → mpesaService (Safaricom STK push)
+//   MTN     → mobileMoneyService.initiatePayment('MTN', ...)
+//   AIRTEL  → mobileMoneyService.initiatePayment('AIRTEL', ...)
+//
+// The frontend uses this field to tell the backend which provider
+// the user picked. Without it, the backend defaults to MPESA.
+//
+// ⚠ This field is opt-in. If the backend deployment hasn't been
+//   updated to accept it, it's silently ignored (Zod strips
+//   unknown keys). Safe to send in all cases.
+
+export type MobileMoneyProvider = 'MPESA' | 'MTN' | 'AIRTEL';
+
+// ============================================
+// ONLINE CHECKOUT — GATEWAY TYPES
 // ============================================
 
-export interface CheckoutItem {
-  productId: string;
-  variantId?: string | null;
-  quantity: number;
-  /**
-   * Read-only. The server computes this from the product's price at
-   * checkout time. Never send it in requests.
-   */
-  unitPrice: number;
-  total: number;
-}
-
-export interface CheckoutData {
+export interface OnlineCheckoutRequest {
   cartId: string;
   customerId?: string;
-  /**
-   * Narrowed to the shared canonical set. Mirrors what the backend's
-   * `checkoutController.checkoutSchema` accepts.
-   */
-  paymentMethod: PaymentMethod;
-  /**
-   * `0` is valid — loyalty-only and fully-discounted checkouts.
-   */
-  paidAmount: number;
+  paymentMethod: CanonicalPaymentMethod | string;
+
   discount?: number;
   notes?: string;
-  cashRegisterId?: string;
-  cashRegisterSessionId?: string;
   applyLoyaltyPoints?: boolean;
   businessUnitId?: string;
+
   customerEmail?: string;
   customerPhone?: string;
   customerName?: string;
   customerAddress?: string;
-  savePaymentMethod?: boolean;
-  /**
-   * Idempotency key. When supplied, the same value sent twice results
-   * in the same sale being returned — no duplicate. Generate one with
-   * `newIdempotencyKey()` and reuse it across retries. Do NOT
-   * regenerate on retry.
-   */
+
   idempotencyKey?: string;
+
+  returnUrl?: string;
+  cancelUrl?: string;
+
+  /** Square Web SDK card nonce. Required for `SQUARE`. */
+  cardNonce?: string;
+  /** Stripe PaymentMethod id (pm_xxx) for server-side confirm. */
+  paymentMethodId?: string;
+  /**
+   * Gift card code for `paymentMethod === 'GIFT_CARD'`. The service
+   * also mirrors this onto `gatewayId` so backends that expect the
+   * code there resolve it correctly.
+   */
+  giftCardCode?: string;
+
+  /**
+   * Mobile-money provider selector.
+   *
+   * Only meaningful when `paymentMethod === 'MOBILE_MONEY'`. Tells
+   * the backend whether to route to M-Pesa, MTN, or Airtel.
+   *
+   * When omitted, the backend defaults to `'MPESA'` (the historical
+   * behaviour).
+   */
+  mobileMoneyProvider?: MobileMoneyProvider;
+
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
 }
 
-export interface CheckoutResponse {
-  sale: Sale;
-  payment: any;
-  receipt: {
-    receiptNumber: string;
-    items: CheckoutItem[];
-    subtotal: number;
-    tax: number;
-    discount: number;
-    total: number;
-    paidAmount: number;
-    changeAmount: number;
-    customerId?: string;
-    businessUnitId: string;
-    createdAt: string;
-    paymentMethod: string;
+/**
+ * Discriminated union describing what the frontend must do next
+ * after `POST /checkout/online` returns.
+ */
+export type NextAction =
+  | { type: 'CONFIRM_STRIPE'; clientSecret: string }
+  | { type: 'REDIRECT'; url: string }
+  | { type: 'AWAIT_STK_PUSH'; message: string; checkoutRequestId: string }
+  | { type: 'OFFLINE'; message: string }
+  | { type: 'NONE' };
+
+export interface OnlineCheckoutResponse extends CheckoutResponse {
+  clientSecret?: string;
+  redirectUrl?: string;
+  mpesa?: {
+    checkoutRequestId: string;
+    customerMessage: string;
   };
-  loyaltyPointsEarned: number;
-  loyaltyPointsUsed: number;
-  changeAmount: number;
+  nextAction: NextAction;
 }
 
-export interface CheckoutWithPaymentResponse {
-  checkout: CheckoutResponse;
-  payment: Payment;
-}
+// ============================================
+// BACKWARD-COMPATIBLE LIST RESPONSES
+// ============================================
 
-export interface CheckoutSummary {
-  items: any[];
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  loyaltyPointsAvailable: number;
-  loyaltyPointsRedeemable: number;
-  maxLoyaltyDiscount: number;
-  customerId?: string;
-}
-
-export interface CheckoutStats {
-  summary: {
-    totalRevenue: number;
-    totalOrders: number;
-    averageOrderValue: number;
-    totalCustomers: number;
-    conversionRate: number;
-    abandonedCarts: number;
-    recoveredCarts: number;
-  };
-  trends: {
-    daily: Array<{ date: string; revenue: number; orders: number }>;
-    weekly: Array<{ week: string; revenue: number; orders: number }>;
-    monthly: Array<{ month: string; revenue: number; orders: number }>;
-  };
-  topProducts: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-    revenue: number;
-  }>;
-  topCustomers: Array<{
-    id: string;
-    name: string;
-    email: string;
-    totalSpent: number;
-    orderCount: number;
-  }>;
-  paymentMethods: Array<{ method: string; count: number; total: number }>;
-  checkoutSteps: Array<{
-    step: string;
-    completed: number;
-    dropped: number;
-  }>;
-  performance: {
-    averageCheckoutTime: number;
-    pageLoadTime: number;
-    successRate: number;
-    errorRate: number;
-  };
-}
-
-export interface PaymentMethodOption {
-  id: string;
-  name: string;
-  code: string;
-  icon?: string;
-  enabled: boolean;
-  description?: string;
-}
-
-export interface CheckoutSettings {
-  allowPartialPayment: boolean;
-  requireCustomer: boolean;
-  requireSignature: boolean;
-  maxDiscount: number;
-  taxInclusive: boolean;
-  defaultPaymentMethod: PaymentMethod;
-  receiptFooter: string;
-  loyaltyPointsEnabled: boolean;
-  pointsPerDollar: number;
-  allowGuestCheckout: boolean;
-  maxCartItems: number;
-  cartExpiryHours: number;
-  discountEnabled: boolean;
-  maxDiscountPercentage: number;
-  autoApplyPromotions: boolean;
-  reserveStockOnAdd: boolean;
-  reserveStockMinutes: number;
-  lowStockThreshold: number;
-  freeShippingThreshold: number;
-  shippingCost: number;
-  taxRate: number;
-  notifyOnAbandonedCart: boolean;
-  abandonedCartHours: number;
-  currencyCode: string;
-  currencySymbol: string;
-  showStockBadge: boolean;
-  showVariantImages: boolean;
-}
-
-export interface CheckoutHistoryResponse {
-  data: Sale[];
+function withLegacyListAccessors<T>(
+  response: CheckoutListResponse<T>,
+): CheckoutListResponse<T> & {
   total: number;
   page: number;
   totalPages: number;
   limit: number;
-}
+} {
+  const { pagination } = response;
 
-export interface CalculateTotalsRequest {
-  items: Array<{
-    productId: string;
-    variantId?: string;
-    quantity: number;
-    unitPrice: number;
-  }>;
-  discount?: number;
-  taxRate?: number;
-}
+  Object.defineProperties(response, {
+    total: {
+      get: () => pagination.total,
+      enumerable: false,
+      configurable: true,
+    },
+    page: {
+      get: () => pagination.page,
+      enumerable: false,
+      configurable: true,
+    },
+    totalPages: {
+      get: () => pagination.totalPages,
+      enumerable: false,
+      configurable: true,
+    },
+    limit: {
+      get: () => pagination.limit,
+      enumerable: false,
+      configurable: true,
+    },
+  });
 
-export interface CalculateTotalsResponse {
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  items: Array<{
-    productId: string;
-    quantity: number;
-    unitPrice: number;
+  return response as CheckoutListResponse<T> & {
     total: number;
-  }>;
+    page: number;
+    totalPages: number;
+    limit: number;
+  };
 }
 
-export interface ValidateCheckoutRequest {
-  cartId: string;
-  paymentMethod: PaymentMethod;
-  paidAmount: number;
+export type CheckoutListReturn<T> = CheckoutListResponse<T> & {
+  /** @deprecated Read `pagination.total`. */
+  total: number;
+  /** @deprecated Read `pagination.page`. */
+  page: number;
+  /** @deprecated Read `pagination.totalPages`. */
+  totalPages: number;
+  /** @deprecated Read `pagination.limit`. */
+  limit: number;
+};
+
+// ============================================
+// NOT-IMPLEMENTED GUARD
+// ============================================
+
+class NotImplementedError extends Error {
+  readonly methodName: string;
+  readonly missingRoute: string;
+
+  constructor(methodName: string, missingRoute: string) {
+    super(
+      `checkoutService.${methodName} calls ${missingRoute}, which is not ` +
+        `implemented on the backend. Either add the route or remove the ` +
+        `method from the web service.`,
+    );
+    this.name = 'NotImplementedError';
+    this.methodName = methodName;
+    this.missingRoute = missingRoute;
+  }
 }
 
-export interface ValidateCheckoutResponse {
-  valid: boolean;
-  errors?: Array<{ field: string; message: string }>;
-  warnings?: Array<{ field: string; message: string }>;
+function notImplemented(
+  methodName: string,
+  missingRoute: string,
+): never {
+  throw new NotImplementedError(methodName, missingRoute);
 }
 
-export interface ProcessPaymentRequest {
-  paymentMethod: PaymentMethod;
-  amount: number;
-  paymentDetails?: Record<string, any>;
+export { NotImplementedError };
+
+// ============================================
+// ERROR CLASSIFICATION HELPERS
+// ============================================
+//
+// The backend can reject an online checkout for several reasons.
+// Two of them require the frontend to react differently from the
+// generic "show the error message" path:
+//
+//   409 IDEMPOTENCY_CANCELLED
+//     The previous attempt at this idempotency key failed and was
+//     cancelled. The caller should clear its cached key and retry.
+//     Showing the raw 409 body to the user is confusing; the UX
+//     should be a "please retry" prompt.
+//
+//   503 M-Pesa not configured
+//     The server is missing M-Pesa credentials. Not retryable from
+//     the client. The message is already user-friendly ("M-Pesa is
+//     not configured. Please contact support.") so it's fine to
+//     surface verbatim, but callers might want to disable the
+//     M-Pesa button.
+
+/**
+ * True if the thrown error is the "previous idempotency key
+ * matched a cancelled sale" 409 from the backend.
+ *
+ * Callers that hold an idempotency key should clear it and prompt
+ * the user to retry. The next submission will be treated as a
+ * fresh attempt by the backend.
+ */
+export function isIdempotencyConflict(error: unknown): boolean {
+  const anyErr = error as {
+    response?: {
+      status?: number;
+      data?: { code?: string };
+    };
+  };
+
+  return (
+    anyErr?.response?.status === 409 &&
+    anyErr?.response?.data?.code === 'IDEMPOTENCY_CANCELLED'
+  );
 }
 
-export interface CancelCheckoutRequest {
-  reason?: string;
-}
-
-export interface EmailReceiptRequest {
-  email?: string;
-}
-
-export interface ExportCheckoutsParams {
-  format?: 'csv' | 'json' | 'excel' | 'pdf';
-  dateFrom?: string;
-  dateTo?: string;
-  businessUnitId?: string;
-  status?: string;
-}
-
-export interface CheckoutHistoryParams {
-  page?: number;
-  limit?: number;
-  startDate?: string;
-  endDate?: string;
-  status?: string;
-  customerId?: string;
-  search?: string;
-}
-
-export interface CheckoutStatsParams {
-  range?: 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
-  startDate?: string;
-  endDate?: string;
-  businessUnitId?: string;
-}
-
-export interface CheckoutSettingsUpdate {
-  allowPartialPayment?: boolean;
-  requireCustomer?: boolean;
-  requireSignature?: boolean;
-  maxDiscount?: number;
-  taxInclusive?: boolean;
-  defaultPaymentMethod?: PaymentMethod;
-  receiptFooter?: string;
-  loyaltyPointsEnabled?: boolean;
-  pointsPerDollar?: number;
-  allowGuestCheckout?: boolean;
-  maxCartItems?: number;
-  cartExpiryHours?: number;
-  discountEnabled?: boolean;
-  maxDiscountPercentage?: number;
-  autoApplyPromotions?: boolean;
-  reserveStockOnAdd?: boolean;
-  reserveStockMinutes?: number;
-  lowStockThreshold?: number;
-  freeShippingThreshold?: number;
-  shippingCost?: number;
-  taxRate?: number;
-  notifyOnAbandonedCart?: boolean;
-  abandonedCartHours?: number;
-  currencyCode?: string;
-  currencySymbol?: string;
-  showStockBadge?: boolean;
-  showVariantImages?: boolean;
+/**
+ * True if the thrown error is a "provider not configured" 503.
+ *
+ * The provider is not retryable from the client. The caller should
+ * surface the message and (optionally) disable the method.
+ */
+export function isProviderUnavailable(error: unknown): boolean {
+  const anyErr = error as {
+    response?: { status?: number };
+  };
+  return anyErr?.response?.status === 503;
 }
 
 // ============================================
@@ -306,59 +339,146 @@ export const checkoutService = {
   /**
    * Create a new checkout from a cart.
    * POST /checkout
-   *
-   * Pass `idempotencyKey` to make the call safe against retries and
-   * double-submits.
    */
   async createCheckout(
     data: CheckoutData,
   ): Promise<CheckoutResponse> {
-    const response = await api.post<CheckoutResponse>(
-      '/checkout',
-      data,
-    );
-    return response;
+    return api.post<CheckoutResponse>('/checkout', data);
   },
 
   /**
-   * Process checkout (alias for createCheckout).
+   * Process an OFFLINE checkout (cash / bank transfer / check).
    * POST /checkout
    */
   async processCheckout(
     data: CheckoutData,
   ): Promise<CheckoutResponse> {
-    const response = await api.post<CheckoutResponse>(
-      '/checkout',
-      data,
-    );
-    return response;
+    const payload: Record<string, unknown> = {
+      cartId: data.cartId,
+      paymentMethod: data.paymentMethod,
+      paidAmount: data.paidAmount,
+    };
+
+    if (data.customerId !== undefined) payload.customerId = data.customerId;
+    if (data.discount !== undefined) payload.discount = data.discount;
+    if (data.notes !== undefined) payload.notes = data.notes;
+    if (data.cashRegisterId !== undefined)
+      payload.cashRegisterId = data.cashRegisterId;
+    if (data.cashRegisterSessionId !== undefined)
+      payload.cashRegisterSessionId = data.cashRegisterSessionId;
+    if (data.applyLoyaltyPoints !== undefined)
+      payload.applyLoyaltyPoints = data.applyLoyaltyPoints;
+    if (data.businessUnitId !== undefined)
+      payload.businessUnitId = data.businessUnitId;
+    if (data.customerEmail !== undefined)
+      payload.customerEmail = data.customerEmail;
+    if (data.customerPhone !== undefined)
+      payload.customerPhone = data.customerPhone;
+    if (data.customerName !== undefined)
+      payload.customerName = data.customerName;
+    if (data.customerAddress !== undefined)
+      payload.customerAddress = data.customerAddress;
+    if (data.idempotencyKey !== undefined)
+      payload.idempotencyKey = data.idempotencyKey;
+
+    if (data.discountType !== undefined)
+      payload.discountType = data.discountType;
+    if (data.promotionCode !== undefined)
+      payload.promotionCode = data.promotionCode;
+    if (data.promotionDiscount !== undefined)
+      payload.promotionDiscount = data.promotionDiscount;
+
+    if (data.cardNonce !== undefined) payload.cardNonce = data.cardNonce;
+    if (data.giftCardCode !== undefined) {
+      payload.giftCardCode = data.giftCardCode;
+      if (payload.gatewayId === undefined) {
+        payload.gatewayId = data.giftCardCode;
+      }
+    }
+
+    console.log('🧾 processCheckout payload:', payload);
+
+    return api.post<CheckoutResponse>('/checkout', payload);
+  },
+
+  /**
+   * Process an ONLINE checkout (card / PayPal / Flutterwave /
+   * Paystack / Square / Mobile Money / M-Pesa / Gift card).
+   * POST /checkout/online
+   */
+  async processOnlineCheckout(
+    data: OnlineCheckoutRequest,
+  ): Promise<OnlineCheckoutResponse> {
+    const payload: Record<string, unknown> = {
+      cartId: data.cartId,
+      paymentMethod: data.paymentMethod,
+    };
+
+    if (data.customerId !== undefined)
+      payload.customerId = data.customerId;
+    if (data.discount !== undefined) payload.discount = data.discount;
+    if (data.notes !== undefined) payload.notes = data.notes;
+    if (data.applyLoyaltyPoints !== undefined)
+      payload.applyLoyaltyPoints = data.applyLoyaltyPoints;
+    if (data.businessUnitId !== undefined)
+      payload.businessUnitId = data.businessUnitId;
+
+    if (data.customerEmail !== undefined)
+      payload.customerEmail = data.customerEmail;
+    if (data.customerPhone !== undefined)
+      payload.customerPhone = data.customerPhone;
+    if (data.customerName !== undefined)
+      payload.customerName = data.customerName;
+    if (data.customerAddress !== undefined)
+      payload.customerAddress = data.customerAddress;
+
+    if (data.idempotencyKey !== undefined)
+      payload.idempotencyKey = data.idempotencyKey;
+
+    if (data.returnUrl !== undefined) payload.returnUrl = data.returnUrl;
+    if (data.cancelUrl !== undefined) payload.cancelUrl = data.cancelUrl;
+    if (data.cardNonce !== undefined) payload.cardNonce = data.cardNonce;
+    if (data.paymentMethodId !== undefined)
+      payload.paymentMethodId = data.paymentMethodId;
+
+    // Gift card code: sent under both names so backends that read
+    // `giftCardCode` and backends that read `gatewayId` both work.
+    if (data.giftCardCode !== undefined) {
+      payload.giftCardCode = data.giftCardCode;
+      if (payload.gatewayId === undefined) {
+        payload.gatewayId = data.giftCardCode;
+      }
+    }
+
+    // Mobile-money provider hint. Only sent when the caller
+    // supplied it. Ignored by backends that haven't added the
+    // field yet (Zod strips unknown keys).
+    if (data.mobileMoneyProvider !== undefined) {
+      payload.mobileMoneyProvider = data.mobileMoneyProvider;
+    }
+
+    if (data.discountType !== undefined)
+      payload.discountType = data.discountType;
+    if (data.promotionCode !== undefined)
+      payload.promotionCode = data.promotionCode;
+    if (data.promotionDiscount !== undefined)
+      payload.promotionDiscount = data.promotionDiscount;
+
+    console.log('🌐 processOnlineCheckout payload:', payload);
+
+    return api.post<OnlineCheckoutResponse>('/checkout/online', payload);
   },
 
   /**
    * Process checkout with integrated payment.
-   *
-   * ⚠ IMPORTANT: The backend's `/checkout` endpoint ALREADY creates a
-   * `Payment` row inside the same transaction as the sale. Calling
-   * `paymentService.processPayment` on top of it produces a duplicate
-   * payment for the same sale.
-   *
-   * This method therefore calls `/checkout` only, and adapts its
-   * response into the `CheckoutWithPaymentResponse` shape by
-   * extracting the payment the backend already created.
-   *
-   * Kept under this name for backward compatibility. New callers
-   * should use `processCheckout` directly.
    */
   async processCheckoutWithPayment(
     data: CheckoutData,
   ): Promise<CheckoutWithPaymentResponse> {
     const checkout = await this.processCheckout(data);
 
-    // The backend returns the payment it created inside
-    // `processCheckout`. It is not always present (idempotent replays
-    // may omit it), so fall back to a receipt-derived stub.
-    const payment =
-      (checkout as any).payment ??
+    const payment: Payment =
+      checkout.payment ??
       ({
         saleId: checkout.sale.id,
         amount: checkout.receipt.total,
@@ -369,750 +489,417 @@ export const checkoutService = {
     return { checkout, payment };
   },
 
-  /**
-   * Get all checkouts with pagination (Admin/SuperAdmin only).
-   * GET /checkout
-   */
-  async getCheckouts(params?: {
-    page?: number;
-    limit?: number;
-    status?: string;
-    paymentStatus?: string;
-    customerId?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    search?: string;
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-  }): Promise<{
-    data: Sale[];
-    total: number;
-    page: number;
-    totalPages: number;
-    limit: number;
-  }> {
-    const response = await api.get<{
-      data: Sale[];
-      total: number;
-      page: number;
-      totalPages: number;
-      limit: number;
-    }>('/checkout', { params });
-    return response;
+  // ============================================
+  // LIST / READ
+  // ============================================
+
+  async getCheckouts(
+    params?: GetCheckoutsQuery,
+  ): Promise<CheckoutListReturn<Sale>> {
+    const response = await api.get<CheckoutListResponse<Sale>>(
+      '/checkout',
+      { params },
+    );
+    return withLegacyListAccessors(response);
   },
 
-  /**
-   * Get checkout by ID.
-   * GET /checkout/:id
-   */
   async getCheckoutById(id: string): Promise<Sale> {
-    const response = await api.get<Sale>(`/checkout/${id}`);
-    return response;
+    return api.get<Sale>(`/checkout/${id}`);
   },
 
-  /**
-   * Get checkout by receipt number.
-   * GET /checkout/receipt/:receiptNumber
-   */
   async getCheckoutByReceiptNumber(
     receiptNumber: string,
   ): Promise<Sale> {
-    const response = await api.get<Sale>(
-      `/checkout/receipt/${receiptNumber}`,
-    );
-    return response;
+    return api.get<Sale>(`/checkout/receipt/${receiptNumber}`);
   },
 
-  /**
-   * Update checkout (Admin/SuperAdmin only).
-   * PUT /checkout/:id
-   */
+  async getCheckoutHistory(
+    params?: GetCheckoutHistoryQuery,
+  ): Promise<CheckoutListReturn<Sale>> {
+    const response = await api.get<CheckoutListResponse<Sale>>(
+      '/checkout/history',
+      { params },
+    );
+    return withLegacyListAccessors(response);
+  },
+
+  async getCustomerCheckoutHistory(
+    customerId: string,
+    params?: GetCustomerCheckoutHistoryQuery,
+  ): Promise<
+    CheckoutListReturn<Sale> & {
+      /** @deprecated Read `data`. */
+      history: Sale[];
+    }
+  > {
+    const response = await api.get<CheckoutListResponse<Sale>>(
+      `/checkout/customer/${customerId}/history`,
+      { params },
+    );
+    const withList = withLegacyListAccessors(response);
+
+    Object.defineProperty(withList, 'history', {
+      get: () => withList.data,
+      enumerable: false,
+      configurable: true,
+    });
+
+    return withList as CheckoutListReturn<Sale> & { history: Sale[] };
+  },
+
+  // ============================================
+  // UPDATE / STATUS
+  // ============================================
+
   async updateCheckout(
     id: string,
-    data: {
-      status?:
-        | 'PENDING'
-        | 'PROCESSING'
-        | 'COMPLETED'
-        | 'CANCELLED'
-        | 'VOIDED';
-      paymentStatus?:
-        | 'PENDING'
-        | 'PAID'
-        | 'FAILED'
-        | 'REFUNDED'
-        | 'PARTIAL';
-      notes?: string;
-    },
+    data: UpdateCheckoutRequest,
   ): Promise<Sale> {
-    const response = await api.put<Sale>(`/checkout/${id}`, data);
-    return response;
+    return api.put<Sale>(`/checkout/${id}`, data);
   },
 
-  /**
-   * Delete checkout (Admin/SuperAdmin only).
-   * DELETE /checkout/:id
-   */
-  async deleteCheckout(
-    id: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await api.delete<{
-      success: boolean;
-      message: string;
-    }>(`/checkout/${id}`);
-    return response;
+  async completeCheckout(id: string): Promise<Sale> {
+    return api.post<Sale>(`/checkout/${id}/complete`);
   },
 
-  /**
-   * Void checkout (Admin/SuperAdmin only).
-   * POST /checkout/:saleId/void
-   */
-  async voidCheckout(
-    saleId: string,
-    data?: CancelCheckoutRequest,
-  ): Promise<Sale> {
-    const response = await api.post<Sale>(
-      `/checkout/${saleId}/void`,
-      data || {},
-    );
-    return response;
-  },
-
-  /**
-   * Cancel checkout.
-   * POST /checkout/:id/cancel
-   */
   async cancelCheckout(
     id: string,
     data?: CancelCheckoutRequest,
   ): Promise<Sale> {
-    const response = await api.post<Sale>(
-      `/checkout/${id}/cancel`,
-      data || {},
-    );
-    return response;
+    return api.post<Sale>(`/checkout/${id}/cancel`, data ?? {});
   },
 
-  /**
-   * Complete checkout.
-   * POST /checkout/:id/complete
-   */
-  async completeCheckout(id: string): Promise<Sale> {
-    const response = await api.post<Sale>(
-      `/checkout/${id}/complete`,
+  async voidCheckout(
+    saleId: string,
+    data?: VoidCheckoutRequest,
+  ): Promise<Sale> {
+    return api.post<Sale>(`/checkout/${saleId}/void`, data ?? {});
+  },
+
+  async deleteCheckout(
+    id: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return api.delete<{ success: boolean; message: string }>(
+      `/checkout/${id}`,
     );
-    return response;
   },
 
   // ============================================
   // CHECKOUT ITEM OPERATIONS
   // ============================================
 
-  /**
-   * Get checkout items.
-   * GET /checkout/:id/items
-   */
-  async getCheckoutItems(id: string): Promise<any[]> {
-    const response = await api.get<any[]>(`/checkout/${id}/items`);
-    return response;
+  async getCheckoutItems(id: string): Promise<CheckoutReceiptItem[]> {
+    return api.get<CheckoutReceiptItem[]>(`/checkout/${id}/items`);
   },
 
-  /**
-   * Add item to checkout.
-   * POST /checkout/:id/items
-   *
-   * ⚠ `unitPrice` is NOT accepted. The server looks up the
-   * authoritative price from `Product.unitPrice` or
-   * `ProductVariant.price`. Sending it in the body is a no-op — the
-   * server ignores it.
-   */
   async addCheckoutItem(
     id: string,
-    data: {
-      productId: string;
-      variantId?: string;
-      quantity: number;
-    },
-  ): Promise<any> {
-    const response = await api.post<any>(
-      `/checkout/${id}/items`,
-      data,
-    );
-    return response;
+    data: AddCheckoutItemRequest,
+  ): Promise<Sale> {
+    return api.post<Sale>(`/checkout/${id}/items`, data);
   },
 
-  /**
-   * Update checkout item quantity.
-   * PUT /checkout/:id/items/:itemId
-   */
   async updateCheckoutItem(
     id: string,
     itemId: string,
-    data: { quantity: number },
-  ): Promise<any> {
-    const response = await api.put<any>(
-      `/checkout/${id}/items/${itemId}`,
-      data,
-    );
-    return response;
+    data: UpdateCheckoutItemRequest,
+  ): Promise<Sale> {
+    return api.put<Sale>(`/checkout/${id}/items/${itemId}`, data);
   },
 
-  /**
-   * Remove item from checkout.
-   * DELETE /checkout/:id/items/:itemId
-   */
   async removeCheckoutItem(
     id: string,
     itemId: string,
   ): Promise<{ success: boolean; message: string }> {
-    const response = await api.delete<{
-      success: boolean;
-      message: string;
-    }>(`/checkout/${id}/items/${itemId}`);
-    return response;
-  },
-
-  // ============================================
-  // PAYMENT OPERATIONS
-  // ============================================
-
-  /**
-   * Process an additional payment for a checkout.
-   * POST /checkout/:id/pay
-   *
-   * Used for split payments or partial payments AFTER the initial
-   * checkout. The initial checkout already creates its own payment.
-   */
-  async processPayment(
-    id: string,
-    data: ProcessPaymentRequest,
-  ): Promise<any> {
-    const response = await api.post<any>(
-      `/checkout/${id}/pay`,
-      data,
+    return api.delete<{ success: boolean; message: string }>(
+      `/checkout/${id}/items/${itemId}`,
     );
-    return response;
-  },
-
-  /**
-   * Get payment methods.
-   * GET /checkout/payment-methods
-   */
-  async getPaymentMethods(): Promise<{
-    success: boolean;
-    data: PaymentMethodOption[];
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: PaymentMethodOption[];
-    }>('/checkout/payment-methods');
-    return response;
   },
 
   // ============================================
   // DISCOUNT OPERATIONS
   // ============================================
 
-  /**
-   * Apply discount to checkout.
-   * POST /checkout/:id/discount
-   */
   async applyDiscount(
     id: string,
-    data: { code: string },
+    data: ApplyCheckoutDiscountRequest,
   ): Promise<Sale> {
-    const response = await api.post<Sale>(
-      `/checkout/${id}/discount`,
-      data,
-    );
-    return response;
+    return api.post<Sale>(`/checkout/${id}/discount`, data);
   },
 
-  /**
-   * Remove discount from checkout.
-   * DELETE /checkout/:id/discount
-   */
   async removeDiscount(id: string): Promise<Sale> {
-    const response = await api.delete<Sale>(
-      `/checkout/${id}/discount`,
-    );
-    return response;
+    return api.delete<Sale>(`/checkout/${id}/discount`);
+  },
+
+  // ============================================
+  // PAYMENT OPERATIONS (POST-CHECKOUT)
+  // ============================================
+
+  async processPayment(
+    id: string,
+    data: ProcessCheckoutPaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(`/checkout/${id}/pay`, data);
+  },
+
+  async getPaymentMethods(): Promise<PaymentMethodOption[]> {
+    const response = await api.get<
+      CheckoutSingleResponse<PaymentMethodOption[]>
+    >('/checkout/payment-methods');
+    return response.data;
   },
 
   // ============================================
   // RECEIPT OPERATIONS
   // ============================================
 
-  /**
-   * Get checkout receipt.
-   * GET /checkout/:id/receipt
-   */
-  async getCheckoutReceipt(id: string): Promise<Sale> {
-    const response = await api.get<Sale>(
-      `/checkout/${id}/receipt`,
-    );
-    return response;
+  async getCheckoutReceipt(id: string): Promise<CheckoutReceipt> {
+    return api.get<CheckoutReceipt>(`/checkout/${id}/receipt`);
   },
 
-  /**
-   * Get checkout summary.
-   * GET /checkout/:id/summary
-   */
+  async getCheckoutSummaryByCart(
+    cartId: string,
+  ): Promise<CheckoutSummary> {
+    return api.get<CheckoutSummary>(`/checkout/summary/${cartId}`);
+  },
+
+  async getCheckoutSummaryBySale(
+    id: string,
+  ): Promise<CheckoutSummary> {
+    return api.get<CheckoutSummary>(`/checkout/${id}/summary`);
+  },
+
+  /** @deprecated Renamed. */
   async getCheckoutSummary(id: string): Promise<CheckoutSummary> {
-    const response = await api.get<CheckoutSummary>(
-      `/checkout/${id}/summary`,
-    );
-    return response;
+    return api.get<CheckoutSummary>(`/checkout/${id}/summary`);
   },
 
-  /**
-   * Get checkout summary by cart ID.
-   * GET /checkout/summary/:cartId
-   */
-  async getCheckoutSummaryByCart(cartId: string): Promise<{
-    subtotal: number;
-    tax: number;
-    discount: number;
-    total: number;
-    items: any[];
-    customer?: any;
-    loyaltyPoints?: number;
-  }> {
-    const response = await api.get<{
-      subtotal: number;
-      tax: number;
-      discount: number;
-      total: number;
-      items: any[];
-      customer?: any;
-      loyaltyPoints?: number;
-    }>(`/checkout/summary/${cartId}`);
-    return response;
-  },
-
-  /**
-   * Send checkout receipt via email.
-   * POST /checkout/:id/email-receipt
-   */
   async sendReceiptEmail(
     id: string,
-    data?: EmailReceiptRequest,
+    data?: EmailCheckoutReceiptRequest,
   ): Promise<{ success: boolean; message: string; email: string }> {
-    const response = await api.post<{
+    return api.post<{
       success: boolean;
       message: string;
       email: string;
-    }>(`/checkout/${id}/email-receipt`, data || {});
-    return response;
-  },
-
-  // ============================================
-  // HISTORY OPERATIONS
-  // ============================================
-
-  /**
-   * Get checkout history with filters.
-   * GET /checkout/history
-   */
-  async getCheckoutHistory(
-    params?: CheckoutHistoryParams,
-  ): Promise<{
-    data: Sale[];
-    total: number;
-    page: number;
-    totalPages: number;
-    limit: number;
-  }> {
-    const response = await api.get<{
-      data: Sale[];
-      total: number;
-      page: number;
-      totalPages: number;
-      limit: number;
-    }>('/checkout/history', { params });
-    return response;
-  },
-
-  /**
-   * Get customer checkout history.
-   * GET /checkout/customer/:customerId/history
-   */
-  async getCustomerCheckoutHistory(
-    customerId: string,
-    params?: { page?: number; limit?: number },
-  ): Promise<{
-    history: Sale[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    const response = await api.get<{
-      history: Sale[];
-      total: number;
-      page: number;
-      limit: number;
-    }>(`/checkout/customer/${customerId}/history`, { params });
-    return response;
+    }>(`/checkout/${id}/email-receipt`, data ?? {});
   },
 
   // ============================================
   // STATISTICS OPERATIONS
   // ============================================
 
-  /**
-   * Get checkout statistics (Admin/SuperAdmin only).
-   * GET /checkout/stats/summary
-   */
-  async getCheckoutStats(params?: {
-    dateFrom?: string;
-    dateTo?: string;
-    businessUnitId?: string;
-  }): Promise<CheckoutStats> {
-    const response = await api.get<CheckoutStats>(
-      '/checkout/stats/summary',
-      { params },
-    );
-    return response;
-  },
-
-  /**
-   * Get checkout statistics with filters.
-   * GET /checkout/stats
-   */
-  async getStats(params?: CheckoutStatsParams): Promise<{
-    success: boolean;
-    data: CheckoutStats;
-    message?: string;
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: CheckoutStats;
-      message?: string;
-    }>('/checkout/stats', { params });
-    return response;
-  },
-
-  /**
-   * Export statistics.
-   * GET /checkout/stats/export
-   */
-  async exportStats(params?: {
-    range?:
-      | 'today'
-      | 'week'
-      | 'month'
-      | 'quarter'
-      | 'year'
-      | 'custom';
-    startDate?: string;
-    endDate?: string;
-    format?: 'csv' | 'pdf' | 'excel';
-  }): Promise<{ data: string }> {
-    const response = await api.get<{ data: string }>(
-      '/checkout/stats/export',
-      {
-        params,
-        responseType: 'blob',
-      },
-    );
-    return response;
+  async getCheckoutStats(
+    params?: GetCheckoutStatsQuery,
+  ): Promise<CheckoutStats> {
+    return api.get<CheckoutStats>('/checkout/stats/summary', {
+      params,
+    });
   },
 
   // ============================================
   // SETTINGS OPERATIONS
   // ============================================
 
-  /**
-   * Get checkout settings.
-   * GET /checkout/settings
-   */
-  async getCheckoutSettings(): Promise<{
-    success: boolean;
-    data: CheckoutSettings;
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: CheckoutSettings;
-    }>('/checkout/settings');
-    return response;
+  async getCheckoutSettings(): Promise<CheckoutSettingsResponse> {
+    return api.get<CheckoutSettingsResponse>('/checkout/settings');
   },
 
-  /**
-   * Update checkout settings.
-   * PUT /checkout/settings
-   */
   async updateCheckoutSettings(
     settings: CheckoutSettingsUpdate,
-  ): Promise<{
-    success: boolean;
-    data: CheckoutSettings;
-    message: string;
-  }> {
-    const response = await api.put<{
-      success: boolean;
-      data: CheckoutSettings;
-      message: string;
-    }>('/checkout/settings', settings);
-    return response;
+  ): Promise<CheckoutSettingsResponse> {
+    return api.put<CheckoutSettingsResponse>(
+      '/checkout/settings',
+      settings,
+    );
   },
 
   // ============================================
   // EXPORT OPERATIONS
   // ============================================
 
-  /**
-   * Export checkouts (Admin/SuperAdmin only).
-   * GET /checkout/export/all
-   */
-  async exportCheckouts(params?: ExportCheckoutsParams): Promise<any> {
-    const response = await api.get('/checkout/export/all', {
+  async exportCheckouts(
+    params?: ExportCheckoutsQuery,
+  ): Promise<Blob | CheckoutExportJsonResponse> {
+    const format = params?.format ?? 'csv';
+    if (format === 'json') {
+      return api.get<CheckoutExportJsonResponse>(
+        '/checkout/export/all',
+        { params },
+      );
+    }
+    return api.get<Blob>('/checkout/export/all', {
       params,
       responseType: 'blob',
     });
-    return response;
   },
 
-  /**
-   * Export checkout data.
-   * GET /checkout/export
-   */
-  async exportCheckoutData(params?: {
-    format?: 'csv' | 'json' | 'excel' | 'pdf';
-    dateFrom?: string;
-    dateTo?: string;
-    status?: string;
-    includeItems?: boolean;
-    includeCustomer?: boolean;
-  }): Promise<any> {
-    const response = await api.get('/checkout/export', {
+  async exportCheckoutData(
+    params?: ExportCheckoutDataQuery,
+  ): Promise<Blob | CheckoutExportJsonResponse> {
+    const format = params?.format ?? 'csv';
+    if (format === 'json') {
+      return api.get<CheckoutExportJsonResponse>('/checkout/export', {
+        params,
+      });
+    }
+    return api.get<Blob>('/checkout/export', {
       params,
       responseType: 'blob',
     });
-    return response;
   },
 
   // ============================================
-  // VALIDATION OPERATIONS
+  // UNIMPLEMENTED BACKEND ROUTES
   // ============================================
 
-  /**
-   * Validate checkout.
-   * POST /checkout/validate
-   */
+  /** @deprecated Backend has no `POST /checkout/validate`. */
   async validateCheckout(
-    data: ValidateCheckoutRequest,
+    _data: ValidateCheckoutRequest,
   ): Promise<ValidateCheckoutResponse> {
-    const response = await api.post<ValidateCheckoutResponse>(
-      '/checkout/validate',
-      data,
+    return notImplemented(
+      'validateCheckout',
+      'POST /checkout/validate',
     );
-    return response;
   },
 
-  /**
-   * Calculate checkout totals.
-   * POST /checkout/calculate
-   */
+  /** @deprecated Backend has no `POST /checkout/calculate`. */
   async calculateTotals(
-    data: CalculateTotalsRequest,
+    _data: CalculateTotalsRequest,
   ): Promise<CalculateTotalsResponse> {
-    const response = await api.post<CalculateTotalsResponse>(
-      '/checkout/calculate',
-      data,
+    return notImplemented(
+      'calculateTotals',
+      'POST /checkout/calculate',
     );
-    return response;
   },
 
-  // ============================================
-  // PAYMENT INTEGRATION
-  // ============================================
-
-  /**
-   * Get payment status for a checkout.
-   * GET /checkout/:id/payment-status
-   */
-  async getCheckoutPaymentStatus(checkoutId: string): Promise<{
-    success: boolean;
-    data: {
-      paymentStatus: string;
-      amountPaid: number;
-      amountDue: number;
-      payments: any[];
-    };
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: {
-        paymentStatus: string;
-        amountPaid: number;
-        amountDue: number;
-        payments: any[];
-      };
-    }>(`/checkout/${checkoutId}/payment-status`);
-    return response;
+  /** @deprecated Use `getCheckoutStats()`. */
+  async getStats(): Promise<never> {
+    return notImplemented('getStats', 'GET /checkout/stats');
   },
 
-  /**
-   * Get all payments for a checkout.
-   * GET /checkout/:id/payments
-   */
-  async getCheckoutPayments(checkoutId: string): Promise<{
-    success: boolean;
-    data: any[];
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: any[];
-    }>(`/checkout/${checkoutId}/payments`);
-    return response;
+  /** @deprecated Backend has no `GET /checkout/stats/export`. */
+  async exportStats(): Promise<never> {
+    return notImplemented(
+      'exportStats',
+      'GET /checkout/stats/export',
+    );
   },
 
-  /**
-   * Refund a specific payment on a checkout.
-   * POST /checkout/:id/refund
-   */
+  /** @deprecated Backend has no `GET /checkout/:id/payment-status`. */
+  async getCheckoutPaymentStatus(_checkoutId: string): Promise<never> {
+    return notImplemented(
+      'getCheckoutPaymentStatus',
+      'GET /checkout/:id/payment-status',
+    );
+  },
+
+  /** @deprecated Backend has no `GET /checkout/:id/payments`. */
+  async getCheckoutPayments(_checkoutId: string): Promise<never> {
+    return notImplemented(
+      'getCheckoutPayments',
+      'GET /checkout/:id/payments',
+    );
+  },
+
+  /** @deprecated Backend has no `POST /checkout/:id/refund`. */
   async refundCheckoutPayment(
-    checkoutId: string,
-    data: {
+    _checkoutId: string,
+    _data: {
       paymentId: string;
       amount?: number;
       reason?: string;
     },
-  ): Promise<{
-    success: boolean;
-    data: any;
-    message: string;
-  }> {
-    const response = await api.post<{
-      success: boolean;
-      data: any;
-      message: string;
-    }>(`/checkout/${checkoutId}/refund`, data);
-    return response;
-  },
-
-  // ============================================
-  // LEGACY / COMPATIBILITY
-  // ============================================
-
-  /**
-   * @deprecated Use `getCheckoutReceipt` with the checkout ID.
-   */
-  async getReceipt(saleId: string): Promise<Sale> {
-    const response = await api.get<Sale>(
-      `/checkout/receipt/${saleId}`,
+  ): Promise<never> {
+    return notImplemented(
+      'refundCheckoutPayment',
+      'POST /checkout/:id/refund',
     );
-    return response;
   },
 
-  /**
-   * @deprecated Use `getCheckoutByReceiptNumber`.
-   */
-  async getReceiptByNumber(receiptNumber: string): Promise<Sale> {
-    const response = await api.get<Sale>(
-      `/checkout/receipt/number/${receiptNumber}`,
+  /** @deprecated Use `getCheckoutByReceiptNumber(receiptNumber)`. */
+  async getReceiptByNumber(_receiptNumber: string): Promise<never> {
+    return notImplemented(
+      'getReceiptByNumber',
+      'GET /checkout/receipt/number/:receiptNumber',
     );
-    return response;
   },
 
-  /**
-   * @deprecated Use `getCheckouts` with pagination params.
-   */
-  async getAllCheckouts(params?: {
-    limit?: number;
-    offset?: number;
-  }): Promise<Sale[]> {
-    const response = await api.get<Sale[]>('/checkout/admin/all', {
-      params,
-    });
-    return response;
+  /** @deprecated Use `getCheckouts({ limit, offset })`. */
+  async getAllCheckouts(): Promise<never> {
+    return notImplemented(
+      'getAllCheckouts',
+      'GET /checkout/admin/all',
+    );
   },
 
-  /**
-   * @deprecated Use `sendReceiptEmail` with the checkout ID.
-   */
+  /** @deprecated Use `sendReceiptEmail(id, { email })`. */
   async sendReceiptEmailLegacy(
-    saleId: string,
-    email: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{
-      success: boolean;
-      message: string;
-    }>('/checkout/receipt/email', { saleId, email });
-    return response;
-  },
-
-  /**
-   * @deprecated Use `getCheckoutReceipt` with the checkout ID.
-   */
-  async printReceipt(
-    saleId: string,
-  ): Promise<{ printUrl: string; receiptData: Sale }> {
-    const response = await api.get<{
-      printUrl: string;
-      receiptData: Sale;
-    }>(`/checkout/receipt/print/${saleId}`);
-    return response;
-  },
-
-  /**
-   * @deprecated Use `getCheckoutReceipt` with the checkout ID.
-   */
-  async getReceiptPdf(saleId: string): Promise<Blob> {
-    const response = await api.download(
-      `/checkout/receipt/pdf/${saleId}`,
+    _saleId: string,
+    _email: string,
+  ): Promise<never> {
+    return notImplemented(
+      'sendReceiptEmailLegacy',
+      'POST /checkout/receipt/email',
     );
-    return response;
   },
 
-  /**
-   * @deprecated Use `sendReceiptEmail` with the checkout ID.
-   */
-  async resendReceiptEmail(
-    saleId: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{
-      success: boolean;
-      message: string;
-    }>('/checkout/receipt/resend', { saleId });
-    return response;
+  /** @deprecated Backend has no `GET /checkout/receipt/print/:id`. */
+  async printReceipt(_saleId: string): Promise<never> {
+    return notImplemented(
+      'printReceipt',
+      'GET /checkout/receipt/print/:saleId',
+    );
   },
 
-  /**
-   * @deprecated Use `cancelCheckout` with the checkout ID.
-   */
+  /** @deprecated Backend has no `GET /checkout/receipt/pdf/:id`. */
+  async getReceiptPdf(_saleId: string): Promise<never> {
+    return notImplemented(
+      'getReceiptPdf',
+      'GET /checkout/receipt/pdf/:saleId',
+    );
+  },
+
+  /** @deprecated Backend has no `POST /checkout/receipt/resend`. */
+  async resendReceiptEmail(_saleId: string): Promise<never> {
+    return notImplemented(
+      'resendReceiptEmail',
+      'POST /checkout/receipt/resend',
+    );
+  },
+
+  /** @deprecated Use `cancelCheckout(id, { reason })`. */
   async cancelCheckoutLegacy(
-    saleId: string,
-    reason?: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await api.post<{
-      success: boolean;
-      message: string;
-    }>(`/checkout/cancel/${saleId}`, { reason });
-    return response;
+    _saleId: string,
+    _reason?: string,
+  ): Promise<never> {
+    return notImplemented(
+      'cancelCheckoutLegacy',
+      'POST /checkout/cancel/:saleId',
+    );
   },
 
-  /**
-   * @deprecated Use `getCheckoutById` or `getCheckoutByReceiptNumber`.
-   */
-  async getCheckoutByCart(cartId: string): Promise<{
-    id: string;
-    status: string;
-    items: any[];
-    total: number;
-    createdAt: string;
-  }> {
-    const response = await api.get<{
-      id: string;
-      status: string;
-      items: any[];
-      total: number;
-      createdAt: string;
-    }>(`/checkout/cart/${cartId}`);
-    return response;
+  /** @deprecated Use `getCheckoutSummaryByCart(cartId)`. */
+  async getCheckoutByCart(_cartId: string): Promise<never> {
+    return notImplemented(
+      'getCheckoutByCart',
+      'GET /checkout/cart/:cartId',
+    );
+  },
+
+  // ============================================
+  // LEGACY / COMPATIBILITY (WORKING)
+  // ============================================
+
+  /** @deprecated Use `getCheckoutReceipt(id)`. */
+  async getReceipt(id: string): Promise<CheckoutReceipt> {
+    return this.getCheckoutReceipt(id);
   },
 };
 
-// Export types for use in other files
+// ============================================
+// MODULE-LEVEL RE-EXPORTS
+// ============================================
+
 export type { Sale };
 export default checkoutService;

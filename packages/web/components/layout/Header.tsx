@@ -873,7 +873,7 @@ export default function Header({
                       Shop
                     </Link>
                     <Link
-                      href="/settings"
+                      href="/admin/settings"
                       prefetch={false}
                       className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                       onClick={() => setIsProfileOpen(false)}

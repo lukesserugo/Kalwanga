@@ -444,7 +444,13 @@ exports.Prisma.RefundScalarFieldEnum = {
   completedAt: 'completedAt',
   updatedAt: 'updatedAt',
   companyId: 'companyId',
-  businessUnitId: 'businessUnitId'
+  businessUnitId: 'businessUnitId',
+  approvedAt: 'approvedAt',
+  approvedBy: 'approvedBy',
+  rejectedAt: 'rejectedAt',
+  rejectedBy: 'rejectedBy',
+  rejectedReason: 'rejectedReason',
+  completedBy: 'completedBy'
 };
 
 exports.Prisma.RefundItemScalarFieldEnum = {
@@ -755,6 +761,11 @@ exports.Prisma.SaleScalarFieldEnum = {
   subtotal: 'subtotal',
   tax: 'tax',
   discount: 'discount',
+  discountType: 'discountType',
+  promotionCode: 'promotionCode',
+  promotionDiscount: 'promotionDiscount',
+  loyaltyPointsUsed: 'loyaltyPointsUsed',
+  loyaltyDiscount: 'loyaltyDiscount',
   total: 'total',
   paidAmount: 'paidAmount',
   changeAmount: 'changeAmount',
@@ -785,6 +796,7 @@ exports.Prisma.SaleItemScalarFieldEnum = {
 
 exports.Prisma.PaymentScalarFieldEnum = {
   id: 'id',
+  idempotencyKey: 'idempotencyKey',
   amount: 'amount',
   currency: 'currency',
   paymentMethod: 'paymentMethod',
@@ -1213,6 +1225,11 @@ exports.Prisma.CartScalarFieldEnum = {
   subtotal: 'subtotal',
   tax: 'tax',
   discount: 'discount',
+  discountType: 'discountType',
+  promotionCode: 'promotionCode',
+  promotionDiscount: 'promotionDiscount',
+  loyaltyPointsUsed: 'loyaltyPointsUsed',
+  loyaltyDiscount: 'loyaltyDiscount',
   total: 'total',
   notes: 'notes',
   status: 'status',
@@ -1594,6 +1611,13 @@ exports.OrderStatus = exports.$Enums.OrderStatus = {
   ON_HOLD: 'ON_HOLD'
 };
 
+exports.DiscountType = exports.$Enums.DiscountType = {
+  PERCENTAGE: 'PERCENTAGE',
+  FIXED: 'FIXED',
+  LOYALTY: 'LOYALTY',
+  MANUAL: 'MANUAL'
+};
+
 exports.SaleStatus = exports.$Enums.SaleStatus = {
   PENDING: 'PENDING',
   PROCESSING: 'PROCESSING',
@@ -1614,7 +1638,12 @@ exports.PaymentMethod = exports.$Enums.PaymentMethod = {
   GIFT_CARD: 'GIFT_CARD',
   LOYALTY_POINTS: 'LOYALTY_POINTS',
   CRYPTO: 'CRYPTO',
-  CHECK: 'CHECK'
+  CHECK: 'CHECK',
+  PAYPAL: 'PAYPAL',
+  FLUTTERWAVE: 'FLUTTERWAVE',
+  SQUARE: 'SQUARE',
+  MTN: 'MTN',
+  AIRTEL: 'AIRTEL'
 };
 
 exports.PaymentStatus = exports.$Enums.PaymentStatus = {
@@ -1838,6 +1867,18 @@ exports.ReportFormat = exports.$Enums.ReportFormat = {
   EXCEL: 'EXCEL',
   JSON: 'JSON',
   HTML: 'HTML'
+};
+
+exports.CartDiscountType = exports.$Enums.CartDiscountType = {
+  PERCENTAGE: 'PERCENTAGE',
+  FIXED: 'FIXED'
+};
+
+exports.CartStatus = exports.$Enums.CartStatus = {
+  ACTIVE: 'ACTIVE',
+  SAVED: 'SAVED',
+  CHECKED_OUT: 'CHECKED_OUT',
+  ABANDONED: 'ABANDONED'
 };
 
 exports.AccountType = exports.$Enums.AccountType = {

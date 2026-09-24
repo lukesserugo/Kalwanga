@@ -14,6 +14,7 @@ import {
   Shield,
   RotateCcw,
   Sparkles,
+  Package,
 } from 'lucide-react';
 import { api } from '../../../services/api';
 import { toast } from '../../../utils/toast-manager';
@@ -21,7 +22,6 @@ import { formatCurrency } from '../../../utils/formatters';
 import {
   cartService,
   type Cart as AuthCart,
-  type CartItem as AuthCartItem,
 } from '../../../services/cartService';
 import {
   guestCartService,
@@ -52,20 +52,17 @@ interface LoyaltyResponse {
 }
 
 /**
- * The page's cart item shape. Structurally a superset of
- * `cartService.CartItem` so the normalized cart is assignable to
- * whatever `<CartSummary>` expects without a cast.
+ * The page's cart shape. Structurally a superset of `cartService.Cart`
+ * — every required field is present, and the extra fields used only by
+ * this page are declared locally.
  *
- * Required fields mirrored from cartService.CartItem:
- *   - id, productId, quantity, unitPrice, total
- *   - product: { id, name, sku, unitPrice, images }
- *   - availableStock, isInStock
- *
- * Optional / nullable fields also mirrored:
- *   - variantId?: string | null
- *   - variant?: { id, name, sku, price, attributes }
- *   - notes?, discount?
+ * NOTE: `CartSummary` and the other cart components consume
+ * `cartService.Cart` from `types/cart.ts`. This page augments it with
+ * a couple of display-only fields (`discount` on the item, nullable
+ * `variantId`, `discount` on the cart). Those extras are declared here
+ * rather than in the shared types to keep the shared types honest.
  */
+
 interface CartItem {
   id: string;
   productId: string;
@@ -91,13 +88,10 @@ interface CartItem {
     name: string;
     sku: string;
     price: number;
-    attributes: any;
+    attributes: Record<string, unknown>;
   } | null;
 }
 
-/**
- * The page's cart shape. Structurally a superset of `cartService.Cart`.
- */
 interface Cart {
   id: string;
   items: CartItem[];
@@ -137,10 +131,9 @@ interface Cart {
 // NORMALIZATION HELPERS
 // ============================================
 //
-// Both services return different shapes for the same logical cart.
-// These widen them into the page's own `Cart` type so the UI never
-// sees the union, and every required field of `cartService.CartItem`
-// and `cartService.Cart` is populated.
+// Both `cartService` and `guestCartService` return slightly different
+// shapes. These widen them into the page's own `Cart` type so the UI
+// never sees a union.
 
 function toImageArray(input: unknown): string[] {
   if (!input) return [];
@@ -181,21 +174,13 @@ function normalizeCartItem(item: any): CartItem {
       ? item.isInStock
       : availableStock > 0;
 
-  // `product.unitPrice` is required by cartService.CartItem. Fall back
-  // to the cart item's own unitPrice when the nested product doesn't
-  // carry one (guest carts omit it).
   const productUnitPrice =
     typeof item.product?.unitPrice === 'number'
       ? item.product.unitPrice
       : unitPrice;
 
-  // `product.images` is required (non-optional) by cartService.CartItem.
-  // Always return an array, even if empty.
   const productImages = toImageArray(item.product?.images);
 
-  // `variant.attributes` and `variant.price` are required by
-  // cartService.CartItem when a variant is present. Fill in safe
-  // defaults.
   const variant =
     item.variant && typeof item.variant === 'object'
       ? {
@@ -232,9 +217,6 @@ function normalizeCartItem(item: any): CartItem {
       unitPrice: productUnitPrice,
       images: productImages,
     },
-    // `variantId` is optional in cartService.CartItem, but the type
-    // accepts `string | null`. Preserve the source's value so callers
-    // can read it if they need to.
     variantId:
       typeof item.variantId === 'string'
         ? item.variantId
@@ -269,9 +251,6 @@ function normalizeCart(
       ? rawStatus
       : 'ACTIVE';
 
-  // `customer.email` and `customer.phoneNumber` are required by
-  // cartService.Cart. Fill in empty strings when the source doesn't
-  // provide them so the type matches.
   const customer =
     anySource.customer && typeof anySource.customer === 'object'
       ? {
@@ -308,13 +287,36 @@ function normalizeCart(
       anySource.discountType === 'FIXED'
         ? anySource.discountType
         : undefined,
-    // `createdAt` and `updatedAt` are required by cartService.Cart.
     createdAt:
       typeof anySource.createdAt === 'string' ? anySource.createdAt : now,
     updatedAt:
       typeof anySource.updatedAt === 'string' ? anySource.updatedAt : now,
   };
 }
+
+/**
+ * The `api` wrapper may or may not unwrap `response.data`. Accept both.
+ */
+function unwrapApiResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response === 'object' && 'data' in (response as any)) {
+    const inner = (response as any).data;
+    if (inner !== undefined && inner !== null) return inner as T;
+  }
+  return response as T;
+}
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+/**
+ * Default free-shipping threshold. Ideally this comes from
+ * `CartSettings.freeShippingThreshold` on the backend — the banner on
+ * this page is a UX cue, not a contract. Fetching settings on every
+ * cart view is expensive, so we use a static fallback.
+ */
+const DEFAULT_FREE_SHIPPING_THRESHOLD = 50;
 
 // ============================================
 // MAIN COMPONENT
@@ -335,7 +337,9 @@ export default function CartPage() {
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  const activeCartService = isAuthenticated ? cartService : guestCartService;
+  const activeCartService = isAuthenticated
+    ? cartService
+    : guestCartService;
 
   // ============================================
   // FETCH CART
@@ -358,23 +362,34 @@ export default function CartPage() {
 
       if (cartData.customerId) {
         setCustomerId(cartData.customerId);
-        try {
-          const response = await api.get<LoyaltyResponse>(
-            `/customers/${cartData.customerId}/loyalty`,
-          );
-          if (response && response.points !== undefined) {
-            setLoyaltyPoints(response.points);
+        // Prefer the loyalty balance from the cart's customer when the
+        // backend includes it; otherwise fall back to a dedicated fetch.
+        const cartLoyalty = (cartData.customer as any)?.loyaltyPoints;
+        if (typeof cartLoyalty === 'number') {
+          setLoyaltyPoints(cartLoyalty);
+        } else {
+          try {
+            const response = await api.get(
+              `/customers/${cartData.customerId}/loyalty`,
+            );
+            const payload = unwrapApiResponse<LoyaltyResponse>(response);
+            if (payload && typeof payload.points === 'number') {
+              setLoyaltyPoints(payload.points);
+            }
+          } catch (err) {
+            console.warn('Failed to fetch loyalty points:', err);
           }
-        } catch (error) {
-          console.warn('Failed to fetch loyalty points:', error);
         }
+      } else {
+        setCustomerId(undefined);
+        setLoyaltyPoints(0);
       }
-    } catch (error: any) {
-      console.error('❌ Failed to fetch cart:', error);
-      if (error?.response?.status === 401 && isAuthenticated) {
+    } catch (err: any) {
+      console.error('❌ Failed to fetch cart:', err);
+      if (err?.response?.status === 401 && isAuthenticated) {
         router.push('/login?redirect_url=/cart');
       } else {
-        setError(error?.message || 'Failed to load cart');
+        setError(err?.message || 'Failed to load cart');
         toast.error('Failed to load cart');
       }
     } finally {
@@ -394,12 +409,12 @@ export default function CartPage() {
       try {
         const raw = isAuthenticated
           ? await cartService.updateItemQuantity(itemId, quantity)
-          : await guestCartService.updateItem(itemId, quantity);
+          : await guestCartService.updateItemQuantity(itemId, quantity);
         const updated = normalizeCart(raw);
         setCart(updated);
-      } catch (error: any) {
-        console.error('❌ Failed to update quantity:', error);
-        toast.error(error?.message || 'Failed to update quantity');
+      } catch (err: any) {
+        console.error('❌ Failed to update quantity:', err);
+        toast.error(err?.message || 'Failed to update quantity');
         await fetchCart();
       } finally {
         setUpdating(null);
@@ -416,9 +431,9 @@ export default function CartPage() {
         const updated = normalizeCart(raw);
         setCart(updated);
         toast.success('Item removed from cart');
-      } catch (error: any) {
-        console.error('❌ Failed to remove item:', error);
-        toast.error(error?.message || 'Failed to remove item');
+      } catch (err: any) {
+        console.error('❌ Failed to remove item:', err);
+        toast.error(err?.message || 'Failed to remove item');
         await fetchCart();
       } finally {
         setUpdating(null);
@@ -450,9 +465,9 @@ export default function CartPage() {
         await fetchCart();
       }
       toast.success('Cart cleared');
-    } catch (error: any) {
-      console.error('❌ Failed to clear cart:', error);
-      toast.error(error?.message || 'Failed to clear cart');
+    } catch (err: any) {
+      console.error('❌ Failed to clear cart:', err);
+      toast.error(err?.message || 'Failed to clear cart');
     } finally {
       setClearing(false);
     }
@@ -470,12 +485,14 @@ export default function CartPage() {
       if (result.valid) {
         toast.success('Cart is in sync with inventory');
       } else {
-        toast.warning(`Inventory issues: ${result.issues.join(', ')}`);
+        toast.warning(
+          `Inventory issues: ${result.issues.join(', ')}`,
+        );
       }
       await fetchCart();
-    } catch (error: any) {
-      console.error('❌ Failed to sync cart:', error);
-      toast.error(error?.message || 'Failed to sync cart');
+    } catch (err: any) {
+      console.error('❌ Failed to sync cart:', err);
+      toast.error(err?.message || 'Failed to sync cart');
     } finally {
       setSyncing(false);
     }
@@ -493,47 +510,44 @@ export default function CartPage() {
       const updated = normalizeCart(raw);
       setCart(updated);
       toast.success('Cart saved for later');
-    } catch (error: any) {
-      console.error('❌ Failed to save cart:', error);
-      toast.error(error?.message || 'Failed to save cart');
+    } catch (err: any) {
+      console.error('❌ Failed to save cart:', err);
+      toast.error(err?.message || 'Failed to save cart');
     } finally {
       setSaving(false);
     }
   }, [isAuthenticated]);
 
-  const applyDiscount = useCallback(
-    async (code: string) => {
+  /**
+   * Apply a numeric discount. The caller must know whether the value
+   * is a percentage or a fixed amount — this replaces the previous
+   * `parseFloat(code)` heuristic that misclassified promo codes like
+   * `"1234"` as fixed discounts.
+   */
+  const applyDiscountValue = useCallback(
+    async (value: number, type: 'PERCENTAGE' | 'FIXED') => {
       if (!isAuthenticated) {
         toast.info('Sign in to apply a discount');
         throw new Error('Authentication required');
       }
 
       try {
-        const discountValue = parseFloat(code);
-        if (!isNaN(discountValue) && discountValue > 0) {
-          const raw = await cartService.applyDiscount(
-            discountValue,
-            'FIXED',
-          );
-          const updated = normalizeCart(raw);
-          setCart(updated);
-          toast.success('Discount applied successfully');
-        } else {
-          const raw = await cartService.applyPromotion(code);
-          const updated = normalizeCart(raw);
-          setCart(updated);
-          toast.success('Promotion applied successfully');
-        }
-      } catch (error: any) {
-        console.error('❌ Failed to apply discount:', error);
-        toast.error(error?.message || 'Failed to apply discount');
-        throw error;
+        const raw = await cartService.applyDiscount(value, type);
+        const updated = normalizeCart(raw);
+        setCart(updated);
+      } catch (err: any) {
+        console.error('❌ Failed to apply discount:', err);
+        toast.error(err?.message || 'Failed to apply discount');
+        throw err;
       }
     },
     [isAuthenticated],
   );
 
-  const applyPromotion = useCallback(
+  /**
+   * Apply a promotion by code. The backend resolves the code.
+   */
+  const applyPromotionCode = useCallback(
     async (code: string) => {
       if (!isAuthenticated) {
         toast.info('Sign in to apply a promotion');
@@ -544,11 +558,10 @@ export default function CartPage() {
         const raw = await cartService.applyPromotion(code);
         const updated = normalizeCart(raw);
         setCart(updated);
-        toast.success('Promotion applied successfully');
-      } catch (error: any) {
-        console.error('❌ Failed to apply promotion:', error);
-        toast.error(error?.message || 'Failed to apply promotion');
-        throw error;
+      } catch (err: any) {
+        console.error('❌ Failed to apply promotion:', err);
+        toast.error(err?.message || 'Failed to apply promotion');
+        throw err;
       }
     },
     [isAuthenticated],
@@ -571,46 +584,54 @@ export default function CartPage() {
         );
         const updated = normalizeCart(raw);
         setCart(updated);
-        setLoyaltyPoints((prev) => prev - points);
+
+        // Prefer the authoritative balance from the cart payload; fall
+        // back to an optimistic decrement only when it's absent.
+        const serverBalance = (updated?.customer as any)?.loyaltyPoints;
+        if (typeof serverBalance === 'number') {
+          setLoyaltyPoints(serverBalance);
+        } else {
+          setLoyaltyPoints((prev) => Math.max(0, prev - points));
+        }
+
         toast.success(`${points} loyalty points applied`);
-      } catch (error: any) {
-        console.error('❌ Failed to apply loyalty points:', error);
-        toast.error(
-          error?.message || 'Failed to apply loyalty points',
-        );
-        throw error;
+      } catch (err: any) {
+        console.error('❌ Failed to apply loyalty points:', err);
+        toast.error(err?.message || 'Failed to apply loyalty points');
+        throw err;
       }
     },
     [customerId, isAuthenticated],
   );
 
   const associateCustomer = useCallback(
-    async (customerId: string) => {
+    async (newCustomerId: string) => {
       if (!isAuthenticated) {
         toast.info('Sign in to associate a customer');
         return;
       }
 
       try {
-        const raw = await cartService.associateCustomer(customerId);
+        const raw = await cartService.associateCustomer(newCustomerId);
         const updated = normalizeCart(raw);
         setCart(updated);
-        setCustomerId(customerId);
-        toast.success('Customer associated with cart');
+        setCustomerId(newCustomerId);
+
         try {
-          const response = await api.get<LoyaltyResponse>(
-            `/customers/${customerId}/loyalty`,
+          const response = await api.get(
+            `/customers/${newCustomerId}/loyalty`,
           );
-          if (response && response.points !== undefined) {
-            setLoyaltyPoints(response.points);
+          const payload = unwrapApiResponse<LoyaltyResponse>(response);
+          if (payload && typeof payload.points === 'number') {
+            setLoyaltyPoints(payload.points);
           }
-        } catch (error) {
-          console.warn('Failed to fetch loyalty points:', error);
+        } catch (err) {
+          console.warn('Failed to fetch loyalty points:', err);
         }
-      } catch (error: any) {
-        console.error('❌ Failed to associate customer:', error);
-        toast.error(error?.message || 'Failed to associate customer');
-        throw error;
+      } catch (err: any) {
+        console.error('❌ Failed to associate customer:', err);
+        toast.error(err?.message || 'Failed to associate customer');
+        throw err;
       }
     },
     [isAuthenticated],
@@ -619,9 +640,7 @@ export default function CartPage() {
   const updateCartNotes = useCallback(
     async (notes: string) => {
       if (!isAuthenticated) {
-        setCart((prev) =>
-          prev ? { ...prev, notes } : prev,
-        );
+        setCart((prev) => (prev ? { ...prev, notes } : prev));
         return;
       }
 
@@ -629,10 +648,10 @@ export default function CartPage() {
         const raw = await cartService.updateCartNotes(notes);
         const updated = normalizeCart(raw);
         setCart(updated);
-      } catch (error: any) {
-        console.error('❌ Failed to update notes:', error);
-        toast.error(error?.message || 'Failed to update notes');
-        throw error;
+      } catch (err: any) {
+        console.error('❌ Failed to update notes:', err);
+        toast.error(err?.message || 'Failed to update notes');
+        throw err;
       }
     },
     [isAuthenticated],
@@ -659,7 +678,7 @@ export default function CartPage() {
   // ============================================
 
   useEffect(() => {
-    fetchCart();
+    void fetchCart();
   }, [fetchCart]);
 
   // ============================================
@@ -669,9 +688,9 @@ export default function CartPage() {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       ACTIVE:
-        'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
       SAVED:
-        'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+        'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
       CHECKED_OUT:
         'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
       ABANDONED:
@@ -738,6 +757,16 @@ export default function CartPage() {
     0,
   );
 
+  const shippingThreshold = DEFAULT_FREE_SHIPPING_THRESHOLD;
+  const amountToFreeShipping = Math.max(
+    0,
+    shippingThreshold - cart.subtotal,
+  );
+  const freeShippingProgress = Math.min(
+    (cart.subtotal / shippingThreshold) * 100,
+    100,
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-24 md:pt-28 pb-8 sm:pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -747,7 +776,7 @@ export default function CartPage() {
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
               <ShoppingCart className="w-7 h-7 sm:w-8 sm:h-8 text-orange-500" />
               Your Cart
-              <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+              <span className="text-sm font-normal text-gray-500 dark:text-gray-400 tabular-nums">
                 ({itemCount} {itemCount === 1 ? 'item' : 'items'})
               </span>
             </h1>
@@ -780,11 +809,12 @@ export default function CartPage() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => {
-                fetchCart();
+                void fetchCart();
                 toast.success('Cart refreshed');
               }}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Refresh cart"
             >
               <RefreshCw className="w-4 h-4" />
@@ -812,8 +842,9 @@ export default function CartPage() {
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setError(null)}
-              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1"
+              className="text-red-600 hover:text-red-800 dark:text-red-400 p-1 focus-ring rounded"
               aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
@@ -837,11 +868,12 @@ export default function CartPage() {
                         <img
                           src={item.product.images[0]}
                           alt={item.product.name}
+                          loading="lazy"
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-                          No image
+                        <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          <Package className="w-6 h-6" />
                         </div>
                       )}
                     </div>
@@ -858,27 +890,30 @@ export default function CartPage() {
                           Variant: {item.variant.name}
                         </p>
                       )}
-                      <p className="text-sm font-medium text-orange-600 dark:text-orange-400">
+                      <p className="text-sm font-medium text-orange-600 dark:text-orange-400 tabular-nums">
                         {formatCurrency(item.unitPrice)}
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() =>
                           updateQuantity(item.id, item.quantity - 1)
                         }
                         disabled={
                           updating === item.id || item.quantity <= 1
                         }
-                        className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
+                        aria-label="Decrease quantity"
                       >
                         -
                       </button>
-                      <span className="w-8 text-center text-gray-900 dark:text-white">
+                      <span className="w-8 text-center text-gray-900 dark:text-white tabular-nums">
                         {updating === item.id ? '...' : item.quantity}
                       </span>
                       <button
+                        type="button"
                         onClick={() =>
                           updateQuantity(item.id, item.quantity + 1)
                         }
@@ -887,20 +922,22 @@ export default function CartPage() {
                           (item.availableStock > 0 &&
                             item.quantity >= item.availableStock)
                         }
-                        className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="w-8 h-8 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-ring"
+                        aria-label="Increase quantity"
                       >
                         +
                       </button>
                     </div>
 
                     <div className="text-right min-w-[80px]">
-                      <p className="font-medium text-gray-900 dark:text-white">
+                      <p className="font-medium text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(item.total)}
                       </p>
                       <button
+                        type="button"
                         onClick={() => removeItem(item.id)}
                         disabled={updating === item.id}
-                        className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs transition-colors"
+                        className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-xs transition-colors focus-ring rounded"
                       >
                         Remove
                       </button>
@@ -910,8 +947,8 @@ export default function CartPage() {
               </div>
             </div>
 
-            {/* Cart Extras — hidden for guests when the feature
-                requires an authenticated customer. */}
+            {/* Cart Extras — the individual components return null for
+                guests, so this outer gate is cosmetic. */}
             {isAuthenticated && (
               <div className="space-y-4">
                 <CartCustomerSelector
@@ -928,7 +965,7 @@ export default function CartPage() {
                   <CartLoyaltyPoints
                     customerId={customerId}
                     onPointsApplied={() => {
-                      fetchCart();
+                      void fetchCart();
                     }}
                     disabled={loading}
                   />
@@ -938,12 +975,16 @@ export default function CartPage() {
 
             <div className="space-y-4">
               <CartDiscountInput
-                onDiscountApplied={() => fetchCart()}
+                onDiscountApplied={() => {
+                  void fetchCart();
+                }}
                 disabled={loading}
               />
 
               <CartPromotionInput
-                onPromotionApplied={() => fetchCart()}
+                onPromotionApplied={() => {
+                  void fetchCart();
+                }}
                 disabled={loading}
               />
 
@@ -958,14 +999,15 @@ export default function CartPage() {
           {/* Cart Summary */}
           <div className="lg:col-span-1">
             <CartSummary
-              cart={cart}
-              onApplyDiscount={applyDiscount}
-              onApplyPromotion={applyPromotion}
+              cart={cart as any}
+              onApplyDiscountValue={applyDiscountValue}
+              onApplyPromotion={applyPromotionCode}
               onApplyLoyalty={applyLoyaltyPoints}
               onCheckout={proceedToCheckout}
               loading={loading}
               customerId={customerId}
               loyaltyPoints={loyaltyPoints}
+              isAuthenticated={isAuthenticated}
             />
           </div>
         </div>
@@ -975,20 +1017,20 @@ export default function CartPage() {
           <div className="flex items-center justify-between text-sm flex-wrap gap-2">
             <span className="text-orange-700 dark:text-orange-300 flex items-center gap-2">
               <Truck className="w-5 h-5" />
-              Free shipping on orders over $50
+              Free shipping on orders over{' '}
+              {formatCurrency(shippingThreshold)}
             </span>
-            <span className="font-medium text-orange-700 dark:text-orange-300">
-              ${Math.max(0, 50 - cart.subtotal).toFixed(2)} away
+            <span className="font-medium text-orange-700 dark:text-orange-300 tabular-nums">
+              {amountToFreeShipping > 0
+                ? `${formatCurrency(amountToFreeShipping)} away`
+                : 'Free shipping unlocked'}
             </span>
           </div>
           <div className="mt-2 w-full bg-orange-200 dark:bg-orange-800 rounded-full h-2">
             <div
               className="bg-gradient-to-r from-orange-500 to-red-500 h-2 rounded-full transition-all duration-500"
               style={{
-                width: `${Math.min(
-                  (cart.subtotal / 50) * 100,
-                  100,
-                )}%`,
+                width: `${freeShippingProgress}%`,
               }}
             />
           </div>

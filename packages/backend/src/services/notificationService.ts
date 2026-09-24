@@ -4,16 +4,6 @@ import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { EventEmitter } from 'events';
 
-// ============================================
-// PRISMA ENUMS — canonical source of truth
-// ============================================
-//
-// We import the generated enums so every string written to the
-// database is validated by TypeScript at compile time and by Postgres
-// at runtime. The local string unions below are kept for the public
-// API surface, but they're now derived from the Prisma enums so they
-// can never drift.
-
 import {
   NotificationType as PrismaNotificationType,
   NotificationPriority as PrismaNotificationPriority,

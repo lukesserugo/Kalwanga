@@ -1,6 +1,8 @@
+// D:\Projects\Kalwanga\packages\web\app\(public)\payment\page.tsx
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -29,7 +31,23 @@ import { PaymentMethodSelector } from '../../../components/payments/PaymentMetho
 import { PaymentForm } from '../../../components/payments/PaymentForm';
 
 // ============================================
-// CONSTANTS - PROVIDER IMAGE URLs
+// HELPERS
+// ============================================
+
+/**
+ * Extract the provider list from whatever shape
+ * `getPaymentProviders()` returns.
+ */
+function extractProviderList(response: any): any[] {
+  if (Array.isArray(response)) return response;
+  if (response && typeof response === 'object') {
+    if (Array.isArray(response.data)) return response.data;
+  }
+  return [];
+}
+
+// ============================================
+// CONSTANTS
 // ============================================
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
@@ -106,52 +124,63 @@ export default function PaymentPage() {
   const { isDark } = useThemeStore();
   const { user, isAuthenticated } = useAuth();
 
-  // URL params
+  // URL params — captured once so the loader doesn't re-run when
+  // `searchParams` identity changes (it doesn't on Next 14, but
+  // this makes the intent explicit).
   const amountParam = searchParams.get('amount');
   const orderIdParam = searchParams.get('orderId');
   const saleIdParam = searchParams.get('saleId');
   const cartIdParam = searchParams.get('cartId');
+  const businessUnitIdParam = searchParams.get('businessUnitId');
 
   // State
   const [loading, setLoading] = useState(true);
   const [paymentData, setPaymentData] = useState<any>(null);
   const [selectedMethod, setSelectedMethod] = useState('CREDIT_CARD');
-  const [selectedProvider, setSelectedProvider] = useState<string>('STRIPE');
+  const [selectedProvider, setSelectedProvider] =
+    useState<string>('STRIPE');
   const [paymentResult, setPaymentResult] = useState<any>(null);
-  const [step, setStep] = useState<'select' | 'pay' | 'complete'>('select');
+  const [step, setStep] = useState<'select' | 'pay' | 'complete'>(
+    'select',
+  );
   const [customerLoyaltyPoints, setCustomerLoyaltyPoints] = useState(0);
   const [availableProviders, setAvailableProviders] = useState<any[]>([]);
 
-  // Load payment data
-  useEffect(() => {
-    loadPaymentData();
-    loadAvailableProviders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderIdParam, saleIdParam, cartIdParam]);
+  // When the backend returns AWAIT_STK_PUSH, PaymentForm emits the
+  // sale id so we can poll `getCheckoutById` until the webhook
+  // lands and the sale flips to COMPLETED.
+  const [awaitingSaleId, setAwaitingSaleId] = useState<string | null>(
+    null,
+  );
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
-  const loadPaymentData = async () => {
+  // ── Data loading ─────────────────────────────────────────────
+
+  const loadPaymentData = useCallback(async () => {
     try {
       setLoading(true);
 
-      // If we have a sale or order, fetch its details
       if (saleIdParam) {
         const sale = await checkoutService.getCheckoutById(saleIdParam);
         setPaymentData({
           amount: sale.total,
           reference: sale.receiptNumber,
           customer: sale.customer,
-          items: sale.items,
+          items: (sale as any).items,
           saleId: sale.id,
         });
       } else if (orderIdParam) {
         try {
-          const order = await checkoutService.getCheckoutById(orderIdParam);
+          const order =
+            await checkoutService.getCheckoutById(orderIdParam);
           setPaymentData({
             amount: order.total,
             reference:
               order.receiptNumber || `ORD-${orderIdParam.slice(0, 8)}`,
             customer: order.customer,
-            items: order.items,
+            items: (order as any).items,
             orderId: order.id,
           });
         } catch (error) {
@@ -181,63 +210,121 @@ export default function PaymentPage() {
       } else {
         setPaymentData(null);
       }
-
-      // Get customer loyalty points if authenticated
-      if (isAuthenticated && user) {
-        try {
-          const loyaltyResponse = await fetch(
-            `/api/customers/${user.id}/loyalty`,
-          );
-          if (loyaltyResponse.ok) {
-            const data = await loyaltyResponse.json();
-            setCustomerLoyaltyPoints(data.points || 0);
-          }
-        } catch (error) {
-          console.warn('Failed to fetch loyalty points:', error);
-          setCustomerLoyaltyPoints(0);
-        }
-      }
     } catch (error) {
       console.error('Failed to load payment data:', error);
       toast.error('Failed to load payment details');
     } finally {
       setLoading(false);
     }
-  };
+  }, [saleIdParam, orderIdParam, cartIdParam, amountParam]);
 
-  const loadAvailableProviders = async () => {
+  const loadAvailableProviders = useCallback(async () => {
     try {
       const response = await paymentService.getPaymentProviders();
-      if (response.success && response.data) {
-        const active = response.data.filter(
-          (p) => p.isActive && p.isHealthy && p.configured,
-        );
-        setAvailableProviders(active);
-      }
+      const list = extractProviderList(response);
+      const active = list.filter(
+        (p: any) => p.isActive && p.isHealthy && p.configured,
+      );
+      setAvailableProviders(active);
     } catch (error) {
       console.warn('Failed to load providers:', error);
       setAvailableProviders([]);
     }
-  };
+  }, []);
 
-  const getProviderImageUrl = (providerCode: string): string => {
-    if (!providerCode) return '';
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-      : PROVIDER_IMAGE_URLS[providerCode] || '';
-  };
-
-  const getProviderConfig = (providerCode: string) => {
-    return (
-      PROVIDER_CONFIGS[providerCode] || {
-        icon: '💳',
-        name: providerCode,
-        color: 'gray',
+  const loadCustomerLoyalty = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) {
+      setCustomerLoyaltyPoints(0);
+      return;
+    }
+    // ⚠ The backend does not expose `/customers/:id/loyalty`. The
+    //   correct source is the checkout summary, which includes
+    //   `loyaltyPointsAvailable`. We fetch the summary for the
+    //   current cart when available, otherwise fall back to 0.
+    if (cartIdParam) {
+      try {
+        const summary =
+          await checkoutService.getCheckoutSummaryByCart(cartIdParam);
+        setCustomerLoyaltyPoints(summary.loyaltyPointsAvailable || 0);
+      } catch {
+        setCustomerLoyaltyPoints(0);
       }
-    );
-  };
+    } else {
+      setCustomerLoyaltyPoints(0);
+    }
+  }, [isAuthenticated, user?.id, cartIdParam]);
 
-  const handlePaymentComplete = async (payment: any) => {
+  useEffect(() => {
+    void loadPaymentData();
+    void loadAvailableProviders();
+    void loadCustomerLoyalty();
+  }, [loadPaymentData, loadAvailableProviders, loadCustomerLoyalty]);
+
+  // ── Polling controller ───────────────────────────────────────
+  //
+  // When the backend returns AWAIT_STK_PUSH (M-Pesa) or the
+  // checkout is otherwise pending, we poll the sale until the
+  // webhook flips it to COMPLETED.
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, [stopPolling]);
+
+  const startPollingSale = useCallback(
+    (saleId: string) => {
+      stopPolling();
+      const startTime = Date.now();
+      const MAX_WAIT_MS = 3 * 60 * 1000;
+
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const sale = await checkoutService.getCheckoutById(saleId);
+          if (sale.status === 'COMPLETED') {
+            stopPolling();
+            setPaymentResult((prev: any) => ({
+              ...(prev || {}),
+              status: 'PAID',
+              processedAt: new Date().toISOString(),
+            }));
+            setStep('complete');
+            toast.success('Payment confirmed');
+            return;
+          }
+          if (
+            sale.status === 'CANCELLED' ||
+            sale.status === 'VOIDED' ||
+            sale.status === 'REFUNDED'
+          ) {
+            stopPolling();
+            toast.error('Payment was not completed');
+            return;
+          }
+        } catch (err) {
+          console.warn('Poll error:', err);
+        }
+        if (Date.now() - startTime > MAX_WAIT_MS) {
+          stopPolling();
+          toast.info(
+            'Still processing. You will be notified when complete.',
+          );
+        }
+      }, 2500);
+    },
+    [stopPolling],
+  );
+
+  // ── Handlers ─────────────────────────────────────────────────
+
+  const handlePaymentComplete = useCallback((payment: any) => {
     setPaymentResult(payment);
     setStep('complete');
 
@@ -246,21 +333,29 @@ export default function PaymentPage() {
     );
 
     toast.success('Payment completed successfully');
-  };
+  }, []);
 
-  const handlePaymentError = () => {
+  const handlePaymentError = useCallback(() => {
     toast.error('Payment failed. Please try again.');
-  };
+  }, []);
 
-  const handleContinueShopping = () => {
+  const handleAwaitingConfirmation = useCallback(
+    (saleId: string) => {
+      setAwaitingSaleId(saleId);
+      startPollingSale(saleId);
+    },
+    [startPollingSale],
+  );
+
+  const handleContinueShopping = useCallback(() => {
     router.push('/shop');
-  };
+  }, [router]);
 
-  const handleViewOrders = () => {
+  const handleViewOrders = useCallback(() => {
     router.push('/account/orders');
-  };
+  }, [router]);
 
-  const handleDownloadReceipt = () => {
+  const handleDownloadReceipt = useCallback(() => {
     if (!paymentResult) return;
 
     const receiptData = {
@@ -278,18 +373,67 @@ export default function PaymentPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `receipt-${paymentResult.reference}.json`;
+    link.download = `receipt-${paymentResult.reference || 'payment'}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
     toast.success('Receipt downloaded');
-  };
+  }, [paymentResult]);
 
-  // ============================================
-  // RENDER — loading
-  // ============================================
+  const getProviderImageUrl = useCallback(
+    (providerCode: string): string => {
+      if (!providerCode) return '';
+      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
+        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
+        : PROVIDER_IMAGE_URLS[providerCode] || '';
+    },
+    [isDark],
+  );
+
+  const getProviderConfig = useCallback((providerCode: string) => {
+    return (
+      PROVIDER_CONFIGS[providerCode] || {
+        icon: '💳',
+        name: providerCode,
+        color: 'gray',
+      }
+    );
+  }, []);
+
+  // ── Derived ──────────────────────────────────────────────────
+  //
+  // The `cartId` and `saleId` we forward to PaymentForm. If both
+  // are present, `cartId` wins because the online checkout flow
+  // creates a fresh Sale and links everything server-side.
+
+  const paymentFormLinkage = useMemo(() => {
+    if (paymentData?.cartId) {
+      return {
+        cartId: paymentData.cartId,
+        saleId: undefined as string | undefined,
+      };
+    }
+    if (paymentData?.saleId) {
+      return {
+        cartId: undefined as string | undefined,
+        saleId: paymentData.saleId,
+      };
+    }
+    if (paymentData?.orderId) {
+      return {
+        cartId: undefined as string | undefined,
+        saleId: paymentData.orderId,
+      };
+    }
+    return {
+      cartId: undefined as string | undefined,
+      saleId: undefined as string | undefined,
+    };
+  }, [paymentData]);
+
+  // ── Render — loading ─────────────────────────────────────────
 
   if (loading) {
     return (
@@ -314,9 +458,7 @@ export default function PaymentPage() {
     );
   }
 
-  // ============================================
-  // RENDER — no payment data
-  // ============================================
+  // ── Render — no payment data ─────────────────────────────────
 
   if (!paymentData) {
     return (
@@ -361,9 +503,7 @@ export default function PaymentPage() {
     );
   }
 
-  // ============================================
-  // RENDER — main
-  // ============================================
+  // ── Render — main ────────────────────────────────────────────
 
   return (
     <div
@@ -380,6 +520,7 @@ export default function PaymentPage() {
               className={`p-2 rounded-lg transition ${
                 isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
               }`}
+              aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -454,7 +595,9 @@ export default function PaymentPage() {
             <div
               className={`rounded-xl p-6 shadow-sm ${
                 isDark ? 'bg-gray-800' : 'bg-white'
-              } border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}
+              } border ${
+                isDark ? 'border-gray-700' : 'border-gray-200'
+              }`}
             >
               {/* Payment Method Selector */}
               {step === 'select' && (
@@ -487,7 +630,9 @@ export default function PaymentPage() {
                           );
                           return (
                             <span
-                              key={provider.id}
+                              key={
+                                provider.id ?? provider.provider
+                              }
                               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600"
                             >
                               {imageUrl ? (
@@ -580,8 +725,12 @@ export default function PaymentPage() {
                       <div className="relative w-10 h-10 flex-shrink-0">
                         {getProviderImageUrl(selectedProvider) ? (
                           <Image
-                            src={getProviderImageUrl(selectedProvider)}
-                            alt={getProviderConfig(selectedProvider).name}
+                            src={getProviderImageUrl(
+                              selectedProvider,
+                            )}
+                            alt={
+                              getProviderConfig(selectedProvider).name
+                            }
                             width={40}
                             height={40}
                             className="rounded object-contain"
@@ -620,12 +769,56 @@ export default function PaymentPage() {
                     amount={paymentData.amount}
                     currency="USD"
                     paymentMethod={selectedMethod}
+                    provider={selectedProvider}
                     customerId={user?.id}
                     customerLoyaltyPoints={customerLoyaltyPoints}
+                    // Forward the linkage so the form actually
+                    // charges the gateway instead of writing a
+                    // bookkeeping row.
+                    saleId={paymentFormLinkage.saleId}
+                    cartId={paymentFormLinkage.cartId}
+                    businessUnitId={businessUnitIdParam || undefined}
+                    returnUrl={
+                      typeof window !== 'undefined'
+                        ? `${window.location.origin}/payment?${new URLSearchParams(
+                            Object.fromEntries(
+                              Object.entries({
+                                saleId: saleIdParam || '',
+                                orderId: orderIdParam || '',
+                                cartId: cartIdParam || '',
+                              }).filter(([, v]) => v),
+                            ),
+                          ).toString()}`
+                        : undefined
+                    }
+                    cancelUrl={
+                      typeof window !== 'undefined'
+                        ? `${window.location.origin}/payment`
+                        : undefined
+                    }
                     onSuccess={handlePaymentComplete}
                     onError={handlePaymentError}
                     onCancel={() => setStep('select')}
+                    onAwaitingConfirmation={handleAwaitingConfirmation}
                   />
+
+                  {/* Awaiting confirmation banner — shown while the
+                      M-Pesa STK push is pending or a webhook is
+                      still landing. */}
+                  {awaitingSaleId && step === 'pay' && (
+                    <div className="mt-4 p-3 rounded-lg bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 flex items-start gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-warning-600 dark:text-warning-400 mt-0.5 flex-shrink-0" />
+                      <div className="text-sm text-warning-700 dark:text-warning-300">
+                        <p className="font-medium">
+                          Waiting for confirmation
+                        </p>
+                        <p>
+                          Check your phone to authorize the payment.
+                          This page will update automatically.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -655,7 +848,9 @@ export default function PaymentPage() {
                         isDark ? 'text-white' : 'text-gray-900'
                       }`}
                     >
-                      {formatCurrency(paymentResult.amount)}
+                      {formatCurrency(
+                        paymentResult.amount ?? paymentData.amount,
+                      )}
                     </p>
                     {paymentResult.provider && (
                       <div className="mt-2 flex items-center gap-2">
@@ -747,7 +942,9 @@ export default function PaymentPage() {
             <div
               className={`sticky top-24 rounded-xl p-6 shadow-sm ${
                 isDark ? 'bg-gray-800' : 'bg-white'
-              } border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}
+              } border ${
+                isDark ? 'border-gray-700' : 'border-gray-200'
+              }`}
             >
               <h3
                 className={`text-lg font-semibold mb-4 ${
@@ -767,7 +964,7 @@ export default function PaymentPage() {
                     Reference
                   </span>
                   <span
-                    className={`text-sm font-medium ${
+                    className={`text-sm font-medium tabular-nums ${
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
@@ -784,7 +981,7 @@ export default function PaymentPage() {
                     Amount
                   </span>
                   <span
-                    className={`text-lg font-bold ${
+                    className={`text-lg font-bold tabular-nums ${
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
@@ -792,51 +989,55 @@ export default function PaymentPage() {
                   </span>
                 </div>
 
-                {paymentData.items && paymentData.items.length > 0 && (
-                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-                    <p
-                      className={`text-sm font-medium mb-2 ${
-                        isDark ? 'text-gray-300' : 'text-gray-700'
-                      }`}
-                    >
-                      Items ({paymentData.items.length})
-                    </p>
-                    <div className="space-y-2 max-h-32 overflow-y-auto">
-                      {paymentData.items.map(
-                        (item: any, index: number) => (
-                          <div
-                            key={index}
-                            className="flex justify-between text-sm"
-                          >
-                            <span
-                              className={
-                                isDark
-                                  ? 'text-gray-300'
-                                  : 'text-gray-600'
-                              }
+                {paymentData.items &&
+                  paymentData.items.length > 0 && (
+                    <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <p
+                        className={`text-sm font-medium mb-2 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
+                        Items ({paymentData.items.length})
+                      </p>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {paymentData.items.map(
+                          (item: any, index: number) => (
+                            <div
+                              key={index}
+                              className="flex justify-between text-sm"
                             >
-                              {item.product?.name ||
-                                item.productName ||
-                                `Item ${index + 1}`}
-                              {item.quantity && ` × ${item.quantity}`}
-                            </span>
-                            <span
-                              className={
-                                isDark ? 'text-white' : 'text-gray-900'
-                              }
-                            >
-                              {formatCurrency(
-                                item.total ||
-                                  item.unitPrice * item.quantity ||
-                                  0,
-                              )}
-                            </span>
-                          </div>
-                        ),
-                      )}
+                              <span
+                                className={
+                                  isDark
+                                    ? 'text-gray-300'
+                                    : 'text-gray-600'
+                                }
+                              >
+                                {item.product?.name ||
+                                  item.productName ||
+                                  `Item ${index + 1}`}
+                                {item.quantity &&
+                                  ` × ${item.quantity}`}
+                              </span>
+                              <span
+                                className={`tabular-nums ${
+                                  isDark
+                                    ? 'text-white'
+                                    : 'text-gray-900'
+                                }`}
+                              >
+                                {formatCurrency(
+                                  item.total ||
+                                    item.unitPrice * item.quantity ||
+                                    0,
+                                )}
+                              </span>
+                            </div>
+                          ),
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {customerLoyaltyPoints > 0 && (
                   <div className="pt-3 border-t border-gray-200 dark:border-gray-700">

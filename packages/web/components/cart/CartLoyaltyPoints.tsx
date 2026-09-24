@@ -28,8 +28,20 @@ interface LoyaltyResponse {
   totalEarned?: number;
 }
 
+/**
+ * Mirrors the backend conversion in `CartService.applyLoyaltyPoints`:
+ *   1 point = $0.10  →  10 points per $1.
+ */
 const POINTS_PER_CURRENCY_UNIT = 10;
-const MAX_REDEMPTION_RATIO = 0.5;
+
+function unwrapApiResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response === 'object' && 'data' in (response as any)) {
+    const inner = (response as any).data;
+    if (inner && typeof inner === 'object') return inner as T;
+  }
+  return response as T;
+}
 
 export function CartLoyaltyPoints({
   customerId,
@@ -51,13 +63,8 @@ export function CartLoyaltyPoints({
 
     try {
       setIsFetching(true);
-      const response = await api.get<LoyaltyResponse>(
-        `/customers/${customerId}/loyalty`,
-      );
-      const payload =
-        response && typeof response === 'object' && 'points' in response
-          ? (response as LoyaltyResponse)
-          : (response as unknown as { data: LoyaltyResponse })?.data;
+      const response = await api.get(`/customers/${customerId}/loyalty`);
+      const payload = unwrapApiResponse<LoyaltyResponse>(response);
 
       if (payload && typeof payload.points === 'number') {
         setAvailablePoints(payload.points);
@@ -91,7 +98,7 @@ export function CartLoyaltyPoints({
       }
 
       const pointsToRedeem = parseInt(pointsInput, 10);
-      if (isNaN(pointsToRedeem) || pointsToRedeem <= 0) {
+      if (!Number.isFinite(pointsToRedeem) || pointsToRedeem <= 0) {
         setError('Please enter valid points to redeem');
         return;
       }
@@ -137,7 +144,7 @@ export function CartLoyaltyPoints({
 
   const estimatedDiscount = useMemo(() => {
     const value = parseInt(pointsInput, 10);
-    if (isNaN(value) || value <= 0) return 0;
+    if (!Number.isFinite(value) || value <= 0) return 0;
     return value / POINTS_PER_CURRENCY_UNIT;
   }, [pointsInput]);
 
@@ -219,10 +226,7 @@ export function CartLoyaltyPoints({
             <button
               type="submit"
               disabled={
-                disabled ||
-                isLoading ||
-                !pointsInput ||
-                isFetching
+                disabled || isLoading || !pointsInput || isFetching
               }
               className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[100px] shadow-soft focus-ring"
             >

@@ -104,7 +104,11 @@ router.post('/associate', barcodeController.associateBarcode);
 // BARCODE SCAN ROUTES
 // ============================================
 
-// Scan barcode and get product info
+// Scan barcode and get product info (read-only lookup)
 router.post('/scan', barcodeController.scanBarcode);
+
+// Record a scanner-driven scan (write path — decrements inventory,
+// writes an InventoryTransaction row, respects scanIdempotencyKey)
+router.post('/record-scan', barcodeController.recordScan);
 
 export default router;

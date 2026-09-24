@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { cartService, Cart } from '../../services/cartService';
+import { cartService, type Cart } from '../../services/cartService';
 import { guestCartService } from '../../services/guestCartService';
 import { toast } from '../../utils/toast-manager';
 
@@ -36,15 +36,23 @@ export function CartPage({ className = '' }: CartPageProps) {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState<string | undefined>(
-    undefined,
-  );
-  const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0);
 
   const activeCartService = useMemo(
     () => (isAuthenticated ? cartService : guestCartService),
     [isAuthenticated],
   );
+
+  /**
+   * Loyalty point balance.
+   *
+   * We prefer the value the cart itself carries (via its associated
+   * customer). Only when the cart does not carry it do we fall back to
+   * a locally-tracked value from the last redemption response.
+   */
+  const [localLoyaltyPoints, setLocalLoyaltyPoints] = useState(0);
+  const customerId = cart?.customerId;
+  const loyaltyPoints =
+    (cart as any)?.customer?.loyaltyPoints ?? localLoyaltyPoints;
 
   const fetchCart = useCallback(async () => {
     try {
@@ -54,11 +62,8 @@ export function CartPage({ className = '' }: CartPageProps) {
       const cartData = await activeCartService.getCart();
       setCart(cartData);
 
-      if (cartData.customerId) {
-        setCustomerId(cartData.customerId);
-      } else {
-        setCustomerId(undefined);
-        setLoyaltyPoints(0);
+      if (!cartData.customerId) {
+        setLocalLoyaltyPoints(0);
       }
     } catch (error: any) {
       console.error('❌ Failed to fetch cart:', error);
@@ -99,8 +104,7 @@ export function CartPage({ className = '' }: CartPageProps) {
     async (itemId: string) => {
       setUpdating(itemId);
       try {
-        const updatedCart =
-          await activeCartService.removeItem(itemId);
+        const updatedCart = await activeCartService.removeItem(itemId);
         setCart(updatedCart);
         toast.success('Item removed from cart');
         window.dispatchEvent(new CustomEvent('cart:updated'));
@@ -126,6 +130,7 @@ export function CartPage({ className = '' }: CartPageProps) {
     try {
       const updatedCart = await activeCartService.clearCart();
       setCart(updatedCart);
+      setLocalLoyaltyPoints(0);
       toast.success('Cart cleared');
       window.dispatchEvent(new CustomEvent('cart:updated'));
     } catch (error: any) {
@@ -134,21 +139,19 @@ export function CartPage({ className = '' }: CartPageProps) {
     }
   }, [activeCartService]);
 
-  const applyDiscount = useCallback(
-    async (code: string) => {
+  /**
+   * Apply a numeric discount. `type` is required — the caller must know
+   * whether they hold a percentage or a fixed value. This replaces the
+   * previous heuristic that guessed from `parseFloat(code)`.
+   */
+  const applyDiscountValue = useCallback(
+    async (value: number, type: 'PERCENTAGE' | 'FIXED') => {
       try {
-        const discountValue = parseFloat(code);
-        if (!isNaN(discountValue) && discountValue > 0) {
-          const updatedCart = await activeCartService.applyDiscount(
-            discountValue,
-            'FIXED',
-          );
-          setCart(updatedCart);
-        } else {
-          const updatedCart =
-            await activeCartService.applyPromotion(code);
-          setCart(updatedCart);
-        }
+        const updatedCart = await activeCartService.applyDiscount(
+          value,
+          type,
+        );
+        setCart(updatedCart);
       } catch (error: any) {
         console.error('❌ Failed to apply discount:', error);
         throw error;
@@ -157,6 +160,9 @@ export function CartPage({ className = '' }: CartPageProps) {
     [activeCartService],
   );
 
+  /**
+   * Apply a promotion by code. The backend resolves the code server-side.
+   */
   const applyPromotion = useCallback(
     async (code: string) => {
       try {
@@ -186,7 +192,12 @@ export function CartPage({ className = '' }: CartPageProps) {
           points,
         );
         setCart(updatedCart);
-        setLoyaltyPoints((prev) => Math.max(0, prev - points));
+        // Keep a local mirror in case the cart payload doesn't carry
+        // the updated customer balance.
+        const serverBalance = (updatedCart as any)?.customer?.loyaltyPoints;
+        if (typeof serverBalance !== 'number') {
+          setLocalLoyaltyPoints((prev) => Math.max(0, prev - points));
+        }
       } catch (error: any) {
         console.error('❌ Failed to apply loyalty points:', error);
         throw error;
@@ -340,7 +351,7 @@ export function CartPage({ className = '' }: CartPageProps) {
           <div className="lg:col-span-1">
             <CartSummary
               cart={cart}
-              onApplyDiscount={applyDiscount}
+              onApplyDiscountValue={applyDiscountValue}
               onApplyPromotion={applyPromotion}
               onApplyLoyalty={applyLoyaltyPoints}
               onCheckout={proceedToCheckout}

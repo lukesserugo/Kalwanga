@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { CheckoutService } from '../services/checkoutService.js';
 import { CartService } from '../services/cartService.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../lib/logger.js';
 import { z } from 'zod';
 
 const checkoutService = new CheckoutService();
@@ -13,10 +14,9 @@ const cartService = new CartService();
 // CANONICAL PAYMENT METHODS
 // ============================================
 //
-// Mirrors `CANONICAL_PAYMENT_METHODS` in `../utils/validators.ts`.
-// Kept local to the controller to avoid a circular import; the two
-// must stay in sync. Any change to the backend-wide set should be
-// applied here too.
+// Mirrors `CANONICAL_PAYMENT_METHODS` in
+// `../services/checkoutService.ts` and `../routes/checkout.ts`. The
+// three must stay in sync.
 
 const CANONICAL_PAYMENT_METHODS = [
   'CASH',
@@ -58,15 +58,34 @@ const paymentMethodSchema = z
   });
 
 // ============================================
+// DISCOUNT TYPE
+// ============================================
+//
+// ⚠ This array MUST stay in lock-step with the `DiscountType` union
+// in `../services/checkoutService.ts`. Both now carry all 9 values.
+// If either side is ever narrowed, TS2322 will reappear at the two
+// `discountType: validatedData.discountType` callsites below.
+
+const DISCOUNT_TYPE_VALUES = [
+  'PERCENTAGE',
+  'FIXED',
+  'LOYALTY',
+  'MANUAL',
+  'BUY_X_GET_Y',
+  'FREE_SHIPPING',
+  'BOGO',
+  'BUNDLE',
+  'TIERED',
+] as const;
+
+// ============================================
 // VALIDATION SCHEMAS
 // ============================================
 //
 // ⚠ Each of these schemas MUST stay in lock-step with its counterpart
-// in `../routes/checkout.ts` and `../utils/validators.ts`. The route
-// validates first, then this controller re-validates, and any drift
-// between the three produces "Required (undefined)" 400s on payloads
-// that are actually valid. Fields that must match across all three
-// copies of `checkoutSchema` are documented on the schema itself.
+// in `../routes/checkout.ts` and `../services/checkoutService.ts`.
+// Any drift between the three produces "Required (undefined)" 400s on
+// payloads that are actually valid.
 
 const checkoutSchema = z.object({
   cartId: z.string().min(1, 'Cart ID is required'),
@@ -85,8 +104,68 @@ const checkoutSchema = z.object({
   customerPhone: z.string().optional(),
   customerName: z.string().optional(),
   customerAddress: z.string().optional(),
-  // Idempotency guard for double-submit. Same key = same sale returned.
   idempotencyKey: z.string().uuid().optional(),
+
+  // Gateway-specific (harmless on the offline path; the service
+  // ignores what it doesn't need).
+  returnUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+  cardNonce: z.string().optional(),
+  paymentMethodId: z.string().optional(),
+
+  // Gift-card specific. The frontend sends the code under both
+  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
+  // name); the service reads either.
+  giftCardCode: z.string().optional(),
+  gatewayId: z.string().optional(),
+
+  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
+  promotionCode: z.string().nullable().optional(),
+  promotionDiscount: z.number().min(0).optional(),
+});
+
+/**
+ * Online checkout schema.
+ *
+ * Everything `checkoutSchema` accepts, PLUS the gateway fields:
+ *   - returnUrl / cancelUrl   for redirect-based providers
+ *   - cardNonce               for Square (from the Web SDK)
+ *   - paymentMethodId         for server-side Stripe confirmation
+ *   - giftCardCode / gatewayId for Gift Card redemption
+ *
+ * `paidAmount` is NOT accepted here — the amount is entirely
+ * server-computed from the cart. A client that tries to send it will
+ * have it silently dropped by the schema's `.strip()` behaviour.
+ */
+const onlineCheckoutSchema = z.object({
+  cartId: z.string().min(1, 'Cart ID is required'),
+  customerId: z.string().optional(),
+  paymentMethod: paymentMethodSchema,
+  discount: z.number().min(0, 'Discount cannot be negative').optional(),
+  notes: z.string().optional(),
+  applyLoyaltyPoints: z.boolean().default(false),
+  businessUnitId: z.string().optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().optional(),
+  customerName: z.string().optional(),
+  customerAddress: z.string().optional(),
+  idempotencyKey: z.string().uuid().optional(),
+
+  // Gateway-specific
+  returnUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+  cardNonce: z.string().optional(),
+  paymentMethodId: z.string().optional(),
+
+  // Gift-card specific. The frontend sends the code under both
+  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
+  // name); the service reads either.
+  giftCardCode: z.string().optional(),
+  gatewayId: z.string().optional(),
+
+  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
+  promotionCode: z.string().nullable().optional(),
+  promotionDiscount: z.number().min(0).optional(),
 });
 
 const voidCheckoutSchema = z.object({
@@ -106,9 +185,6 @@ const getCheckoutsSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 
-// ⚠ `unitPrice` intentionally removed. The server looks up the
-// authoritative price from `Product.unitPrice` / `ProductVariant.price`.
-// Accepting it from the client was a fraud vector.
 const addItemSchema = z.object({
   productId: z.string().min(1, 'Product ID is required'),
   variantId: z.string().optional(),
@@ -127,11 +203,6 @@ const discountSchema = z.object({
 // HELPERS
 // ============================================
 
-/**
- * Convert a ZodError to the standard 400 response shape. Used by
- * every handler that parses a body — the shape was duplicated ~10
- * times before.
- */
 function zodErrorResponse(error: z.ZodError) {
   return {
     success: false,
@@ -143,27 +214,10 @@ function zodErrorResponse(error: z.ZodError) {
   };
 }
 
-/**
- * Extract the authenticated user's ID from the request. Supports
- * both `req.user.id` and `req.user.userId` shapes since different
- * auth middlewares populate one or the other.
- */
 function getUserId(req: Request): string | undefined {
   return (req as any).user?.id ?? (req as any).user?.userId;
 }
 
-/**
- * Resolve a cart-or-sale identifier from the request params.
- *
- * The `getCheckoutSummary` handler serves two routes:
- *
- *   GET /checkout/summary/:cartId   → params.cartId is populated
- *   GET /checkout/:id/summary       → params.id is populated
- *
- * Both resolve to the same underlying query — the service's
- * `getCheckoutSummary` looks up the cart row directly. This helper
- * hides the shape difference so the handler body stays single-path.
- */
 function resolveCartId(req: Request): string | undefined {
   const { cartId, id } = req.params as {
     cartId?: string;
@@ -172,29 +226,166 @@ function resolveCartId(req: Request): string | undefined {
   return cartId ?? id ?? undefined;
 }
 
+/**
+ * Read a numeric HTTP status code off an unknown error value.
+ *
+ * `AppError` in this codebase exposes the status code as `status`
+ * (see `../middleware/errorHandler.ts`). Some errors thrown by
+ * third-party libraries (axios, Stripe SDK) use `statusCode` or
+ * `response.status`. We check all three and return `undefined` when
+ * none matches, so the caller can fall through to the generic
+ * handler.
+ */
+function getErrorStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+
+  const anyErr = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { status?: unknown };
+  };
+
+  const candidates = [
+    anyErr.status,
+    anyErr.statusCode,
+    anyErr.response?.status,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Normalize an incoming checkout body: accept snake_case aliases,
+ * coerce stringified numbers, and return a canonical object the
+ * Zod schema can validate.
+ *
+ * The list of accepted aliases is intentionally broad so the
+ * endpoint is forgiving of client-side drift. The controller still
+ * reports exactly which canonical field is missing if one is absent.
+ */
+function normalizeCheckoutBody(body: any) {
+  const b = body ?? {};
+
+  const normalized: any = {
+    cartId: b.cartId ?? b.cart_id ?? b.cart?.id,
+    customerId: b.customerId ?? b.customer_id ?? undefined,
+    paymentMethod: b.paymentMethod ?? b.payment_method ?? undefined,
+    paidAmount: b.paidAmount ?? b.paid_amount ?? b.amount ?? undefined,
+    discount: b.discount,
+    notes: b.notes,
+    cashRegisterId: b.cashRegisterId ?? b.cash_register_id ?? undefined,
+    cashRegisterSessionId:
+      b.cashRegisterSessionId ?? b.cash_register_session_id ?? undefined,
+    applyLoyaltyPoints:
+      b.applyLoyaltyPoints ?? b.apply_loyalty_points ?? false,
+    businessUnitId: b.businessUnitId ?? b.business_unit_id ?? undefined,
+    customerEmail: b.customerEmail ?? b.customer_email ?? undefined,
+    customerPhone: b.customerPhone ?? b.customer_phone ?? undefined,
+    customerName: b.customerName ?? b.customer_name ?? undefined,
+    customerAddress: b.customerAddress ?? b.customer_address ?? undefined,
+    idempotencyKey: b.idempotencyKey ?? b.idempotency_key ?? undefined,
+
+    // Gateway-specific
+    returnUrl: b.returnUrl ?? b.return_url ?? undefined,
+    cancelUrl: b.cancelUrl ?? b.cancel_url ?? undefined,
+    cardNonce: b.cardNonce ?? b.card_nonce ?? undefined,
+    paymentMethodId:
+      b.paymentMethodId ?? b.payment_method_id ?? undefined,
+
+    // Gift-card specific. The frontend sends the same code under
+    // both keys; the service reads either, so we preserve both here.
+    giftCardCode: b.giftCardCode ?? b.gift_card_code ?? undefined,
+    gatewayId: b.gatewayId ?? b.gateway_id ?? undefined,
+
+    // Promotion / loyalty passthrough
+    discountType: b.discountType ?? b.discount_type ?? undefined,
+    promotionCode: b.promotionCode ?? b.promotion_code ?? undefined,
+    promotionDiscount:
+      b.promotionDiscount ?? b.promotion_discount ?? undefined,
+  };
+
+  // Coerce numeric strings
+  if (typeof normalized.paidAmount === 'string') {
+    const parsed = Number(normalized.paidAmount);
+    if (Number.isFinite(parsed)) normalized.paidAmount = parsed;
+  }
+  if (typeof normalized.promotionDiscount === 'string') {
+    const parsed = Number(normalized.promotionDiscount);
+    if (Number.isFinite(parsed)) normalized.promotionDiscount = parsed;
+  }
+
+  return normalized;
+}
+
+/**
+ * Report the fields that must be present on a create-checkout body.
+ * Extracted so both create handlers use the same list and produce
+ * the same "Required" shape.
+ */
+function findMissingCreateFields(
+  normalized: any,
+  opts: { requirePaidAmount: boolean },
+): string[] {
+  const missing: string[] = [];
+  if (!normalized.cartId) missing.push('cartId');
+  if (!normalized.paymentMethod) missing.push('paymentMethod');
+  if (
+    opts.requirePaidAmount &&
+    (normalized.paidAmount === undefined ||
+      normalized.paidAmount === null)
+  ) {
+    missing.push('paidAmount');
+  }
+  return missing;
+}
+
 // ============================================
 // CHECKOUT CONTROLLER
 // ============================================
 
 export const checkoutController = {
   // ============================================
-  // CREATE
+  // CREATE — OFFLINE (POS / CASH)
   // ============================================
+  //
+  // Records a completed sale for an already-tendered payment. Only
+  // supports cash / bank transfer / check. Card, PayPal, Flutterwave,
+  // Paystack, Square, and Mobile Money are rejected here with a
+  // clear message pointing at POST /checkout/online.
 
-  /**
-   * Create a new checkout.
-   * POST /checkout
-   *
-   * Idempotent: if `idempotencyKey` matches an existing sale, that
-   * sale is returned instead of a new one being created. Prevents
-   * double-clicks and network retries from producing duplicate sales.
-   */
   async createCheckout(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
       if (!userId) throw new AppError('User ID is required', 400);
 
-      const validatedData = checkoutSchema.parse(req.body);
+      logger.info('🧾 POST /checkout payload:', {
+        body: req.body,
+      });
+
+      const normalized = normalizeCheckoutBody(req.body);
+
+      const missing = findMissingCreateFields(normalized, {
+        requirePaidAmount: true,
+      });
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: missing.map((field) => ({
+            field,
+            message: 'Required',
+          })),
+          received: Object.keys(req.body ?? {}),
+        });
+      }
+
+      const validatedData = checkoutSchema.parse(normalized);
 
       const cart = await cartService.getCartById(validatedData.cartId);
       if (!cart) throw new AppError('Cart not found', 404);
@@ -219,6 +410,9 @@ export const checkoutController = {
           customerName: validatedData.customerName,
           customerAddress: validatedData.customerAddress,
           idempotencyKey: validatedData.idempotencyKey,
+          discountType: validatedData.discountType ?? null,
+          promotionCode: validatedData.promotionCode ?? null,
+          promotionDiscount: validatedData.promotionDiscount,
         },
         userId,
       );
@@ -230,8 +424,222 @@ export const checkoutController = {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json(zodErrorResponse(error));
+        return res.status(400).json({
+          ...zodErrorResponse(error),
+          received: Object.keys(req.body ?? {}),
+        });
       }
+      next(error);
+    }
+  },
+
+  // ============================================
+  // CREATE — ONLINE (GATEWAY-BACKED)
+  // ============================================
+  //
+  // The public web checkout entry point. Creates a PENDING Sale +
+  // PENDING Payment, calls the gateway, and returns a `nextAction`
+  // the frontend switches on:
+  //
+  //   CONFIRM_STRIPE  → frontend confirms with Stripe.js
+  //   REDIRECT        → window.location.href = url
+  //   AWAIT_STK_PUSH  → poll /checkout/:saleId until COMPLETED
+  //   OFFLINE         → show "awaiting confirmation" screen
+  //   NONE            → sale already complete (idempotent replay)
+  //
+  // ⚠ `paidAmount` is NOT read from the body. The total is entirely
+  //   server-computed from the cart + product prices + loyalty.
+  //
+  // ⚠ On gateway failure the sale is marked CANCELLED, inventory is
+  //   restored, and the response is a 502 with the gateway's error
+  //   message.
+  //
+  // ── Idempotency semantics ──────────────────────────────────
+  //
+  // The service short-circuits when the incoming `idempotencyKey`
+  // matches an existing Sale. The reply shape depends on the
+  // matched Sale's status:
+  //
+  //   PENDING / PROCESSING  → 201 with `nextAction: OFFLINE`
+  //   COMPLETED             → 200 with `nextAction: NONE`
+  //   CANCELLED             → **409 Conflict**
+  //
+  // 409 means "your previous attempt at this key failed; generate
+  // a new key and retry". The frontend must NOT show the
+  // awaiting-confirmation screen for a CANCELLED sale — the user
+  // would be stuck waiting for a callback that will never come.
+  //
+  // Before this fix the branch returned 201 with `nextAction:
+  // OFFLINE` for CANCELLED sales too, which produced exactly that
+  // stuck UX. See the `CANCELLED` handling below.
+
+  async createOnlineCheckout(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = getUserId(req);
+      if (!userId) throw new AppError('User ID is required', 400);
+
+      logger.info('🧾 POST /checkout/online payload:', {
+        body: req.body,
+      });
+
+      const normalized = normalizeCheckoutBody(req.body);
+
+      // `paidAmount` is deliberately NOT required — server computes it.
+      const missing = findMissingCreateFields(normalized, {
+        requirePaidAmount: false,
+      });
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation error',
+          errors: missing.map((field) => ({
+            field,
+            message: 'Required',
+          })),
+          received: Object.keys(req.body ?? {}),
+        });
+      }
+
+      const validatedData = onlineCheckoutSchema.parse(normalized);
+
+      // Ownership check before the service even opens a transaction.
+      const cart = await cartService.getCartById(validatedData.cartId);
+      if (!cart) throw new AppError('Cart not found', 404);
+      if (cart.userId !== userId) {
+        throw new AppError('Cart does not belong to this user', 403);
+      }
+
+      const result = await checkoutService.processOnlineCheckout(
+        {
+          cartId: validatedData.cartId,
+          customerId: validatedData.customerId,
+          paymentMethod: validatedData.paymentMethod,
+          // Server ignores this but the type requires it.
+          paidAmount: 0,
+          discount: validatedData.discount,
+          notes: validatedData.notes,
+          applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
+          businessUnitId: validatedData.businessUnitId,
+          customerEmail: validatedData.customerEmail,
+          customerPhone: validatedData.customerPhone,
+          customerName: validatedData.customerName,
+          customerAddress: validatedData.customerAddress,
+          idempotencyKey: validatedData.idempotencyKey,
+
+          // Gateway-specific passthrough
+          returnUrl: validatedData.returnUrl,
+          cancelUrl: validatedData.cancelUrl,
+          cardNonce: validatedData.cardNonce,
+          paymentMethodId: validatedData.paymentMethodId,
+
+          // Gift-card specific. Forwarded under both names so the
+          // service's `data.giftCardCode ?? data.gatewayId` lookup
+          // resolves regardless of which key the client sent.
+          giftCardCode: validatedData.giftCardCode,
+          gatewayId: validatedData.gatewayId,
+
+          // Promotion / loyalty passthrough
+          discountType: validatedData.discountType ?? null,
+          promotionCode: validatedData.promotionCode ?? null,
+          promotionDiscount: validatedData.promotionDiscount,
+        },
+        userId,
+      );
+
+      // ── Idempotency short-circuit detection ──────────────
+      //
+      // `processOnlineCheckout` has two "short-circuit" paths
+      // that return an existing Sale without doing any gateway
+      // work:
+      //
+      //   1. A COMPLETED replay — legitimate, user should see
+      //      the receipt.
+      //   2. A CANCELLED replay — the previous attempt at this
+      //      key failed. Returning success here would strand the
+      //      user on the "awaiting confirmation" screen for a
+      //      callback that will never arrive. Return 409 instead
+      //      and let the frontend prompt a retry with a fresh
+      //      key.
+      //
+      // We can't easily tell "did the service short-circuit?"
+      // from the response shape alone, so we rely on the Sale's
+      // status: if the incoming request supplied an idempotency
+      // key AND the resulting sale is CANCELLED, this was a
+      // replay of a failed attempt.
+      if (
+        validatedData.idempotencyKey &&
+        result.sale?.status === 'CANCELLED'
+      ) {
+        logger.warn(
+          `[checkout] idempotency key ${validatedData.idempotencyKey} matched CANCELLED sale ${result.sale.id} — returning 409`,
+        );
+        return res.status(409).json({
+          success: false,
+          message:
+            'This checkout attempt was previously cancelled. ' +
+            'Retry with a fresh idempotency key.',
+          code: 'IDEMPOTENCY_CANCELLED',
+          saleId: result.sale.id,
+        });
+      }
+
+      // ── If the sale is already complete (idempotent replay or an
+      //    offline method that resolves synchronously), return 200
+      //    instead of 201 so clients can distinguish.
+      const isComplete = result.sale?.status === 'COMPLETED';
+      const status = isComplete ? 200 : 201;
+
+      res.status(status).json({
+        success: true,
+        data: result,
+        message: isComplete
+          ? 'Checkout completed'
+          : 'Checkout created — awaiting payment confirmation',
+      });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          ...zodErrorResponse(error),
+          received: Object.keys(req.body ?? {}),
+        });
+      }
+
+      // Gateway failures surface as 5xx so the frontend can retry
+      // without treating it as a client error.
+      //
+      // ⚠ `AppError` in this codebase exposes its status code as
+      //   `status` (see `../middleware/errorHandler.ts`), NOT
+      //   `statusCode`. Axios / Stripe SDK errors may use
+      //   `statusCode` or `response.status`. `getErrorStatusCode`
+      //   handles all three shapes.
+      const statusCode = getErrorStatusCode(error);
+      if (typeof statusCode === 'number' && statusCode >= 500) {
+        return res.status(statusCode).json({
+          success: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Payment gateway error',
+        });
+      }
+
+      // Map specific gateway error hints to 502
+      const message: string = error?.message ?? '';
+      if (
+        message.startsWith('Payment gateway error') ||
+        message.includes('did not return') ||
+        message.includes('gateway')
+      ) {
+        return res.status(502).json({
+          success: false,
+          message,
+        });
+      }
+
       next(error);
     }
   },
@@ -240,10 +648,6 @@ export const checkoutController = {
   // LIST / READ
   // ============================================
 
-  /**
-   * Get all checkouts with pagination.
-   * GET /checkout
-   */
   async getCheckouts(req: Request, res: Response, next: NextFunction) {
     try {
       const params = getCheckoutsSchema.parse(req.query);
@@ -300,7 +704,6 @@ export const checkoutController = {
         }
       }
 
-      // Map `createdAt` → `saleDate` since Sale has no `createdAt`.
       const orderBy: any = {};
       orderBy[
         params.sortBy === 'createdAt' ? 'saleDate' : params.sortBy
@@ -331,10 +734,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get checkout by ID.
-   * GET /checkout/:id
-   */
   async getCheckoutById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -348,10 +747,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get checkout by receipt number.
-   * GET /checkout/receipt/:receiptNumber
-   */
   async getCheckoutByReceiptNumber(
     req: Request,
     res: Response,
@@ -372,18 +767,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get checkout summary.
-   *
-   * Serves two routes:
-   *   GET /checkout/summary/:cartId   — cart-first (frontend)
-   *   GET /checkout/:id/summary       — id-first (backward compat)
-   *
-   * Both resolve to the same underlying cart lookup. The route
-   * ordering in `routes/checkout.ts` ensures `/summary/:cartId` is
-   * matched before `/:id` so Express doesn't swallow `summary` as
-   * an ID.
-   */
   async getCheckoutSummary(
     req: Request,
     res: Response,
@@ -401,10 +784,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get checkout items.
-   * GET /checkout/:id/items
-   */
   async getCheckoutItems(
     req: Request,
     res: Response,
@@ -422,10 +801,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get checkout history with filters.
-   * GET /checkout/history
-   */
   async getCheckoutHistory(
     req: Request,
     res: Response,
@@ -512,10 +887,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get customer checkout history.
-   * GET /checkout/customer/:customerId/history
-   */
   async getCustomerCheckoutHistory(
     req: Request,
     res: Response,
@@ -557,10 +928,6 @@ export const checkoutController = {
   // UPDATE / STATUS
   // ============================================
 
-  /**
-   * Update checkout.
-   * PUT /checkout/:id
-   */
   async updateCheckout(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -589,10 +956,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Complete checkout.
-   * POST /checkout/:id/complete
-   */
   async completeCheckout(
     req: Request,
     res: Response,
@@ -617,10 +980,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Cancel checkout.
-   * POST /checkout/:id/cancel
-   */
   async cancelCheckout(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -646,10 +1005,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Void checkout.
-   * POST /checkout/:saleId/void
-   */
   async voidCheckout(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = getUserId(req);
@@ -678,10 +1033,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Delete checkout.
-   * DELETE /checkout/:id
-   */
   async deleteCheckout(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -706,13 +1057,6 @@ export const checkoutController = {
   // ITEMS
   // ============================================
 
-  /**
-   * Add item to checkout.
-   * POST /checkout/:id/items
-   *
-   * ⚠ `unitPrice` is NOT accepted from the client. The service looks
-   * up the authoritative price from the database.
-   */
   async addCheckoutItem(
     req: Request,
     res: Response,
@@ -745,10 +1089,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Update checkout item quantity.
-   * PUT /checkout/:id/items/:itemId
-   */
   async updateCheckoutItem(
     req: Request,
     res: Response,
@@ -784,10 +1124,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Remove item from checkout.
-   * DELETE /checkout/:id/items/:itemId
-   */
   async removeCheckoutItem(
     req: Request,
     res: Response,
@@ -822,10 +1158,6 @@ export const checkoutController = {
   // DISCOUNTS
   // ============================================
 
-  /**
-   * Apply discount to checkout.
-   * POST /checkout/:id/discount
-   */
   async applyDiscount(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -854,10 +1186,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Remove discount from checkout.
-   * DELETE /checkout/:id/discount
-   */
   async removeDiscount(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -882,13 +1210,14 @@ export const checkoutController = {
   },
 
   // ============================================
-  // PAYMENTS
+  // PAYMENTS (POST-CHECKOUT)
   // ============================================
+  //
+  // ⚠ This handles SPLIT / PARTIAL payments added AFTER the initial
+  //    checkout. It is NOT the gateway-call entry point — that is
+  //    `createOnlineCheckout`. If you need to charge a card for a
+  //    split payment, call the payment service directly.
 
-  /**
-   * Process payment for checkout.
-   * POST /checkout/:id/pay
-   */
   async processPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -918,13 +1247,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get payment methods.
-   * GET /checkout/payment-methods
-   *
-   * Canonical identifiers are `enabled: true`; alias forms are
-   * exposed as `enabled: false` so the UI renders each method once.
-   */
   async getPaymentMethods(
     req: Request,
     res: Response,
@@ -949,10 +1271,6 @@ export const checkoutController = {
   // RECEIPTS
   // ============================================
 
-  /**
-   * Get checkout receipt.
-   * GET /checkout/:id/receipt
-   */
   async getCheckoutReceipt(
     req: Request,
     res: Response,
@@ -970,10 +1288,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Send receipt via email.
-   * POST /checkout/:id/email-receipt
-   */
   async sendReceiptEmail(
     req: Request,
     res: Response,
@@ -1007,10 +1321,6 @@ export const checkoutController = {
   // STATS / SETTINGS
   // ============================================
 
-  /**
-   * Get checkout statistics.
-   * GET /checkout/stats/summary
-   */
   async getCheckoutStats(
     req: Request,
     res: Response,
@@ -1037,13 +1347,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Get checkout settings.
-   * GET /checkout/settings
-   *
-   * Delegates to the service so the shape stays in sync with
-   * `updateCheckoutSettings`.
-   */
   async getCheckoutSettings(
     req: Request,
     res: Response,
@@ -1061,10 +1364,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Update checkout settings.
-   * PUT /checkout/settings
-   */
   async updateCheckoutSettings(
     req: Request,
     res: Response,
@@ -1095,10 +1394,6 @@ export const checkoutController = {
   // EXPORTS
   // ============================================
 
-  /**
-   * Export checkouts.
-   * GET /checkout/export/all
-   */
   async exportCheckouts(
     req: Request,
     res: Response,
@@ -1136,10 +1431,6 @@ export const checkoutController = {
     }
   },
 
-  /**
-   * Export checkout data.
-   * GET /checkout/export
-   */
   async exportCheckoutData(
     req: Request,
     res: Response,
@@ -1169,18 +1460,30 @@ export const checkoutController = {
 
       if (format === 'csv') {
         let csv =
-          'Receipt Number,Date,Customer,Total,Status,Payment Method\n';
+          'Receipt Number,Date,Customer,Total,Tax,Discount,' +
+          'Discount Type,Promotion Code,Promotion Discount,' +
+          'Loyalty Points Used,Loyalty Discount,' +
+          'Status,Payment Method\n';
         for (const checkout of result.checkouts) {
           const customerName = checkout.customer
             ? `${checkout.customer.firstName} ${checkout.customer.lastName}`
             : 'Guest';
           const paymentMethod =
             checkout.payments[0]?.paymentMethod || 'N/A';
-          csv += `${checkout.receiptNumber},${
-            checkout.saleDate?.toISOString() || ''
-          },${customerName},${checkout.total},${
-            checkout.status
-          },${paymentMethod}\n`;
+          csv +=
+            `${checkout.receiptNumber},` +
+            `${checkout.saleDate?.toISOString() || ''},` +
+            `${customerName},` +
+            `${checkout.total},` +
+            `${(checkout.tax || 0).toFixed(2)},` +
+            `${(checkout.discount || 0).toFixed(2)},` +
+            `${checkout.discountType || ''},` +
+            `${checkout.promotionCode || ''},` +
+            `${(checkout.promotionDiscount || 0).toFixed(2)},` +
+            `${checkout.loyaltyPointsUsed ?? 0},` +
+            `${(checkout.loyaltyDiscount || 0).toFixed(2)},` +
+            `${checkout.status},` +
+            `${paymentMethod}\n`;
         }
 
         res.setHeader('Content-Type', 'text/csv');

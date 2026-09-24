@@ -2,12 +2,27 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import Image from 'next/image';
 import {
-  CreditCard, Banknote, Wallet, Building, QrCode, Gift, Star,
-  CheckCircle, ChevronDown, ChevronUp, Info, AlertCircle,
-  Smartphone, Landmark, Shield, Lock, Zap, Globe
+  CreditCard,
+  Banknote,
+  Wallet,
+  Building,
+  QrCode,
+  Gift,
+  Star,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  AlertCircle,
+  Smartphone,
+  Landmark,
+  Shield,
+  Lock,
+  Zap,
+  Globe,
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { PaymentProvider } from '../../services/paymentService';
@@ -16,7 +31,15 @@ import { PaymentProvider } from '../../services/paymentService';
 // TYPES
 // ============================================
 
-interface PaymentMethod {
+/**
+ * The shape of a single selectable payment method.
+ *
+ * Callers can pass through the backend's auto-seeded providers by
+ * mapping a `PaymentProviderStatus` into this shape. The optional
+ * `isHealthy` / `configured` fields let the tile reflect the
+ * provider's real state instead of always rendering as selectable.
+ */
+export interface PaymentMethod {
   id: string;
   name: string;
   code: string;
@@ -31,6 +54,15 @@ interface PaymentMethod {
   popular?: boolean;
   recommended?: boolean;
   comingSoon?: boolean;
+
+  /** Backend `isHealthy` flag. When `false`, the tile renders
+   *  as disabled with a "Provider unavailable" tooltip. */
+  isHealthy?: boolean;
+
+  /** Backend `configured` flag. When `false` and the caller
+   *  opts in via `respectConfiguration`, the tile renders
+   *  disabled with a "Not configured" tooltip. */
+  configured?: boolean;
 }
 
 interface PaymentMethodSelectorProps {
@@ -38,6 +70,11 @@ interface PaymentMethodSelectorProps {
   onSelect: (methodId: string) => void;
   availableMethods?: PaymentMethod[];
   showProviderInfo?: boolean;
+  /** When true, methods whose `configured` field is false render
+   *  as disabled. Defaults to false so callers that don't pass
+   *  configuration info keep the current "everything selectable"
+   *  behaviour. */
+  respectConfiguration?: boolean;
   className?: string;
 }
 
@@ -47,57 +84,83 @@ interface PaymentMethodSelectorProps {
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
-const PROVIDER_CONFIGS: Record<string, { icon: string; name: string; color: string }> = {
+const PROVIDER_CONFIGS: Record<
+  string,
+  { icon: string; name: string; color: string }
+> = {
   STRIPE: { icon: '💳', name: 'Stripe', color: 'primary' },
   PAYPAL: { icon: '💸', name: 'PayPal', color: 'primary' },
   FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan' },
-  PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky' },
   SQUARE: { icon: '⬜', name: 'Square', color: 'gray' },
   CASH: { icon: '💰', name: 'Cash', color: 'success' },
-  MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'brand' },
-  BANK_TRANSFER: { icon: '🏦', name: 'Bank Transfer', color: 'indigo' },
+  MOBILE_MONEY: {
+    icon: '📱',
+    name: 'Mobile Money',
+    color: 'brand',
+  },
+  BANK_TRANSFER: {
+    icon: '🏦',
+    name: 'Bank Transfer',
+    color: 'indigo',
+  },
   GIFT_CARD: { icon: '🎁', name: 'Gift Card', color: 'brand' },
-  LOYALTY_POINTS: { icon: '⭐', name: 'Loyalty Points', color: 'warning' },
+  LOYALTY_POINTS: {
+    icon: '⭐',
+    name: 'Loyalty Points',
+    color: 'warning',
+  },
   MTN: { icon: '📱', name: 'MTN Mobile Money', color: 'warning' },
   AIRTEL: { icon: '📱', name: 'Airtel Money', color: 'danger' },
   TIGO: { icon: '📱', name: 'Tigo Pesa', color: 'primary' },
-  VODAFONE: { icon: '📱', name: 'Vodafone Cash', color: 'danger' },
+  VODAFONE: {
+    icon: '📱',
+    name: 'Vodafone Cash',
+    color: 'danger',
+  },
 };
 
 // ============================================
-// CONSTANTS
+// DEFAULT METHODS
 // ============================================
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
@@ -161,26 +224,14 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
     name: 'Flutterwave',
     code: 'FLUTTERWAVE',
     icon: <Globe className="w-5 h-5" />,
-    description: 'Pay with Flutterwave (Cards, Mobile Money, Bank Transfer)',
+    description:
+      'Pay with Flutterwave (Cards, Mobile Money, Bank Transfer)',
     enabled: true,
     requiresDetails: true,
     provider: PaymentProvider.FLUTTERWAVE,
     providerName: 'Flutterwave',
     providerImageUrl: PROVIDER_IMAGE_URLS.FLUTTERWAVE,
     providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.FLUTTERWAVE,
-  },
-  {
-    id: 'PAYSTACK',
-    name: 'Paystack',
-    code: 'PAYSTACK',
-    icon: <CreditCard className="w-5 h-5" />,
-    description: 'Pay with Paystack (Cards, Bank Transfer, USSD)',
-    enabled: true,
-    requiresDetails: true,
-    provider: PaymentProvider.PAYSTACK,
-    providerName: 'Paystack',
-    providerImageUrl: PROVIDER_IMAGE_URLS.PAYSTACK,
-    providerDarkImageUrl: PROVIDER_DARK_IMAGE_URLS.PAYSTACK,
   },
   {
     id: 'SQUARE',
@@ -259,51 +310,81 @@ export function PaymentMethodSelector({
   onSelect,
   availableMethods = DEFAULT_PAYMENT_METHODS,
   showProviderInfo = true,
+  respectConfiguration = false,
   className = '',
 }: PaymentMethodSelectorProps) {
   const { isDark } = useThemeStore();
   const [showAll, setShowAll] = useState(false);
   const [hoveredMethod, setHoveredMethod] = useState<string | null>(null);
 
-  // Filter enabled methods
-  const enabledMethods = availableMethods.filter(m => m.enabled);
-  const filteredMethods = showAll
-    ? enabledMethods
-    : enabledMethods.slice(0, 6);
+  // ── Derived lists ────────────────────────────────────────────
 
-  const selected = availableMethods.find(m => m.id === selectedMethod);
+  /**
+   * Methods that are selectable right now. A method is unselectable
+   * when:
+   *   - `enabled` is false
+   *   - `comingSoon` is true
+   *   - `isHealthy` is explicitly false
+   *   - `configured` is explicitly false AND the caller opted in to
+   *     configuration-gating via `respectConfiguration`
+   */
+  const enabledMethods = useMemo(
+    () => availableMethods.filter((m) => m.enabled),
+    [availableMethods],
+  );
 
-  const getProviderImageUrl = (method: PaymentMethod): string => {
-    if (!method.providerImageUrl) return '';
-    return isDark && method.providerDarkImageUrl
-      ? method.providerDarkImageUrl
-      : method.providerImageUrl;
-  };
+  const filteredMethods = useMemo(
+    () => (showAll ? enabledMethods : enabledMethods.slice(0, 6)),
+    [showAll, enabledMethods],
+  );
 
-  const getProviderConfig = (providerCode?: string) => {
+  const selected = useMemo(
+    () => availableMethods.find((m) => m.id === selectedMethod),
+    [availableMethods, selectedMethod],
+  );
+
+  // ── Lookups ──────────────────────────────────────────────────
+
+  const getProviderImageUrl = useCallback(
+    (method: PaymentMethod): string => {
+      if (!method.providerImageUrl) return '';
+      return isDark && method.providerDarkImageUrl
+        ? method.providerDarkImageUrl
+        : method.providerImageUrl;
+    },
+    [isDark],
+  );
+
+  const getProviderConfig = useCallback((providerCode?: string) => {
     if (!providerCode) return null;
     return PROVIDER_CONFIGS[providerCode] || null;
-  };
+  }, []);
 
-  // Group methods by category
-  const getMethodCategory = (methodId: string): 'card' | 'digital' | 'mobile' | 'bank' | 'cash' | 'other' => {
-    const categories: Record<string, 'card' | 'digital' | 'mobile' | 'bank' | 'cash' | 'other'> = {
-      CREDIT_CARD: 'card',
-      DEBIT_CARD: 'card',
-      PAYPAL: 'digital',
-      FLUTTERWAVE: 'digital',
-      PAYSTACK: 'digital',
-      SQUARE: 'card',
-      MOBILE_MONEY: 'mobile',
-      BANK_TRANSFER: 'bank',
-      GIFT_CARD: 'digital',
-      LOYALTY_POINTS: 'digital',
-      CASH: 'cash',
-    };
-    return categories[methodId] || 'other';
-  };
+  const getMethodCategory = useCallback(
+    (
+      methodId: string,
+    ): 'card' | 'digital' | 'mobile' | 'bank' | 'cash' | 'other' => {
+      const categories: Record<
+        string,
+        'card' | 'digital' | 'mobile' | 'bank' | 'cash' | 'other'
+      > = {
+        CREDIT_CARD: 'card',
+        DEBIT_CARD: 'card',
+        PAYPAL: 'digital',
+        FLUTTERWAVE: 'digital',
+        SQUARE: 'card',
+        MOBILE_MONEY: 'mobile',
+        BANK_TRANSFER: 'bank',
+        GIFT_CARD: 'digital',
+        LOYALTY_POINTS: 'digital',
+        CASH: 'cash',
+      };
+      return categories[methodId] || 'other';
+    },
+    [],
+  );
 
-  const getCategoryLabel = (category: string): string => {
+  const getCategoryLabel = useCallback((category: string): string => {
     const labels: Record<string, string> = {
       card: 'Cards',
       digital: 'Digital Wallets',
@@ -313,24 +394,49 @@ export function PaymentMethodSelector({
       other: 'Other',
     };
     return labels[category] || category;
-  };
+  }, []);
+
+  /**
+   * Compute why a tile is unselectable, or `null` if it's fine.
+   * Used to drive the tooltip and disabled styling.
+   */
+  const getDisabledReason = useCallback(
+    (method: PaymentMethod): string | null => {
+      if (method.comingSoon) return 'Coming soon';
+      if (!method.enabled) return 'Not available';
+      if (method.isHealthy === false) return 'Provider unavailable';
+      if (respectConfiguration && method.configured === false) {
+        return 'Not configured — ask an admin to enable it';
+      }
+      return null;
+    },
+    [respectConfiguration],
+  );
+
+  // ── Render ───────────────────────────────────────────────────
 
   return (
     <div className={`${className} animate-fade-in`}>
       <div className="space-y-6">
         {/* Selected Method Display */}
         {selected && (
-          <div className={`p-4 rounded-2xl border-2 border-brand-500 bg-brand-50 dark:bg-brand-900/20 transition duration-250 ${
-            isDark ? 'border-brand-400' : 'border-brand-500'
-          }`}>
+          <div
+            className={`p-4 rounded-2xl border-2 border-brand-500 bg-brand-50 dark:bg-brand-900/20 transition duration-250 ${
+              isDark ? 'border-brand-400' : 'border-brand-500'
+            }`}
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl bg-brand-100 dark:bg-brand-900/30`}>
+                <div className="p-3 rounded-xl bg-brand-100 dark:bg-brand-900/30">
                   {selected.icon}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className={`font-semibold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    <p
+                      className={`font-semibold text-lg ${
+                        isDark ? 'text-white' : 'text-gray-900'
+                      }`}
+                    >
                       {selected.name}
                     </p>
                     {selected.recommended && (
@@ -339,7 +445,11 @@ export function PaymentMethodSelector({
                       </span>
                     )}
                   </div>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <p
+                    className={`text-sm ${
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    }`}
+                  >
                     {selected.description}
                   </p>
                   {showProviderInfo && selected.providerName && (
@@ -353,12 +463,18 @@ export function PaymentMethodSelector({
                             height={20}
                             className="rounded object-contain"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
+                              (
+                                e.target as HTMLImageElement
+                              ).style.display = 'none';
                             }}
                           />
                         </div>
                       ) : null}
-                      <span className={`text-xs ${isDark ? 'text-brand-400' : 'text-brand-600'}`}>
+                      <span
+                        className={`text-xs ${
+                          isDark ? 'text-brand-400' : 'text-brand-600'
+                        }`}
+                      >
                         Powered by {selected.providerName}
                       </span>
                     </div>
@@ -373,10 +489,18 @@ export function PaymentMethodSelector({
         {/* Payment Methods Grid */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <p className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+            <p
+              className={`text-sm font-medium ${
+                isDark ? 'text-gray-300' : 'text-gray-700'
+              }`}
+            >
               Available Payment Methods
             </p>
-            <span className={`text-2xs tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <span
+              className={`text-2xs tabular-nums ${
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              }`}
+            >
               {enabledMethods.length} methods
             </span>
           </div>
@@ -385,35 +509,40 @@ export function PaymentMethodSelector({
             {filteredMethods.map((method) => {
               const isSelected = selectedMethod === method.id;
               const isHovered = hoveredMethod === method.id;
-              const isComingSoon = method.comingSoon || false;
+              const disabledReason = getDisabledReason(method);
+              const isDisabled = disabledReason !== null;
               const providerConfig = getProviderConfig(method.provider);
               const imageUrl = getProviderImageUrl(method);
-              const category = getMethodCategory(method.id);
 
               return (
                 <button
                   key={method.id}
-                  onClick={() => !isComingSoon && onSelect(method.id)}
+                  onClick={() => !isDisabled && onSelect(method.id)}
                   onMouseEnter={() => setHoveredMethod(method.id)}
                   onMouseLeave={() => setHoveredMethod(null)}
                   className={`p-4 border-2 rounded-2xl text-center transition duration-250 relative focus-ring ${
                     isSelected
                       ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 shadow-brand scale-[1.02]'
-                      : isComingSoon
+                      : isDisabled
                         ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 cursor-not-allowed'
                         : 'border-gray-200 dark:border-gray-600 hover:border-brand-300 dark:hover:border-brand-500 hover:shadow-card-hover'
                   } ${!method.enabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  disabled={!method.enabled || isComingSoon}
+                  disabled={isDisabled}
+                  aria-pressed={isSelected}
+                  aria-label={`${method.name} — ${method.description}`}
+                  title={disabledReason || method.description}
                 >
                   <div className="flex flex-col items-center gap-2">
                     {/* Provider Logo or Icon */}
-                    <div className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition duration-250 ${
-                      isSelected
-                        ? 'bg-brand-100 dark:bg-brand-900/30'
-                        : isHovered && !isComingSoon
-                          ? 'bg-gray-100 dark:bg-gray-700'
-                          : 'bg-gray-100 dark:bg-gray-700/50'
-                    }`}>
+                    <div
+                      className={`relative w-12 h-12 rounded-xl flex items-center justify-center transition duration-250 ${
+                        isSelected
+                          ? 'bg-brand-100 dark:bg-brand-900/30'
+                          : isHovered && !isDisabled
+                            ? 'bg-gray-100 dark:bg-gray-700'
+                            : 'bg-gray-100 dark:bg-gray-700/50'
+                      }`}
+                    >
                       {imageUrl ? (
                         <Image
                           src={imageUrl}
@@ -422,58 +551,90 @@ export function PaymentMethodSelector({
                           height={36}
                           className="rounded object-contain"
                           onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            const parent = (e.target as HTMLImageElement).parentElement;
+                            (
+                              e.target as HTMLImageElement
+                            ).style.display = 'none';
+                            const parent = (
+                              e.target as HTMLImageElement
+                            ).parentElement;
                             if (parent) {
-                              const fallback = document.createElement('span');
+                              const fallback =
+                                document.createElement('span');
                               fallback.className = 'text-2xl';
-                              fallback.textContent = providerConfig?.icon || '💳';
+                              fallback.textContent =
+                                providerConfig?.icon || '💳';
                               parent.appendChild(fallback);
                             }
                           }}
                         />
                       ) : (
-                        <span className="text-2xl">{providerConfig?.icon || method.icon}</span>
+                        <span className="text-2xl">
+                          {providerConfig?.icon || method.icon}
+                        </span>
                       )}
                     </div>
 
-                    <span className={`text-sm font-medium ${
-                      isSelected
-                        ? 'text-brand-600 dark:text-brand-400'
-                        : isComingSoon
-                          ? 'text-gray-400 dark:text-gray-500'
-                          : 'text-gray-700 dark:text-gray-300'
-                    }`}>
+                    <span
+                      className={`text-sm font-medium ${
+                        isSelected
+                          ? 'text-brand-600 dark:text-brand-400'
+                          : isDisabled
+                            ? 'text-gray-400 dark:text-gray-500'
+                            : 'text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
                       {method.name}
                     </span>
 
-                    {method.popular && !isComingSoon && (
+                    {method.popular && !isDisabled && (
                       <span className="absolute top-2 right-2 text-2xs font-medium bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300 px-1.5 py-0.5 rounded-md">
                         Popular
                       </span>
                     )}
 
-                    {method.recommended && !isComingSoon && (
+                    {method.recommended && !isDisabled && (
                       <span className="absolute top-2 left-2 text-2xs font-medium bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 px-1.5 py-0.5 rounded-md">
                         Best
                       </span>
                     )}
 
-                    {isComingSoon && (
+                    {method.comingSoon && (
                       <span className="absolute top-2 right-2 text-2xs font-medium bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300 px-1.5 py-0.5 rounded-md">
                         Soon
                       </span>
                     )}
 
+                    {/* New: non-"coming soon" disable reasons get
+                        their own badge so users see why the tile is
+                        greyed out. */}
+                    {!method.comingSoon &&
+                      disabledReason !== null && (
+                        <span className="absolute top-2 right-2 text-2xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded-md">
+                          {disabledReason === 'Provider unavailable'
+                            ? 'Offline'
+                            : disabledReason === 'Not configured — ask an admin to enable it'
+                              ? 'Setup'
+                              : 'Off'}
+                        </span>
+                      )}
+
                     {isSelected && (
                       <CheckCircle className="w-4 h-4 text-brand-500 absolute bottom-2 right-2" />
                     )}
 
-                    {showProviderInfo && method.providerName && !isComingSoon && (
-                      <span className={`text-2xs ${isSelected ? 'text-brand-500' : 'text-gray-400 dark:text-gray-500'}`}>
-                        {method.providerName}
-                      </span>
-                    )}
+                    {showProviderInfo &&
+                      method.providerName &&
+                      !isDisabled && (
+                        <span
+                          className={`text-2xs ${
+                            isSelected
+                              ? 'text-brand-500'
+                              : 'text-gray-400 dark:text-gray-500'
+                          }`}
+                        >
+                          {method.providerName}
+                        </span>
+                      )}
                   </div>
                 </button>
               );
@@ -484,8 +645,11 @@ export function PaymentMethodSelector({
             <button
               onClick={() => setShowAll(!showAll)}
               className={`mt-4 text-sm flex items-center gap-1 transition duration-250 focus-ring rounded ${
-                isDark ? 'text-brand-400 hover:text-brand-300' : 'text-brand-600 hover:text-brand-700'
+                isDark
+                  ? 'text-brand-400 hover:text-brand-300'
+                  : 'text-brand-600 hover:text-brand-700'
               }`}
+              aria-expanded={showAll}
             >
               {showAll ? (
                 <>
@@ -525,3 +689,5 @@ export function PaymentMethodSelector({
     </div>
   );
 }
+
+export default PaymentMethodSelector;

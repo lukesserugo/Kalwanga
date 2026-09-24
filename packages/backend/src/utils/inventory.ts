@@ -17,11 +17,12 @@
  *     referenceId: sale.id,
  *     notes: `Sale ${receiptNumber}`,
  *     userId,
+ *     forbidNegative: true,        // sale path: reject if it would go below zero
  *   });
  *
  * Responsibilities:
  *   1. Resolve the inventory row for (businessUnitId, productId, variantId).
- *   2. Reject negative results (never let stock go below zero on a sale).
+ *   2. Reject negative results when `forbidNegative` is set (default).
  *   3. Update `quantity` and recompute `available = quantity - reserved`.
  *   4. Write an `InventoryTransaction` row so every stock mutation is
  *      auditable — matching the pattern used everywhere else in the
@@ -92,6 +93,16 @@ export interface ApplyInventoryDeltaInput {
 
   /** User whose action caused the delta. */
   userId: string;
+
+  /**
+   * When `true` (the default), the helper throws if the delta would
+   * drive on-hand quantity below zero.
+   *
+   * The sale path passes `true` (a sale must never oversell).
+   * The void/restock path passes `false` so a restock that lands on
+   * an already-zero row succeeds without tripping the guard.
+   */
+  forbidNegative?: boolean;
 }
 
 export interface ApplyInventoryDeltaResult {
@@ -138,6 +149,7 @@ export async function applyInventoryDelta(
     referenceId,
     notes,
     userId,
+    forbidNegative = true,
   } = input;
 
   // ── Validate inputs ──────────────────────────────────────────
@@ -165,14 +177,22 @@ export async function applyInventoryDelta(
 
   // ── Resolve the inventory row ────────────────────────────────
   //
-  // Mirrors the resolution strategy used elsewhere in the codebase:
-  // scope by business unit, then by (productId, variantId). Prisma's
-  // generated `findFirst` accepts a compound object here.
+  // ⚠ Prisma hides the scalar foreign-key fields (`productId`,
+  // `variantId`) on models that declare a relation field
+  // (`product`, `variant`). Filtering must go through the relation:
+  //
+  //   product: { id: productId }     → "product whose id is productId"
+  //   variant: { id: variantId }     → "variant whose id is variantId"
+  //   variant: null                  → "no variant" (nullable relation)
+  const variantFilter = normalizedVariantId
+    ? { variant: { id: normalizedVariantId } }
+    : { variant: null };
+
   const inventory = await tx.inventory.findFirst({
     where: {
       businessUnitId,
-      productId,
-      variantId: normalizedVariantId,
+      product: { id: productId },
+      ...variantFilter,
     },
   });
 
@@ -191,10 +211,11 @@ export async function applyInventoryDelta(
 
   const newQuantity = currentQuantity + delta;
 
-  // Selling below zero is always a bug — the stock check upstream
-  // should have caught it, but we guard here so the invariant is
-  // enforced at the single point where stock actually changes.
-  if (newQuantity < 0) {
+  // Selling below zero is always a bug — but only the sale path
+  // asks us to enforce that here. The restock/void path passes
+  // `forbidNegative: false` so an add-back always lands, even if
+  // the row was somehow at zero.
+  if (forbidNegative && newQuantity < 0) {
     throw new AppError(
       `applyInventoryDelta: insufficient stock for product ${productId}. ` +
         `Current: ${currentQuantity}, requested: ${Math.abs(delta)}`,
@@ -202,6 +223,8 @@ export async function applyInventoryDelta(
     );
   }
 
+  // `available` is a derived column: quantity − reserved, floored
+  // at zero so the UI never shows a negative availability.
   const newAvailable = Math.max(0, newQuantity - currentReserved);
 
   // ── Persist ─────────────────────────────────────────────────

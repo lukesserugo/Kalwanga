@@ -6,15 +6,18 @@ import { CheckoutService } from '../services/checkoutService.js';
 import { SaleService } from '../services/saleService.js';
 import { ProductService } from '../services/productService.js';
 import { CustomerService } from '../services/customerService.js';
+import { POSService } from '../services/posSyncService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
+import type { DiscountType } from '../generated/prisma/index.js';
 
 const cartService = new CartService();
 const checkoutService = new CheckoutService();
 const saleService = new SaleService();
 const productService = new ProductService();
 const customerService = new CustomerService();
+const posService = new POSService();
 
 // ============================================
 // HELPERS
@@ -122,6 +125,95 @@ function getIdempotencyKey(req: Request): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+// ── Discount type enum helpers ───────────────────────────────────
+//
+// Mirrors the Postgres enum defined in `prisma/schema.prisma`:
+//
+//     enum DiscountType {
+//       PERCENTAGE
+//       FIXED
+//       LOYALTY
+//       MANUAL
+//     }
+//
+// We define a runtime list + guard here so `readPromotionFields` can
+// narrow arbitrary incoming strings to the enum union before
+// forwarding them to the checkout service. Any value not in this list
+// is silently dropped — the service then infers a valid `discountType`
+// from the underlying discount amounts.
+//
+// ⚠ Keep in sync with `enum DiscountType`. Adding a value to the
+//   Prisma enum requires updating this list too.
+const DISCOUNT_TYPE_ENUM_VALUES = [
+  'PERCENTAGE',
+  'FIXED',
+  'LOYALTY',
+  'MANUAL',
+] as const satisfies readonly DiscountType[];
+
+function isDiscountType(value: unknown): value is DiscountType {
+  return (
+    typeof value === 'string' &&
+    (DISCOUNT_TYPE_ENUM_VALUES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Read the promotion / loyalty passthrough fields off a request body.
+ *
+ * Mirrors `saleController.readPromotionFields`. All three fields are
+ * optional everywhere they appear. Snake_case aliases
+ * (`discount_type`, `promotion_code`, `promotion_discount`) are
+ * accepted, and a string `promotionDiscount` is coerced to a number.
+ *
+ * `discountType` is narrowed to the Prisma `DiscountType` enum union.
+ * Any value that isn't a member is silently dropped — the service
+ * will then infer a valid type (LOYALTY / MANUAL / null) from the
+ * discount amounts. This keeps a single bad field from failing the
+ * entire sale with a Postgres enum rejection.
+ *
+ * Reading from the original `req.body` (not the Zod-parsed result)
+ * means this is robust against non-strict schemas silently dropping
+ * unknown keys.
+ */
+function readPromotionFields(body: any): {
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+} {
+  const out: {
+    discountType?: DiscountType | null;
+    promotionCode?: string | null;
+    promotionDiscount?: number;
+  } = {};
+
+  const dt = body?.discountType ?? body?.discount_type;
+  if (dt !== undefined) {
+    if (dt === null) {
+      out.discountType = null;
+    } else if (isDiscountType(dt)) {
+      out.discountType = dt;
+    }
+    // Unknown values are silently dropped — the service infers a
+    // valid `discountType` from the discount amounts instead.
+  }
+
+  const pc = body?.promotionCode ?? body?.promotion_code;
+  if (pc !== undefined) out.promotionCode = pc;
+
+  const pd = body?.promotionDiscount ?? body?.promotion_discount;
+  if (pd !== undefined) {
+    if (typeof pd === 'number' && Number.isFinite(pd)) {
+      out.promotionDiscount = pd;
+    } else if (typeof pd === 'string') {
+      const parsed = Number(pd);
+      if (Number.isFinite(parsed)) out.promotionDiscount = parsed;
+    }
+  }
+
+  return out;
+}
+
 // ============================================
 // VALIDATION SCHEMAS
 // ============================================
@@ -175,6 +267,24 @@ const posUpdateItemSchema = z.object({
   notes: z.string().optional(),
 });
 
+// ── Discount type union ──────────────────────────────────────────
+// Mirrors the Prisma `DiscountType` enum. Keep this list in sync
+// with `enum DiscountType` in `schema.prisma`.
+//
+// ⚠ Do NOT add the `PromotionType`-only members here
+//   (BUY_X_GET_Y, FREE_SHIPPING, BOGO, BUNDLE, TIERED). Those
+//   describe the shape of a `Promotion`; the `Sale.discountType`
+//   column is the narrower attribution of *how* the resulting
+//   discount was derived. Unknown values are silently dropped by
+//   `readPromotionFields`, so a bad client can't 500 the sale.
+
+const DISCOUNT_TYPE_VALUES = [
+  'PERCENTAGE',
+  'FIXED',
+  'LOYALTY',
+  'MANUAL',
+] as const satisfies readonly DiscountType[];
+
 const posCheckoutSchema = z.object({
   customerId: z.string().optional().nullable(),
   paymentMethod: paymentMethodSchema,
@@ -192,6 +302,18 @@ const posCheckoutSchema = z.object({
    * that can't set custom headers.
    */
   idempotencyKey: z.string().trim().min(1).max(255).optional(),
+
+  // ── Promotion / loyalty passthrough ─────────────────────────
+  // All optional. The service infers `discountType` when omitted.
+  // Also read directly off the body by `readPromotionFields` so
+  // non-strict schemas can't strip them.
+  //
+  // `discountType` is now strictly validated against the 4-member
+  // Prisma enum. Zod rejects anything else with a 400 before the
+  // handler runs.
+  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
+  promotionCode: z.string().nullable().optional(),
+  promotionDiscount: z.number().min(0).optional(),
 });
 
 const posCreateCustomerSchema = z.object({
@@ -578,6 +700,18 @@ export const posController = {
    * Idempotent when the client supplies an `Idempotency-Key` header
    * (or `idempotencyKey` in the body). Retries with the same key return
    * the original sale — see `SaleService.createSaleFromCart`.
+   *
+   * Accepts optional promotion / loyalty passthrough fields
+   * (`discountType`, `promotionCode`, `promotionDiscount`, plus their
+   * snake_case aliases). Persisted on the resulting `Sale` row so
+   * every POS sale self-documents where its discount came from.
+   *
+   * `discountType`, when supplied, must be one of the Prisma enum
+   * members:
+   *   PERCENTAGE | FIXED | LOYALTY | MANUAL
+   * Zod rejects anything else at the schema boundary with a 400.
+   * Values are further narrowed by `readPromotionFields` before
+   * reaching the service.
    */
   async checkout(req: Request, res: Response, next: NextFunction) {
     try {
@@ -594,6 +728,11 @@ export const posController = {
       // ✅ Resolve the idempotency key from header (preferred) or body.
       const idempotencyKey = getIdempotencyKey(req);
 
+      // ✅ Promotion / loyalty passthrough. Read directly off the body
+      //    so non-strict schemas can't strip them, and normalize snake_case
+      //    aliases + string numerics.
+      const promotion = readPromotionFields(req.body);
+
       const result = await checkoutService.processCheckout(
         {
           cartId: cart.id,
@@ -607,6 +746,8 @@ export const posController = {
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
           // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
+          // ✅ Forward the promotion / loyalty passthrough.
+          ...promotion,
         },
         userId
       );
@@ -677,6 +818,19 @@ export const posController = {
     }
   },
 
+  /**
+   * Get a product by barcode via `POSService.getProductByBarcode`.
+   *
+   * `POSService.getProductByBarcode` resolves against BOTH
+   * `Product.barcode` and `ProductVariant.barcode` — the same surface
+   * that `POST /barcodes/record-scan` accepts. A scan of a variant
+   * barcode now succeeds here just like it does on the write path.
+   *
+   * The response includes a `matchType: 'PRODUCT' | 'VARIANT'` field
+   * and, when a variant matches, a `matchedVariant` object carrying
+   * the exact `(id, sku, price, barcode)` the POS UI needs to add
+   * the right line to the cart.
+   */
   async getProductByBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -686,7 +840,7 @@ export const posController = {
         throw new AppError('Barcode is required', 400);
       }
 
-      const product = await productService.getProductByBarcode(barcode, businessUnitId);
+      const product = await posService.getProductByBarcode(businessUnitId, barcode);
 
       if (!product) {
         throw new AppError('Product not found', 404);
@@ -757,100 +911,101 @@ export const posController = {
    * back to a direct Prisma groupBy on `saleItem`.
    */
   async getPopularProducts(req: Request, res: Response, next: NextFunction) {
-    try {
-      const businessUnitId = await getBusinessUnitId(req);
-      const limit = parseInt(req.query.limit as string) || 10;
-      const days = parseInt(req.query.days as string) || 30;
+      try {
+        const businessUnitId = await getBusinessUnitId(req);
+        const limit = parseInt(req.query.limit as string) || 10;
+        const days = parseInt(req.query.days as string) || 30;
 
-      const since = new Date();
-      since.setDate(since.getDate() - days);
+        const since = new Date();
+        since.setDate(since.getDate() - days);
 
-      // Prefer the service method if it exists.
-      const anyProductService = productService as any;
-      if (typeof anyProductService.getMostPurchased === 'function') {
-        const results = await anyProductService.getMostPurchased(
-          businessUnitId,
-          limit,
-          since
-        );
-        res.status(200).json({ success: true, data: results });
-        return;
-      }
-
-      // Fallback: direct Prisma aggregation.
-      const popularItems = await prisma.saleItem.groupBy({
-        by: ['productId'],
-        where: {
-          sale: {
+        // Prefer the service method if it exists.
+        const anyProductService = productService as any;
+        if (typeof anyProductService.getMostPurchased === 'function') {
+          const results = await anyProductService.getMostPurchased(
             businessUnitId,
-            status: { notIn: ['CANCELLED', 'DELETED'] },
-            saleDate: { gte: since },
-          },
-        },
-        _sum: { quantity: true, total: true },
-        orderBy: { _sum: { quantity: 'desc' } },
-        take: limit,
-      });
+            limit,
+            since
+          );
+          res.status(200).json({ success: true, data: results });
+          return;
+        }
 
-      if (popularItems.length === 0) {
-        res.status(200).json({ success: true, data: [] });
-        return;
+        // Fallback: direct Prisma aggregation.
+        const popularItems = await prisma.saleItem.groupBy({
+          by: ['productId'],
+          where: {
+            sale: {
+              businessUnitId,
+              status: { notIn: ['CANCELLED', 'DELETED'] },
+              saleDate: { gte: since },
+            },
+          },
+          _sum: { quantity: true, total: true },
+          orderBy: { _sum: { quantity: 'desc' } },
+          take: limit,
+        });
+
+        if (popularItems.length === 0) {
+          res.status(200).json({ success: true, data: [] });
+          return;
+        }
+
+        const productIds = popularItems.map((p: any) => p.productId);
+
+        const products = await prisma.product.findMany({
+          where: {
+            id: { in: productIds },
+            isActive: true,
+            businessUnitId,
+          },
+          include: {
+            inventory: {
+              where: { businessUnitId },
+              select: { quantity: true, reserved: true },
+            },
+            category: { select: { id: true, name: true } },
+            images: true,
+          },
+        });
+
+        const result = popularItems
+          .map((agg: any) => {
+            const product = products.find((p: any) => p.id === agg.productId);
+            if (!product) return null;
+
+            const inv = Array.isArray(product.inventory)
+              ? product.inventory[0]
+              : product.inventory;
+            const available = inv
+              ? Math.max(0, inv.quantity - (inv.reserved || 0))
+              : 0;
+
+            return {
+              id: product.id,
+              name: product.name,
+              sku: product.sku,
+              unitPrice: product.unitPrice,
+              images: product.images || [],
+              category: product.category?.name || null,
+              categoryId: product.category?.id || null,
+              inventory: inv
+                ? { available, quantity: inv.quantity, reserved: inv.reserved || 0 }
+                : { available: 0, quantity: 0, reserved: 0 },
+              soldCount: agg._sum?.quantity || 0,
+              revenue: agg._sum?.total || 0,
+            };
+          })
+          .filter((p: any): p is NonNullable<typeof p> => p !== null);
+
+        res.status(200).json({
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        next(error);
       }
-
-      const productIds = popularItems.map((p: any) => p.productId);
-
-      const products = await prisma.product.findMany({
-        where: {
-          id: { in: productIds },
-          isActive: true,
-          businessUnitId,
-        },
-        include: {
-          inventory: {
-            where: { businessUnitId },
-            select: { quantity: true, reserved: true },
-          },
-          category: { select: { id: true, name: true } },
-        },
-      });
-
-      const result = popularItems
-        .map((agg: any) => {
-          const product = products.find((p: any) => p.id === agg.productId);
-          if (!product) return null;
-
-          const inv = Array.isArray(product.inventory)
-            ? product.inventory[0]
-            : product.inventory;
-          const available = inv
-            ? Math.max(0, inv.quantity - (inv.reserved || 0))
-            : 0;
-
-          return {
-            id: product.id,
-            name: product.name,
-            sku: product.sku,
-            unitPrice: product.unitPrice,
-            images: product.images || [],
-            category: product.category?.name || null,
-            categoryId: product.category?.id || null,
-            inventory: inv
-              ? { available, quantity: inv.quantity, reserved: inv.reserved || 0 }
-              : { available: 0, quantity: 0, reserved: 0 },
-            soldCount: agg._sum?.quantity || 0,
-            revenue: agg._sum?.total || 0,
-          };
-        })
-        .filter((p: any): p is NonNullable<typeof p> => p !== null);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
+    },
 
   // ============================================
   // CUSTOMER OPERATIONS

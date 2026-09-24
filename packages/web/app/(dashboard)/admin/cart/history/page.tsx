@@ -30,6 +30,7 @@ import {
   List,
   ChevronLeft,
   ChevronRight,
+  Info,
 } from 'lucide-react';
 import { toast } from '../../../../../utils/toast-manager';
 import { usePermission } from '../../../../../hooks/usePermission';
@@ -44,11 +45,19 @@ import {
 // ============================================
 // INTERFACES
 // ============================================
+//
+// These mirror what `GET /cart/abandoned` returns: raw `Cart` rows
+// with `items` and `customer` populated, but NOT `user`, `saleId`, or
+// `checkedOutAt`. Those fields were in the previous interface but are
+// never present on the wire, so the UI silently rendered blanks.
+// Optional fields are kept and guarded at every use site so that if
+// the backend later enriches the payload, they light up automatically.
 
 interface CartHistoryItem {
   id: string;
   userId: string;
-  user: {
+  /** Not returned by the current backend — see file header. */
+  user?: {
     id: string;
     firstName: string;
     lastName: string;
@@ -83,8 +92,9 @@ interface CartHistoryItem {
   status: string;
   createdAt: string;
   updatedAt: string;
+  /** Not returned by the current backend — see file header. */
   checkedOutAt?: string;
-  /** Server-provided link to the sale, if the cart was checked out. */
+  /** Not returned by the current backend — see file header. */
   saleId?: string;
 }
 
@@ -139,13 +149,30 @@ const STATUS_FILTERS = [
   { value: 'ABANDONED', label: 'Abandoned' },
 ];
 
+/**
+ * `/cart/abandoned` accepts `hours`, not `dateRange`. Translate the
+ * UI's named ranges into concrete hour windows.
+ */
+const DATE_RANGE_TO_HOURS: Record<string, number> = {
+  today: 24,
+  yesterday: 48,
+  week: 24 * 7,
+  month: 24 * 30,
+  quarter: 24 * 90,
+  year: 24 * 365,
+  all: 24 * 365 * 10,
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function AdminCartHistoryPage() {
   const router = useRouter();
-  const { canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    hasPermission,
+    isLoading: permissionLoading,
+  } = usePermission();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -180,14 +207,26 @@ export default function AdminCartHistoryPage() {
   // ============================================
 
   const canViewHistory =
-    canManage(PermissionResource.CART_VIEW_HISTORY) ||
-    canManage(PermissionResource.CART_VIEW) ||
-    canManage(PermissionResource.CART_MANAGE);
+    hasPermission(PermissionResource.CART_VIEW_HISTORY) ||
+    hasPermission(PermissionResource.CART_VIEW) ||
+    hasPermission(PermissionResource.CART_MANAGE);
 
   // ============================================
   // DATA FETCHING
   // ============================================
 
+  /**
+   * Fetch cart history.
+   *
+   * BACKEND LIMITATION: `GET /cart/history` returns only the current
+   * user's carts (`where: { userId, businessUnitId }`). The admin-scoped
+   * list endpoint is `GET /cart/abandoned`, which requires `hours`
+   * rather than `dateRange`. We use it with a wide window so this page
+   * functions as an admin history view.
+   *
+   * Client-side filters (`search`, `userId`, `maxValue`) compensate for
+   * parameters the endpoint does not understand.
+   */
   const fetchCartHistory = useCallback(
     async (mode: 'initial' | 'refresh' | 'silent' = 'silent') => {
       if (!canViewHistory) return;
@@ -198,32 +237,37 @@ export default function AdminCartHistoryPage() {
       try {
         setError(null);
 
+        const hours =
+          DATE_RANGE_TO_HOURS[filters.dateRange] ??
+          DATE_RANGE_TO_HOURS.week;
+
         const params: Record<string, unknown> = {
           page: pagination.page,
           limit: pagination.limit,
+          hours,
         };
-        if (filters.search) params.search = filters.search;
         if (filters.status !== 'all') params.status = filters.status;
         if (typeof filters.minValue === 'number') {
           params.minValue = filters.minValue;
         }
-        if (typeof filters.maxValue === 'number') {
-          params.maxValue = filters.maxValue;
-        }
-        if (filters.userId) params.userId = filters.userId;
-        if (filters.dateRange !== 'all') {
-          params.dateRange = filters.dateRange;
-        }
+        // `maxValue` and `userId` are not supported by the endpoint.
+        // Applied below, client-side.
 
-        const response = await cartService.getCartHistory(params);
+        const response = await cartService.getAbandonedCarts(params);
         if (!isMountedRef.current) return;
 
-        setCarts(response.carts ?? []);
+        const rawCarts: CartHistoryItem[] = Array.isArray(response)
+          ? response
+          : response?.carts ?? [];
+
+        const filtered = applyClientFilters(rawCarts, filters);
+
+        setCarts(filtered);
         setPagination({
-          total: response.total ?? 0,
-          page: response.page ?? 1,
-          totalPages: response.totalPages ?? 1,
-          limit: response.limit ?? DEFAULT_PAGINATION.limit,
+          total: response?.total ?? rawCarts.length,
+          page: response?.page ?? pagination.page,
+          totalPages: response?.totalPages ?? 1,
+          limit: response?.limit ?? pagination.limit,
         });
       } catch (err: any) {
         if (!isMountedRef.current) return;
@@ -243,12 +287,7 @@ export default function AdminCartHistoryPage() {
     },
     [
       canViewHistory,
-      filters.search,
-      filters.status,
-      filters.dateRange,
-      filters.minValue,
-      filters.maxValue,
-      filters.userId,
+      filters,
       pagination.page,
       pagination.limit,
     ],
@@ -410,13 +449,13 @@ export default function AdminCartHistoryPage() {
   // PERMISSION GUARD
   // ============================================
 
-  if (permissionLoading || loading) {
+  if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Loading cart history…
+            Checking permissions…
           </p>
         </div>
       </div>
@@ -442,6 +481,19 @@ export default function AdminCartHistoryPage() {
         >
           Back to Dashboard
         </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading cart history…
+          </p>
+        </div>
       </div>
     );
   }
@@ -522,6 +574,17 @@ export default function AdminCartHistoryPage() {
               Export CSV
             </button>
           </div>
+        </div>
+
+        {/* Page-scope notice */}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300 mb-6">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            Summary figures below reflect the <strong>current page</strong>{' '}
+            only. Filters for <em>search</em>, <em>user ID</em>, and{' '}
+            <em>max value</em> are applied client-side because the backend
+            endpoint does not yet support them.
+          </p>
         </div>
 
         {/* Stats */}
@@ -713,13 +776,23 @@ export default function AdminCartHistoryPage() {
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-gray-400 shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                {cart.user?.firstName}{' '}
-                                {cart.user?.lastName}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                {cart.user?.email}
-                              </p>
+                              {cart.user ? (
+                                <>
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {cart.user.firstName}{' '}
+                                    {cart.user.lastName}
+                                  </p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    {cart.user.email}
+                                  </p>
+                                </>
+                              ) : (
+                                <p className="text-sm font-mono text-gray-600 dark:text-gray-300 truncate">
+                                  {cart.userId
+                                    ? `${cart.userId.slice(0, 8)}…`
+                                    : 'Unknown'}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -784,12 +857,23 @@ export default function AdminCartHistoryPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-white truncate">
-                          {cart.user?.firstName} {cart.user?.lastName}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {cart.user?.email}
-                        </p>
+                        {cart.user ? (
+                          <>
+                            <p className="font-medium text-gray-900 dark:text-white truncate">
+                              {cart.user.firstName}{' '}
+                              {cart.user.lastName}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              {cart.user.email}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="font-mono text-sm text-gray-600 dark:text-gray-300 truncate">
+                            {cart.userId
+                              ? `${cart.userId.slice(0, 8)}…`
+                              : 'Unknown'}
+                          </p>
+                        )}
                       </div>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${getStatusColor(cart.status)}`}
@@ -927,13 +1011,23 @@ export default function AdminCartHistoryPage() {
               {/* Info grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 <InfoTile label="User">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">
-                    {selectedCart.user?.firstName}{' '}
-                    {selectedCart.user?.lastName}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {selectedCart.user?.email}
-                  </p>
+                  {selectedCart.user ? (
+                    <>
+                      <p className="font-medium text-gray-900 dark:text-white truncate">
+                        {selectedCart.user.firstName}{' '}
+                        {selectedCart.user.lastName}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {selectedCart.user.email}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="font-mono text-sm text-gray-700 dark:text-gray-300 truncate">
+                      {selectedCart.userId
+                        ? `${selectedCart.userId.slice(0, 12)}…`
+                        : 'Unknown'}
+                    </p>
+                  )}
                 </InfoTile>
                 <InfoTile label="Status">
                   <span
@@ -1041,6 +1135,65 @@ export default function AdminCartHistoryPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+// ============================================
+// MODULE-LEVEL HELPERS
+// ============================================
+
+/**
+ * Apply the filters the backend does not support, over the response
+ * rows. Runs in O(n·m) where m is the number of non-server filters, but
+ * n is capped at the page size and m is 3.
+ */
+function applyClientFilters(
+  carts: CartHistoryItem[],
+  filters: HistoryFilters,
+): CartHistoryItem[] {
+  const needle = filters.search.trim().toLowerCase();
+  const userId = filters.userId?.trim().toLowerCase();
+  const maxValue = filters.maxValue;
+
+  return carts.filter((c) => {
+    if (
+      typeof maxValue === 'number' &&
+      (c.total ?? 0) > maxValue
+    ) {
+      return false;
+    }
+
+    if (userId) {
+      const haystackUser = `${c.userId ?? ''}`.toLowerCase();
+      const haystackUserObj = c.user
+        ? `${c.user.id} ${c.user.email}`.toLowerCase()
+        : '';
+      if (
+        !haystackUser.includes(userId) &&
+        !haystackUserObj.includes(userId)
+      ) {
+        return false;
+      }
+    }
+
+    if (needle) {
+      const haystack = [
+        c.id,
+        c.userId,
+        c.user?.firstName,
+        c.user?.lastName,
+        c.user?.email,
+        c.customer?.firstName,
+        c.customer?.lastName,
+        c.customer?.email,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
+
+    return true;
+  });
 }
 
 // ============================================

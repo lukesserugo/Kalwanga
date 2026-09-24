@@ -1,4 +1,4 @@
-// src/services/onboardingService.ts
+// D:\Projects\Kalwanga\packages\backend\src\services\onboardingService.ts
 
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -71,87 +71,14 @@ export interface MarkStepResult {
 }
 
 // ============================================
-// STEP REGISTRY
+// CONTEXT / REGISTRY
 // ============================================
 
 interface ProbeContext {
   userId: string;
   businessUnitId: string;
   companyId: string | null;
-  prisma: PrismaClientLike;
-}
-
-interface PrismaClientLike {
-  company: {
-    count(args: { where: { id: string } }): Promise<number>;
-  };
-  companySettings: {
-    count(args: { where: { companyId: string } }): Promise<number>;
-  };
-  salesSettings: {
-    count(args: { where: { companyId: string } }): Promise<number>;
-  };
-  businessUnit: {
-    count(args: {
-      where: { id?: string; deletedAt: null };
-    }): Promise<number>;
-    findUnique(args: {
-      where: { id: string };
-      select: { companyId: true };
-    }): Promise<{ companyId: string } | null>;
-  };
-  cashRegister: {
-    count(args: {
-      where: { businessUnitId: string; isActive: boolean };
-    }): Promise<number>;
-  };
-  businessUnitUser: {
-    count(args: {
-      where: {
-        businessUnitId: string;
-        userId: { not: string };
-        isActive: boolean;
-      };
-    }): Promise<number>;
-  };
-  category: {
-    count(args: {
-      where: { businessUnitId: string; isActive: boolean };
-    }): Promise<number>;
-  };
-  supplier: {
-    count(args: {
-      where: { companyId: string; isActive: boolean };
-    }): Promise<number>;
-  };
-  paymentProvider: {
-    count(args: {
-      where: {
-        isActive: boolean;
-        deletedAt: null;
-        OR: Array<{ businessUnitId: string } | { businessUnitId: null }>;
-      };
-    }): Promise<number>;
-  };
-  product: {
-    count(args: {
-      where: {
-        businessUnitId: string;
-        deletedAt: null;
-        isActive: boolean;
-      };
-    }): Promise<number>;
-  };
-  shiftLog: {
-    count(args: {
-      where: { userId: string; businessUnitId: string; status: string };
-    }): Promise<number>;
-  };
-  sale: {
-    count(args: {
-      where: { businessUnitId: string; status: string };
-    }): Promise<number>;
-  };
+  prisma: Prisma.TransactionClient;
 }
 
 interface StepDefinition {
@@ -417,11 +344,11 @@ const STEP_BY_ID = new Map(STEP_REGISTRY.map((s) => [s.id, s]));
 const TOTAL_STEPS = STEP_REGISTRY.length;
 
 export const OPTIONAL_STEP_IDS = new Set<number>(
-  STEP_REGISTRY.filter((s) => s.optional).map((s) => s.id)
+  STEP_REGISTRY.filter((s) => s.optional).map((s) => s.id),
 );
 
 export const STEP_NAMES: Record<number, string> = Object.fromEntries(
-  STEP_REGISTRY.map((s) => [s.id, s.name])
+  STEP_REGISTRY.map((s) => [s.id, s.name]),
 );
 
 // ============================================
@@ -445,7 +372,7 @@ function readCursor(raw: unknown): number | null {
 
 function writeCursor(
   steps: Record<string, StepState>,
-  stepId: number | null
+  stepId: number | null,
 ): Record<string, StepState> {
   const next: Record<string, StepState> = { ...steps };
   if (stepId === null) {
@@ -457,7 +384,7 @@ function writeCursor(
 }
 
 function stripCursor(
-  steps: Record<string, StepState>
+  steps: Record<string, StepState>,
 ): Record<string, StepState> {
   const out: Record<string, StepState> = {};
   for (const [k, v] of Object.entries(steps)) {
@@ -468,13 +395,13 @@ function stripCursor(
 }
 
 function writeStepsBlob(
-  steps: Record<string, StepState>
+  steps: Record<string, StepState>,
 ): Prisma.InputJsonValue {
   return steps as unknown as Prisma.InputJsonValue;
 }
 
 function writeNullableJson(
-  value: unknown | null
+  value: unknown,
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
   if (value === null || value === undefined) return Prisma.JsonNull;
   return value as unknown as Prisma.InputJsonValue;
@@ -499,24 +426,16 @@ interface ResolvedSteps {
 }
 
 export class OnboardingService extends BaseService {
-  /**
-   * Expand a route template like `/admin/companies/:companyId/settings`
-   * into a real path using the caller's resolved context.
-   *
-   * Returns `null` when a required context value is missing — the
-   * caller must then HIDE the step rather than redirect the user
-   * to the wrong page (which is what caused the step-1/step-2 loop).
-   */
   private resolveRoute(
     template: string,
-    ctx: { companyId?: string | null; businessUnitId?: string | null }
+    ctx: { companyId?: string | null; businessUnitId?: string | null },
   ): string | null {
     let route = template;
 
     if (route.includes(':companyId')) {
       if (!ctx.companyId) {
         logger.warn(
-          `[onboarding] Cannot resolve route template ${template}: missing companyId`
+          `[onboarding] Cannot resolve route template ${template}: missing companyId`,
         );
         return null;
       }
@@ -526,7 +445,7 @@ export class OnboardingService extends BaseService {
     if (route.includes(':businessUnitId')) {
       if (!ctx.businessUnitId) {
         logger.warn(
-          `[onboarding] Cannot resolve route template ${template}: missing businessUnitId`
+          `[onboarding] Cannot resolve route template ${template}: missing businessUnitId`,
         );
         return null;
       }
@@ -536,17 +455,12 @@ export class OnboardingService extends BaseService {
     return route;
   }
 
-  /**
-   * Build a `NextStep` payload with the pagination metadata
-   * attached. Returns `null` if the route cannot be resolved —
-   * callers must skip such steps to avoid dead links.
-   */
   private buildNextStep(
     def: StepDefinition,
     state: StepState,
     activeIndex: number,
     displayTotal: number,
-    ctx: { companyId?: string | null; businessUnitId?: string | null }
+    ctx: { companyId?: string | null; businessUnitId?: string | null },
   ): NextStep | null {
     const route = this.resolveRoute(def.routeTemplate, ctx);
     if (!route) return null;
@@ -568,24 +482,17 @@ export class OnboardingService extends BaseService {
     };
   }
 
-  /**
-   * Run all step probes in parallel and merge with persisted state.
-   * Returns the full per-step state plus the ordered list of step
-   * IDs still "active" (not complete, not skipped).
-   *
-   * This is the single source of truth for pagination.
-   */
   private async resolveActiveSteps(
     userId: string,
     businessUnitId: string,
     companyId: string | null,
-    persistedSteps: Record<string, StepState>
+    persistedSteps: Record<string, StepState>,
   ): Promise<ResolvedSteps> {
     const ctx: ProbeContext = {
       userId,
       businessUnitId,
       companyId,
-      prisma: this.prisma as unknown as PrismaClientLike,
+      prisma: this.prisma as unknown as Prisma.TransactionClient,
     };
 
     const probeResults = await Promise.all(
@@ -597,11 +504,11 @@ export class OnboardingService extends BaseService {
           logger.error(
             `[onboarding] probe FAILED for step ${def.id} (${def.name}) — ` +
               `step will remain active until manually completed`,
-            err
+            err,
           );
           return { id: def.id, result: null as boolean | null };
         }
-      })
+      }),
     );
 
     const probeMap = new Map(probeResults.map((p) => [p.id, p.result]));
@@ -651,16 +558,12 @@ export class OnboardingService extends BaseService {
     return { states, activeIds, doneIds, degraded };
   }
 
-  /**
-   * Compute `completedCount`, `isComplete`, and `completedAt` from
-   * a merged state map. Centralized so every write path persists
-   * the SAME derived values — no drift between mark/skip/reset.
-   */
-  private deriveProgress(
-    states: Record<number, StepState>
-  ): { completedCount: number; isComplete: boolean } {
+  private deriveProgress(states: Record<number, StepState>): {
+    completedCount: number;
+    isComplete: boolean;
+  } {
     const completedCount = Object.values(states).filter(
-      (s) => s.completed
+      (s) => s.completed,
     ).length;
     const remaining = STEP_REGISTRY.filter((def) => {
       const s = states[def.id];
@@ -669,35 +572,42 @@ export class OnboardingService extends BaseService {
     return { completedCount, isComplete: remaining.length === 0 };
   }
 
+  private toNumericStates(
+    steps: Record<string, StepState>,
+  ): Record<number, StepState> {
+    const out: Record<number, StepState> = {};
+    for (const [k, v] of Object.entries(steps)) {
+      const id = Number(k);
+      if (!Number.isInteger(id) || !STEP_BY_ID.has(id)) continue;
+      out[id] = v;
+    }
+    return out;
+  }
+
+  // ── READ ────────────────────────────────────────────────────
+
   /**
    * Get the current onboarding status for a user.
    *
-   * The cursor (persisted under `__cursor` in the steps blob)
-   * determines which step the guide highlights. If the cursor
-   * points at a step that has since been completed or skipped,
-   * the service advances to the first unmet mandatory step.
-   *
-   * ✅ FIX: The service no longer persists `businessUnitId` into
-   *    `onboardingProgress`. That column was a stale cache: it
-   *    stored whichever BU was resolved on a previous request, so
-   *    if the user's real BU changed (or the frontend switched
-   *    BUs), the next `getStatus` would reuse the stale value and
-   *    probe against the wrong BU. Leaving it `null` forces every
-   *    request to use the caller-supplied BU, which is the one the
-   *    controller resolved for THIS request.
+   * ⚠ `businessUnitId` MUST be the BU resolved by the controller
+   * for the current request. Persisting it into the progress row
+   * was a cache that could disagree with the caller's BU — the
+   * "step 1 ↔ step 2 loop" bug — so the write path never touches
+   * that column.
    */
   async getStatus(
     userId: string,
     businessUnitId: string,
-    companyId?: string | null
+    companyId?: string | null,
   ): Promise<OnboardingStatus> {
     if (!userId) throw new AppError('User ID is required', 400);
+    if (!businessUnitId) {
+      throw new AppError('Business Unit ID is required', 400);
+    }
 
-    const hasBu = Boolean(businessUnitId);
-
-    // ── Resolve companyId if not supplied ──────────────────────
+    // ── 1. Resolve companyId if not supplied ───────────────────
     let resolvedCompanyId: string | null = companyId ?? null;
-    if (!resolvedCompanyId && hasBu) {
+    if (!resolvedCompanyId) {
       const bu = await this.prisma.businessUnit.findUnique({
         where: { id: businessUnitId },
         select: { companyId: true },
@@ -705,7 +615,7 @@ export class OnboardingService extends BaseService {
       resolvedCompanyId = bu?.companyId ?? null;
     }
 
-    // ── 1. Load or create persisted progress ───────────────────
+    // ── 2. Load or create persisted progress ───────────────────
     let progress = await this.prisma.onboardingProgress.findUnique({
       where: { userId },
     });
@@ -715,7 +625,7 @@ export class OnboardingService extends BaseService {
         data: {
           userId,
           companyId: resolvedCompanyId,
-          businessUnitId: hasBu ? businessUnitId : null,
+          // businessUnitId is deliberately left unset.
           steps: {},
           totalSteps: TOTAL_STEPS,
         },
@@ -726,19 +636,18 @@ export class OnboardingService extends BaseService {
     const persistedSteps = stripCursor(rawBlob);
     const cursorId = readCursor(rawBlob);
 
-    // ── 2. Dynamic step resolution ─────────────────────────────
-    const { states, activeIds, doneIds, degraded } =
-      await this.resolveActiveSteps(
-        userId,
-        businessUnitId,
-        resolvedCompanyId,
-        persistedSteps
-      );
+    // ── 3. Dynamic step resolution ─────────────────────────────
+    const { states, activeIds, degraded } = await this.resolveActiveSteps(
+      userId,
+      businessUnitId,
+      resolvedCompanyId,
+      persistedSteps,
+    );
 
-    // ── 3. Build the active step list (with resolved routes) ───
+    // ── 4. Build the active step list ──────────────────────────
     const routeCtx = {
       companyId: resolvedCompanyId,
-      businessUnitId: hasBu ? businessUnitId : null,
+      businessUnitId,
     };
 
     const activeSteps: NextStep[] = [];
@@ -749,7 +658,7 @@ export class OnboardingService extends BaseService {
         states[id],
         activeSteps.length,
         activeIds.length,
-        routeCtx
+        routeCtx,
       );
       if (built) activeSteps.push(built);
     }
@@ -760,7 +669,7 @@ export class OnboardingService extends BaseService {
       activeSteps[i].displayTotal = activeSteps.length;
     }
 
-    // ── 4. Determine nextStep / prevStep / currentIndex ────────
+    // ── 5. Determine nextStep / prevStep / currentIndex ────────
     let currentIndex = -1;
     if (cursorId !== null) {
       currentIndex = activeSteps.findIndex((s) => s.id === cursorId);
@@ -772,40 +681,35 @@ export class OnboardingService extends BaseService {
         firstMandatoryIndex >= 0
           ? firstMandatoryIndex
           : activeSteps.length > 0
-          ? 0
-          : -1;
+            ? 0
+            : -1;
     }
 
     const nextStep = currentIndex >= 0 ? activeSteps[currentIndex] : null;
-    const prevStep = currentIndex > 0 ? activeSteps[currentIndex - 1] : null;
+    const prevStep =
+      currentIndex > 0 ? activeSteps[currentIndex - 1] : null;
 
-    // ── 5. Persist merged state ────────────────────────────────
-    //
-    // ✅ FIX: `businessUnitId` is intentionally NOT written back.
-    //    It stays whatever it was (or null). Persisting the
-    //    caller-supplied BU made it a stale cache that could
-    //    disagree with the BU the controller resolved for the
-    //    current request.
+    // ── 6. Persist merged state ────────────────────────────────
     const { completedCount, isComplete } = this.deriveProgress(states);
 
     const updatedProgress = await this.prisma.onboardingProgress.update({
       where: { userId },
       data: {
         steps: writeStepsBlob(
-          cursorId !== null ? writeCursor(states, cursorId) : states
+          cursorId !== null ? writeCursor(states, cursorId) : states,
         ),
         completedCount,
         totalSteps: TOTAL_STEPS,
         isComplete,
         completedAt: isComplete
-          ? progress.completedAt ?? new Date()
+          ? (progress.completedAt ?? new Date())
           : null,
         companyId: resolvedCompanyId,
-        // ✅ businessUnitId is deliberately omitted here.
+        // ⚠ businessUnitId is deliberately NOT written.
       },
     });
 
-    // ── 6. Build gates ─────────────────────────────────────────
+    // ── 7. Build gates ─────────────────────────────────────────
     const gates: OnboardingGate = {
       gate1_company: !!states[1]?.completed,
       gate2_companySettings: !!states[2]?.completed,
@@ -823,7 +727,7 @@ export class OnboardingService extends BaseService {
 
     if (degraded.length > 0) {
       logger.warn(
-        `[onboarding] degraded probes for user=${userId}: ${degraded.join(', ')}`
+        `[onboarding] degraded probes for user=${userId}: ${degraded.join(', ')}`,
       );
     }
 
@@ -846,18 +750,24 @@ export class OnboardingService extends BaseService {
     };
   }
 
+  // ── WRITE ───────────────────────────────────────────────────
+  //
+  // Every write path takes the BU the controller resolved for the
+  // CURRENT request. Passing it here (instead of relying on the
+  // service's own recursive read) is what fixed the state reset bug.
+
   /**
-   * Move the user's cursor to a specific step. The service
-   * persists the cursor, records an audit event, and returns the
-   * refreshed status so the guide can re-render in one round-trip.
-   *
-   * ✅ FIX: The recursive `getStatus` call passes `''` for
-   *    `businessUnitId`. The service has no business remembering
-   *    which BU was used before; the controller re-resolves it
-   *    from the current request.
+   * Move the user's cursor to a specific step.
    */
-  async paginate(userId: string, stepId: number): Promise<OnboardingStatus> {
+  async paginate(
+    userId: string,
+    stepId: number,
+    businessUnitId: string,
+  ): Promise<OnboardingStatus> {
     if (!userId) throw new AppError('User ID is required', 400);
+    if (!businessUnitId) {
+      throw new AppError('Business Unit ID is required', 400);
+    }
     if (!STEP_BY_ID.has(stepId)) {
       throw new AppError(`Unknown onboarding step: ${stepId}`, 400);
     }
@@ -890,7 +800,7 @@ export class OnboardingService extends BaseService {
         userId,
         stepId,
         stepKey: `step_${stepId}`,
-        event: targetDone ? 'ADVANCED_PAST' : 'VIEWED',
+        event: targetDone ? 'SKIPPED' : 'VIEWED',
         previousState: writeNullableJson({
           cursorStepId: readCursor(steps),
         }),
@@ -901,29 +811,27 @@ export class OnboardingService extends BaseService {
       },
     });
 
-    // ✅ FIX: do not pass a stale BU; let the caller re-resolve.
     return this.getStatus(
       userId,
-      '',
-      progress.companyId ?? null
+      businessUnitId,
+      progress.companyId ?? null,
     );
   }
 
   /**
-   * Manually mark a step as completed. Returns the updated step
-   * AND the full refreshed status so callers don't need a second
-   * round-trip.
-   *
-   * ✅ FIX: The recursive `getStatus` call passes `''` for
-   *    `businessUnitId`.
+   * Manually mark a step as completed.
    */
   async markStepCompleted(
     userId: string,
     stepId: number,
+    businessUnitId: string,
     source: 'manual' | 'admin' = 'manual',
-    notes?: string
+    notes?: string,
   ): Promise<MarkStepResult> {
     if (!userId) throw new AppError('User ID is required', 400);
+    if (!businessUnitId) {
+      throw new AppError('Business Unit ID is required', 400);
+    }
     if (!STEP_BY_ID.has(stepId)) {
       throw new AppError(`Unknown onboarding step: ${stepId}`, 400);
     }
@@ -956,7 +864,7 @@ export class OnboardingService extends BaseService {
     steps[String(stepId)] = updated;
 
     const { completedCount, isComplete } = this.deriveProgress(
-      this.toNumericStates(steps)
+      this.toNumericStates(steps),
     );
 
     const nextCursor = cursorId === stepId ? null : cursorId;
@@ -985,38 +893,38 @@ export class OnboardingService extends BaseService {
       },
     });
 
-    // ✅ FIX: do not pass a stale BU.
     return {
       success: true,
       step: updated,
       status: await this.getStatus(
         userId,
-        '',
-        progress.companyId ?? null
+        businessUnitId,
+        progress.companyId ?? null,
       ),
     };
   }
 
   /**
    * Mark an optional step as skipped. Mandatory steps throw 400.
-   *
-   * ✅ FIX: The recursive `getStatus` call passes `''` for
-   *    `businessUnitId`.
    */
   async skipStep(
     userId: string,
     stepId: number,
+    businessUnitId: string,
     source: 'manual' | 'admin' = 'manual',
-    notes?: string
+    notes?: string,
   ): Promise<MarkStepResult> {
     if (!userId) throw new AppError('User ID is required', 400);
+    if (!businessUnitId) {
+      throw new AppError('Business Unit ID is required', 400);
+    }
     if (!STEP_BY_ID.has(stepId)) {
       throw new AppError(`Unknown onboarding step: ${stepId}`, 400);
     }
     if (!OPTIONAL_STEP_IDS.has(stepId)) {
       throw new AppError(
         `Step ${stepId} is mandatory and cannot be skipped`,
-        400
+        400,
       );
     }
 
@@ -1047,7 +955,7 @@ export class OnboardingService extends BaseService {
     steps[String(stepId)] = updated;
 
     const { completedCount, isComplete } = this.deriveProgress(
-      this.toNumericStates(steps)
+      this.toNumericStates(steps),
     );
 
     const nextCursor = cursorId === stepId ? null : cursorId;
@@ -1076,29 +984,29 @@ export class OnboardingService extends BaseService {
       },
     });
 
-    // ✅ FIX: do not pass a stale BU.
     return {
       success: true,
       step: updated,
       status: await this.getStatus(
         userId,
-        '',
-        progress.companyId ?? null
+        businessUnitId,
+        progress.companyId ?? null,
       ),
     };
   }
 
   /**
-   * Reset onboarding progress for a user. Records an audit event.
-   * Clears the cursor too, so the guide starts fresh at step 1.
-   *
-   * ✅ FIX: The recursive `getStatus` call passes `''` for
-   *    `businessUnitId`.
+   * Reset onboarding progress for a user.
    */
   async reset(
     userId: string,
-    performedBy: string
+    businessUnitId: string,
+    performedBy: string,
   ): Promise<{ success: true; status: OnboardingStatus }> {
+    if (!businessUnitId) {
+      throw new AppError('Business Unit ID is required', 400);
+    }
+
     const prev = await this.prisma.onboardingProgress.findUnique({
       where: { userId },
     });
@@ -1133,49 +1041,36 @@ export class OnboardingService extends BaseService {
       },
     });
 
-    // ✅ FIX: do not pass a stale BU.
     return {
       success: true,
       status: await this.getStatus(
         userId,
-        '',
-        prev?.companyId ?? null
+        businessUnitId,
+        prev?.companyId ?? null,
       ),
     };
   }
 
   /**
-   * Convenience: is a specific route blocked by the current next
-   * step's `blocksRoutes`?
+   * Is a specific route blocked by the current next step's
+   * `blocksRoutes`?
    */
   async isRouteBlocked(
     route: string,
     userId: string,
     businessUnitId: string,
-    companyId?: string | null
+    companyId?: string | null,
   ): Promise<{ blocked: boolean; step?: NextStep }> {
     const status = await this.getStatus(userId, businessUnitId, companyId);
     if (!status.nextStep) return { blocked: false };
 
     const blocked = status.nextStep.blocksRoutes.some((base) =>
-      route.startsWith(base)
+      route.startsWith(base),
     );
 
     return blocked
       ? { blocked: true, step: status.nextStep }
       : { blocked: false };
-  }
-
-  private toNumericStates(
-    steps: Record<string, StepState>
-  ): Record<number, StepState> {
-    const out: Record<number, StepState> = {};
-    for (const [k, v] of Object.entries(steps)) {
-      const id = Number(k);
-      if (!Number.isInteger(id) || !STEP_BY_ID.has(id)) continue;
-      out[id] = v;
-    }
-    return out;
   }
 }
 
