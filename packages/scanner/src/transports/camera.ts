@@ -65,7 +65,7 @@ export class CameraAdapter implements TransportAdapter {
       const reader = new BrowserMultiFormatReader();
       this.detector = {
         detect: async () => {
-          const result = await reader.decodeOnceFromVideoElement(
+          const result = await reader.decodeFromVideoElement(
             this.opts.video,
           ).catch(() => null);
           return result
@@ -124,7 +124,7 @@ export class CameraAdapter implements TransportAdapter {
           }
         }
       } catch {
-        /* swallow — detection failures are expected per frame */
+        /* swallow â€” detection failures are expected per frame */
       }
     }
     this.rafId = requestAnimationFrame(() => void this.loop());

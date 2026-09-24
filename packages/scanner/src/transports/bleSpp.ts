@@ -43,7 +43,7 @@ export class BleSppAdapter implements TransportAdapter {
   private battery: number | null = null;
   private opts: Required<Omit<Options, 'bridge' | 'onCode'>> & {
     bridge: BleBridge;
-    onCode: (code: string) => void;
+    onCode: (code: string, format?: string) => void;
   };
 
   constructor(options: Options) {

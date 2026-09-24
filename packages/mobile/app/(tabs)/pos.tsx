@@ -43,10 +43,10 @@ export default function POSScreen() {
   const loadData = useCallback(async () => {
     try {
       const [productsResponse, categoriesResponse, savedCart] = await Promise.all([
-        apiService.get<ApiResponse<Product[]>>("/products", {
+        apiService.get<Product[]>("/products", {
           params: { businessUnitId: "default", limit: 50 },
         }),
-        apiService.get<ApiResponse<any[]>>("/categories"),
+        apiService.get<any[]>("/categories"),
         CartService.getCart(),
       ]);
 
@@ -218,7 +218,7 @@ export default function POSScreen() {
         businessUnitId: "default",
       };
 
-      const response = await apiService.post<ApiResponse<{ receiptNumber: string }>>("/sales", saleData);
+      const response = await apiService.post<{ receiptNumber: string }>("/sales", saleData);
       
       setCart([]);
       await CartService.clearCart();
@@ -399,7 +399,7 @@ export default function POSScreen() {
                     {item.product.name}
                   </Text>
                   <Text style={[styles.cartItemPrice, { color: colors.textSecondary }]}>
-                    {formatCurrency(item.unitPrice)} × {item.quantity}
+                    {formatCurrency(item.unitPrice)} Ã— {item.quantity}
                   </Text>
                 </View>
                 <View style={styles.cartItemActions}>

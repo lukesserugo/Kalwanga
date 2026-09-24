@@ -13,9 +13,9 @@ import { useSignUp } from "@clerk/clerk-expo";
 import { useState } from "react";
 import { router, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../../hooks/useTheme";
-import { useToast } from "../../hooks/useToast";
-import { validateEmail, validatePhone, validateRequired } from "../../utils/validators";
+import { useTheme } from "../../../hooks/useTheme";
+import { useToast } from "../../../hooks/useToast";
+import { validateEmail, validatePhone, validateRequired } from "../../../utils/validators";
 
 export default function RegisterScreen() {
   const { signUp, setActive, isLoaded } = useSignUp();
@@ -75,7 +75,7 @@ export default function RegisterScreen() {
         await setActive({ session: signUpAttempt.createdSessionId });
         showToast("Account created successfully!", "success");
         router.replace("/(tabs)");
-      } else if (signUpAttempt.status === "needs_verification") {
+      } else if ((signUpAttempt.status as string) === "needs_verification") {
         // Redirect to verification
         showToast("Please verify your email", "info");
         router.push("/(auth)/verify");

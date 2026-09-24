@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../hooks/useTheme";
+import { useTheme } from "../../hooks/useTheme";
 
 export default function HelpPage() {
   const { colors } = useTheme();
@@ -35,19 +35,19 @@ export default function HelpPage() {
 
       <View style={styles.quickLinks}>
         <TouchableOpacity style={[styles.quickLink, { backgroundColor: colors.card }]}>
-          <Text style={styles.quickLinkIcon}>🚀</Text>
+          <Text style={styles.quickLinkIcon}>ðŸš€</Text>
           <Text style={[styles.quickLinkText, { color: colors.text }]}>Getting Started</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.quickLink, { backgroundColor: colors.card }]}>
-          <Text style={styles.quickLinkIcon}>📦</Text>
+          <Text style={styles.quickLinkIcon}>ðŸ“¦</Text>
           <Text style={[styles.quickLinkText, { color: colors.text }]}>Inventory</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.quickLink, { backgroundColor: colors.card }]}>
-          <Text style={styles.quickLinkIcon}>💳</Text>
+          <Text style={styles.quickLinkIcon}>ðŸ’³</Text>
           <Text style={[styles.quickLinkText, { color: colors.text }]}>Sales & Payments</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.quickLink, { backgroundColor: colors.card }]}>
-          <Text style={styles.quickLinkIcon}>📊</Text>
+          <Text style={styles.quickLinkIcon}>ðŸ“Š</Text>
           <Text style={[styles.quickLinkText, { color: colors.text }]}>Reports</Text>
         </TouchableOpacity>
       </View>
@@ -65,7 +65,7 @@ export default function HelpPage() {
       <View style={styles.contactSupport}>
         <Text style={[styles.supportText, { color: colors.textSecondary }]}>Still have questions?</Text>
         <TouchableOpacity onPress={() => router.push("/contact")}>
-          <Text style={[styles.supportLink, { color: colors.primary }]}>Contact Support →</Text>
+          <Text style={[styles.supportLink, { color: colors.primary }]}>Contact Support â†’</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

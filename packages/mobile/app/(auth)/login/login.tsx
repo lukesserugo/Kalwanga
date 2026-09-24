@@ -14,8 +14,8 @@ import { useSignIn } from "@clerk/clerk-expo";
 import { useState } from "react";
 import { router, Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useTheme } from "../../hooks/useTheme";
-import { useToast } from "../../hooks/useToast";
+import { useTheme } from "../../../hooks/useTheme";
+import { useToast } from "../../../hooks/useToast";
 
 export default function LoginScreen() {
   const { signIn, setActive, isLoaded } = useSignIn();
@@ -47,7 +47,7 @@ export default function LoginScreen() {
         await setActive({ session: signInAttempt.createdSessionId });
         showToast("Welcome back!", "success");
         router.replace("/(tabs)");
-      } else if (signInAttempt.status === "needs_verification") {
+      } else if ((signInAttempt.status as string) === "needs_verification") {
         // Handle email verification needed
         showToast("Please verify your email first", "warning");
         router.push("/(auth)/verify");

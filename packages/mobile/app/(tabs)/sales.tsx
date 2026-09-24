@@ -14,7 +14,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { useToast } from "../../hooks/useToast";
 import { apiService } from "../../services/api";
 import { formatCurrency, formatDate } from "../../utils/helpers";
-import { Sale } from "@pos/shared/types";
+import type { Sale } from "@pos/shared/types";
 
 export default function SalesScreen() {
   const { colors } = useTheme();
@@ -34,7 +34,7 @@ export default function SalesScreen() {
           limit: 50,
         },
       });
-      setSales(response.data);
+      setSales(response.data ?? []);
     } catch (error) {
       console.error("Error loading sales:", error);
       showToast("Failed to load sales", "error");
@@ -54,7 +54,7 @@ export default function SalesScreen() {
   }, [loadSales]);
 
   const filterSales = (sales: Sale[]) => {
-    const filtered = sales.filter(sale => {
+    const filtered = sales.filter((sale) => {
       const search = searchQuery.toLowerCase();
       return (
         sale.receiptNumber.toLowerCase().includes(search) ||
@@ -72,11 +72,11 @@ export default function SalesScreen() {
 
     switch (selectedFilter) {
       case "today":
-        return filtered.filter(sale => new Date(sale.createdAt) >= today);
+        return filtered.filter((sale) => new Date(sale.createdAt) >= today);
       case "week":
-        return filtered.filter(sale => new Date(sale.createdAt) >= weekAgo);
+        return filtered.filter((sale) => new Date(sale.createdAt) >= weekAgo);
       case "month":
-        return filtered.filter(sale => new Date(sale.createdAt) >= monthAgo);
+        return filtered.filter((sale) => new Date(sale.createdAt) >= monthAgo);
       default:
         return filtered;
     }
@@ -121,7 +121,12 @@ export default function SalesScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" },
+        ]}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -158,16 +163,14 @@ export default function SalesScreen() {
             key={filter}
             style={[
               styles.filterChip,
-              {
-                backgroundColor: selectedFilter === filter ? colors.primary : colors.card,
-              },
+              { backgroundColor: selectedFilter === filter ? colors.primary : colors.card },
             ]}
             onPress={() => setSelectedFilter(filter)}
           >
             <Text
               style={[
                 styles.filterText,
-                { color: selectedFilter === filter ? '#fff' : colors.text },
+                { color: selectedFilter === filter ? "#fff" : colors.text },
               ]}
             >
               {filter.charAt(0).toUpperCase() + filter.slice(1)}
@@ -183,11 +186,7 @@ export default function SalesScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.primary]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -203,114 +202,59 @@ export default function SalesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 8,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  headerTotal: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
+  headerTitle: { fontSize: 20, fontWeight: "bold" },
+  headerTotal: { fontSize: 18, fontWeight: "600" },
+  searchContainer: { paddingHorizontal: 16, paddingBottom: 8 },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
   },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    fontSize: 16,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 8,
-    marginBottom: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  filterText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  list: {
-    padding: 16,
-  },
+  searchInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, fontSize: 16 },
+  filterContainer: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 8 },
+  filterChip: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
+  filterText: { fontSize: 13, fontWeight: "500" },
+  list: { padding: 16 },
   saleCard: {
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
   saleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 4,
   },
-  saleReceipt: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  saleTotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saleDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  saleDate: {
-    fontSize: 13,
-  },
-  saleCustomer: {
-    fontSize: 13,
-  },
+  saleReceipt: { fontSize: 15, fontWeight: "600" },
+  saleTotal: { fontSize: 16, fontWeight: "bold" },
+  saleDetails: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  saleDate: { fontSize: 13 },
+  saleCustomer: { fontSize: 13 },
   saleFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingTop: 8,
     borderTopWidth: 1,
   },
-  saleItems: {
-    fontSize: 13,
-  },
-  saleStatus: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  emptyContainer: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    marginTop: 16,
-  },
+  saleItems: { fontSize: 13 },
+  saleStatus: { fontSize: 13, fontWeight: "500" },
+  emptyContainer: { padding: 40, alignItems: "center" },
+  emptyText: { fontSize: 16, marginTop: 16 },
 });

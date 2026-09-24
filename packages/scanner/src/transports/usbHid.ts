@@ -27,7 +27,7 @@ export class UsbHidAdapter implements TransportAdapter {
   private target: HTMLElement | Document;
   private opts: Required<Omit<Options, 'target' | 'onCode'>> & {
     target: HTMLElement | Document;
-    onCode: (code: string) => void;
+    onCode: (code: string, format?: string) => void;
   };
 
   constructor(options: Options) {
@@ -84,7 +84,7 @@ export class UsbHidAdapter implements TransportAdapter {
 
     const now = Date.now();
 
-    // Gap too long since last keystroke → previous buffer was
+    // Gap too long since last keystroke â†’ previous buffer was
     // human typing, discard it.
     if (this.buffer && now - this.lastKeyAt > this.opts.maxGapMs) {
       this.buffer = '';
@@ -106,7 +106,7 @@ export class UsbHidAdapter implements TransportAdapter {
         this.opts.flushDelayMs,
       );
 
-      // Scanner guns type fast — suppress the keystroke from
+      // Scanner guns type fast â€” suppress the keystroke from
       // reaching any focused UI element.
       ev.preventDefault();
     }

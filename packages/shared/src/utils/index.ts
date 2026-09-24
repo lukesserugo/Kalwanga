@@ -91,7 +91,7 @@ export function formatRelativeTime(
   const now = new Date();
   const diff = now.getTime() - d.getTime();
 
-  const rtf = new Intl.RelativeTimeFormatter(locale, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
 
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -560,3 +560,4 @@ export function getApiUrl(): string {
 export function getWebSocketUrl(): string {
   return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
 }
+

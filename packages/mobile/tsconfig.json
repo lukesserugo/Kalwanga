@@ -1,10 +1,14 @@
-﻿{
+{
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@pos/shared/*": ["../shared/src/*"]
+      "@pos/shared": ["../shared/src/index.ts"],
+      "@pos/shared/*": ["../shared/src/*"],
+      "@pos/tokens": ["../tokens/src/index.ts"],
+      "@pos/tokens/*": ["../tokens/src/*"]
     },
     "jsx": "react-native",
     "allowJs": true,
@@ -12,14 +16,16 @@
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "noEmit": true,
-    "typeRoots": ["./node_modules/@types", "./types"]
+    "typeRoots": ["./node_modules/@types", "./types"],
+    "types": ["node", "web-bluetooth"]
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
+    "nativewind-env.d.ts",
     "types/**/*.d.ts"
   ],
-  "exclude": ["node_modules", "dist", "web-build"]
+  "exclude": ["node_modules", "dist", "web-build", ".expo"]
 }

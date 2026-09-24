@@ -123,7 +123,7 @@ export default function ProfileScreen() {
           <View style={styles.userMetaItem}>
             <Ionicons name="shield-outline" size={16} color={colors.textSecondary} />
             <Text style={[styles.userMetaText, { color: colors.textSecondary }]}>
-              {user?.publicMetadata?.role || "Employee"}
+              {String(user?.publicMetadata?.role || "Employee")}
             </Text>
           </View>
         </View>
