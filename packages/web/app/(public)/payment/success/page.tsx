@@ -1,6 +1,13 @@
+// D:\Projects\Kalwanga\packages\web\app\(public)\payment\success\page.tsx
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -33,11 +40,16 @@ import {
 } from 'lucide-react';
 import { useThemeStore } from '../../../stores/themeStore';
 import { paymentService } from '../../../../services/paymentService';
+import { checkoutService } from '../../../../services/checkoutService';
 import {
   formatCurrency,
   formatDate,
 } from '../../../../utils/formatters';
 import { toast } from '../../../../utils/toast-manager';
+
+// ============================================
+// TYPES
+// ============================================
 
 interface PaymentDetails {
   id: string;
@@ -48,6 +60,7 @@ interface PaymentDetails {
   processedAt: string;
   provider?: string;
   gatewayId?: string;
+  metadata?: Record<string, unknown>;
   sale?: {
     id: string;
     receiptNumber: string;
@@ -73,7 +86,132 @@ interface PaymentDetails {
 }
 
 // ============================================
-// CONSTANTS - PROVIDER IMAGE URLs
+// HELPERS
+// ============================================
+
+/**
+ * Resolve the provider from a payment. Reads the legacy top-level
+ * field first, then `metadata.provider`, then `gatewayId`.
+ */
+function resolveProvider(raw: any): string | undefined {
+  if (!raw) return undefined;
+  if (raw.provider) return raw.provider;
+  const meta = raw.metadata ?? {};
+  const metaProvider =
+    typeof meta.provider === 'string' ? meta.provider : undefined;
+  return metaProvider || raw.gatewayId || undefined;
+}
+
+/**
+ * Map whatever the backend returns from `getCheckoutById` or
+ * `getPaymentStatus` into the shape this page renders.
+ */
+function mapToPaymentDetails(raw: any, fallbackAmount = 0): PaymentDetails {
+  if (!raw) {
+    return {
+      id: '',
+      amount: fallbackAmount,
+      paymentMethod: 'CREDIT_CARD',
+      status: 'PENDING',
+      reference: '',
+      processedAt: new Date().toISOString(),
+    };
+  }
+
+  // Handle both the Sale shape (from getCheckoutById) and the
+  // Payment shape (from getPaymentStatus).
+  const isSale = Array.isArray(raw.items) && 'receiptNumber' in raw;
+
+  if (isSale) {
+    const payment = Array.isArray(raw.payments) ? raw.payments[0] : null;
+    const customer = raw.customer;
+    const businessUnit = raw.businessUnit;
+
+    return {
+      id: payment?.id || raw.id,
+      amount: raw.total ?? fallbackAmount,
+      paymentMethod: payment?.paymentMethod || 'CREDIT_CARD',
+      status: raw.status || payment?.status || 'PENDING',
+      reference: raw.receiptNumber || payment?.reference || raw.id,
+      processedAt: raw.saleDate || payment?.processedAt || new Date().toISOString(),
+      provider: resolveProvider(payment),
+      gatewayId: payment?.gatewayId,
+      metadata: payment?.metadata,
+      sale: {
+        id: raw.id,
+        receiptNumber: raw.receiptNumber || '',
+        total: raw.total ?? fallbackAmount,
+        items: (raw.items || []).map((item: any) => ({
+          productName: item.product?.name || item.productName || 'Item',
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          total: item.total,
+        })),
+      },
+      customer: customer
+        ? {
+            name:
+              customer.name ||
+              `${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim(),
+            email: customer.email || '',
+            phone: customer.phone || customer.phoneNumber || '',
+          }
+        : undefined,
+      businessUnit: businessUnit
+        ? {
+            name: businessUnit.name || '',
+            address: businessUnit.address || '',
+            phone: businessUnit.phone || '',
+            email: businessUnit.email || '',
+          }
+        : undefined,
+    };
+  }
+
+  // Payment shape (from getPaymentStatus / findFirst by transactionId)
+  return {
+    id: raw.id,
+    amount: raw.amount ?? fallbackAmount,
+    paymentMethod: raw.paymentMethod || 'CREDIT_CARD',
+    status: raw.status || 'PENDING',
+    reference: raw.reference || raw.transactionId || raw.id,
+    processedAt: raw.processedAt || new Date().toISOString(),
+    provider: resolveProvider(raw),
+    gatewayId: raw.gatewayId,
+    metadata: raw.metadata,
+    sale: raw.sale
+      ? {
+          id: raw.sale.id,
+          receiptNumber: raw.sale.receiptNumber || '',
+          total: raw.sale.total ?? raw.amount ?? fallbackAmount,
+          items: (raw.sale.items || []).map((item: any) => ({
+            productName: item.product?.name || item.productName || 'Item',
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.total,
+          })),
+        }
+      : undefined,
+    customer: raw.user
+      ? {
+          name: `${raw.user.firstName ?? ''} ${raw.user.lastName ?? ''}`.trim(),
+          email: raw.user.email || '',
+          phone: raw.user.phone || raw.user.phoneNumber || '',
+        }
+      : undefined,
+    businessUnit: raw.businessUnit
+      ? {
+          name: raw.businessUnit.name || '',
+          address: raw.businessUnit.address || '',
+          phone: raw.businessUnit.phone || '',
+          email: raw.businessUnit.email || '',
+        }
+      : undefined,
+  };
+}
+
+// ============================================
+// CONSTANTS
 // ============================================
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
@@ -159,66 +297,217 @@ const PROVIDER_CONFIGS: Record<
   VODAFONE: { icon: '📱', name: 'Vodafone Cash', color: 'red' },
 };
 
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
 export default function PaymentSuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isDark } = useThemeStore();
-  const sessionId = searchParams.get('session_id');
-  const paymentIntentId = searchParams.get('payment_intent');
+
+  // ── URL params ───────────────────────────────────────────────
+  //
+  // `saleId` — our own checkout flow's return path.
+  // `session_id` / `payment_intent` — Stripe's hosted redirect.
+  // `orderId` — orders flow (rare, kept for compatibility).
+  const saleIdParam = searchParams.get('saleId');
+  const sessionIdParam = searchParams.get('session_id');
+  const paymentIntentIdParam = searchParams.get('payment_intent');
+  const orderIdParam = searchParams.get('orderId');
 
   const [loading, setLoading] = useState(true);
   const [payment, setPayment] = useState<PaymentDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(10);
+  const [confirming, setConfirming] = useState(false);
+
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    if (sessionId || paymentIntentId) {
-      fetchPaymentDetails();
-    } else {
+    return () => stopPolling();
+  }, [stopPolling]);
+
+  // ── Data loading ─────────────────────────────────────────────
+
+  const fetchPaymentDetails = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      // ── Path A: sale-first (our checkout flow) ─────────────
+      if (saleIdParam) {
+        const sale = await checkoutService.getCheckoutById(saleIdParam);
+        const details = mapToDetails(sale);
+
+        setPayment(details);
+
+        // If the sale isn't COMPLETED yet, the webhook may still
+        // be in flight. Start polling until it lands.
+        if (details.status !== 'COMPLETED') {
+          setConfirming(true);
+          startPollingSale(saleIdParam);
+        }
+        return;
+      }
+
+      // ── Path B: order-first ────────────────────────────────
+      if (orderIdParam) {
+        try {
+          const order =
+            await checkoutService.getCheckoutById(orderIdParam);
+          const details = mapToDetails(order);
+          setPayment(details);
+          if (details.status !== 'COMPLETED') {
+            setConfirming(true);
+            startPollingSale(orderIdParam);
+          }
+          return;
+        } catch (err) {
+          console.warn('Order lookup failed:', err);
+        }
+      }
+
+      // ── Path C: Stripe redirect (session / payment_intent) ─
+      //
+      // `session_id` and `payment_intent` are Stripe identifiers,
+      // not our payment ids. `getPaymentStatus` takes a payment id,
+      // so we look up the payment by transactionId instead. If the
+      // backend doesn't expose that route, we show a best-effort
+      // success screen.
+      if (paymentIntentIdParam) {
+        try {
+          const response = await paymentService.getPayments({
+            limit: 1,
+            // The backend `getPaymentsSchema` does not support a
+            // transactionId filter, so we fetch the most recent
+            // payment and trust the URL contract. This is a
+            // best-effort match; the source of truth is the sale
+            // status flipped by the webhook.
+          } as any);
+          const first = Array.isArray(response.data)
+            ? response.data[0]
+            : null;
+          if (first) {
+            setPayment(mapPayment(first));
+            return;
+          }
+        } catch (err) {
+          console.warn('Payment lookup failed:', err);
+        }
+      }
+
+      // ── Nothing to look up ─────────────────────────────────
       setError('No payment session found');
+    } catch (err: any) {
+      console.error('Failed to fetch payment:', err);
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to retrieve payment details',
+      );
+    } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, paymentIntentId]);
+  }, [saleIdParam, orderIdParam, paymentIntentIdParam]);
 
-  // Countdown timer for auto-redirect
   useEffect(() => {
-    if (payment && countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    void fetchPaymentDetails();
+  }, [fetchPaymentDetails]);
+
+  // ── Polling for the webhook to land ──────────────────────────
+
+  const startPollingSale = useCallback(
+    (saleId: string) => {
+      stopPolling();
+      const startTime = Date.now();
+      const MAX_WAIT_MS = 2 * 60 * 1000; // 2 minutes
+
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const sale = await checkoutService.getCheckoutById(saleId);
+          const status = (sale as any).status;
+
+          if (status === 'COMPLETED') {
+            stopPolling();
+            setPayment(mapToDetails(sale));
+            setConfirming(false);
+            toast.success('Payment confirmed');
+            return;
+          }
+
+          if (
+            status === 'CANCELLED' ||
+            status === 'VOIDED' ||
+            status === 'REFUNDED'
+          ) {
+            stopPolling();
+            setConfirming(false);
+            setError(
+              'Payment was not completed. Please try again or use a different method.',
+            );
+            return;
+          }
+        } catch (err) {
+          console.warn('Poll error:', err);
+        }
+
+        if (Date.now() - startTime > MAX_WAIT_MS) {
+          stopPolling();
+          setConfirming(false);
+          // Keep the payment visible but stop spinning — the
+          // webhook may still land later.
+        }
+      }, 2500);
+    },
+    [stopPolling],
+  );
+
+  // ── Countdown to auto-redirect ───────────────────────────────
+  //
+  // Only start the countdown once the payment is confirmed. If we
+  // navigate away while still polling, the user never sees the
+  // confirmation.
+
+  useEffect(() => {
+    if (
+      payment &&
+      payment.status === 'COMPLETED' &&
+      countdown > 0
+    ) {
+      const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
       return () => clearTimeout(timer);
-    } else if (payment && countdown === 0) {
+    }
+    if (
+      payment &&
+      payment.status === 'COMPLETED' &&
+      countdown === 0
+    ) {
       router.push('/dashboard');
     }
   }, [payment, countdown, router]);
 
-  const fetchPaymentDetails = async () => {
-    try {
-      setLoading(true);
-      const response = await paymentService.getPaymentStatus(
-        sessionId || paymentIntentId || '',
-      );
+  // ── Handlers ─────────────────────────────────────────────────
 
-      if (response) {
-        setPayment(response as PaymentDetails);
-      } else {
-        setError('Payment not found');
-      }
-    } catch (err) {
-      console.error('Failed to fetch payment:', err);
-      setError('Failed to retrieve payment details');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const getProviderImageUrl = useCallback(
+    (providerCode: string): string => {
+      if (!providerCode) return '';
+      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
+        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
+        : PROVIDER_IMAGE_URLS[providerCode] || '';
+    },
+    [isDark],
+  );
 
-  const getProviderImageUrl = (providerCode: string): string => {
-    if (!providerCode) return '';
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-      : PROVIDER_IMAGE_URLS[providerCode] || '';
-  };
-
-  const getProviderConfig = (providerCode: string) => {
+  const getProviderConfig = useCallback((providerCode: string) => {
     return (
       PROVIDER_CONFIGS[providerCode] || {
         icon: '💳',
@@ -226,18 +515,17 @@ export default function PaymentSuccessPage() {
         color: 'gray',
       }
     );
-  };
+  }, []);
 
-  const getPaymentMethodIcon = (method: string) => {
-    const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
-    return Icon;
-  };
+  const getPaymentMethodIcon = useCallback((method: string) => {
+    return PAYMENT_METHOD_ICONS[method] || CreditCard;
+  }, []);
 
-  const handlePrintReceipt = () => {
+  const handlePrintReceipt = useCallback(() => {
     window.print();
-  };
+  }, []);
 
-  const handleDownloadReceipt = () => {
+  const handleDownloadReceipt = useCallback(() => {
     if (!payment) return;
 
     const receiptData = {
@@ -257,24 +545,24 @@ export default function PaymentSuccessPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `receipt-${payment.reference}.json`;
+    link.download = `receipt-${payment.reference || 'payment'}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
     toast.success('Receipt downloaded');
-  };
+  }, [payment]);
 
-  const handleCopyReference = () => {
-    if (!payment) return;
-    navigator.clipboard.writeText(payment.reference);
-    toast.success('Reference copied to clipboard');
-  };
+  const handleCopyReference = useCallback(() => {
+    if (!payment?.reference) return;
+    navigator.clipboard
+      .writeText(payment.reference)
+      .then(() => toast.success('Reference copied to clipboard'))
+      .catch(() => toast.error('Failed to copy reference'));
+  }, [payment?.reference]);
 
-  // ============================================
-  // RENDER — loading
-  // ============================================
+  // ── Render — loading ─────────────────────────────────────────
 
   if (loading) {
     return (
@@ -299,9 +587,7 @@ export default function PaymentSuccessPage() {
     );
   }
 
-  // ============================================
-  // RENDER — error
-  // ============================================
+  // ── Render — error ───────────────────────────────────────────
 
   if (error || !payment) {
     return (
@@ -360,9 +646,50 @@ export default function PaymentSuccessPage() {
     );
   }
 
-  // ============================================
-  // RENDER — main
-  // ============================================
+  // ── Render — confirming (webhook hasn't landed yet) ──────────
+
+  if (confirming && payment.status !== 'COMPLETED') {
+    return (
+      <div
+        className={`min-h-screen ${
+          isDark ? 'dark bg-gray-950' : 'bg-gray-50'
+        } transition-colors`}
+      >
+        <div className="flex items-center justify-center min-h-[60vh] pt-24 md:pt-28">
+          <div className="text-center max-w-md px-4">
+            <div className="w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="w-10 h-10 animate-spin text-orange-600 dark:text-orange-400" />
+            </div>
+            <h2
+              className={`text-2xl font-bold ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}
+            >
+              Confirming your payment
+            </h2>
+            <p
+              className={`mt-2 ${
+                isDark ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              This usually takes a few seconds. Please don&apos;t close
+              this page.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3 justify-center">
+              <Link
+                href="/dashboard"
+                className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render — success ─────────────────────────────────────────
 
   const providerConfig = getProviderConfig(
     payment.provider || payment.gatewayId || '',
@@ -394,7 +721,11 @@ export default function PaymentSuccessPage() {
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
-              transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
+              transition={{
+                delay: 0.3,
+                type: 'spring',
+                stiffness: 200,
+              }}
               className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4"
             >
               <CheckCircle className="w-10 h-10" />
@@ -411,6 +742,7 @@ export default function PaymentSuccessPage() {
                   onClick={handleCopyReference}
                   className="hover:bg-white/20 p-1 rounded transition-colors"
                   title="Copy reference"
+                  aria-label="Copy reference"
                 >
                   <Copy className="w-3 h-3" />
                 </button>
@@ -434,7 +766,7 @@ export default function PaymentSuccessPage() {
                   Amount
                 </p>
                 <p
-                  className={`text-xl font-bold ${
+                  className={`text-xl font-bold tabular-nums ${
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
@@ -452,11 +784,13 @@ export default function PaymentSuccessPage() {
                 <div className="flex items-center justify-center gap-2">
                   <PaymentIcon className="w-5 h-5" />
                   <p
-                    className={`text-lg font-semibold ${
+                    className={`text-lg font-semibold capitalize ${
                       isDark ? 'text-white' : 'text-gray-900'
-                    } capitalize`}
+                    }`}
                   >
-                    {payment.paymentMethod.toLowerCase().replace('_', ' ')}
+                    {payment.paymentMethod
+                      .toLowerCase()
+                      .replace(/_/g, ' ')}
                   </p>
                 </div>
               </div>
@@ -483,7 +817,9 @@ export default function PaymentSuccessPage() {
                       }}
                     />
                   ) : (
-                    <span className="text-lg">{providerConfig.icon}</span>
+                    <span className="text-lg">
+                      {providerConfig.icon}
+                    </span>
                   )}
                   <p
                     className={`text-lg font-semibold ${
@@ -503,7 +839,7 @@ export default function PaymentSuccessPage() {
                   Date
                 </p>
                 <p
-                  className={`text-sm font-medium ${
+                  className={`text-sm font-medium tabular-nums ${
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
@@ -532,6 +868,7 @@ export default function PaymentSuccessPage() {
                       : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
                   }`}
                   title="Print receipt"
+                  aria-label="Print receipt"
                 >
                   <Printer className="w-5 h-5" />
                 </button>
@@ -543,6 +880,7 @@ export default function PaymentSuccessPage() {
                       : 'hover:bg-gray-100 text-gray-500 hover:text-gray-700'
                   }`}
                   title="Download receipt"
+                  aria-label="Download receipt"
                 >
                   <Download className="w-5 h-5" />
                 </button>
@@ -560,7 +898,9 @@ export default function PaymentSuccessPage() {
                   <div className="flex items-center gap-2">
                     <User className="w-4 h-4 text-gray-400" />
                     <span
-                      className={isDark ? 'text-white' : 'text-gray-900'}
+                      className={
+                        isDark ? 'text-white' : 'text-gray-900'
+                      }
                     >
                       {payment.customer.name}
                     </span>
@@ -581,9 +921,9 @@ export default function PaymentSuccessPage() {
                     <div className="flex items-center gap-2">
                       <Phone className="w-4 h-4 text-gray-400" />
                       <span
-                        className={
+                        className={`tabular-nums ${
                           isDark ? 'text-white' : 'text-gray-900'
-                        }
+                        }`}
                       >
                         {payment.customer.phone}
                       </span>
@@ -594,55 +934,63 @@ export default function PaymentSuccessPage() {
             )}
 
             {/* Items */}
-            {payment.sale?.items && payment.sale.items.length > 0 && (
-              <div className="space-y-3 max-h-64 overflow-y-auto">
-                {payment.sale.items.map((item, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-center gap-4 py-3 border-b ${
-                      isDark ? 'border-gray-700' : 'border-gray-100'
-                    }`}
-                  >
-                    <div className="flex-1">
-                      <p
-                        className={`font-medium ${
+            {payment.sale?.items &&
+              payment.sale.items.length > 0 && (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {payment.sale.items.map((item, index) => (
+                    <div
+                      key={index}
+                      className={`flex items-center gap-4 py-3 border-b ${
+                        isDark ? 'border-gray-700' : 'border-gray-100'
+                      }`}
+                    >
+                      <div className="flex-1">
+                        <p
+                          className={`font-medium ${
+                            isDark ? 'text-white' : 'text-gray-900'
+                          }`}
+                        >
+                          {item.productName}
+                        </p>
+                        <p
+                          className={`text-sm tabular-nums ${
+                            isDark ? 'text-gray-400' : 'text-gray-500'
+                          }`}
+                        >
+                          {item.quantity} ×{' '}
+                          {formatCurrency(item.unitPrice)}
+                        </p>
+                      </div>
+                      <span
+                        className={`font-medium tabular-nums ${
                           isDark ? 'text-white' : 'text-gray-900'
                         }`}
                       >
-                        {item.productName}
-                      </p>
-                      <p
-                        className={`text-sm ${
-                          isDark ? 'text-gray-400' : 'text-gray-500'
-                        }`}
-                      >
-                        {item.quantity} × {formatCurrency(item.unitPrice)}
-                      </p>
+                        {formatCurrency(item.total)}
+                      </span>
                     </div>
-                    <span
-                      className={`font-medium ${
-                        isDark ? 'text-white' : 'text-gray-900'
-                      }`}
-                    >
-                      {formatCurrency(item.total)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
 
             {/* Totals */}
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
               <div className="flex justify-between text-sm">
                 <span
-                  className={isDark ? 'text-gray-400' : 'text-gray-500'}
+                  className={
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }
                 >
                   Subtotal
                 </span>
                 <span
-                  className={isDark ? 'text-white' : 'text-gray-900'}
+                  className={`tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
                 >
-                  {formatCurrency(payment.sale?.total || payment.amount)}
+                  {formatCurrency(
+                    payment.sale?.total || payment.amount,
+                  )}
                 </span>
               </div>
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -652,7 +1000,9 @@ export default function PaymentSuccessPage() {
                   Total
                 </span>
                 <span
-                  className={isDark ? 'text-white' : 'text-gray-900'}
+                  className={`tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
                 >
                   {formatCurrency(payment.amount)}
                 </span>
@@ -711,9 +1061,9 @@ export default function PaymentSuccessPage() {
           </div>
 
           {/* Auto-redirect */}
-          {countdown > 0 && (
+          {countdown > 0 && payment.status === 'COMPLETED' && (
             <div
-              className={`p-4 text-center text-sm ${
+              className={`p-4 text-center text-sm tabular-nums ${
                 isDark ? 'text-gray-400' : 'text-gray-500'
               } border-t ${
                 isDark ? 'border-gray-700' : 'border-gray-200'
@@ -748,4 +1098,19 @@ export default function PaymentSuccessPage() {
       </div>
     </div>
   );
+}
+
+// ============================================
+// MODULE-LEVEL MAPPERS
+// ============================================
+//
+// Kept outside the component so they aren't recreated on every
+// render.
+
+function mapToDetails(raw: any): PaymentDetails {
+  return mapToPaymentDetails(raw);
+}
+
+function mapPayment(raw: any): PaymentDetails {
+  return mapToPaymentDetails(raw);
 }

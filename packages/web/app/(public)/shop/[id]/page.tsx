@@ -49,7 +49,6 @@ import {
   ChevronDown,
   SlidersHorizontal,
 } from 'lucide-react';
-import PublicNavigation from '../../../../components/PublicNavigation';
 import { productService } from '../../../../services/productService';
 import { toast } from '../../../../utils/toast-manager';
 import {
@@ -860,7 +859,6 @@ export default function ShopProductPage() {
           isDark ? 'dark bg-gray-950' : 'bg-orange-50'
         } transition-colors duration-300`}
       >
-        <PublicNavigation />
         <div className={`${SIZES.container} ${SIZES.headerHeight} pb-16`}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 xl:gap-12">
             <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm aspect-square animate-pulse" />
@@ -888,7 +886,6 @@ export default function ShopProductPage() {
           isDark ? 'dark bg-gray-950' : 'bg-orange-50'
         } transition-colors duration-300`}
       >
-        <PublicNavigation />
         <div className={`${SIZES.container} ${SIZES.headerHeight} pb-16`}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -942,8 +939,6 @@ export default function ShopProductPage() {
           : 'bg-gradient-to-b from-orange-50 via-white to-amber-50'
       } transition-colors duration-300`}
     >
-      <PublicNavigation />
-
       <div className={`${SIZES.container} ${SIZES.headerHeight} pb-16`}>
         {/* Breadcrumb */}
         <nav className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 mb-5 overflow-x-auto">

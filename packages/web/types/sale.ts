@@ -26,7 +26,7 @@ import type { CashRegister, CashRegisterSession } from './register';
 // SALE STATUS ENUMS
 // ============================================
 
-export type SaleStatus = 
+export type SaleStatus =
   | 'PENDING'
   | 'PROCESSING'
   | 'COMPLETED'
@@ -36,7 +36,7 @@ export type SaleStatus =
   | 'VOID'
   | 'DELETED';
 
-export type PaymentMethod = 
+export type PaymentMethod =
   | 'CASH'
   | 'CREDIT_CARD'
   | 'DEBIT_CARD'
@@ -47,7 +47,7 @@ export type PaymentMethod =
   | 'CRYPTO'
   | 'CHECK';
 
-export type PaymentStatus = 
+export type PaymentStatus =
   | 'PENDING'
   | 'PAID'
   | 'FAILED'
@@ -56,6 +56,97 @@ export type PaymentStatus =
   | 'PROCESSING'
   | 'AUTHORIZED'
   | 'DECLINED';
+
+/**
+ * Discount category stored on `Sale.discountType`. Mirrors the
+ * backend's Prisma `DiscountType` enum exactly, and the frontend
+ * `services/saleService.ts` union — all three must stay in sync.
+ *
+ *   - 'PERCENTAGE' — applied from a percentage-based promotion
+ *   - 'FIXED'      — applied from a fixed-amount promotion
+ *   - 'LOYALTY'    — discount came entirely from loyalty points
+ *   - 'MANUAL'     — free-form discount (mixed sources / bare discount)
+ *
+ * ⚠ Do NOT add values here that are not in the Prisma enum. Any
+ * value that reaches the database but isn't a member of the Postgres
+ * enum will be rejected at insert time with an "invalid input value
+ * for enum" error.
+ */
+export type DiscountType =
+  | 'PERCENTAGE'
+  | 'FIXED'
+  | 'LOYALTY'
+  | 'MANUAL';
+
+/**
+ * Runtime list of the enum members. Handy for validation and for
+ * rendering a `<select>` of discount types. Mirrors the Prisma enum
+ * member order.
+ */
+export const DISCOUNT_TYPE_VALUES: readonly DiscountType[] = [
+  'PERCENTAGE',
+  'FIXED',
+  'LOYALTY',
+  'MANUAL',
+] as const;
+
+/**
+ * Human-readable labels for each discount type. Centralized so every
+ * screen renders the same wording.
+ */
+export const DISCOUNT_TYPE_LABELS: Record<DiscountType, string> = {
+  PERCENTAGE: 'Percentage off',
+  FIXED: 'Fixed amount off',
+  LOYALTY: 'Loyalty points',
+  MANUAL: 'Manual discount',
+};
+
+/**
+ * Type guard for the discount type union. Useful for narrowing an
+ * arbitrary string coming off the wire before rendering a label.
+ */
+export function isDiscountType(value: unknown): value is DiscountType {
+  if (typeof value !== 'string') return false;
+  return (DISCOUNT_TYPE_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * Promotion / loyalty passthrough fields shared by every create
+ * path. All optional. When omitted, the backend infers
+ * `discountType` from the underlying sources and leaves the rest
+ * at their model defaults.
+ */
+export interface PromotionPassthrough {
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+}
+
+/**
+ * Promotion / loyalty breakdown as returned on a `Sale` row and
+ * inside receipt payloads.
+ *
+ * The `Sale` interface already carries these fields directly.
+ * This standalone interface exists so consumers that want to pass
+ * just the breakdown around — without the rest of a `Sale` — have
+ * a named shape to reach for.
+ *
+ * `discountType` is typed as `DiscountType | string | null` on the
+ * READ side to remain compatible with:
+ *   1. sales created before the enum migration ran (whose column was
+ *      a free-form TEXT at the time), and
+ *   2. any future enum member the frontend hasn't been updated to
+ *      know about yet.
+ *
+ * Narrow it with `isDiscountType()` before rendering a label.
+ */
+export interface SaleBreakdown {
+  discountType?: DiscountType | string | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+  loyaltyPointsUsed?: number;
+  loyaltyDiscount?: number;
+}
 
 // ============================================
 // MAIN SALE INTERFACE
@@ -67,6 +158,29 @@ export interface Sale {
   subtotal: number;
   tax: number;
   discount: number;
+
+  // ── Promotion / loyalty audit fields ─────────────────────────
+  //
+  // Persisted by the backend on every create path
+  // (`SaleService.createSale`, `SaleService.createSaleFromCart`,
+  // `CheckoutService.processCheckout`). All optional so this
+  // interface stays compatible with sales created before the
+  // migration added the columns.
+  //
+  //   discountType      — PERCENTAGE | FIXED | LOYALTY | MANUAL (or a
+  //                       legacy string on pre-migration rows; narrow
+  //                       with `isDiscountType` before rendering)
+  //   promotionCode     — the code that was applied, if any
+  //   promotionDiscount — the promotion's currency contribution
+  //   loyaltyPointsUsed — points burned on this sale
+  //   loyaltyDiscount   — the currency value of those points
+  //
+  discountType?: DiscountType | string | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+  loyaltyPointsUsed?: number;
+  loyaltyDiscount?: number;
+
   total: number;
   paidAmount: number;
   changeAmount: number;
@@ -106,6 +220,12 @@ export interface Sale {
   qrCodes?: QRCodeRecord[];
   createdAt: string | Date;
   updatedAt: string | Date;
+  /**
+   * Optional idempotency key the sale was created with. Only present
+   * on sales that were created with a key — older rows and
+   * non-idempotent create paths leave this undefined.
+   */
+  idempotencyKey?: string | null;
 }
 
 // ============================================
@@ -400,7 +520,7 @@ export interface ExportSalesParams {
 // CHECKOUT RELATED INTERFACES
 // ============================================
 
-export interface CheckoutData {
+export interface CheckoutData extends PromotionPassthrough {
   cartId: string;
   customerId?: string;
   paymentMethod: PaymentMethod;
@@ -411,6 +531,11 @@ export interface CheckoutData {
   cashRegisterSessionId?: string;
   applyLoyaltyPoints?: boolean;
   businessUnitId?: string;
+  /**
+   * Idempotency key. When supplied, the same value sent twice results
+   * in the same sale being returned — no duplicate.
+   */
+  idempotencyKey?: string;
 }
 
 export interface CheckoutResponse {
@@ -429,6 +554,19 @@ export interface CheckoutResponse {
     businessUnitId: string;
     createdAt: string | Date;
     paymentMethod: PaymentMethod;
+
+    // ── Promotion / loyalty breakdown ──────────────────────────
+    // Populated by the backend's `buildReceiptShape`, which forwards
+    // the corresponding columns from the `Sale` row.
+    //
+    // `discountType` stays widened to `DiscountType | string | null`
+    // so responses from a pre-migration backend still type-check.
+    // Narrow it with `isDiscountType` before rendering a label.
+    discountType?: DiscountType | string | null;
+    promotionCode?: string | null;
+    promotionDiscount?: number;
+    loyaltyPointsUsed?: number;
+    loyaltyDiscount?: number;
   };
   loyaltyPointsEarned: number;
   loyaltyPointsUsed: number;
@@ -461,17 +599,17 @@ export interface CheckoutStats {
   totalTax: number;
   totalDiscount: number;
   averageOrderValue: number;
-  topProducts: Array<{ 
-    productId: string; 
-    productName: string; 
-    quantity: number; 
-    revenue: number 
+  topProducts: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    revenue: number;
   }>;
   salesByPaymentMethod: Record<string, number>;
-  salesByDate: Array<{ 
-    date: string; 
-    count: number; 
-    revenue: number 
+  salesByDate: Array<{
+    date: string;
+    count: number;
+    revenue: number;
   }>;
   recentSales: Sale[];
 }
@@ -490,7 +628,6 @@ export interface ValidateCheckoutResponse {
 
 export interface ProcessPaymentRequest {
   paymentMethod: PaymentMethod;
-  amount: number;
   paymentDetails?: Record<string, any>;
 }
 
@@ -503,11 +640,11 @@ export interface EmailReceiptRequest {
 }
 
 export interface CalculateTotalsRequest {
-  items: Array<{ 
-    productId: string; 
-    variantId?: string; 
-    quantity: number; 
-    unitPrice: number 
+  items: Array<{
+    productId: string;
+    variantId?: string;
+    quantity: number;
+    unitPrice: number;
   }>;
   discount?: number;
   taxRate?: number;

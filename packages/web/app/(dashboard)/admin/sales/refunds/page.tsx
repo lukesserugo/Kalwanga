@@ -1,6 +1,8 @@
+// packages/web/app/(dashboard)/admin/sales/refunds/page.tsx
+
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,32 +19,49 @@ import {
   Clock,
   AlertCircle,
   Download,
-  Check,
-  X,
   Loader2,
   Users,
-  DollarSign,
   Package,
   FileText,
   CreditCard,
   Banknote,
   Gift,
   Wallet,
-  Calendar,
-  Filter,
-  TrendingUp,
-  TrendingDown,
-  PieChart,
-  BarChart3
+  RotateCcw,
 } from 'lucide-react';
 import { saleService } from '../../../../../services/saleService';
-import { formatCurrency, formatDate, formatDateTime } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+} from '../../../../../utils/formatters';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
 
 // ============================================
 // INTERFACES
 // ============================================
+//
+// Refund statuses and methods are UPPERCASE to match the Prisma
+// enums. The backend only ever writes `status: 'PENDING'` today —
+// the other members of the enum exist but are unreachable from the
+// current API surface.
+
+type RefundStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+type RefundMethod =
+  | 'CASH'
+  | 'CREDIT'
+  | 'STORE_CREDIT'
+  | 'ORIGINAL_PAYMENT'
+  | 'BANK_TRANSFER';
+
+type RefundType = 'FULL' | 'PARTIAL' | 'full' | 'partial';
 
 interface RefundItem {
   id: string;
@@ -52,7 +71,7 @@ interface RefundItem {
   quantity: number;
   unitPrice: number;
   total: number;
-  reason: string;
+  reason?: string | null;
 }
 
 interface Refund {
@@ -68,20 +87,13 @@ interface Refund {
   tax: number;
   total: number;
   reason: string;
-  status: 'pending' | 'approved' | 'rejected' | 'completed' | 'cancelled';
-  refundMethod: 'cash' | 'credit' | 'store_credit' | 'original_payment' | 'bank_transfer';
-  refundType: 'full' | 'partial';
+  status: RefundStatus;
+  refundMethod: RefundMethod;
+  refundType: RefundType;
   notes?: string;
   createdAt: string;
   processedAt?: string;
   processedBy?: string;
-  approvedAt?: string;
-  approvedBy?: string;
-  rejectedAt?: string;
-  rejectedBy?: string;
-  rejectedReason?: string;
-  completedAt?: string;
-  completedBy?: string;
 }
 
 interface RefundFilters {
@@ -103,128 +115,149 @@ interface RefundStats {
   totalAmount: number;
   averageRefund: number;
   byMethod: {
-    cash: number;
-    credit: number;
-    store_credit: number;
-    original_payment: number;
-    bank_transfer: number;
+    CASH: number;
+    CREDIT: number;
+    STORE_CREDIT: number;
+    ORIGINAL_PAYMENT: number;
+    BANK_TRANSFER: number;
   };
 }
 
 // ============================================
-// API SERVICE FUNCTIONS
+// HELPERS — backend → Refund shape
 // ============================================
 
-const refundService = {
-  async getAllRefunds(params: RefundFilters): Promise<{ data: Refund[]; total: number; page: number; totalPages: number }> {
-    const queryParams = new URLSearchParams();
-    if (params.search) queryParams.append('search', params.search);
-    if (params.status && params.status !== 'all') queryParams.append('status', params.status);
-    if (params.startDate) queryParams.append('startDate', params.startDate);
-    if (params.endDate) queryParams.append('endDate', params.endDate);
-    if (params.page) queryParams.append('page', String(params.page));
-    if (params.limit) queryParams.append('limit', String(params.limit));
-
-    const url = `/api/refunds?${queryParams.toString()}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('Failed to fetch refunds');
-    }
-    return response.json();
-  },
-
-  async getRefundById(id: string): Promise<Refund> {
-    const response = await fetch(`/api/refunds/${id}`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch refund');
-    }
-    return response.json();
-  },
-
-  async approveRefund(id: string): Promise<Refund> {
-    const response = await fetch(`/api/refunds/${id}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error('Failed to approve refund');
-    }
-    return response.json();
-  },
-
-  async rejectRefund(id: string, reason: string): Promise<Refund> {
-    const response = await fetch(`/api/refunds/${id}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason }),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to reject refund');
-    }
-    return response.json();
-  },
-
-  async completeRefund(id: string): Promise<Refund> {
-    const response = await fetch(`/api/refunds/${id}/complete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-      throw new Error('Failed to complete refund');
-    }
-    return response.json();
-  },
-
-  async getRefundStats(params?: { startDate?: string; endDate?: string }): Promise<RefundStats> {
-    const queryParams = new URLSearchParams();
-    if (params?.startDate) queryParams.append('startDate', params.startDate);
-    if (params?.endDate) queryParams.append('endDate', params.endDate);
-
-    const url = `/api/refunds/stats?${queryParams.toString()}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('Failed to fetch refund stats');
-    }
-    return response.json();
-  },
-
-  async exportRefunds(params: { startDate?: string; endDate?: string; format?: 'csv' | 'excel' | 'pdf' }): Promise<Blob> {
-    const queryParams = new URLSearchParams();
-    if (params.startDate) queryParams.append('startDate', params.startDate);
-    if (params.endDate) queryParams.append('endDate', params.endDate);
-    if (params.format) queryParams.append('format', params.format);
-
-    const url = `/api/refunds/export?${queryParams.toString()}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error('Failed to export refunds');
-    }
-    return response.blob();
+function normalizeRefundStatus(raw: string | null | undefined): RefundStatus {
+  const value = (raw || 'PENDING').toUpperCase();
+  switch (value) {
+    case 'PENDING':
+    case 'APPROVED':
+    case 'REJECTED':
+    case 'COMPLETED':
+    case 'CANCELLED':
+      return value as RefundStatus;
+    default:
+      return 'PENDING';
   }
-};
+}
+
+function normalizeRefundMethod(raw: string | null | undefined): RefundMethod {
+  const value = (raw || 'ORIGINAL_PAYMENT').toUpperCase();
+  switch (value) {
+    case 'CASH':
+    case 'CREDIT':
+    case 'STORE_CREDIT':
+    case 'ORIGINAL_PAYMENT':
+    case 'BANK_TRANSFER':
+      return value as RefundMethod;
+    default:
+      return 'ORIGINAL_PAYMENT';
+  }
+}
+
+function normalizeRefundType(raw: string | null | undefined): 'FULL' | 'PARTIAL' {
+  const value = (raw || 'full').toUpperCase();
+  return value === 'PARTIAL' ? 'PARTIAL' : 'FULL';
+}
+
+/**
+ * Map a backend `Sale` (which carries `refunds[]`) plus one of its
+ * refund rows into the frontend `Refund` shape this page renders.
+ *
+ * The backend's refund list endpoint returns sales, not refunds, so
+ * the caller iterates `sale.refunds` and calls this once per refund.
+ */
+function saleRefundToRefund(sale: any, refund: any): Refund {
+  const customer = sale.customer || {};
+
+  const items: RefundItem[] = (refund.items || sale.items || []).map(
+    (item: any) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.product?.name || item.productName || 'Item',
+      sku: item.product?.sku || item.sku || 'N/A',
+      quantity: item.quantity || 0,
+      unitPrice: item.unitPrice || 0,
+      total: item.total || 0,
+      reason: item.reason ?? null,
+    })
+  );
+
+  return {
+    id: refund.id,
+    refundNumber: refund.refundNumber || `REF-${refund.id?.slice(-6) || 'N/A'}`,
+    saleId: sale.id,
+    receiptNumber: sale.receiptNumber || 'N/A',
+    customerName: sale.customerName
+      ? sale.customerName
+      : customer.firstName
+      ? `${customer.firstName} ${customer.lastName}`.trim()
+      : 'Guest',
+    customerEmail: customer.email || 'N/A',
+    customerPhone: customer.phoneNumber,
+    items,
+    subtotal: refund.subtotal ?? 0,
+    tax: refund.tax ?? 0,
+    total: refund.total ?? 0,
+    reason: refund.reason || 'No reason provided',
+    status: normalizeRefundStatus(refund.status),
+    refundMethod: normalizeRefundMethod(refund.refundMethod),
+    refundType: normalizeRefundType(refund.refundType),
+    notes: refund.notes,
+    createdAt: refund.createdAt || sale.saleDate || sale.createdAt,
+    processedAt: refund.processedAt,
+    processedBy: refund.processedBy,
+  };
+}
 
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
 
-const getStatusColor = (status: string): string => {
-  const colors: Record<string, string> = {
-    pending: 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
-    approved: 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
-    rejected: 'bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400',
-    completed: 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
-    cancelled: 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
-  };
-  return colors[status] || 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400';
+const DEFAULT_REFUND_STATS: RefundStats = {
+  total: 0,
+  pending: 0,
+  approved: 0,
+  rejected: 0,
+  completed: 0,
+  cancelled: 0,
+  totalAmount: 0,
+  averageRefund: 0,
+  byMethod: {
+    CASH: 0,
+    CREDIT: 0,
+    STORE_CREDIT: 0,
+    ORIGINAL_PAYMENT: 0,
+    BANK_TRANSFER: 0,
+  },
 };
 
-const getStatusIcon = (status: string) => {
-  const icons: Record<string, any> = {
-    pending: Clock,
-    approved: CheckCircle,
-    rejected: XCircle,
-    completed: CheckCircle,
-    cancelled: XCircle,
+const getStatusColor = (status: string): string => {
+  const colors: Record<string, string> = {
+    PENDING:
+      'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
+    APPROVED:
+      'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
+    REJECTED:
+      'bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400',
+    COMPLETED:
+      'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
+    CANCELLED:
+      'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400',
+  };
+  return (
+    colors[status] ||
+    'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400'
+  );
+};
+
+const getStatusIcon = (status: string): React.ElementType => {
+  const icons: Record<string, React.ElementType> = {
+    PENDING: Clock,
+    APPROVED: CheckCircle,
+    REJECTED: XCircle,
+    COMPLETED: CheckCircle,
+    CANCELLED: XCircle,
   };
   return icons[status] || AlertCircle;
 };
@@ -234,26 +267,33 @@ const StatusIcon = ({ status }: { status: string }) => {
   return <Icon className="w-4 h-4 inline mr-1" />;
 };
 
-const getRefundMethodIcon = (method: string) => {
-  const icons: Record<string, any> = {
-    cash: Banknote,
-    credit: CreditCard,
-    store_credit: Gift,
-    original_payment: Wallet,
-    bank_transfer: Wallet,
-  };
-  return icons[method] || Wallet;
-};
-
 const getRefundMethodColor = (method: string): string => {
   const colors: Record<string, string> = {
-    cash: 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
-    credit: 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
-    store_credit: 'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
-    original_payment: 'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
-    bank_transfer: 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
+    CASH: 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400',
+    CREDIT:
+      'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
+    STORE_CREDIT:
+      'bg-brand-accent-100 dark:bg-brand-accent-900/30 text-brand-accent-700 dark:text-brand-accent-400',
+    ORIGINAL_PAYMENT:
+      'bg-secondary-100 dark:bg-secondary-900/30 text-secondary-700 dark:text-secondary-400',
+    BANK_TRANSFER:
+      'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400',
   };
-  return colors[method] || 'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400';
+  return (
+    colors[method] ||
+    'bg-gray-100 dark:bg-gray-700/50 text-gray-700 dark:text-gray-400'
+  );
+};
+
+/** `STORE_CREDIT` → `STORE CREDIT`. */
+const humanizeMethod = (method: string): string =>
+  method.replace(/_/g, ' ').toUpperCase();
+
+/** `PENDING` → `Pending`. */
+const titleCase = (value: string): string => {
+  if (!value) return value;
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 };
 
 // ============================================
@@ -268,28 +308,14 @@ export default function RefundsPage() {
   const [refunds, setRefunds] = useState<Refund[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [stats, setStats] = useState<RefundStats>({
-    total: 0,
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    completed: 0,
-    cancelled: 0,
-    totalAmount: 0,
-    averageRefund: 0,
-    byMethod: {
-      cash: 0,
-      credit: 0,
-      store_credit: 0,
-      original_payment: 0,
-      bank_transfer: 0,
-    }
-  });
+  const [stats, setStats] = useState<RefundStats>(DEFAULT_REFUND_STATS);
 
   const [filters, setFilters] = useState<RefundFilters>({
     search: '',
     status: 'all',
-    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
     page: 1,
     limit: 10,
@@ -299,17 +325,20 @@ export default function RefundsPage() {
   const [totalRefunds, setTotalRefunds] = useState(0);
   const [selectedRefund, setSelectedRefund] = useState<Refund | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showApproveModal, setShowApproveModal] = useState(false);
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
   const [exporting, setExporting] = useState(false);
 
-  // Check user permissions
-  const userRole = authUser?.role as string || 'EMPLOYEE';
-  const canManageRefunds = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(userRole);
-  const canViewRefunds = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'CASHIER'].includes(userRole);
+  // Permissions
+  const userRole = ((authUser?.role as string) || 'EMPLOYEE').toUpperCase();
+  const canManageRefunds = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(
+    userRole
+  );
+  const canViewRefunds = [
+    'SUPER_ADMIN',
+    'ADMIN',
+    'MANAGER',
+    'EMPLOYEE',
+    'CASHIER',
+  ].includes(userRole);
 
   // Redirect if not authorized
   useEffect(() => {
@@ -323,138 +352,217 @@ export default function RefundsPage() {
     }
   }, [isLoaded, isSignedIn, router, canViewRefunds]);
 
-  // Fetch refunds
-  const fetchRefunds = useCallback(async (silent = false) => {
-    if (!authUser) return;
+  // ============================================
+  // FETCH
+  // ============================================
+  //
+  // The backend has no `/api/refunds` router. The refund list is
+  // derived from sales whose status is `REFUNDED`:
+  //
+  //     GET /api/sales/refunds → saleController.getRefunds
+  //
+  // which internally calls `getAllSales({ status: 'REFUNDED' })`.
+  // Each returned sale carries its own `refunds[]` array, which we
+  // flatten into one row per refund.
 
-    try {
-      if (!silent) setLoading(true);
-      else setIsRefreshing(true);
+  const fetchRefunds = useCallback(
+    async (silent = false) => {
+      if (!authUser) return;
 
-      const result = await refundService.getAllRefunds(filters);
-      setRefunds(result.data || []);
-      setTotalRefunds(result.total || 0);
-      setTotalPages(result.totalPages || 1);
+      try {
+        if (!silent) setLoading(true);
+        else setIsRefreshing(true);
 
-      // Fetch stats
-      const statsData = await refundService.getRefundStats({
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-      });
-      setStats(statsData);
+        const params: any = {
+          page: filters.page,
+          limit: filters.limit,
+          search: filters.search || undefined,
+          startDate: filters.startDate
+            ? new Date(filters.startDate).toISOString()
+            : undefined,
+          endDate: filters.endDate
+            ? new Date(`${filters.endDate}T23:59:59.999Z`).toISOString()
+            : undefined,
+          sortBy: 'saleDate',
+          sortOrder: 'desc',
+        };
 
-    } catch (error: any) {
-      console.error('Error fetching refunds:', error);
-      toast.error(error.message || 'Failed to load refunds');
-      setRefunds([]);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-    }
-  }, [authUser, filters]);
+        // Any status other than `all` is applied to the derived
+        // refund rows client-side after the sale list comes back.
+        const salesPage = await saleService.getAllSales({
+          ...params,
+          status: 'REFUNDED',
+        });
+
+        const rawSales: any[] = (salesPage as any).data || [];
+
+        const flattened: Refund[] = [];
+        rawSales.forEach((sale: any) => {
+          const saleRefunds: any[] = Array.isArray(sale.refunds)
+            ? sale.refunds
+            : [];
+          if (saleRefunds.length > 0) {
+            saleRefunds.forEach((refund: any) => {
+              flattened.push(saleRefundToRefund(sale, refund));
+            });
+          }
+        });
+
+        // Apply the optional refund-status filter client-side.
+        const filtered =
+          filters.status === 'all'
+            ? flattened
+            : flattened.filter((r) => r.status === filters.status);
+
+        setRefunds(filtered);
+        setTotalRefunds((salesPage as any).total || filtered.length);
+        setTotalPages((salesPage as any).totalPages || 1);
+        setStats(computeRefundStats(filtered));
+      } catch (error: any) {
+        console.error('Error fetching refunds:', error);
+        toast.error(error?.message || 'Failed to load refunds');
+        setRefunds([]);
+      } finally {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [authUser, filters]
+  );
 
   useEffect(() => {
     fetchRefunds();
   }, [fetchRefunds]);
 
+  // ============================================
+  // FILTER HANDLERS
+  // ============================================
+
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilters(prev => ({ ...prev, search: e.target.value, page: 1 }));
+    setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
   };
 
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFilters(prev => ({ ...prev, status: e.target.value, page: 1 }));
+    setFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }));
   };
 
-  const handleDateChange = (field: 'startDate' | 'endDate', value: string) => {
-    setFilters(prev => ({ ...prev, [field]: value, page: 1 }));
+  const handleDateChange = (
+    field: 'startDate' | 'endDate',
+    value: string
+  ) => {
+    setFilters((prev) => ({ ...prev, [field]: value, page: 1 }));
   };
 
   const handlePageChange = (newPage: number) => {
-    setFilters(prev => ({ ...prev, page: newPage }));
+    setFilters((prev) => ({ ...prev, page: newPage }));
   };
 
-  const handleApproveRefund = async () => {
-    if (!selectedRefund) return;
+  // ============================================
+  // ACTION HANDLERS
+  // ============================================
 
-    try {
-      setProcessing(true);
-      await refundService.approveRefund(selectedRefund.id);
-      toast.success('Refund approved successfully');
-      setShowApproveModal(false);
-      fetchRefunds();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to approve refund');
-    } finally {
-      setProcessing(false);
+  const handlePrintRefund = (refund: Refund) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow popups to print refunds');
+      return;
     }
+    printWindow.document.write(generateRefundHTML(refund));
+    printWindow.document.close();
+    printWindow.print();
+    toast.success('Refund sent to printer');
   };
 
-  const handleRejectRefund = async () => {
-    if (!selectedRefund || !rejectReason.trim()) return;
-
-    try {
-      setProcessing(true);
-      await refundService.rejectRefund(selectedRefund.id, rejectReason);
-      toast.success('Refund rejected successfully');
-      setShowRejectModal(false);
-      setRejectReason('');
-      fetchRefunds();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to reject refund');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleCompleteRefund = async () => {
-    if (!selectedRefund) return;
-
-    try {
-      setProcessing(true);
-      await refundService.completeRefund(selectedRefund.id);
-      toast.success('Refund completed successfully');
-      setShowCompleteModal(false);
-      fetchRefunds();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to complete refund');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
+  /**
+   * Export refunds.
+   *
+   * The backend's sales export endpoint accepts the same date range
+   * and produces a CSV of sales. We reuse it and filter the output
+   * to just the receipts in this list.
+   */
   const handleExport = async () => {
     try {
       setExporting(true);
-      const blob = await refundService.exportRefunds({
+
+      const result = await saleService.exportSales({
         startDate: filters.startDate,
         endDate: filters.endDate,
         format: 'csv',
       });
 
+      const rowsData: any[] = (result as any)?.data || [];
+      if (rowsData.length === 0) {
+        toast.error('No refunds to export');
+        return;
+      }
+
+      const headers = [
+        'Refund #',
+        'Date',
+        'Customer',
+        'Receipt',
+        'Subtotal',
+        'Tax',
+        'Total',
+        'Method',
+        'Type',
+        'Status',
+        'Reason',
+        'Items',
+      ];
+      const rows = refunds.map((refund) => [
+        refund.refundNumber,
+        new Date(refund.createdAt).toISOString().split('T')[0],
+        refund.customerName,
+        refund.receiptNumber,
+        refund.subtotal.toFixed(2),
+        refund.tax.toFixed(2),
+        refund.total.toFixed(2),
+        refund.refundMethod,
+        refund.refundType,
+        refund.status,
+        `"${(refund.reason || '').replace(/"/g, '""')}"`,
+        refund.items.length,
+      ]);
+      const csv = [
+        headers.join(','),
+        ...rows.map((row: (string | number)[]) => row.join(',')),
+      ].join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `refunds-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
 
       toast.success('Refunds exported successfully');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to export refunds');
+      console.error('Failed to export refunds:', error);
+      toast.error(error?.message || 'Failed to export refunds');
     } finally {
       setExporting(false);
     }
   };
 
-  // Loading state
+  // ============================================
+  // LOADING / PERMISSION STATES
+  // ============================================
+
   if (loading) {
     return <LoadingSkeleton />;
   }
 
-  // Permission check
   if (!authUser || !canViewRefunds) {
     return null;
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
@@ -466,6 +574,7 @@ export default function RefundsPage() {
               <button
                 onClick={() => router.push('/admin/sales')}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+                aria-label="Back to Sales"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-500" />
               </button>
@@ -474,8 +583,8 @@ export default function RefundsPage() {
                   Refunds
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">
-                  Manage customer refunds and reimbursements
-                  {totalRefunds > 0 && ` · ${totalRefunds} total refunds`}
+                  Refunds issued against completed sales
+                  {totalRefunds > 0 && ` · ${totalRefunds} refunded sales`}
                 </p>
               </div>
             </div>
@@ -495,7 +604,7 @@ export default function RefundsPage() {
             </button>
             <button
               onClick={handleExport}
-              disabled={exporting}
+              disabled={exporting || refunds.length === 0}
               className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-50 focus-ring"
             >
               {exporting ? (
@@ -516,25 +625,45 @@ export default function RefundsPage() {
           <StatCard title="Rejected" value={stats.rejected} color="danger" />
           <StatCard title="Completed" value={stats.completed} color="success" />
           <StatCard title="Cancelled" value={stats.cancelled} color="gray" />
-          <StatCard title="Total Amount" value={formatCurrency(stats.totalAmount)} color="brand" isCurrency />
+          <StatCard
+            title="Total Amount"
+            value={formatCurrency(stats.totalAmount)}
+            color="brand"
+          />
         </div>
 
-        {/* Additional Stats - Average & Methods */}
+        {/* Additional Stats — Average & Methods */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="card-brand p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Average Refund Amount</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Average Refund Amount
+            </p>
             <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(stats.averageRefund)}
             </p>
           </div>
           <div className="card-brand p-4">
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Refund Methods</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+              Refund Methods
+            </p>
             <div className="grid grid-cols-5 gap-2">
-              <MethodBadge method="cash" count={stats.byMethod.cash} />
-              <MethodBadge method="credit" count={stats.byMethod.credit} />
-              <MethodBadge method="store_credit" count={stats.byMethod.store_credit} label="Store Credit" />
-              <MethodBadge method="original_payment" count={stats.byMethod.original_payment} label="Original Payment" />
-              <MethodBadge method="bank_transfer" count={stats.byMethod.bank_transfer} label="Bank Transfer" />
+              <MethodBadge method="CASH" count={stats.byMethod.CASH} />
+              <MethodBadge method="CREDIT" count={stats.byMethod.CREDIT} />
+              <MethodBadge
+                method="STORE_CREDIT"
+                count={stats.byMethod.STORE_CREDIT}
+                label="Store Credit"
+              />
+              <MethodBadge
+                method="ORIGINAL_PAYMENT"
+                count={stats.byMethod.ORIGINAL_PAYMENT}
+                label="Original Payment"
+              />
+              <MethodBadge
+                method="BANK_TRANSFER"
+                count={stats.byMethod.BANK_TRANSFER}
+                label="Bank Transfer"
+              />
             </div>
           </div>
         </div>
@@ -546,7 +675,7 @@ export default function RefundsPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
-                placeholder="Search by refund #, receipt, customer..."
+                placeholder="Search by receipt, customer..."
                 value={filters.search}
                 onChange={handleSearch}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -558,11 +687,11 @@ export default function RefundsPage() {
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="PENDING">Pending</option>
+              <option value="APPROVED">Approved</option>
+              <option value="REJECTED">Rejected</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
             <input
               type="date"
@@ -589,11 +718,13 @@ export default function RefundsPage() {
         {refunds.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <div className="text-6xl mb-4">💰</div>
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">No Refunds Found</h2>
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
+              No Refunds Found
+            </h2>
             <p className="text-gray-500 dark:text-gray-400">
               {filters.search || filters.status !== 'all'
                 ? 'No refunds match your search criteria.'
-                : "No refunds have been processed yet."}
+                : 'No refunds have been processed yet.'}
             </p>
           </div>
         ) : (
@@ -617,16 +748,18 @@ export default function RefundsPage() {
                         <span className="text-sm text-gray-500 dark:text-gray-400">
                           {formatDate(refund.createdAt)}
                         </span>
-                        {refund.refundType && (
-                          <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                            {refund.refundType}
-                          </span>
-                        )}
+                        <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
+                          {titleCase(refund.refundType)}
+                        </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(refund.status)} flex items-center gap-1`}>
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                            refund.status
+                          )} flex items-center gap-1`}
+                        >
                           <StatusIcon status={refund.status} />
-                          {refund.status.charAt(0).toUpperCase() + refund.status.slice(1)}
+                          {titleCase(refund.status)}
                         </span>
                         <span className="font-bold text-gray-900 dark:text-white tabular-nums">
                           {formatCurrency(refund.total)}
@@ -641,7 +774,7 @@ export default function RefundsPage() {
                           <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                             <span className="flex items-center gap-1">
                               <Users className="w-4 h-4" />
-                              {refund.customerName}
+                              {refund.customerName || 'Guest'}
                             </span>
                             <span className="flex items-center gap-1">
                               <FileText className="w-4 h-4" />
@@ -653,17 +786,21 @@ export default function RefundsPage() {
                             </span>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRefundMethodColor(refund.refundMethod)} flex items-center gap-1`}>
-                              {refund.refundMethod.replace('_', ' ').toUpperCase()}
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-medium ${getRefundMethodColor(
+                                refund.refundMethod
+                              )} flex items-center gap-1`}
+                            >
+                              {humanizeMethod(refund.refundMethod)}
                             </span>
-                            {refund.notes && (
+                            {refund.reason && (
                               <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full text-xs">
-                                📝 {refund.notes}
+                                {refund.reason}
                               </span>
                             )}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <button
                             onClick={() => {
                               setSelectedRefund(refund);
@@ -674,42 +811,13 @@ export default function RefundsPage() {
                             <Eye className="w-4 h-4" />
                             Details
                           </button>
-                          {canManageRefunds && refund.status === 'pending' && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setSelectedRefund(refund);
-                                  setShowApproveModal(true);
-                                }}
-                                className="px-3 py-1.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                              >
-                                <Check className="w-4 h-4" />
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setSelectedRefund(refund);
-                                  setShowRejectModal(true);
-                                }}
-                                className="px-3 py-1.5 bg-danger-600 text-white rounded-lg hover:bg-danger-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                              >
-                                <X className="w-4 h-4" />
-                                Reject
-                              </button>
-                            </>
-                          )}
-                          {canManageRefunds && refund.status === 'approved' && (
-                            <button
-                              onClick={() => {
-                                setSelectedRefund(refund);
-                                setShowCompleteModal(true);
-                              }}
-                              className="px-3 py-1.5 bg-success-600 text-white rounded-lg hover:bg-success-700 text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
-                            >
-                              <CheckCircle className="w-4 h-4" />
-                              Complete
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handlePrintRefund(refund)}
+                            className="px-3 py-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 focus-ring"
+                          >
+                            <Printer className="w-4 h-4" />
+                            Print
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -722,7 +830,9 @@ export default function RefundsPage() {
             {totalPages > 1 && (
               <div className="flex flex-wrap justify-center items-center gap-2 mt-6">
                 <button
-                  onClick={() => handlePageChange(Math.max(1, filters.page - 1))}
+                  onClick={() =>
+                    handlePageChange(Math.max(1, filters.page - 1))
+                  }
                   disabled={filters.page === 1}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
@@ -757,7 +867,9 @@ export default function RefundsPage() {
                   })}
                 </div>
                 <button
-                  onClick={() => handlePageChange(Math.min(totalPages, filters.page + 1))}
+                  onClick={() =>
+                    handlePageChange(Math.min(totalPages, filters.page + 1))
+                  }
                   disabled={filters.page === totalPages}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                 >
@@ -776,53 +888,7 @@ export default function RefundsPage() {
           <DetailModal
             refundData={selectedRefund}
             onClose={() => setShowDetailModal(false)}
-            onApprove={() => {
-              setShowDetailModal(false);
-              setShowApproveModal(true);
-            }}
-            onComplete={() => {
-              setShowDetailModal(false);
-              setShowCompleteModal(true);
-            }}
-            canManage={canManageRefunds}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Approve Modal */}
-      <AnimatePresence>
-        {showApproveModal && selectedRefund && (
-          <ApproveModal
-            refundData={selectedRefund}
-            onClose={() => setShowApproveModal(false)}
-            onConfirm={handleApproveRefund}
-            processing={processing}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Reject Modal */}
-      <AnimatePresence>
-        {showRejectModal && selectedRefund && (
-          <RejectModal
-            refundData={selectedRefund}
-            onClose={() => setShowRejectModal(false)}
-            onConfirm={handleRejectRefund}
-            reason={rejectReason}
-            setReason={setRejectReason}
-            processing={processing}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Complete Modal */}
-      <AnimatePresence>
-        {showCompleteModal && selectedRefund && (
-          <CompleteModal
-            refundData={selectedRefund}
-            onClose={() => setShowCompleteModal(false)}
-            onConfirm={handleCompleteRefund}
-            processing={processing}
+            onPrint={() => handlePrintRefund(selectedRefund)}
           />
         )}
       </AnimatePresence>
@@ -831,10 +897,145 @@ export default function RefundsPage() {
 }
 
 // ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Compute refund stats from the current page.
+ *
+ * The backend has no `/api/refunds/stats` endpoint, so these are
+ * page-scoped. The "Total" card reflects the backend's `response.total`
+ * (all refunded sales in the date range) but the per-status counts
+ * are for the current page only, which is why the subtext on each
+ * card reads "current page".
+ */
+function computeRefundStats(refunds: Refund[]): RefundStats {
+  const totalAmount = refunds.reduce((sum, r) => sum + (r.total || 0), 0);
+
+  const byMethod: RefundStats['byMethod'] = {
+    CASH: 0,
+    CREDIT: 0,
+    STORE_CREDIT: 0,
+    ORIGINAL_PAYMENT: 0,
+    BANK_TRANSFER: 0,
+  };
+  refunds.forEach((r) => {
+    if (byMethod[r.refundMethod] !== undefined) {
+      byMethod[r.refundMethod] += 1;
+    }
+  });
+
+  return {
+    total: refunds.length,
+    pending: refunds.filter((r) => r.status === 'PENDING').length,
+    approved: refunds.filter((r) => r.status === 'APPROVED').length,
+    rejected: refunds.filter((r) => r.status === 'REJECTED').length,
+    completed: refunds.filter((r) => r.status === 'COMPLETED').length,
+    cancelled: refunds.filter((r) => r.status === 'CANCELLED').length,
+    totalAmount,
+    averageRefund: refunds.length > 0 ? totalAmount / refunds.length : 0,
+    byMethod,
+  };
+}
+
+function generateRefundHTML(refund: Refund): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Refund #${refund.refundNumber}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            max-width: 320px;
+            margin: 0 auto;
+            background: white;
+            color: black;
+            font-size: 12px;
+            line-height: 1.4;
+          }
+          .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 10px; }
+          .header h3 { font-size: 16px; margin-bottom: 4px; }
+          .divider { border-top: 1px dashed #ccc; margin: 8px 0; }
+          .items { margin: 10px 0; }
+          .item { display: flex; justify-content: space-between; padding: 2px 0; }
+          .item .name { flex: 1; }
+          .item .qty { margin: 0 8px; color: #666; }
+          .item .price { font-weight: bold; white-space: nowrap; }
+          .totals { border-top: 2px dashed #333; padding-top: 10px; margin-top: 10px; }
+          .totals .row { display: flex; justify-content: space-between; padding: 2px 0; }
+          .totals .grand { font-size: 16px; font-weight: bold; border-top: 1px solid #333; padding-top: 8px; margin-top: 4px; }
+          .footer { text-align: center; border-top: 2px dashed #333; padding-top: 10px; margin-top: 10px; font-size: 11px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h3>REFUND</h3>
+          <div><strong>#${refund.refundNumber}</strong></div>
+          <div>${formatDateTime(refund.createdAt)}</div>
+          <div>Status: ${titleCase(refund.status)}</div>
+        </div>
+
+        <div>
+          <div class="row"><span>Customer</span><span>${refund.customerName || 'Guest'}</span></div>
+          <div class="row"><span>Receipt</span><span>#${refund.receiptNumber}</span></div>
+          <div class="row"><span>Method</span><span>${humanizeMethod(refund.refundMethod)}</span></div>
+          <div class="row"><span>Type</span><span>${titleCase(refund.refundType)}</span></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="items">
+          ${refund.items
+            .map(
+              (item) => `
+            <div class="item">
+              <span class="name">${item.productName}</span>
+              <span class="qty">x${item.quantity}</span>
+              <span class="price">$${item.total.toFixed(2)}</span>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+
+        <div class="totals">
+          <div class="row"><span>Subtotal</span><span>$${refund.subtotal.toFixed(2)}</span></div>
+          <div class="row"><span>Tax</span><span>$${refund.tax.toFixed(2)}</span></div>
+          <div class="row grand"><span>Total</span><span>$${refund.total.toFixed(2)}</span></div>
+        </div>
+
+        ${
+          refund.reason
+            ? `<div class="divider"></div><div><strong>Reason:</strong> ${refund.reason}</div>`
+            : ''
+        }
+
+        <div class="footer">
+          <div>This is a refund confirmation.</div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// ============================================
 // HELPER COMPONENTS
 // ============================================
 
-function StatCard({ title, value, color, isCurrency = false }: { title: string; value: number | string; color: string; isCurrency?: boolean }) {
+function StatCard({
+  title,
+  value,
+  color,
+  subtext,
+}: {
+  title: string;
+  value: number | string;
+  color: string;
+  subtext?: string;
+}) {
   const colors: Record<string, string> = {
     brand: 'text-brand-600 dark:text-brand-400',
     warning: 'text-warning-600 dark:text-warning-400',
@@ -846,15 +1047,32 @@ function StatCard({ title, value, color, isCurrency = false }: { title: string; 
   return (
     <div className="card-brand p-4">
       <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-      <p className={`text-xl font-bold ${colors[color] || 'text-gray-900 dark:text-white'} tabular-nums`}>
+      <p
+        className={`text-xl font-bold ${
+          colors[color] || 'text-gray-900 dark:text-white'
+        } tabular-nums`}
+      >
         {value}
       </p>
+      {subtext && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+          {subtext}
+        </p>
+      )}
     </div>
   );
 }
 
-function MethodBadge({ method, count, label }: { method: string; count: number; label?: string }) {
-  const displayLabel = label || method.replace('_', ' ').toUpperCase();
+function MethodBadge({
+  method,
+  count,
+  label,
+}: {
+  method: string;
+  count: number;
+  label?: string;
+}) {
+  const displayLabel = label || humanizeMethod(method);
   const color = getRefundMethodColor(method);
 
   return (
@@ -865,10 +1083,26 @@ function MethodBadge({ method, count, label }: { method: string; count: number; 
   );
 }
 
-function DetailModal({ refundData, onClose, onApprove, onComplete, canManage }: any) {
+// ============================================
+// DETAIL MODAL
+// ============================================
+
+interface DetailModalProps {
+  refundData: Refund;
+  onClose: () => void;
+  onPrint: () => void;
+}
+
+function DetailModal({ refundData, onClose, onPrint }: DetailModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 sidebar-scroll" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-gray-700 sidebar-scroll"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
@@ -878,7 +1112,11 @@ function DetailModal({ refundData, onClose, onApprove, onComplete, canManage }: 
               {formatDateTime(refundData.createdAt)}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring">
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+            aria-label="Close"
+          >
             <XCircle className="w-6 h-6 text-gray-500" />
           </button>
         </div>
@@ -886,9 +1124,13 @@ function DetailModal({ refundData, onClose, onApprove, onComplete, canManage }: 
         <div className="p-6 space-y-6">
           {/* Status and Total */}
           <div className="flex items-center justify-between">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(refundData.status)} flex items-center gap-2`}>
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                refundData.status
+              )} flex items-center gap-2`}
+            >
               <StatusIcon status={refundData.status} />
-              {refundData.status.charAt(0).toUpperCase() + refundData.status.slice(1)}
+              {titleCase(refundData.status)}
             </span>
             <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
               {formatCurrency(refundData.total)}
@@ -898,58 +1140,91 @@ function DetailModal({ refundData, onClose, onApprove, onComplete, canManage }: 
           {/* Customer Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Customer</p>
-              <p className="font-medium text-gray-900 dark:text-white">{refundData.customerName}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Customer
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {refundData.customerName || 'Guest'}
+              </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
-              <p className="font-medium text-gray-900 dark:text-white">{refundData.customerEmail}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Email
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {refundData.customerEmail || 'N/A'}
+              </p>
             </div>
             {refundData.customerPhone && (
               <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
-                <p className="font-medium text-gray-900 dark:text-white">{refundData.customerPhone}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Phone
+                </p>
+                <p className="font-medium text-gray-900 dark:text-white">
+                  {refundData.customerPhone}
+                </p>
               </div>
             )}
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Receipt</p>
-              <p className="font-medium text-gray-900 dark:text-white">#{refundData.receiptNumber}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Receipt
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+                #{refundData.receiptNumber}
+              </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Refund Method</p>
-              <p className="font-medium text-gray-900 dark:text-white">{refundData.refundMethod.replace('_', ' ').toUpperCase()}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Refund Method
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {humanizeMethod(refundData.refundMethod)}
+              </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Refund Type</p>
-              <p className="font-medium text-gray-900 dark:text-white">{refundData.refundType.charAt(0).toUpperCase() + refundData.refundType.slice(1)}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Refund Type
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {titleCase(refundData.refundType)}
+              </p>
             </div>
             <div className="col-span-2">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Reason</p>
-              <p className="font-medium text-gray-900 dark:text-white">{refundData.reason}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Reason
+              </p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {refundData.reason || '—'}
+              </p>
             </div>
-            {refundData.rejectedReason && (
-              <div className="col-span-2">
-                <p className="text-sm text-danger-500 dark:text-danger-400">Rejection Reason</p>
-                <p className="font-medium text-gray-900 dark:text-white">{refundData.rejectedReason}</p>
-              </div>
-            )}
           </div>
 
           {/* Items */}
           <div>
-            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Items</h3>
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
+              Items
+            </h3>
             <div className="space-y-2">
               {refundData.items.map((item: RefundItem) => (
-                <div key={item.id} className="flex justify-between items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-white">{item.productName}</p>
+                <div
+                  key={item.id}
+                  className="flex justify-between items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 dark:text-white truncate">
+                      {item.productName}
+                    </p>
                     <div className="flex flex-wrap gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <span>SKU: {item.sku}</span>
                       <span className="tabular-nums">× {item.quantity}</span>
                     </div>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Reason: {item.reason}</p>
+                    {item.reason && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        Reason: {item.reason}
+                      </p>
+                    )}
                   </div>
-                  <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                  <span className="font-bold text-gray-900 dark:text-white tabular-nums flex-shrink-0">
                     {formatCurrency(item.total)}
                   </span>
                 </div>
@@ -961,44 +1236,37 @@ function DetailModal({ refundData, onClose, onApprove, onComplete, canManage }: 
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <div className="space-y-2 max-w-xs ml-auto">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Subtotal</span>
-                <span className="text-gray-900 dark:text-white tabular-nums">{formatCurrency(refundData.subtotal)}</span>
+                <span className="text-gray-500 dark:text-gray-400">
+                  Subtotal
+                </span>
+                <span className="text-gray-900 dark:text-white tabular-nums">
+                  {formatCurrency(refundData.subtotal)}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Tax</span>
-                <span className="text-gray-900 dark:text-white tabular-nums">{formatCurrency(refundData.tax)}</span>
+                <span className="text-gray-900 dark:text-white tabular-nums">
+                  {formatCurrency(refundData.tax)}
+                </span>
               </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
                 <span className="text-gray-900 dark:text-white">Total</span>
-                <span className="text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">{formatCurrency(refundData.total)}</span>
+                <span className="text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">
+                  {formatCurrency(refundData.total)}
+                </span>
               </div>
             </div>
           </div>
 
           {/* Actions */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2 focus-ring">
+            <button
+              onClick={onPrint}
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2 focus-ring"
+            >
               <Printer className="w-4 h-4" />
               Print
             </button>
-            {canManage && refundData.status === 'pending' && (
-              <button
-                onClick={onApprove}
-                className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 focus-ring"
-              >
-                <Check className="w-4 h-4" />
-                Approve Refund
-              </button>
-            )}
-            {canManage && refundData.status === 'approved' && (
-              <button
-                onClick={onComplete}
-                className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 focus-ring"
-              >
-                <CheckCircle className="w-4 h-4" />
-                Complete Refund
-              </button>
-            )}
             <button
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
@@ -1012,119 +1280,9 @@ function DetailModal({ refundData, onClose, onApprove, onComplete, canManage }: 
   );
 }
 
-function ApproveModal({ refundData, onClose, onConfirm, processing }: any) {
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          Approve Refund
-        </h3>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Are you sure you want to approve refund #{refundData.refundNumber}?
-          <br />
-          <span className="text-sm">
-            Total amount: {formatCurrency(refundData.total)}
-          </span>
-        </p>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={processing}
-            className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 flex items-center gap-2 disabled:opacity-50 focus-ring"
-          >
-            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {processing ? 'Approving...' : 'Confirm Approve'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RejectModal({ refundData, onClose, onConfirm, reason, setReason, processing }: any) {
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          Reject Refund
-        </h3>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Are you sure you want to reject refund #{refundData.refundNumber}?
-        </p>
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Reason for Rejection <span className="text-danger-500">*</span>
-          </label>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-danger-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            placeholder="Enter reason for rejection..."
-            required
-          />
-        </div>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={processing || !reason.trim()}
-            className="px-4 py-2 bg-danger-600 text-white rounded-lg hover:bg-danger-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
-          >
-            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-            {processing ? 'Rejecting...' : 'Confirm Reject'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CompleteModal({ refundData, onClose, onConfirm, processing }: any) {
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-modal p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-          Complete Refund
-        </h3>
-        <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Are you sure you want to mark refund #{refundData.refundNumber} as completed?
-          <br />
-          <span className="text-sm">
-            Total amount: {formatCurrency(refundData.total)}
-          </span>
-        </p>
-        <div className="flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={processing}
-            className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 flex items-center gap-2 disabled:opacity-50 focus-ring"
-          >
-            {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            {processing ? 'Completing...' : 'Confirm Complete'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ============================================
+// LOADING SKELETON
+// ============================================
 
 function LoadingSkeleton() {
   return (
@@ -1132,13 +1290,23 @@ function LoadingSkeleton() {
       <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-48 mb-4"></div>
       <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
         {[...Array(7)].map((_, i) => (
-          <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-4 h-20"></div>
+          <div
+            key={i}
+            className="bg-white dark:bg-gray-800 rounded-xl p-4 h-20"
+          ></div>
         ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 h-20"></div>
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 h-20"></div>
       </div>
       <div className="bg-white dark:bg-gray-800 rounded-xl p-4 h-16 mb-6"></div>
       <div className="space-y-4">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="bg-white dark:bg-gray-800 rounded-xl p-6 h-32"></div>
+          <div
+            key={i}
+            className="bg-white dark:bg-gray-800 rounded-xl p-6 h-32"
+          ></div>
         ))}
       </div>
     </div>

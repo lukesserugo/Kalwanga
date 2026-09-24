@@ -118,17 +118,20 @@ export function ExportModal({
   };
 
   const handleDateRangeChange = (value: string) => {
-    setExportOptions((prev) => ({ ...prev, dateRange: value }));
-    if (value === 'custom') {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 30);
-      setExportOptions((prev) => ({
-        ...prev,
-        startDate: start.toISOString().split('T')[0],
-        endDate: end.toISOString().split('T')[0],
-      }));
-    }
+    setExportOptions((prev) => {
+      if (value === 'custom') {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - 30);
+        return {
+          ...prev,
+          dateRange: value,
+          startDate: start.toISOString().split('T')[0],
+          endDate: end.toISOString().split('T')[0],
+        };
+      }
+      return { ...prev, dateRange: value };
+    });
   };
 
   const handleToggleSection = (section: keyof typeof expandedSections) => {
@@ -152,9 +155,11 @@ export function ExportModal({
     setSuccess(false);
 
     try {
-      const payload = {
+      // `metrics` is only meaningful for the analytics endpoint. Send it
+      // only when the caller declared metrics; omit otherwise so the
+      // history/abandoned endpoints see a clean payload.
+      const payload: Record<string, unknown> = {
         format: exportOptions.format,
-        metrics: exportOptions.includeMetrics,
         dateRange: exportOptions.dateRange,
         startDate: exportOptions.startDate,
         endDate: exportOptions.endDate,
@@ -162,6 +167,9 @@ export function ExportModal({
         includeSummary: exportOptions.includeSummary,
         includeDetailedData: exportOptions.includeDetailedData,
       };
+      if (availableMetrics.length > 0) {
+        payload.metrics = exportOptions.includeMetrics;
+      }
 
       console.log('📤 Exporting with payload:', payload);
 
@@ -190,13 +198,13 @@ export function ExportModal({
       exportOptions.endDate
     ) {
       return `${new Date(
-        exportOptions.startDate
+        exportOptions.startDate,
       ).toLocaleDateString()} - ${new Date(
-        exportOptions.endDate
+        exportOptions.endDate,
       ).toLocaleDateString()}`;
     }
     const range = DATE_RANGES.find(
-      (r) => r.value === exportOptions.dateRange
+      (r) => r.value === exportOptions.dateRange,
     );
     return range?.label || exportOptions.dateRange;
   };
@@ -345,7 +353,7 @@ export function ExportModal({
                               const Icon = metric.icon;
                               const isSelected =
                                 exportOptions.includeMetrics.includes(
-                                  metric.id
+                                  metric.id,
                                 );
                               return (
                                 <label

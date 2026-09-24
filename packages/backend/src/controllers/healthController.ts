@@ -3,115 +3,279 @@ import { Request, Response, NextFunction } from 'express';
 import { healthService } from '../services/healthService.js';
 import { AppError } from '../middleware/errorHandler.js';
 
+// ============================================
+// PRISMA ERROR NARROWING
+// ============================================
+//
+// Do NOT `instanceof Prisma.PrismaClientKnownRequestError`.
+// In Prisma 7 with the pg driver adapter, the class is sometimes
+// exposed as a type-only symbol depending on the generated client.
+// `instanceof` against a type-only symbol narrows the value to
+// `never`, and the next property access fails with
+// "Property 'code' does not exist on type 'never'".
+//
+// We narrow structurally instead: any thrown object with a string
+// `code` field is treated as a Prisma known-request error. That is
+// the shape Prisma serializes, and it is stable across versions.
+
+interface PrismaKnownError {
+  code: string;
+  clientVersion?: string;
+  meta?: Record<string, unknown>;
+}
+
+function isPrismaKnownError(err: unknown): err is PrismaKnownError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    typeof (err as { code: unknown }).code === 'string'
+  );
+}
+
+/** P1001 — PostgreSQL server is not reachable. */
+function isDatabaseUnreachable(
+  err: unknown,
+): err is PrismaKnownError & { code: 'P1001' } {
+  return isPrismaKnownError(err) && err.code === 'P1001';
+}
+
+/** P2021 / P2022 — table or column missing (schema drift). */
+function isSchemaDrift(
+  err: unknown,
+): err is PrismaKnownError & { code: 'P2021' | 'P2022' } {
+  return (
+    isPrismaKnownError(err) &&
+    (err.code === 'P2021' || err.code === 'P2022')
+  );
+}
+
+// ============================================
+// SMALL HELPERS
+// ============================================
+
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return 'Unknown error';
+  }
+}
+
+function clampLimit(raw: unknown, fallback: number, max: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(max, Math.floor(parsed));
+}
+
+// ============================================
+// CONTROLLER
+// ============================================
+
 export const healthController = {
   /**
-   * Get basic health status
+   * Basic liveness probe.
    * GET /health
+   *
+   * Always 200 while the process is up. The `database` field reports
+   * whether the DB is reachable, but the status code does NOT flip —
+   * use /health/database for a readiness probe.
    */
-  async getHealth(req: Request, res: Response, next: NextFunction) {
+  async getHealth(_req: Request, res: Response) {
     try {
       const health = await healthService.getBasicHealth();
-      
-      res.json({
+
+      return res.status(200).json({
         status: health.status,
         timestamp: health.timestamp,
         uptime: health.uptime,
-        database: health.database,
+        // ✅ JSON.stringify drops `undefined` — fall back to a
+        //    sentinel so the field is never missing.
+        database: health.database ?? 'unknown',
       });
-    } catch (error) {
-      next(error);
+    } catch (err) {
+      // A broken health service must not 500 the liveness probe.
+      // The process itself is still running.
+      return res.status(200).json({
+        status: 'degraded',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        database: 'unknown',
+        error: toErrorMessage(err),
+      });
     }
   },
 
   /**
-   * Get detailed health status
+   * Detailed health snapshot.
    * GET /health/detailed
+   *
+   * 200 = healthy or degraded, 503 = unhealthy.
    */
-  async getDetailedHealth(req: Request, res: Response, next: NextFunction) {
+  async getDetailedHealth(_req: Request, res: Response) {
     try {
       const healthStatus = await healthService.getHealthStatus();
-      
-      const statusCode = healthStatus.status === 'healthy' ? 200 : 
-                        healthStatus.status === 'degraded' ? 200 : 503;
-      
-      res.status(statusCode).json({
+
+      const statusCode =
+        healthStatus.status === 'unhealthy' ? 503 : 200;
+
+      return res.status(statusCode).json({
         success: healthStatus.status !== 'unhealthy',
         ...healthStatus,
       });
-    } catch (error) {
-      next(error);
+    } catch (err) {
+      if (isDatabaseUnreachable(err)) {
+        return res.status(503).json({
+          success: false,
+          status: 'unhealthy',
+          database: 'unreachable',
+          code: 'P1001',
+          message:
+            'Cannot reach the PostgreSQL server. Verify it is running ' +
+            'and that DATABASE_URL is correct.',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      if (isSchemaDrift(err)) {
+        return res.status(503).json({
+          success: false,
+          status: 'unhealthy',
+          database: 'schema_drift',
+          code: err.code,
+          message:
+            'Database is reachable but the schema is out of date. ' +
+            'Run `npx prisma migrate deploy` (or `prisma db push` in dev).',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return res.status(503).json({
+        success: false,
+        status: 'unhealthy',
+        database: 'error',
+        message: toErrorMessage(err),
+        timestamp: new Date().toISOString(),
+      });
     }
   },
 
   /**
-   * Get database status
+   * Readiness probe — wire this into Docker healthchecks and load
+   * balancers.
    * GET /health/database
+   *
+   * 200 = DB reachable, 503 = DB unreachable OR schema drift.
    */
-  async getDatabaseStatus(req: Request, res: Response, next: NextFunction) {
+  async getDatabaseStatus(_req: Request, res: Response) {
     try {
       const dbStatus = await healthService.getDatabaseStatus();
-      
-      // Remove the duplicate 'success' property
-      // If dbStatus already has success, use that
-      // If dbStatus doesn't have success, add it
-      res.json({
+
+      // ✅ Respect the service's own success flag. Only default to
+      //    true when the service did not supply one.
+      const success =
+        typeof (dbStatus as { success?: unknown }).success === 'boolean'
+          ? Boolean((dbStatus as { success: boolean }).success)
+          : true;
+
+      return res.status(success ? 200 : 503).json({
         ...dbStatus,
-        success: true, // Only if dbStatus doesn't have success
+        success,
       });
-      
-      // OR better: just return dbStatus as-is
-      // res.json(dbStatus);
-    } catch (error) {
-      next(error);
+    } catch (err) {
+      if (isDatabaseUnreachable(err)) {
+        return res.status(503).json({
+          success: false,
+          status: 'unhealthy',
+          database: 'unreachable',
+          code: 'P1001',
+          message:
+            'Cannot reach the PostgreSQL server. Verify it is running ' +
+            'and that DATABASE_URL points at the correct host/port.',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      if (isSchemaDrift(err)) {
+        // ✅ `err` is narrowed to PrismaKnownError here — `err.code`
+        //    is a literal union, safe to read.
+        return res.status(503).json({
+          success: false,
+          status: 'unhealthy',
+          database: 'schema_drift',
+          code: err.code,
+          message:
+            'Database is reachable but the schema is out of date. ' +
+            'Run `npx prisma migrate deploy` (or `prisma db push` in dev).',
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return res.status(503).json({
+        success: false,
+        status: 'unhealthy',
+        database: 'error',
+        message: toErrorMessage(err),
+        timestamp: new Date().toISOString(),
+      });
     }
   },
 
   /**
-   * Get health check history
-   * GET /health/history
+   * Recent health-check history (in-memory ring buffer).
+   * GET /health/history?limit=20
    */
   async getHealthHistory(req: Request, res: Response, next: NextFunction) {
     try {
-      const { limit = 20 } = req.query;
-      const history = await healthService.getHealthHistory(Number(limit));
-      
-      res.json({
+      const limit = clampLimit(req.query.limit, 20, 100);
+
+      const history = await healthService.getHealthHistory(limit);
+
+      return res.json({
         success: true,
         data: history,
         count: history.length,
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   },
 
   /**
-   * Perform a quick health check
+   * Minimal probe for uptime monitors.
    * GET /health/check
    */
-  async quickCheck(req: Request, res: Response, next: NextFunction) {
+  async quickCheck(_req: Request, res: Response) {
     try {
       const health = await healthService.getBasicHealth();
-      
-      // Return minimal response for quick checks
-      res.status(health.status === 'ok' ? 200 : 503).json({
-        status: health.status,
-        timestamp: health.timestamp,
+
+      // ✅ 'ok' is the healthy sentinel. Anything else → 503.
+      return res
+        .status(health.status === 'ok' ? 200 : 503)
+        .json({
+          status: health.status,
+          timestamp: health.timestamp,
+        });
+    } catch (err) {
+      return res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        error: toErrorMessage(err),
       });
-    } catch (error) {
-      next(error);
     }
   },
 
   /**
-   * Get system information
+   * Process-level system info.
    * GET /health/system
    */
-  async getSystemInfo(req: Request, res: Response, next: NextFunction) {
+  async getSystemInfo(_req: Request, res: Response, next: NextFunction) {
     try {
       const healthStatus = await healthService.getHealthStatus();
-      
-      res.json({
+
+      return res.json({
         success: true,
         data: {
           system: healthStatus.system,
@@ -120,7 +284,7 @@ export const healthController = {
         },
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   },
 };

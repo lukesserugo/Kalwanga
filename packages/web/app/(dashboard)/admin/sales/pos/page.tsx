@@ -1,4 +1,5 @@
 // packages/web/app/(dashboard)/admin/sales/pos/page.tsx
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -17,8 +18,20 @@ import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
 
-// Dynamically import the POS component to reduce initial bundle size.
-// Do NOT change this import path — the existing POS component is untouched.
+// ============================================================
+// DYNAMIC IMPORT
+// ============================================================
+//
+// The POS component must be client-only:
+//   - it reads `localStorage` (theme preference) during init
+//   - it calls `document.documentElement.classList` on mount
+//   - it uses `window.open` for receipts
+//   - it uses React refs that only make sense after hydration
+//
+// `ssr: false` is required. The component tree itself is unchanged;
+// only the checkout flow inside it has been consolidated into a
+// single `CheckoutModal` (see `components/sales/POS/POS.tsx`).
+
 const POSComponent = dynamic(
   () =>
     import('../../../../../components/sales/POS/POS').then(
@@ -38,6 +51,10 @@ const POSComponent = dynamic(
     ),
   }
 );
+
+// ============================================================
+// PAGE
+// ============================================================
 
 export default function POSPage() {
   const { isLoaded, isSignedIn } = useUser();
@@ -67,13 +84,14 @@ export default function POSPage() {
     // before deciding. The other admin pages do the same implicitly.
     if (!user) return;
 
-    if (canAccessPos) {
-      setAuthorized(true);
-      setChecking(false);
-    } else {
-      setAuthorized(false);
-      setChecking(false);
-    }
+    // Only flip state if the outcome changed. Prevents an infinite
+    // re-render loop when `canAccessPos` is a stable `true` and every
+    // `setAuthorized` would otherwise re-trigger this effect.
+    setAuthorized((prev) => {
+      if (prev === canAccessPos) return prev;
+      return canAccessPos;
+    });
+    setChecking((prev) => (prev ? false : prev));
   }, [isLoaded, isSignedIn, user, canAccessPos, router]);
 
   // ─────────────────────────────────────────────────────────────
@@ -158,7 +176,7 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* POS Component — untouched */}
+      {/* POS Component */}
       <div className="h-[calc(100vh-73px)]">
         <POSComponent />
       </div>

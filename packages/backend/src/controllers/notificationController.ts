@@ -21,6 +21,7 @@ import {
 import {
   NotificationType as PrismaNotificationType,
   NotificationPriority as PrismaNotificationPriority,
+  Prisma,
 } from '../generated/prisma/index.js';
 
 // ============================================
@@ -29,37 +30,26 @@ import {
 
 /**
  * Map string to Prisma NotificationType enum.
- *
- * The full enum now includes the four extended members that the
- * notification service writes from its alert paths:
- *   LOW_STOCK      — low inventory alert
- *   PURCHASE_ORDER — PO created / needs approval
- *   SHIFT          — shift started / ended / discrepancy
- *   RECEIPT        — receipt emailed
- *
- * Any string that isn't recognized falls back to INFO, which is
- * the same behavior as before the enum was extended.
  */
 function mapToNotificationType(type: string): PrismaNotificationType {
   const typeMap: Record<string, PrismaNotificationType> = {
-    'SALE': PrismaNotificationType.SALE,
-    'INVENTORY': PrismaNotificationType.INVENTORY,
-    'ORDER': PrismaNotificationType.ORDER,
-    'PAYMENT': PrismaNotificationType.PAYMENT,
-    'CUSTOMER': PrismaNotificationType.CUSTOMER,
-    'SYSTEM': PrismaNotificationType.SYSTEM,
-    'ALERT': PrismaNotificationType.ALERT,
-    'SUCCESS': PrismaNotificationType.SUCCESS,
-    'INFO': PrismaNotificationType.INFO,
-    'WARNING': PrismaNotificationType.WARNING,
-    'ERROR': PrismaNotificationType.ERROR,
-    'PROMOTION': PrismaNotificationType.PROMOTION,
-    'REMINDER': PrismaNotificationType.REMINDER,
-    // Extended members — these are the four the service writes.
-    'LOW_STOCK': PrismaNotificationType.LOW_STOCK,
-    'PURCHASE_ORDER': PrismaNotificationType.PURCHASE_ORDER,
-    'SHIFT': PrismaNotificationType.SHIFT,
-    'RECEIPT': PrismaNotificationType.RECEIPT,
+    SALE: PrismaNotificationType.SALE,
+    INVENTORY: PrismaNotificationType.INVENTORY,
+    ORDER: PrismaNotificationType.ORDER,
+    PAYMENT: PrismaNotificationType.PAYMENT,
+    CUSTOMER: PrismaNotificationType.CUSTOMER,
+    SYSTEM: PrismaNotificationType.SYSTEM,
+    ALERT: PrismaNotificationType.ALERT,
+    SUCCESS: PrismaNotificationType.SUCCESS,
+    INFO: PrismaNotificationType.INFO,
+    WARNING: PrismaNotificationType.WARNING,
+    ERROR: PrismaNotificationType.ERROR,
+    PROMOTION: PrismaNotificationType.PROMOTION,
+    REMINDER: PrismaNotificationType.REMINDER,
+    LOW_STOCK: PrismaNotificationType.LOW_STOCK,
+    PURCHASE_ORDER: PrismaNotificationType.PURCHASE_ORDER,
+    SHIFT: PrismaNotificationType.SHIFT,
+    RECEIPT: PrismaNotificationType.RECEIPT,
   };
 
   const mapped = type.toUpperCase();
@@ -68,10 +58,6 @@ function mapToNotificationType(type: string): PrismaNotificationType {
 
 /**
  * Map string to Prisma NotificationPriority enum.
- *
- * Used wherever a request supplies `priority` so the create paths
- * don't hardcode MEDIUM. Falls back to MEDIUM for unknown values,
- * which matches the model's default.
  */
 function mapToPriority(priority?: string): PrismaNotificationPriority {
   if (!priority) return PrismaNotificationPriority.MEDIUM;
@@ -84,6 +70,21 @@ function mapToPriority(priority?: string): PrismaNotificationPriority {
   };
 
   return map[priority.toUpperCase()] || PrismaNotificationPriority.MEDIUM;
+}
+
+/**
+ * Normalize a JSON payload for a Prisma `Json?` column.
+ *
+ * Prisma distinguishes between `DbNull` (SQL NULL) and `JsonNull`
+ * (JSON literal null). Passing a bare `null` is a type error. When the
+ * caller provides no data we simply omit the field (return
+ * `undefined`), which lets the column default take effect.
+ */
+function toPrismaJson(
+  value: Record<string, any> | null | undefined,
+): Prisma.InputJsonValue | undefined {
+  if (value === null || value === undefined) return undefined;
+  return value as Prisma.InputJsonValue;
 }
 
 // ============================================
@@ -185,7 +186,6 @@ export const notificationController = {
   async getStats(req: Request, res: Response, next: NextFunction) {
     try {
       const { id: userId } = (req as any).user || {};
-      const { businessUnitId } = (req as any).user || {};
 
       if (!userId) throw new AppError('User required', 400);
 
@@ -222,6 +222,9 @@ export const notificationController = {
   /**
    * Get unread count
    * GET /notifications/unread-count
+   *
+   * Frontend service reads this as `{ success: true, data: { count } }`
+   * and unwraps `data` down to `{ count }` before rendering the badge.
    */
   async getUnreadCount(req: Request, res: Response, next: NextFunction) {
     try {
@@ -470,15 +473,14 @@ export const notificationController = {
 
       if (!userId) throw new AppError('User required', 400);
 
-      // Map string type and priority to Prisma enums
       const notificationType = mapToNotificationType(data.type);
       const notificationPriority = mapToPriority(data.priority);
+      const jsonData = toPrismaJson(data.data);
 
-      // If no userId in request, send to all users in business unit
-      let targetUserId = data.userId;
-      let targetBusinessUnitId = data.businessUnitId || businessUnitId;
+      const targetUserId = data.userId;
+      const targetBusinessUnitId = data.businessUnitId || businessUnitId;
 
-      // If no specific user, send to all users in business unit
+      // If no specific user, fan out to every user in the business unit.
       if (!targetUserId && targetBusinessUnitId) {
         const users = await prisma.businessUnitUser.findMany({
           where: { businessUnitId: targetBusinessUnitId, isActive: true },
@@ -495,7 +497,7 @@ export const notificationController = {
                 type: notificationType,
                 priority: notificationPriority,
                 link: data.link,
-                data: data.data || null,
+                data: jsonData,
                 businessUnitId: targetBusinessUnitId,
                 companyId: data.companyId || companyId,
               },
@@ -510,7 +512,7 @@ export const notificationController = {
         });
       }
 
-      // Create single notification
+      // Single recipient.
       const notification = await prisma.notification.create({
         data: {
           userId: targetUserId || userId,
@@ -519,7 +521,7 @@ export const notificationController = {
           type: notificationType,
           priority: notificationPriority,
           link: data.link,
-          data: data.data || null,
+          data: jsonData,
           businessUnitId: targetBusinessUnitId || businessUnitId,
           companyId: data.companyId || companyId,
         },
@@ -575,7 +577,7 @@ export const notificationController = {
               type: notificationType,
               priority: notificationPriority,
               link: data.link,
-              data: data.data || null,
+              data: toPrismaJson(data.data),
               businessUnitId: data.businessUnitId || businessUnitId,
               companyId: data.companyId || companyId,
             },
@@ -619,7 +621,6 @@ export const notificationController = {
 
       if (!userId) throw new AppError('User required', 400);
 
-      // Use notification service to get preferences
       const preferences = await notificationService.getPreferences(userId);
 
       res.json({
@@ -634,36 +635,94 @@ export const notificationController = {
   /**
    * Update notification preferences
    * PUT /notifications/preferences
+   *
+   * The `updatePreferencesSchema` shape is defined by the validators
+   * module; we don't assume its field names here. We accept the raw
+   * body, validate, then normalize into the NotificationPreferences
+   * shape that the service expects.
    */
   async updatePreferences(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = updatePreferencesSchema.parse(req.body);
+      // Validate the payload but keep the original body so unknown
+      // keys don't get stripped if the schema is strict.
+      updatePreferencesSchema.parse(req.body);
+      const raw = req.body as Record<string, unknown>;
       const { id: userId } = (req as any).user || {};
 
       if (!userId) throw new AppError('User required', 400);
 
-      // Convert data to match NotificationPreferences type
-      const preferencesData: any = {};
-      if (data.email !== undefined) preferencesData.emailEnabled = data.email;
-      if (data.push !== undefined) preferencesData.pushEnabled = data.push;
-      if (data.inApp !== undefined) preferencesData.inAppEnabled = data.inApp;
-      // Handle types if needed
-      if (data.types) {
-        if (data.types.lowStock !== undefined)
-          preferencesData.lowStockAlerts = data.types.lowStock;
-        if (data.types.sale !== undefined)
-          preferencesData.saleAlerts = data.types.sale;
-        if (data.types.purchaseOrder !== undefined)
-          preferencesData.purchaseOrderAlerts = data.types.purchaseOrder;
-        if (data.types.shift !== undefined)
-          preferencesData.shiftAlerts = data.types.shift;
-        if (data.types.system !== undefined)
-          preferencesData.systemAlerts = data.types.system;
+      // Accept both flat (emailEnabled, pushEnabled, ...) and nested
+      // ({ email, push, inApp, types: {...} }) shapes so the
+      // controller is tolerant of either request convention.
+      const preferencesData: Record<string, unknown> = {};
+
+      const email =
+        raw.emailEnabled !== undefined ? raw.emailEnabled : raw.email;
+      if (email !== undefined) preferencesData.emailEnabled = email;
+
+      const push =
+        raw.pushEnabled !== undefined ? raw.pushEnabled : raw.push;
+      if (push !== undefined) preferencesData.pushEnabled = push;
+
+      const inApp =
+        raw.inAppEnabled !== undefined ? raw.inAppEnabled : raw.inApp;
+      if (inApp !== undefined) preferencesData.inAppEnabled = inApp;
+
+      const sms = raw.smsEnabled;
+      if (sms !== undefined) preferencesData.smsEnabled = sms;
+
+      // Type-specific preferences may arrive flat or nested.
+      const flatTypeKeys: Array<[string, string]> = [
+        ['lowStockAlerts', 'lowStockAlerts'],
+        ['saleAlerts', 'saleAlerts'],
+        ['purchaseOrderAlerts', 'purchaseOrderAlerts'],
+        ['shiftAlerts', 'shiftAlerts'],
+        ['systemAlerts', 'systemAlerts'],
+        ['promotionalAlerts', 'promotionalAlerts'],
+        ['reminderAlerts', 'reminderAlerts'],
+        ['receiptAlerts', 'receiptAlerts'],
+      ];
+      for (const [key] of flatTypeKeys) {
+        if (raw[key] !== undefined) {
+          preferencesData[key] = raw[key];
+        }
+      }
+
+      const nestedTypes =
+        raw.types && typeof raw.types === 'object'
+          ? (raw.types as Record<string, unknown>)
+          : null;
+      if (nestedTypes) {
+        const nestedMap: Array<[string, string]> = [
+          ['lowStock', 'lowStockAlerts'],
+          ['sale', 'saleAlerts'],
+          ['purchaseOrder', 'purchaseOrderAlerts'],
+          ['shift', 'shiftAlerts'],
+          ['system', 'systemAlerts'],
+          ['promotion', 'promotionalAlerts'],
+          ['reminder', 'reminderAlerts'],
+          ['receipt', 'receiptAlerts'],
+        ];
+        for (const [src, dest] of nestedMap) {
+          if (nestedTypes[src] !== undefined) {
+            preferencesData[dest] = nestedTypes[src];
+          }
+        }
+      }
+
+      if (raw.emailFrequency !== undefined) {
+        preferencesData.emailFrequency = raw.emailFrequency;
+      }
+      if (raw.quietHoursStart !== undefined) {
+        preferencesData.quietHoursStart = raw.quietHoursStart;
+      }
+      if (raw.quietHoursEnd !== undefined) {
+        preferencesData.quietHoursEnd = raw.quietHoursEnd;
       }
 
       const preferences = await notificationService.updatePreferences(
         userId,
-        preferencesData,
+        preferencesData as any,
       );
 
       res.json({
@@ -730,7 +789,7 @@ export const notificationController = {
           type: notificationType,
           priority: notificationPriority,
           link: data.link,
-          data: data.data || null,
+          data: toPrismaJson(data.data),
           businessUnitId: data.businessUnitId,
           companyId: data.companyId,
         },

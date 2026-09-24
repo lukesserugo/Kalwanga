@@ -39,6 +39,10 @@ import { api } from '../../../../../services/api';
 //
 // These mirror the Prisma `CartSettings` model. Fields the UI doesn't
 // render (id, timestamps) are optional on the wire.
+//
+// IMPORTANT: the backend's `CART_SETTINGS_ALLOWED_KEYS` whitelist must
+// contain every field below. If you add a field here, add it there too
+// — otherwise the PUT will be rejected with a 400.
 
 interface CartSettings {
   // Server-managed
@@ -163,6 +167,67 @@ const EMPTY_STATS: CartStats = {
   todayRevenue: 0,
 };
 
+/**
+ * Fields the form is allowed to send to the backend.
+ *
+ * Excludes server-managed fields (`id`, `businessUnitId`, `createdAt`,
+ * `updatedAt`) and matches `CART_SETTINGS_ALLOWED_KEYS` in
+ * `packages/backend/src/controllers/cartController.ts`.
+ */
+const MANAGED_FIELDS: ReadonlyArray<keyof CartSettings> = [
+  'isActive',
+  'allowGuestCheckout',
+  'requireCustomerForReturn',
+  'maxCartItems',
+  'cartExpiryHours',
+  'discountEnabled',
+  'maxDiscountPercentage',
+  'maxDiscountAmount',
+  'autoApplyPromotions',
+  'loyaltyPointsEnabled',
+  'pointsPerDollar',
+  'minPointsForRedeem',
+  'maxPointsPerOrder',
+  'reserveStockOnAdd',
+  'reserveStockMinutes',
+  'lowStockThreshold',
+  'defaultPaymentMethod',
+  'allowPartialPayment',
+  'requireSignature',
+  'taxInclusive',
+  'freeShippingThreshold',
+  'shippingCost',
+  'taxRate',
+  'notifyOnAbandonedCart',
+  'abandonedCartHours',
+  'notifyOnLowStock',
+  'currencyCode',
+  'currencySymbol',
+  'showStockBadge',
+  'showVariantImages',
+] as const;
+
+/**
+ * Numeric fields the form treats as non-negative. Used to clamp values
+ * before writing to state — HTML `min={0}` is advisory only, and a user
+ * can paste `-5` into a `type="number"` input.
+ */
+const NON_NEGATIVE_FIELDS: ReadonlySet<keyof CartSettings> = new Set([
+  'maxCartItems',
+  'cartExpiryHours',
+  'maxDiscountPercentage',
+  'maxDiscountAmount',
+  'pointsPerDollar',
+  'minPointsForRedeem',
+  'maxPointsPerOrder',
+  'reserveStockMinutes',
+  'lowStockThreshold',
+  'freeShippingThreshold',
+  'shippingCost',
+  'taxRate',
+  'abandonedCartHours',
+]);
+
 // ============================================
 // CONSTANTS
 // ============================================
@@ -177,15 +242,17 @@ const PAYMENT_METHODS = [
   { value: 'LOYALTY_POINTS', label: 'Loyalty Points' },
 ] as const;
 
+// Matches the Prisma `Currency` enum. `GHS` was previously missing.
 const CURRENCIES = [
   { value: 'USD', label: 'USD — US Dollar', symbol: '$' },
   { value: 'EUR', label: 'EUR — Euro', symbol: '€' },
   { value: 'GBP', label: 'GBP — British Pound', symbol: '£' },
-  { value: 'UGX', label: 'UGX — Ugandan Shilling', symbol: 'UGX' },
-  { value: 'KES', label: 'KES — Kenyan Shilling', symbol: 'KES' },
-  { value: 'TZS', label: 'TZS — Tanzanian Shilling', symbol: 'TZS' },
   { value: 'NGN', label: 'NGN — Nigerian Naira', symbol: '₦' },
+  { value: 'KES', label: 'KES — Kenyan Shilling', symbol: 'KES' },
   { value: 'ZAR', label: 'ZAR — South African Rand', symbol: 'R' },
+  { value: 'GHS', label: 'GHS — Ghanaian Cedi', symbol: '₵' },
+  { value: 'UGX', label: 'UGX — Ugandan Shilling', symbol: 'UGX' },
+  { value: 'TZS', label: 'TZS — Tanzanian Shilling', symbol: 'TZS' },
 ] as const;
 
 const TABS: Array<{
@@ -204,12 +271,58 @@ const TABS: Array<{
 ];
 
 // ============================================
+// HELPERS
+// ============================================
+
+/**
+ * The backend sometimes wraps responses in `{ data: ... }` and
+ * sometimes returns the payload directly. Handle both.
+ */
+function unwrap<T>(response: unknown): T | null {
+  if (response === null || response === undefined) return null;
+  if (typeof response !== 'object') return response as unknown as T;
+  if ('data' in (response as Record<string, unknown>)) {
+    const inner = (response as Record<string, unknown>).data;
+    if (inner !== null && inner !== undefined) return inner as T;
+  }
+  return response as T;
+}
+
+/**
+ * Compare only the fields the form is allowed to modify. Prevents
+ * `updatedAt` churn from making the form permanently "dirty".
+ */
+function hasManagedChanges(
+  a: CartSettings,
+  b: CartSettings,
+): boolean {
+  for (const key of MANAGED_FIELDS) {
+    if (a[key] !== b[key]) return true;
+  }
+  return false;
+}
+
+/**
+ * Build the wire payload: only the fields the backend accepts.
+ */
+function toWirePayload(settings: CartSettings): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const key of MANAGED_FIELDS) {
+    payload[key] = settings[key];
+  }
+  return payload;
+}
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function CartSettingsPage() {
   const router = useRouter();
-  const { canManage, isLoading: permissionLoading } = usePermission();
+  const {
+    hasPermission,
+    isLoading: permissionLoading,
+  } = usePermission();
 
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -221,21 +334,26 @@ export default function CartSettingsPage() {
   const [original, setOriginal] = useState<CartSettings>(DEFAULT_SETTINGS);
 
   const isMountedRef = useRef(true);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+      }
     };
   }, []);
 
-  const canManageSettings = canManage(PermissionResource.SETTINGS);
+  const canManageSettings = hasPermission(PermissionResource.SETTINGS);
 
   // ============================================
   // DERIVED
   // ============================================
 
   const isDirty = useMemo(
-    () => JSON.stringify(settings) !== JSON.stringify(original),
+    () => hasManagedChanges(settings, original),
     [settings, original],
   );
 
@@ -330,12 +448,17 @@ export default function CartSettingsPage() {
           return { ...prev, [name]: input.checked };
         }
         if (type === 'number') {
-          // Empty input should become 0, not NaN.
-          const num = value === '' ? 0 : parseFloat(value);
-          return {
-            ...prev,
-            [name]: Number.isFinite(num) ? num : 0,
-          };
+          // Empty input becomes 0, not NaN.
+          const parsed = value === '' ? 0 : parseFloat(value);
+          let num = Number.isFinite(parsed) ? parsed : 0;
+          // `min={0}` on the input is advisory; clamp real values.
+          if (
+            NON_NEGATIVE_FIELDS.has(name as keyof CartSettings) &&
+            num < 0
+          ) {
+            num = 0;
+          }
+          return { ...prev, [name]: num };
         }
         return { ...prev, [name]: value };
       });
@@ -385,12 +508,8 @@ export default function CartSettingsPage() {
       setSuccess(false);
 
       try {
-        // Strip server-managed fields before sending.
-        const payload = { ...settings };
-        delete payload.id;
-        delete payload.businessUnitId;
-        delete payload.createdAt;
-        delete payload.updatedAt;
+        // Send only the fields the backend whitelist accepts.
+        const payload = toWirePayload(settings);
 
         const response = await api.put<CartSettings>(
           '/cart/settings',
@@ -400,7 +519,10 @@ export default function CartSettingsPage() {
         if (!isMountedRef.current) return;
 
         const updated =
-          unwrap<CartSettings>(response) ?? { ...original, ...payload };
+          unwrap<CartSettings>(response) ?? {
+            ...original,
+            ...payload,
+          };
 
         // Re-merge with the server's response so any server-normalized
         // values land in the form.
@@ -413,7 +535,9 @@ export default function CartSettingsPage() {
 
         setSuccess(true);
         toast.success('Cart settings updated');
-        setTimeout(() => {
+
+        if (successTimerRef.current) clearTimeout(successTimerRef.current);
+        successTimerRef.current = setTimeout(() => {
           if (isMountedRef.current) setSuccess(false);
         }, 3000);
       } catch (err: any) {
@@ -436,13 +560,13 @@ export default function CartSettingsPage() {
   // PERMISSION GUARD
   // ============================================
 
-  if (permissionLoading || loadingData) {
+  if (permissionLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
           <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Loading cart settings…
+            Checking permissions…
           </p>
         </div>
       </div>
@@ -468,6 +592,19 @@ export default function CartSettingsPage() {
         >
           Back to Dashboard
         </button>
+      </div>
+    );
+  }
+
+  if (loadingData) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-orange-500 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading cart settings…
+          </p>
+        </div>
       </div>
     );
   }
@@ -922,19 +1059,6 @@ export default function CartSettingsPage() {
           </div>
         </form>
       </div>
-
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          height: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #fbbf24;
-          border-radius: 2px;
-        }
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #b45309;
-        }
-      `}</style>
     </div>
   );
 }
@@ -1087,22 +1211,4 @@ function StatCard({
       </p>
     </div>
   );
-}
-
-// ============================================
-// HELPERS
-// ============================================
-
-/**
- * The backend sometimes wraps responses in `{ data: ... }` and
- * sometimes returns the payload directly. Handle both.
- */
-function unwrap<T>(response: unknown): T | null {
-  if (response === null || response === undefined) return null;
-  if (typeof response !== 'object') return response as unknown as T;
-  if ('data' in (response as Record<string, unknown>)) {
-    const inner = (response as Record<string, unknown>).data;
-    if (inner !== null && inner !== undefined) return inner as T;
-  }
-  return response as T;
 }

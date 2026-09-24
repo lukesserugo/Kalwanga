@@ -54,6 +54,48 @@ export interface VariantBarcodeInfo extends BarcodeInfo {
   variantId?: string;
 }
 
+/**
+ * Payload for the write-path scan.
+ *
+ * `scanIdempotencyKey` is the caller-supplied dedupe token. When two
+ * transports (USB HID + BLE) fire the same physical scan and drift
+ * past the dispatcher's 250 ms debounce, the second request carries
+ * the same key and the backend short-circuits with a 409.
+ */
+export interface RecordScanInput {
+  barcode: string;
+  businessUnitId: string;
+  quantity?: number;
+  saleId?: string;
+  note?: string;
+  scanIdempotencyKey?: string;
+}
+
+/**
+ * Result of a successful write-path scan. Mirrors the backend's
+ * `recordScan` return shape.
+ */
+export interface RecordScanResult {
+  transactionId: string;
+  matchType: 'PRODUCT' | 'VARIANT';
+  barcode: string;
+  productId: string;
+  variantId: string | null;
+  quantityScanned: number;
+  remainingQuantity: number;
+}
+
+/**
+ * Distinguishes the two 409 meanings returned by the backend.
+ *   - 'DUPLICATE_SCAN'      → safe to ignore (idempotency hit)
+ *   - 'INSUFFICIENT_STOCK'  → real error, surface to the cashier
+ *   - null                  → not a 409, or a 409 the client can't classify
+ */
+export type RecordScanErrorKind =
+  | 'DUPLICATE_SCAN'
+  | 'INSUFFICIENT_STOCK'
+  | null;
+
 // Helper to check if we're on the client
 const isClient = typeof window !== 'undefined';
 
@@ -133,16 +175,14 @@ export const barcodeService = {
   /**
    * Get SVG barcode for a product
    * GET /barcodes/product/:productId/svg
-   * FIXED: Returns string directly, not an object with .data
+   * Returns string directly, not an object with .data
    */
   async getSVGBarcode(productId: string): Promise<string> {
     if (!isClient) {
       return '';
     }
     try {
-      // The API returns the SVG string directly when responseType is 'text'
       const response = await api.get<string>(`/barcodes/product/${productId}/svg`);
-      // response is already the string (not { data: string })
       return response || '';
     } catch (error) {
       console.error(`Error fetching SVG barcode for product ${productId}:`, error);
@@ -218,9 +258,9 @@ export const barcodeService = {
       throw new Error('Cannot generate barcode on server');
     }
     try {
-      const response = await api.post<any>('/barcodes/generate', { 
-        productId, 
-        type: type || 'EAN13' 
+      const response = await api.post<any>('/barcodes/generate', {
+        productId,
+        type: type || 'EAN13',
       });
       return response || { barcode: '', productId };
     } catch (error) {
@@ -289,7 +329,7 @@ export const barcodeService = {
       // Fallback to external service
       const formatParam = format || 'EAN13';
       return {
-        barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${formatParam}&dpi=96&datatype=Content`
+        barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(barcode)}&code=${formatParam}&dpi=96&datatype=Content`,
       };
     }
   },
@@ -449,9 +489,9 @@ export const barcodeService = {
       console.error(`Error validating barcode ${barcode}:`, error);
       // Client-side validation fallback
       const isValid = /^\d{13}$/.test(barcode) && this.validateChecksum(barcode);
-      return { 
-        valid: isValid, 
-        message: isValid ? 'Barcode is valid' : 'Invalid barcode format' 
+      return {
+        valid: isValid,
+        message: isValid ? 'Barcode is valid' : 'Invalid barcode format',
       };
     }
   },
@@ -482,15 +522,27 @@ export const barcodeService = {
   // ============================================
 
   /**
-   * Scan a barcode and get product info
+   * Scan a barcode and get product info (read-only).
    * POST /barcodes/scan
+   *
+   * Use this for camera previews, product lookups, and cart
+   * previews — it resolves the code to a product/variant but does
+   * NOT decrement inventory.
+   *
+   * `silent: true` suppresses the payload logger in `api.post` so a
+   * fast scanner loop doesn't flood the console. Error rejection is
+   * unaffected.
    */
   async scanBarcode(barcode: string, businessUnitId?: string): Promise<ScanBarcodeResult> {
     if (!isClient) {
       throw new Error('Cannot scan barcode on server');
     }
     try {
-      const response = await api.post<any>('/barcodes/scan', { barcode, businessUnitId });
+      const response = await api.post<any>(
+        '/barcodes/scan',
+        { barcode, businessUnitId },
+        { silent: true },
+      );
       return response;
     } catch (error) {
       console.error(`Error scanning barcode ${barcode}:`, error);
@@ -498,9 +550,71 @@ export const barcodeService = {
     }
   },
 
+  /**
+   * Record a scanner-driven scan (write path).
+   * POST /barcodes/record-scan
+   *
+   * Decrements inventory and writes an InventoryTransaction row
+   * atomically. When `scanIdempotencyKey` is supplied, a duplicate
+   * request is rejected with 409 before the transaction begins.
+   *
+   * On a 409, the caller should inspect `classifyRecordScanError(err)`
+   * to distinguish "duplicate scan" (safe to swallow) from
+   * "insufficient stock" (must be shown to the user).
+   *
+   * `silent: true` suppresses the payload logger in `api.post` so a
+   * fast scanner loop doesn't flood the console. Error rejection is
+   * unaffected.
+   */
+  async recordScan(input: RecordScanInput): Promise<RecordScanResult> {
+    if (!isClient) {
+      throw new Error('Cannot record scan on server');
+    }
+    try {
+      const response = await api.post<any>(
+        '/barcodes/record-scan',
+        input,
+        { silent: true },
+      );
+      return response;
+    } catch (error) {
+      console.error(`Error recording scan for ${input.barcode}:`, error);
+      throw error;
+    }
+  },
+
   // ============================================
   // CLIENT-SIDE UTILITY METHODS
   // ============================================
+
+  /**
+   * Classify a `recordScan` rejection into one of the two known
+   * 409 meanings, or `null` if it's something else.
+   *
+   * Prefers the machine-readable `code` field on the error body
+   * when the backend supplies it (recommended), and falls back to
+   * message inspection so the client works against either backend
+   * version.
+   */
+  classifyRecordScanError(err: unknown): RecordScanErrorKind {
+    const status =
+      (err as any)?.response?.status ??
+      (err as any)?.status ??
+      null;
+
+    if (status !== 409) return null;
+
+    const body = (err as any)?.response?.data ?? {};
+    const code = typeof body?.code === 'string' ? body.code : null;
+    if (code === 'DUPLICATE_SCAN' || code === 'INSUFFICIENT_STOCK') {
+      return code;
+    }
+
+    const message = typeof body?.message === 'string' ? body.message : '';
+    if (/duplicate scan/i.test(message)) return 'DUPLICATE_SCAN';
+    if (/insufficient stock/i.test(message)) return 'INSUFFICIENT_STOCK';
+    return null;
+  },
 
   /**
    * Validate barcode checksum (client-side)
@@ -531,5 +645,5 @@ export const barcodeService = {
     }
     const checkDigit = (10 - (sum % 10)) % 10;
     return barcode + checkDigit;
-  }
+  },
 };

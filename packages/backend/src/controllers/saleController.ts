@@ -8,6 +8,7 @@ import {
   cartCheckoutSchema,
 } from '../utils/validators.js';
 import { prisma } from '../lib/prisma.js';
+import type { DiscountType } from '../generated/prisma/index.js';
 import { z } from 'zod';
 
 const saleService = new SaleService();
@@ -20,6 +21,45 @@ const saleService = new SaleService();
 // live in `../utils/validators.ts` so that every checkout path (legacy
 // direct sale, cart checkout, POS checkout) validates against the same
 // canonical payment-method list. Do NOT re-declare them here.
+//
+// ⚠ If you add promotion/loyalty passthrough fields to those schemas
+// (see the note above `createSale`), make sure all three callers
+// (saleService.createSale, saleService.createSaleFromCart, and
+// checkoutService.processCheckout) receive them. The saleService
+// interfaces already declare the fields; the schemas must accept them.
+
+// ── Discount type enum helpers ───────────────────────────────────
+//
+// Mirrors the Postgres enum defined in `prisma/schema.prisma`:
+//
+//     enum DiscountType {
+//       PERCENTAGE
+//       FIXED
+//       LOYALTY
+//       MANUAL
+//     }
+//
+// We define a runtime list + guard here so `readPromotionFields` can
+// narrow arbitrary incoming strings to the enum union before
+// forwarding them to `SaleService`. Any value not in this list is
+// silently dropped — the service then infers a valid `discountType`
+// from the underlying sources.
+//
+// ⚠ Keep in sync with `enum DiscountType`. Adding a value to the
+//   Prisma enum requires updating this list too.
+const DISCOUNT_TYPE_ENUM_VALUES = [
+  'PERCENTAGE',
+  'FIXED',
+  'LOYALTY',
+  'MANUAL',
+] as const satisfies readonly DiscountType[];
+
+function isDiscountType(value: unknown): value is DiscountType {
+  return (
+    typeof value === 'string' &&
+    (DISCOUNT_TYPE_ENUM_VALUES as readonly string[]).includes(value)
+  );
+}
 
 const dateRangeSchema = z.object({
   startDate: z.string().datetime().optional(),
@@ -78,7 +118,7 @@ const bulkStatusSchema = z.object({
 });
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================
 
 async function getBusinessUnitId(req: Request): Promise<string> {
@@ -168,6 +208,59 @@ function getUserId(req: Request): string {
     throw new AppError('User ID is required', 400);
   }
   return userId;
+}
+
+/**
+ * Pull the promotion / loyalty passthrough fields off a request body.
+ *
+ * The three fields (`discountType`, `promotionCode`, `promotionDiscount`)
+ * are optional everywhere they appear. The helper normalizes snake_case
+ * aliases and coerces a string `promotionDiscount` to a number, matching
+ * the same defensive normalization `checkoutController.createCheckout`
+ * performs.
+ *
+ * `discountType` is narrowed to the Prisma `DiscountType` enum union.
+ * Any value that isn't a member is silently dropped — the service
+ * will then infer a valid type (LOYALTY / MANUAL / null) from the
+ * discount amounts. This keeps a single bad field from failing the
+ * entire sale with a Postgres enum rejection.
+ */
+function readPromotionFields(body: any): {
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+} {
+  const out: {
+    discountType?: DiscountType | null;
+    promotionCode?: string | null;
+    promotionDiscount?: number;
+  } = {};
+
+  const dt = body?.discountType ?? body?.discount_type;
+  if (dt !== undefined) {
+    if (dt === null) {
+      out.discountType = null;
+    } else if (isDiscountType(dt)) {
+      out.discountType = dt;
+    }
+    // Unknown values are silently dropped — the service infers a
+    // valid `discountType` from the discount amounts instead.
+  }
+
+  const pc = body?.promotionCode ?? body?.promotion_code;
+  if (pc !== undefined) out.promotionCode = pc;
+
+  const pd = body?.promotionDiscount ?? body?.promotion_discount;
+  if (pd !== undefined) {
+    if (typeof pd === 'number' && Number.isFinite(pd)) {
+      out.promotionDiscount = pd;
+    } else if (typeof pd === 'string') {
+      const parsed = Number(pd);
+      if (Number.isFinite(parsed)) out.promotionDiscount = parsed;
+    }
+  }
+
+  return out;
 }
 
 // ============================================
@@ -285,6 +378,13 @@ export const saleController = {
    * Idempotent when the client sends an `Idempotency-Key` header (or
    * `idempotencyKey` in the body). Retries with the same key return the
    * original sale; see `SaleService.createSale`.
+   *
+   * Promotion / loyalty passthrough fields (`discountType`,
+   * `promotionCode`, `promotionDiscount`) are read from the body
+   * and forwarded to the service, which persists them on the `Sale`
+   * row. `discountType` is inferred when omitted; if supplied, it
+   * must be one of the Prisma enum members:
+   *   PERCENTAGE | FIXED | LOYALTY | MANUAL
    */
   async createSale(req: Request, res: Response, next: NextFunction) {
     try {
@@ -297,11 +397,17 @@ export const saleController = {
       // ✅ Resolve the idempotency key from header (preferred) or body.
       const idempotencyKey = getIdempotencyKey(req);
 
-      // Add businessUnitId + idempotencyKey to the data
+      // ✅ Promotion / loyalty passthrough. The service infers
+      // `discountType` when omitted and leaves the rest at their
+      // model defaults.
+      const promotion = readPromotionFields(req.body);
+
+      // Add businessUnitId + idempotencyKey + promotion fields to the data
       const saleData = {
         ...data,
         businessUnitId,
         idempotencyKey,
+        ...promotion,
       };
 
       const sale = await saleService.createSale(saleData, userId);
@@ -333,6 +439,9 @@ export const saleController = {
    * Idempotent when the client sends an `Idempotency-Key` header (or
    * `idempotencyKey` in the body). Retries with the same key return the
    * original sale; see `SaleService.createSaleFromCart`.
+   *
+   * Promotion / loyalty passthrough fields are read from the body
+   * and forwarded to the service.
    */
   async createSaleFromCart(req: Request, res: Response, next: NextFunction) {
     try {
@@ -342,6 +451,9 @@ export const saleController = {
 
       // ✅ Resolve the idempotency key from header (preferred) or body.
       const idempotencyKey = getIdempotencyKey(req);
+
+      // ✅ Promotion / loyalty passthrough.
+      const promotion = readPromotionFields(req.body);
 
       const sale = await saleService.createSaleFromCart(
         validatedData.cartId,
@@ -355,6 +467,8 @@ export const saleController = {
           tipAmount: validatedData.tipAmount,
           // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
+          // ✅ Forward the promotion / loyalty passthrough.
+          ...promotion,
         }
       );
 
@@ -386,7 +500,7 @@ export const saleController = {
    *
    * Alias of `createSaleFromCart` for legacy POS clients. Same
    * idempotency semantics — header (`Idempotency-Key`) or body
-   * (`idempotencyKey`) is honored.
+   * (`idempotencyKey`) is honored. Same promotion passthrough.
    */
   async createSaleFromPos(req: Request, res: Response, next: NextFunction) {
     try {
@@ -396,6 +510,9 @@ export const saleController = {
 
       // ✅ Resolve the idempotency key from header (preferred) or body.
       const idempotencyKey = getIdempotencyKey(req);
+
+      // ✅ Promotion / loyalty passthrough.
+      const promotion = readPromotionFields(req.body);
 
       const sale = await saleService.createSaleFromCart(
         validatedData.cartId,
@@ -409,6 +526,8 @@ export const saleController = {
           tipAmount: validatedData.tipAmount,
           // ✅ Forward the key so the sale layer persists / dedupes on it.
           idempotencyKey,
+          // ✅ Forward the promotion / loyalty passthrough.
+          ...promotion,
         }
       );
 
@@ -803,6 +922,13 @@ export const saleController = {
         paymentMethod: sale.payments[0]?.paymentMethod || 'N/A',
         status: sale.status,
         items: sale.items?.length || 0,
+
+        // ── Promotion / loyalty breakdown ──────────────────────
+        discountType: sale.discountType ?? null,
+        promotionCode: sale.promotionCode ?? null,
+        promotionDiscount: sale.promotionDiscount ?? 0,
+        loyaltyPointsUsed: sale.loyaltyPointsUsed ?? 0,
+        loyaltyDiscount: sale.loyaltyDiscount ?? 0,
       }));
 
       res.status(200).json({
@@ -820,6 +946,9 @@ export const saleController = {
   /**
    * Export sales to CSV
    * GET /sales/export/csv
+   *
+   * The CSV now includes the promotion / loyalty breakdown columns so
+   * a downloaded report can be audited end-to-end.
    */
   async exportSalesCsv(req: Request, res: Response, next: NextFunction) {
     try {
@@ -841,6 +970,11 @@ export const saleController = {
         'Subtotal',
         'Tax',
         'Discount',
+        'Discount Type',
+        'Promotion Code',
+        'Promotion Discount',
+        'Loyalty Points Used',
+        'Loyalty Discount',
         'Total',
         'Payment',
         'Status',
@@ -855,6 +989,11 @@ export const saleController = {
         sale.subtotal.toFixed(2),
         sale.tax.toFixed(2),
         sale.discount.toFixed(2),
+        sale.discountType || '',
+        sale.promotionCode || '',
+        (sale.promotionDiscount ?? 0).toFixed(2),
+        String(sale.loyaltyPointsUsed ?? 0),
+        (sale.loyaltyDiscount ?? 0).toFixed(2),
         sale.total.toFixed(2),
         sale.payments[0]?.paymentMethod || 'N/A',
         sale.status,

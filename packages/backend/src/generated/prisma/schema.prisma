@@ -529,6 +529,12 @@ model Refund {
   companyId       String
   businessUnitId  String
   items           RefundItem[]
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectedReason  String?
+  completedBy     String?
   businessUnit    BusinessUnit @relation(fields: [businessUnitId], references: [id])
   company         Company      @relation(fields: [companyId], references: [id])
   customer        Customer?    @relation(fields: [customerId], references: [id])
@@ -1031,11 +1037,19 @@ model OrderItem {
 }
 
 model Sale {
-  id                    String                 @id @default(cuid())
-  receiptNumber         String                 @unique
-  subtotal              Float
-  tax                   Float                  @default(0)
-  discount              Float                  @default(0)
+  id            String @id @default(cuid())
+  receiptNumber String @unique
+  subtotal      Float
+  tax           Float  @default(0)
+  discount      Float  @default(0)
+
+  // ── Promotion / loyalty audit fields ────────────────────────
+  discountType      DiscountType?
+  promotionCode     String?
+  promotionDiscount Float         @default(0)
+  loyaltyPointsUsed Int           @default(0)
+  loyaltyDiscount   Float         @default(0)
+
   total                 Float
   paidAmount            Float
   changeAmount          Float                  @default(0)
@@ -1090,6 +1104,7 @@ model SaleItem {
 
 model Payment {
   id                    String               @id @default(cuid())
+  idempotencyKey        String?              @unique
   amount                Float
   currency              String               @default("USD")
   paymentMethod         PaymentMethod
@@ -1684,23 +1699,32 @@ model Report {
 }
 
 model Cart {
-  id             String        @id @default(cuid())
+  id             String  @id @default(cuid())
   userId         String
   businessUnitId String
   customerId     String?
-  subtotal       Float         @default(0)
-  tax            Float         @default(0)
-  discount       Float         @default(0)
-  total          Float         @default(0)
-  notes          String?
-  status         String        @default("ACTIVE")
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  items          CartItem[]
-  businessUnit   BusinessUnit  @relation(fields: [businessUnitId], references: [id])
-  customer       Customer?     @relation(fields: [customerId], references: [id])
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guestSession   GuestSession?
+  subtotal       Float   @default(0)
+  tax            Float   @default(0)
+  discount       Float   @default(0)
+
+  // ── Promotion / loyalty audit fields ─────────────────────────
+  discountType      CartDiscountType? // 'PERCENTAGE' | 'FIXED' | null
+  promotionCode     String?
+  promotionDiscount Float             @default(0)
+  loyaltyPointsUsed Int               @default(0)
+  loyaltyDiscount   Float             @default(0)
+
+  total     Float      @default(0)
+  notes     String?
+  status    CartStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items        CartItem[]
+  businessUnit BusinessUnit  @relation(fields: [businessUnitId], references: [id])
+  customer     Customer?     @relation(fields: [customerId], references: [id])
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestSession GuestSession?
 
   @@unique([userId, businessUnitId])
   @@map("carts")
@@ -2075,6 +2099,11 @@ enum PaymentMethod {
   LOYALTY_POINTS
   CRYPTO
   CHECK
+  PAYPAL // ← ADD
+  FLUTTERWAVE // ← ADD 
+  SQUARE // ← ADD
+  MTN // ← ADD (mobile money sub-provider)
+  AIRTEL // ← ADD
 }
 
 enum InventoryTransactionType {
@@ -2432,4 +2461,23 @@ enum LocationType {
   IN_TRANSIT
   SUPPLIER
   OTHER
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+  LOYALTY
+  MANUAL
+}
+
+enum CartStatus {
+  ACTIVE
+  SAVED
+  CHECKED_OUT
+  ABANDONED
+}
+
+enum CartDiscountType {
+  PERCENTAGE
+  FIXED
 }

@@ -23,6 +23,32 @@ import { ConnectionStatusDot } from './ConnectionStatusPill';
 
 const MAX_PREVIEW = 6;
 
+/**
+ * Coerce any value into a safe non-negative integer.
+ * Defends against `[object Object]` reaching the badge if the API
+ * ever changes shape again.
+ */
+function toSafeCount(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const candidate =
+      typeof obj.count === 'number'
+        ? obj.count
+        : typeof obj.unreadCount === 'number'
+        ? obj.unreadCount
+        : typeof obj.unread === 'number'
+        ? obj.unread
+        : undefined;
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return Math.max(0, Math.floor(candidate));
+    }
+  }
+  return 0;
+}
+
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -31,10 +57,20 @@ export function NotificationBell() {
   const [workingId, setWorkingId] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const handleStreamNotification = useCallback(
     (notification: Notification) => {
-      setUnreadCount((c) => c + 1);
+      if (!isMountedRef.current) return;
+      if (notification.isRead) return;
+      setUnreadCount((c) => toSafeCount(c) + 1);
       setPreview((prev) => [notification, ...prev].slice(0, MAX_PREVIEW));
     },
     [],
@@ -47,28 +83,30 @@ export function NotificationBell() {
   const refreshCount = useCallback(async () => {
     try {
       const res = await notificationService.getUnreadCount();
-      setUnreadCount(res ?? 0);
+      if (!isMountedRef.current) return;
+      setUnreadCount(toSafeCount(res));
     } catch {
-      // Silent.
+      // Silent — badge just stays at its last known value.
     }
   }, []);
 
   const refreshPreview = useCallback(async () => {
     try {
-      setLoading(true);
+      if (isMountedRef.current) setLoading(true);
       const result = await notificationService.getNotifications({
         page: 1,
         limit: MAX_PREVIEW,
         unreadOnly: true,
       });
+      if (!isMountedRef.current) return;
       setPreview(result.data);
       if (typeof result.unreadCount === 'number') {
-        setUnreadCount(result.unreadCount);
+        setUnreadCount(toSafeCount(result.unreadCount));
       }
     } catch {
       // Silent.
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }, []);
 
@@ -111,18 +149,20 @@ export function NotificationBell() {
     try {
       setWorkingId(id);
       await notificationService.markAsRead(id);
+      if (!isMountedRef.current) return;
       setPreview((prev) => prev.filter((n) => n.id !== id));
-      setUnreadCount((c) => Math.max(0, c - 1));
+      setUnreadCount((c) => Math.max(0, toSafeCount(c) - 1));
     } catch {
       toast.error('Failed to mark as read');
     } finally {
-      setWorkingId(null);
+      if (isMountedRef.current) setWorkingId(null);
     }
   }, []);
 
   const handleMarkAll = useCallback(async () => {
     try {
       await notificationService.markAllAsRead();
+      if (!isMountedRef.current) return;
       setPreview([]);
       setUnreadCount(0);
       toast.success('All notifications marked as read');
@@ -132,8 +172,9 @@ export function NotificationBell() {
   }, []);
 
   const badgeText = useMemo(() => {
-    if (unreadCount === 0) return null;
-    return unreadCount > 99 ? '99+' : String(unreadCount);
+    const n = toSafeCount(unreadCount);
+    if (n <= 0) return null;
+    return n > 99 ? '99+' : String(n);
   }, [unreadCount]);
 
   return (

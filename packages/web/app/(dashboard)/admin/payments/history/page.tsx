@@ -1,23 +1,58 @@
+// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\payments\history\page.tsx
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
-  ArrowLeft, Search, Filter, RefreshCw, Loader2,
-  Eye, Download, Printer, ChevronLeft, ChevronRight,
-  Calendar, Clock, User, Mail, Phone, DollarSign,
-  CreditCard, CheckCircle, XCircle, AlertCircle,
-  FileText, Trash2, MoreVertical, Copy, Receipt,
-  Banknote, Wallet, Building, QrCode, Gift, Star,
-  Smartphone, Landmark, ArrowUpRight, ArrowDownRight, Lock,
-  Globe
+  ArrowLeft,
+  Search,
+  Filter,
+  RefreshCw,
+  Loader2,
+  Eye,
+  Download,
+  Printer,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Clock,
+  User,
+  Mail,
+  Phone,
+  DollarSign,
+  CreditCard,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  FileText,
+  Trash2,
+  MoreVertical,
+  Copy,
+  Receipt,
+  Banknote,
+  Wallet,
+  Building,
+  QrCode,
+  Gift,
+  Star,
+  Smartphone,
+  Landmark,
+  ArrowUpRight,
+  ArrowDownRight,
+  Lock,
+  Globe,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
 import { paymentService } from '../../../../../services/paymentService';
-import { formatCurrency, formatDate, formatDateTime } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+} from '../../../../../utils/formatters';
 import { toast } from '../../../../../utils/toast-manager';
 import { useThemeStore } from '../../../../stores/themeStore';
 import { PaymentReceipt } from '../../../../../components/payments/PaymentReceipt';
@@ -59,6 +94,7 @@ interface Payment {
   };
   provider?: string;
   gatewayId?: string;
+  metadata?: Record<string, unknown>;
   providerTransactionId?: string;
   businessUnitId?: string;
   businessUnit?: {
@@ -72,7 +108,7 @@ interface Payment {
   updatedAt: string;
 }
 
-interface PaymentFilters {
+interface PaymentFiltersState {
   status?: string;
   paymentMethod?: string;
   provider?: string;
@@ -84,55 +120,131 @@ interface PaymentFilters {
   businessUnitId?: string;
 }
 
+type DateRange =
+  | 'today'
+  | 'week'
+  | 'month'
+  | 'quarter'
+  | 'year'
+  | 'custom';
+
 // ============================================
-// CONSTANTS - EXACT PROVIDER IMAGE URLs
+// HELPERS
+// ============================================
+
+/**
+ * Resolve the provider name from a payment. Reads the legacy
+ * top-level `provider` field first, then `metadata.provider` (where
+ * the backend actually writes it), then `gatewayId`.
+ */
+function resolveProvider(payment: Payment): string | undefined {
+  if (payment.provider) return payment.provider;
+  const meta = payment.metadata ?? {};
+  const metaProvider =
+    typeof meta.provider === 'string' ? meta.provider : undefined;
+  return metaProvider || payment.gatewayId || undefined;
+}
+
+/**
+ * Compute the `startDate` / `endDate` for a named preset range.
+ * Returns `{}` for `custom`, letting the caller's explicit dates win.
+ */
+function resolveDateRange(range: DateRange): {
+  startDate?: string;
+  endDate?: string;
+} {
+  if (range === 'custom') return {};
+
+  const now = new Date();
+  const start = new Date(now);
+
+  switch (range) {
+    case 'today':
+      start.setHours(0, 0, 0, 0);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case 'week':
+      start.setDate(start.getDate() - 7);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case 'month':
+      start.setMonth(start.getMonth() - 1);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case 'quarter':
+      start.setMonth(start.getMonth() - 3);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    case 'year':
+      start.setFullYear(start.getFullYear() - 1);
+      return { startDate: start.toISOString(), endDate: now.toISOString() };
+    default:
+      return {};
+  }
+}
+
+// ============================================
+// CONSTANTS
 // ============================================
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
 const PAYMENT_STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-  PENDING: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-  FAILED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  REFUNDED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  PARTIAL: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  PROCESSING: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
-  AUTHORIZED: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  DECLINED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  DISPUTED: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-  CANCELLED: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  PENDING:
+    'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  FAILED:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  REFUNDED:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  PARTIAL:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  PROCESSING:
+    'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  AUTHORIZED:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  DECLINED:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  DISPUTED:
+    'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+  CANCELLED:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
 };
 
 const PAYMENT_METHOD_ICONS: Record<string, any> = {
@@ -146,8 +258,31 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CHECK: FileText,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
+};
+
+const PROVIDER_NAMES: Record<string, string> = {
+  STRIPE: 'Stripe',
+  CASH: 'Cash',
+  MOBILE_MONEY: 'Mobile Money',
+  BANK_TRANSFER: 'Bank Transfer',
+  GIFT_CARD: 'Gift Card',
+  LOYALTY_POINTS: 'Loyalty Points',
+  PAYPAL: 'PayPal',
+  FLUTTERWAVE: 'Flutterwave',
+  SQUARE: 'Square',
+  MTN: 'MTN Mobile Money',
+  AIRTEL: 'Airtel Money',
+  TIGO: 'Tigo Pesa',
+  VODAFONE: 'Vodafone Cash',
+};
+
+const EMPTY_FILTERS: PaymentFiltersState = {
+  status: 'all',
+  paymentMethod: 'all',
+  provider: 'all',
+  startDate: '',
+  endDate: '',
 };
 
 // ============================================
@@ -169,83 +304,76 @@ export default function AdminPaymentHistoryPage() {
     totalPages: 1,
     limit: 20,
   });
-  const [filters, setFilters] = useState<PaymentFilters>({
-    status: 'all',
-    paymentMethod: 'all',
-    provider: 'all',
-    startDate: '',
-    endDate: '',
-  });
+  const [filters, setFilters] =
+    useState<PaymentFiltersState>(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [selectedPayment, setSelectedPayment] =
+    useState<Payment | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom'>('month');
+  const [dateRange, setDateRange] = useState<DateRange>('month');
 
-  const canViewPayments = canView(PermissionResource.PAYMENT) || canView(PermissionResource.PAYMENT);
+  const canViewPayments =
+    canView(PermissionResource.PAYMENT) ||
+    canView(PermissionResource.SETTINGS);
 
-  useEffect(() => {
-    if (canViewPayments) {
-      loadPayments();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canViewPayments, pagination.page, filters, dateRange]);
+  // ── Data loading ─────────────────────────────────────────────
 
-  const loadPayments = async () => {
+  const loadPayments = useCallback(async () => {
     try {
       setLoading(true);
-      const params: any = {
+      const params: Record<string, unknown> = {
         page: pagination.page,
         limit: pagination.limit,
       };
 
-      if (filters.status && filters.status !== 'all') params.status = filters.status;
-      if (filters.paymentMethod && filters.paymentMethod !== 'all') params.paymentMethod = filters.paymentMethod;
-      if (filters.provider && filters.provider !== 'all') params.provider = filters.provider;
-      if (filters.startDate) params.startDate = filters.startDate;
-      if (filters.endDate) params.endDate = filters.endDate;
-      if (filters.businessUnitId) params.businessUnitId = filters.businessUnitId;
+      if (filters.status && filters.status !== 'all')
+        params.status = filters.status;
+      if (filters.paymentMethod && filters.paymentMethod !== 'all')
+        params.paymentMethod = filters.paymentMethod;
+      if (filters.provider && filters.provider !== 'all')
+        params.provider = filters.provider;
+      if (filters.businessUnitId)
+        params.businessUnitId = filters.businessUnitId;
       if (search) params.search = search;
 
-      // Handle date range
-      const now = new Date();
-      if (dateRange === 'today') {
-        const start = new Date(now);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(now);
-        end.setHours(23, 59, 59, 999);
-        params.startDate = start.toISOString();
-        params.endDate = end.toISOString();
-      } else if (dateRange === 'week') {
-        const weekAgo = new Date(now);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        params.startDate = weekAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'month') {
-        const monthAgo = new Date(now);
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        params.startDate = monthAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'quarter') {
-        const quarterAgo = new Date(now);
-        quarterAgo.setMonth(quarterAgo.getMonth() - 3);
-        params.startDate = quarterAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'year') {
-        const yearAgo = new Date(now);
-        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-        params.startDate = yearAgo.toISOString();
-        params.endDate = now.toISOString();
+      // Date filters: an explicit custom range wins over the preset.
+      // The old code unconditionally overwrote the custom dates with
+      // the preset range, so picking a custom date did nothing.
+      if (filters.startDate || filters.endDate) {
+        if (filters.startDate) params.startDate = filters.startDate;
+        if (filters.endDate) params.endDate = filters.endDate;
+      } else {
+        const preset = resolveDateRange(dateRange);
+        if (preset.startDate) params.startDate = preset.startDate;
+        if (preset.endDate) params.endDate = preset.endDate;
       }
 
       const response = await paymentService.getPayments(params);
-      setPayments(response.data || []);
-      setPagination({
-        page: response.page || 1,
-        total: response.total || 0,
-        totalPages: response.totalPages || 1,
-        limit: response.limit || 20,
-      });
+
+      const items: Payment[] = Array.isArray(response.data)
+        ? (response.data as unknown as Payment[])
+        : [];
+      setPayments(items);
+
+      const paginationData =
+        (response as any).pagination ??
+        ({
+          page: response.page,
+          total: response.total,
+          totalPages: response.totalPages,
+          limit: response.limit,
+        } as const);
+
+      // Functional update so a concurrent page change isn't
+      // clobbered by a stale snapshot.
+      setPagination((prev) => ({
+        ...prev,
+        page: paginationData.page || prev.page,
+        total: paginationData.total || 0,
+        totalPages: paginationData.totalPages || 1,
+        limit: paginationData.limit || prev.limit,
+      }));
     } catch (error: any) {
       console.error('Failed to load payment history:', error);
       toast.error('Failed to load payment history');
@@ -253,24 +381,94 @@ export default function AdminPaymentHistoryPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [
+    pagination.page,
+    pagination.limit,
+    filters.status,
+    filters.paymentMethod,
+    filters.provider,
+    filters.startDate,
+    filters.endDate,
+    filters.businessUnitId,
+    search,
+    dateRange,
+  ]);
 
-  const handleRefresh = async () => {
+  // Fetch on mount and whenever a scalar filter changes. Individual
+  // deps (not the `filters` object) so typing in search doesn't
+  // trigger a refetch until Enter or Apply.
+  useEffect(() => {
+    if (!canViewPayments) return;
+    void loadPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    canViewPayments,
+    pagination.page,
+    pagination.limit,
+    filters.status,
+    filters.paymentMethod,
+    filters.provider,
+    filters.startDate,
+    filters.endDate,
+    filters.businessUnitId,
+    dateRange,
+  ]);
+
+  // ── Handlers ─────────────────────────────────────────────────
+
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadPayments();
     toast.success('Data refreshed');
-  };
+  }, [loadPayments]);
 
-  const getStatusColor = (status: string) => {
-    return PAYMENT_STATUS_COLORS[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
-  };
+  const handleSearch = useCallback(() => {
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    // The effect above fires when pagination.page changes; if we're
+    // already on page 1, call loadPayments directly.
+    if (pagination.page === 1) {
+      void loadPayments();
+    }
+  }, [pagination.page, loadPayments]);
 
-  const getPaymentIcon = (method: string) => {
+  const goToPage = useCallback((page: number) => {
+    setPagination((prev) => ({ ...prev, page }));
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setFilters(EMPTY_FILTERS);
+    setSearch('');
+    setDateRange('month');
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  }, []);
+
+  const handleCopyReference = useCallback((reference: string) => {
+    navigator.clipboard
+      .writeText(reference)
+      .then(() => toast.success('Reference copied'))
+      .catch(() => toast.error('Failed to copy reference'));
+  }, []);
+
+  const handleViewReceipt = useCallback((payment: Payment) => {
+    setSelectedPayment(payment);
+    setShowReceiptModal(true);
+  }, []);
+
+  // ── Lookups ──────────────────────────────────────────────────
+
+  const getStatusColor = useCallback((status: string) => {
+    return (
+      PAYMENT_STATUS_COLORS[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
+    );
+  }, []);
+
+  const getPaymentIcon = useCallback((method: string) => {
     const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
     return <Icon className="w-5 h-5" />;
-  };
+  }, []);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = useCallback((status: string) => {
     switch (status) {
       case 'PAID':
         return <CheckCircle className="w-4 h-4" />;
@@ -286,48 +484,57 @@ export default function AdminPaymentHistoryPage() {
       default:
         return <AlertCircle className="w-4 h-4" />;
     }
-  };
+  }, []);
 
-  const formatMethod = (method: string) => {
+  const formatMethod = useCallback((method: string) => {
+    if (!method) return 'unknown';
     return method.toLowerCase().replace(/_/g, ' ');
-  };
+  }, []);
 
-  const getProviderName = (provider: string) => {
-    const names: Record<string, string> = {
-      STRIPE: 'Stripe',
-      CASH: 'Cash',
-      MOBILE_MONEY: 'Mobile Money',
-      BANK_TRANSFER: 'Bank Transfer',
-      GIFT_CARD: 'Gift Card',
-      LOYALTY_POINTS: 'Loyalty Points',
-      PAYPAL: 'PayPal',
-      FLUTTERWAVE: 'Flutterwave',
-      PAYSTACK: 'Paystack',
-      SQUARE: 'Square',
-      MTN: 'MTN Mobile Money',
-      AIRTEL: 'Airtel Money',
-      TIGO: 'Tigo Pesa',
-      VODAFONE: 'Vodafone Cash',
-    };
-    return names[provider] || provider || 'N/A';
-  };
+  const getProviderName = useCallback((provider?: string) => {
+    if (!provider) return 'N/A';
+    return PROVIDER_NAMES[provider] || provider;
+  }, []);
 
-  const getProviderImageUrl = (provider: string): string => {
-    if (!provider) return '';
-    return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-      ? PROVIDER_DARK_IMAGE_URLS[provider]
-      : PROVIDER_IMAGE_URLS[provider] || '';
-  };
+  const getProviderImageUrl = useCallback(
+    (provider?: string): string => {
+      if (!provider) return '';
+      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
+        ? PROVIDER_DARK_IMAGE_URLS[provider]
+        : PROVIDER_IMAGE_URLS[provider] || '';
+    },
+    [isDark],
+  );
 
-  const handleCopyReference = (reference: string) => {
-    navigator.clipboard.writeText(reference);
-    toast.success('Reference copied');
-  };
+  const getCustomerName = useCallback(
+    (user?: { firstName: string; lastName: string }) => {
+      if (!user) return 'N/A';
+      return `${user.firstName} ${user.lastName}`;
+    },
+    [],
+  );
 
-  const handleViewReceipt = (payment: Payment) => {
-    setSelectedPayment(payment);
-    setShowReceiptModal(true);
-  };
+  const getCustomerEmail = useCallback(
+    (user?: { email: string }) => {
+      return user?.email || '';
+    },
+    [],
+  );
+
+  const getBusinessUnitData = useCallback(
+    (businessUnit?: Payment['businessUnit']) => {
+      if (!businessUnit) return undefined;
+      return {
+        name: businessUnit.name,
+        address: businessUnit.address || '',
+        phone: businessUnit.phone || '',
+        email: businessUnit.email || '',
+      };
+    },
+    [],
+  );
+
+  // ── Render gates ─────────────────────────────────────────────
 
   if (permissionLoading) {
     return (
@@ -343,7 +550,9 @@ export default function AdminPaymentHistoryPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
           You don't have permission to view payment history.
         </p>
@@ -357,30 +566,21 @@ export default function AdminPaymentHistoryPage() {
     );
   }
 
-  // Helper to get customer name
-  const getCustomerName = (user?: { firstName: string; lastName: string }) => {
-    if (!user) return 'N/A';
-    return `${user.firstName} ${user.lastName}`;
-  };
+  // ── Main render ──────────────────────────────────────────────
 
-  // Helper to get customer email
-  const getCustomerEmail = (user?: { email: string }) => {
-    return user?.email || '';
-  };
-
-  // Helper to get business unit data
-  const getBusinessUnitData = (businessUnit?: Payment['businessUnit']) => {
-    if (!businessUnit) return undefined;
-    return {
-      name: businessUnit.name,
-      address: businessUnit.address || '',
-      phone: businessUnit.phone || '',
-      email: businessUnit.email || '',
-    };
-  };
+  const activeFilterCount =
+    (filters.status !== 'all' ? 1 : 0) +
+    (filters.paymentMethod !== 'all' ? 1 : 0) +
+    (filters.provider !== 'all' ? 1 : 0) +
+    (filters.startDate ? 1 : 0) +
+    (filters.endDate ? 1 : 0);
 
   return (
-    <div className={`min-h-screen p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div
+      className={`min-h-screen p-6 ${
+        isDark ? 'bg-gray-900' : 'bg-gray-50'
+      }`}
+    >
       <div className="max-w-container mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in">
@@ -395,10 +595,18 @@ export default function AdminPaymentHistoryPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              <h1
+                className={`text-2xl font-bold ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}
+              >
                 Payment History
               </h1>
-              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              <p
+                className={`text-sm ${
+                  isDark ? 'text-gray-400' : 'text-gray-600'
+                }`}
+              >
                 View all payment transactions across all providers
               </p>
             </div>
@@ -411,10 +619,16 @@ export default function AdminPaymentHistoryPage() {
                 isDark
                   ? 'bg-gray-800 hover:bg-gray-700 text-white'
                   : 'bg-white hover:bg-gray-100 text-gray-700'
-              } border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
+              } border ${
+                isDark ? 'border-gray-700' : 'border-gray-300'
+              } disabled:opacity-50`}
               aria-label="Refresh payment history"
             >
-              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-5 h-5 ${
+                  refreshing ? 'animate-spin' : ''
+                }`}
+              />
             </button>
             <button
               onClick={() => router.push('/admin/payments/export')}
@@ -436,7 +650,7 @@ export default function AdminPaymentHistoryPage() {
                 placeholder="Search by reference, customer..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && loadPayments()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm ${
                   isDark
                     ? 'bg-gray-700 text-white placeholder-gray-400'
@@ -447,7 +661,7 @@ export default function AdminPaymentHistoryPage() {
 
             <select
               value={dateRange}
-              onChange={(e) => setDateRange(e.target.value as any)}
+              onChange={(e) => setDateRange(e.target.value as DateRange)}
               className={`px-4 py-2 rounded-lg border text-sm ${
                 isDark
                   ? 'bg-gray-700 border-gray-600 text-white'
@@ -465,26 +679,24 @@ export default function AdminPaymentHistoryPage() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition duration-250 focus-ring ${
-                showFilters || (filters.status !== 'all' || filters.paymentMethod !== 'all' || filters.provider !== 'all' || filters.startDate || filters.endDate)
+                showFilters || activeFilterCount > 0
                   ? 'bg-brand-gradient text-white'
                   : isDark
                     ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
+              aria-expanded={showFilters}
             >
               <Filter className="w-4 h-4" />
               Filters
-              {(filters.status !== 'all' || filters.paymentMethod !== 'all' || filters.provider !== 'all' || filters.startDate || filters.endDate) && (
+              {activeFilterCount > 0 && (
                 <span className="w-5 h-5 rounded-full bg-white/20 text-white text-xs flex items-center justify-center tabular-nums">
-                  {(filters.status !== 'all' ? 1 : 0) + (filters.paymentMethod !== 'all' ? 1 : 0) + (filters.provider !== 'all' ? 1 : 0) + (filters.startDate ? 1 : 0) + (filters.endDate ? 1 : 0)}
+                  {activeFilterCount}
                 </span>
               )}
             </button>
 
-            <button
-              onClick={loadPayments}
-              className="btn-brand"
-            >
+            <button onClick={handleSearch} className="btn-brand">
               Apply
             </button>
           </div>
@@ -493,12 +705,21 @@ export default function AdminPaymentHistoryPage() {
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 animate-slide-down">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      isDark ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
                     Status
                   </label>
                   <select
                     value={filters.status}
-                    onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                    onChange={(e) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        status: e.target.value,
+                      }))
+                    }
                     className={`w-full px-3 py-2 rounded-lg text-sm ${
                       isDark
                         ? 'bg-gray-700 text-white border-gray-600'
@@ -519,12 +740,21 @@ export default function AdminPaymentHistoryPage() {
                   </select>
                 </div>
                 <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      isDark ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
                     Payment Method
                   </label>
                   <select
                     value={filters.paymentMethod}
-                    onChange={(e) => setFilters(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                    onChange={(e) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        paymentMethod: e.target.value,
+                      }))
+                    }
                     className={`w-full px-3 py-2 rounded-lg text-sm ${
                       isDark
                         ? 'bg-gray-700 text-white border-gray-600'
@@ -542,17 +772,25 @@ export default function AdminPaymentHistoryPage() {
                     <option value="CHECK">Check</option>
                     <option value="PAYPAL">PayPal</option>
                     <option value="FLUTTERWAVE">Flutterwave</option>
-                    <option value="PAYSTACK">Paystack</option>
                     <option value="SQUARE">Square</option>
                   </select>
                 </div>
                 <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      isDark ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
                     Provider
                   </label>
                   <select
                     value={filters.provider}
-                    onChange={(e) => setFilters(prev => ({ ...prev, provider: e.target.value }))}
+                    onChange={(e) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        provider: e.target.value,
+                      }))
+                    }
                     className={`w-full px-3 py-2 rounded-lg text-sm ${
                       isDark
                         ? 'bg-gray-700 text-white border-gray-600'
@@ -568,19 +806,27 @@ export default function AdminPaymentHistoryPage() {
                     <option value="LOYALTY_POINTS">Loyalty Points</option>
                     <option value="PAYPAL">PayPal</option>
                     <option value="FLUTTERWAVE">Flutterwave</option>
-                    <option value="PAYSTACK">Paystack</option>
                     <option value="SQUARE">Square</option>
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Date From
                     </label>
                     <input
                       type="date"
-                      value={filters.startDate}
-                      onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                      value={filters.startDate || ''}
+                      onChange={(e) =>
+                        setFilters((prev) => ({
+                          ...prev,
+                          startDate: e.target.value,
+                        }))
+                      }
                       className={`w-full px-3 py-2 rounded-lg text-sm ${
                         isDark
                           ? 'bg-gray-700 text-white border-gray-600'
@@ -589,13 +835,22 @@ export default function AdminPaymentHistoryPage() {
                     />
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Date To
                     </label>
                     <input
                       type="date"
-                      value={filters.endDate}
-                      onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                      value={filters.endDate || ''}
+                      onChange={(e) =>
+                        setFilters((prev) => ({
+                          ...prev,
+                          endDate: e.target.value,
+                        }))
+                      }
                       className={`w-full px-3 py-2 rounded-lg text-sm ${
                         isDark
                           ? 'bg-gray-700 text-white border-gray-600'
@@ -607,18 +862,7 @@ export default function AdminPaymentHistoryPage() {
               </div>
               <div className="mt-4 flex justify-end">
                 <button
-                  onClick={() => {
-                    setFilters({
-                      status: 'all',
-                      paymentMethod: 'all',
-                      provider: 'all',
-                      startDate: '',
-                      endDate: '',
-                    });
-                    setSearch('');
-                    setDateRange('month');
-                    setPagination(prev => ({ ...prev, page: 1 }));
-                  }}
+                  onClick={handleClearFilters}
                   className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring"
                 >
                   Clear All Filters
@@ -637,10 +881,18 @@ export default function AdminPaymentHistoryPage() {
           ) : payments.length === 0 ? (
             <div className="text-center py-12">
               <CreditCard className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-              <h3 className={`text-lg font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              <h3
+                className={`text-lg font-medium ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}
+              >
                 No payments found
               </h3>
-              <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              <p
+                className={`text-sm mt-1 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}
+              >
                 Try adjusting your filters or search terms
               </p>
             </div>
@@ -648,85 +900,121 @@ export default function AdminPaymentHistoryPage() {
             <>
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full">
-                  <thead className={`border-b ${isDark ? 'border-gray-700 bg-gray-700/30' : 'border-gray-200 bg-gray-50'}`}>
+                  <thead
+                    className={`border-b ${
+                      isDark
+                        ? 'border-gray-700 bg-gray-700/30'
+                        : 'border-gray-200 bg-gray-50'
+                    }`}
+                  >
                     <tr>
-                      <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Reference
-                      </th>
-                      <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Date
-                      </th>
-                      <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Customer
-                      </th>
-                      <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Amount
-                      </th>
-                      <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Method / Provider
-                      </th>
-                      <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Status
-                      </th>
-                      <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${
-                        isDark ? 'text-gray-400' : 'text-gray-500'
-                      }`}>
-                        Actions
-                      </th>
+                      {[
+                        'Reference',
+                        'Date',
+                        'Customer',
+                        'Amount',
+                        'Method / Provider',
+                        'Status',
+                        'Actions',
+                      ].map((label, i) => (
+                        <th
+                          key={label}
+                          className={`px-4 py-3 text-${
+                            i === 3 || i === 6 ? 'right' : 'left'
+                          } text-2xs font-medium uppercase tracking-wider eyebrow ${
+                            isDark ? 'text-gray-400' : 'text-gray-500'
+                          }`}
+                        >
+                          {label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
-                  <tbody className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-200'}`}>
+                  <tbody
+                    className={`divide-y ${
+                      isDark ? 'divide-gray-700' : 'divide-gray-200'
+                    }`}
+                  >
                     {payments.map((payment) => {
-                      const imageUrl = getProviderImageUrl(payment.provider || payment.gatewayId || '');
+                      const providerCode = resolveProvider(payment);
+                      const imageUrl = getProviderImageUrl(providerCode);
 
                       return (
-                        <tr key={payment.id} className={`transition-colors duration-250 ${
-                          isDark ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50'
-                        }`}>
+                        <tr
+                          key={payment.id}
+                          className={`transition-colors duration-250 ${
+                            isDark
+                              ? 'hover:bg-gray-700/50'
+                              : 'hover:bg-gray-50'
+                          }`}
+                        >
                           <td className="px-4 py-3">
-                            <p className={`font-mono text-sm font-medium tabular-nums ${
-                              isDark ? 'text-white' : 'text-gray-900'
-                            }`}>
-                              {payment.reference || `PAY-${payment.id.slice(0, 8)}`}
+                            <p
+                              className={`font-mono text-sm font-medium tabular-nums ${
+                                isDark ? 'text-white' : 'text-gray-900'
+                              }`}
+                            >
+                              {payment.reference ||
+                                `PAY-${payment.id.slice(0, 8)}`}
                             </p>
                             {payment.sale?.receiptNumber && (
-                              <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                              <p
+                                className={`text-xs ${
+                                  isDark
+                                    ? 'text-gray-400'
+                                    : 'text-gray-500'
+                                }`}
+                              >
                                 Sale: {payment.sale.receiptNumber}
                               </p>
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                            <p
+                              className={`text-sm ${
+                                isDark
+                                  ? 'text-gray-300'
+                                  : 'text-gray-700'
+                              }`}
+                            >
                               {formatDate(payment.processedAt)}
                             </p>
-                            <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            <p
+                              className={`text-xs ${
+                                isDark
+                                  ? 'text-gray-500'
+                                  : 'text-gray-400'
+                              }`}
+                            >
                               {formatDateTime(payment.processedAt)}
                             </p>
                           </td>
                           <td className="px-4 py-3">
-                            <p className={`text-sm ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            <p
+                              className={`text-sm ${
+                                isDark ? 'text-white' : 'text-gray-900'
+                              }`}
+                            >
                               {getCustomerName(payment.user)}
                             </p>
                             {payment.user?.email && (
-                              <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                              <p
+                                className={`text-xs ${
+                                  isDark
+                                    ? 'text-gray-400'
+                                    : 'text-gray-500'
+                                }`}
+                              >
                                 {payment.user.email}
                               </p>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <p className={`text-sm font-bold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                            <p
+                              className={`text-sm font-bold tabular-nums ${
+                                isDark ? 'text-white' : 'text-gray-900'
+                              }`}
+                            >
                               {formatCurrency(payment.amount)}
                             </p>
                           </td>
@@ -736,16 +1024,27 @@ export default function AdminPaymentHistoryPage() {
                                 <div className="relative w-7 h-7 flex-shrink-0">
                                   <Image
                                     src={imageUrl}
-                                    alt={getProviderName(payment.provider || payment.gatewayId || '')}
+                                    alt={getProviderName(providerCode)}
                                     width={28}
                                     height={28}
                                     className="rounded object-contain"
                                     onError={(e) => {
-                                      (e.target as HTMLImageElement).style.display = 'none';
-                                      const parent = (e.target as HTMLImageElement).parentElement;
+                                      (
+                                        e.target as HTMLImageElement
+                                      ).style.display = 'none';
+                                      const parent = (
+                                        e.target as HTMLImageElement
+                                      ).parentElement;
                                       if (parent) {
-                                        const fallback = document.createElement('span');
-                                        fallback.className = `text-base ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
+                                        const fallback =
+                                          document.createElement(
+                                            'span',
+                                          );
+                                        fallback.className = `text-base ${
+                                          isDark
+                                            ? 'text-gray-300'
+                                            : 'text-gray-600'
+                                        }`;
                                         fallback.textContent = '💳';
                                         parent.appendChild(fallback);
                                       }
@@ -756,19 +1055,35 @@ export default function AdminPaymentHistoryPage() {
                                 getPaymentIcon(payment.paymentMethod)
                               )}
                               <div>
-                                <span className={`text-sm capitalize ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                                <span
+                                  className={`text-sm capitalize ${
+                                    isDark
+                                      ? 'text-gray-300'
+                                      : 'text-gray-700'
+                                  }`}
+                                >
                                   {formatMethod(payment.paymentMethod)}
                                 </span>
-                                {payment.provider && (
-                                  <span className={`text-xs block ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                                    {getProviderName(payment.provider)}
+                                {providerCode && (
+                                  <span
+                                    className={`text-xs block ${
+                                      isDark
+                                        ? 'text-gray-400'
+                                        : 'text-gray-500'
+                                    }`}
+                                  >
+                                    {getProviderName(providerCode)}
                                   </span>
                                 )}
                               </div>
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-1 text-2xs font-medium rounded-full flex items-center gap-1 w-fit ${getStatusColor(payment.status)}`}>
+                            <span
+                              className={`px-2 py-1 text-2xs font-medium rounded-full flex items-center gap-1 w-fit ${getStatusColor(
+                                payment.status,
+                              )}`}
+                            >
                               {getStatusIcon(payment.status)}
                               {payment.status}
                             </span>
@@ -776,9 +1091,13 @@ export default function AdminPaymentHistoryPage() {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={() => handleViewReceipt(payment)}
+                                onClick={() =>
+                                  handleViewReceipt(payment)
+                                }
                                 className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
-                                  isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                                  isDark
+                                    ? 'hover:bg-gray-700'
+                                    : 'hover:bg-gray-100'
                                 }`}
                                 title="View receipt"
                                 aria-label="View receipt"
@@ -786,9 +1105,15 @@ export default function AdminPaymentHistoryPage() {
                                 <Receipt className="w-4 h-4 text-primary-500" />
                               </button>
                               <button
-                                onClick={() => handleCopyReference(payment.reference || payment.id)}
+                                onClick={() =>
+                                  handleCopyReference(
+                                    payment.reference || payment.id,
+                                  )
+                                }
                                 className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
-                                  isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                                  isDark
+                                    ? 'hover:bg-gray-700'
+                                    : 'hover:bg-gray-100'
                                 }`}
                                 title="Copy reference"
                                 aria-label="Copy reference"
@@ -806,14 +1131,27 @@ export default function AdminPaymentHistoryPage() {
 
               {/* Pagination */}
               {pagination.totalPages > 1 && (
-                <div className={`px-4 py-3 border-t ${isDark ? 'border-gray-700' : 'border-gray-200'} flex flex-wrap items-center justify-between gap-3`}>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-                    {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
+                <div
+                  className={`px-4 py-3 border-t ${
+                    isDark ? 'border-gray-700' : 'border-gray-200'
+                  } flex flex-wrap items-center justify-between gap-3`}
+                >
+                  <p
+                    className={`text-sm ${
+                      isDark ? 'text-gray-400' : 'text-gray-500'
+                    }`}
+                  >
+                    Showing{' '}
+                    {(pagination.page - 1) * pagination.limit + 1} to{' '}
+                    {Math.min(
+                      pagination.page * pagination.limit,
+                      pagination.total,
+                    )}{' '}
+                    of {pagination.total}
                   </p>
                   <div className="flex gap-1">
                     <button
-                      onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                      onClick={() => goToPage(pagination.page - 1)}
                       disabled={pagination.page === 1}
                       className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                         isDark
@@ -824,36 +1162,45 @@ export default function AdminPaymentHistoryPage() {
                       <ChevronLeft className="w-4 h-4 inline" />
                       Previous
                     </button>
-                    {Array.from({ length: Math.min(pagination.totalPages, 5) }, (_, i) => {
-                      let pageNum: number;
-                      if (pagination.totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (pagination.page <= 3) {
-                        pageNum = i + 1;
-                      } else if (pagination.page >= pagination.totalPages - 2) {
-                        pageNum = pagination.totalPages - 4 + i;
-                      } else {
-                        pageNum = pagination.page - 2 + i;
-                      }
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setPagination(prev => ({ ...prev, page: pageNum }))}
-                          className={`px-3 py-1 rounded-lg text-sm transition duration-250 focus-ring ${
-                            pagination.page === pageNum
-                              ? 'bg-brand-gradient text-white'
-                              : isDark
-                                ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
-                                : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-                          } border`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
+                    {Array.from(
+                      { length: Math.min(pagination.totalPages, 5) },
+                      (_, i) => {
+                        let pageNum: number;
+                        if (pagination.totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (pagination.page <= 3) {
+                          pageNum = i + 1;
+                        } else if (
+                          pagination.page >=
+                          pagination.totalPages - 2
+                        ) {
+                          pageNum =
+                            pagination.totalPages - 4 + i;
+                        } else {
+                          pageNum = pagination.page - 2 + i;
+                        }
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => goToPage(pageNum)}
+                            className={`px-3 py-1 rounded-lg text-sm transition duration-250 focus-ring ${
+                              pagination.page === pageNum
+                                ? 'bg-brand-gradient text-white'
+                                : isDark
+                                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                                  : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                            } border`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      },
+                    )}
                     <button
-                      onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                      disabled={pagination.page === pagination.totalPages}
+                      onClick={() => goToPage(pagination.page + 1)}
+                      disabled={
+                        pagination.page === pagination.totalPages
+                      }
                       className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                         isDark
                           ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
@@ -877,21 +1224,31 @@ export default function AdminPaymentHistoryPage() {
               <PaymentReceipt
                 payment={{
                   id: selectedPayment.id,
-                  reference: selectedPayment.reference || selectedPayment.id,
+                  reference:
+                    selectedPayment.reference || selectedPayment.id,
                   amount: selectedPayment.amount,
                   paymentMethod: selectedPayment.paymentMethod,
                   status: selectedPayment.status,
                   processedAt: selectedPayment.processedAt,
-                  sale: selectedPayment.sale ? {
-                    receiptNumber: selectedPayment.sale.receiptNumber,
-                    items: [],
-                  } : undefined,
-                  customer: selectedPayment.user ? {
-                    name: getCustomerName(selectedPayment.user),
-                    email: getCustomerEmail(selectedPayment.user),
-                    phone: selectedPayment.user.phone || '',
-                  } : undefined,
-                  businessUnit: getBusinessUnitData(selectedPayment.businessUnit),
+                  provider: resolveProvider(selectedPayment),
+                  metadata: selectedPayment.metadata,
+                  sale: selectedPayment.sale
+                    ? {
+                        receiptNumber:
+                          selectedPayment.sale.receiptNumber,
+                        items: [],
+                      }
+                    : undefined,
+                  customer: selectedPayment.user
+                    ? {
+                        name: getCustomerName(selectedPayment.user),
+                        email: getCustomerEmail(selectedPayment.user),
+                        phone: selectedPayment.user.phone || '',
+                      }
+                    : undefined,
+                  businessUnit: getBusinessUnitData(
+                    selectedPayment.businessUnit,
+                  ),
                 }}
                 onClose={() => setShowReceiptModal(false)}
               />

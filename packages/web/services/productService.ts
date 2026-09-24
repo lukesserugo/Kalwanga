@@ -452,11 +452,6 @@ export const productService = {
   // ============================================
   // STOCK UTILITIES
   // ============================================
-  //
-  // ✅ Exposed as a method so callers that only import `productService`
-  //    (without destructuring `getProductStock`) can still reach it.
-  //    The standalone export above remains available for callers that
-  //    prefer `import { getProductStock } from ...`.
 
   getProductStock,
 
@@ -790,6 +785,27 @@ export const productService = {
     }
   },
 
+  /**
+   * Resolve a barcode to a product or variant.
+   *
+   * Hits the POS-aware endpoint `/sales/pos/products/barcode/:barcode`,
+   * which routes through `posService.getProductByBarcode` on the
+   * backend. That method resolves BOTH `Product.barcode` and
+   * `ProductVariant.barcode` — the same surface
+   * `POST /barcodes/record-scan` accepts.
+   *
+   * The response carries:
+   *   - `matchType: 'PRODUCT' | 'VARIANT'` — which column matched
+   *   - `matchedVariant: { id, name, sku, price, barcode } | null`
+   *
+   * `POS.tsx` uses these to add the correct variant line to the cart
+   * at the variant's price instead of the parent product's.
+   *
+   * ⚠ Do NOT switch this back to `/products/barcode/:barcode`.
+   *   That endpoint only queries `Product.barcode`, so a scan of a
+   *   variant barcode would 404 here even though the write path
+   *   (`/barcodes/record-scan`) accepts the same code.
+   */
   async getProductByBarcode(
     barcode: string,
     businessUnitId?: string,
@@ -797,9 +813,10 @@ export const productService = {
     if (!isClient) return {} as Product;
     try {
       const bid = businessUnitId || getBusinessUnitId();
-      const response = await api.get<any>(`/products/barcode/${barcode}`, {
-        params: { businessUnitId: bid },
-      });
+      const response = await api.get<any>(
+        `/sales/pos/products/barcode/${encodeURIComponent(barcode)}`,
+        { params: { businessUnitId: bid } },
+      );
       return normalizeItem<Product>(response) ?? ({} as Product);
     } catch (error) {
       console.error(`Error fetching product by barcode ${barcode}:`, error);

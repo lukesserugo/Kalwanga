@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, X, ShoppingBag } from 'lucide-react';
+import { CheckCircle, X } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -27,7 +27,9 @@ export function CheckoutSuccessToast({
           initial={{ opacity: 0, y: 50, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 50, scale: 0.9 }}
-          className="fixed bottom-4 right-4 z-toast max-w-md w-full"
+          className="fixed bottom-4 right-4 z-50 max-w-md w-full"
+          role="status"
+          aria-live="polite"
         >
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-card-hover border border-gray-200 dark:border-gray-700 p-6">
             <div className="flex items-start gap-4">
@@ -36,11 +38,11 @@ export function CheckoutSuccessToast({
                   <CheckCircle className="w-6 h-6 text-success-600 dark:text-success-400" />
                 </div>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <h4 className="font-semibold text-gray-900 dark:text-white">
                   Order Placed!
                 </h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums truncate">
                   Order #{receiptNumber} - {formatCurrency(total)}
                 </p>
                 <div className="mt-3 flex gap-2">
@@ -51,6 +53,7 @@ export function CheckoutSuccessToast({
                     View Order
                   </Link>
                   <button
+                    type="button"
                     onClick={onClose}
                     className="text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300 focus-ring"
                   >
@@ -59,6 +62,7 @@ export function CheckoutSuccessToast({
                 </div>
               </div>
               <button
+                type="button"
                 onClick={onClose}
                 className="flex-shrink-0 p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
                 aria-label="Close notification"

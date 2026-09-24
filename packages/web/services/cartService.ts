@@ -5,99 +5,38 @@ import type { PaymentMethod } from './saleService';
 
 export type { PaymentMethod } from './saleService';
 
+// Re-export the canonical cart shapes so existing imports keep working.
+// Do NOT redefine `Cart` or `CartItem` here — see `types/cart.ts`.
+export type {
+  Cart,
+  CartItem,
+  CartItemInput,
+  CartCustomer,
+  CartItemProduct,
+  CartItemVariant,
+  CartStatus,
+  CartDiscountType,
+  CartSummary,
+  CartSummaryItem,
+  CartCountResponse,
+  CartHistoryResponse,
+  SyncResult,
+  SplitCartResult,
+} from '../types/cart';
+
+import type {
+  Cart,
+  CartItemInput,
+  CartSummary,
+  CartCountResponse,
+  CartHistoryResponse,
+  SyncResult,
+  SplitCartResult,
+} from '../types/cart';
+
 // ============================================
-// TYPES
+// SERVICE-SPECIFIC TYPES
 // ============================================
-
-export interface Cart {
-  id: string;
-  items: CartItem[];
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  customerId?: string;
-  customer?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phoneNumber: string;
-  };
-  businessUnitId: string;
-  userId: string;
-  notes?: string;
-  status: 'ACTIVE' | 'SAVED' | 'CHECKED_OUT' | 'ABANDONED';
-  itemCount: number;
-  discountType?: 'PERCENTAGE' | 'FIXED';
-  promotionCode?: string;
-  promotionDiscount?: number;
-  loyaltyPointsUsed?: number;
-  loyaltyDiscount?: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CartItem {
-  id: string;
-  productId: string;
-  product: {
-    id: string;
-    name: string;
-    sku: string;
-    unitPrice: number;
-    images: string[];
-  };
-  /**
-   * `null` is accepted at the client boundary because some callers
-   * (e.g. the POS quick-add flow) send `variantId: null` explicitly.
-   * The backend normalizes it to `undefined` before touching Prisma.
-   */
-  variantId?: string | null;
-  variant?: {
-    id: string;
-    name: string;
-    sku: string;
-    price: number;
-    attributes: any;
-  };
-  quantity: number;
-  unitPrice: number;
-  total: number;
-  notes?: string;
-  availableStock: number;
-  isInStock: boolean;
-}
-
-export interface CartSummary {
-  id: string;
-  itemCount: number;
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  items: Array<{
-    id: string;
-    productName: string;
-    quantity: number;
-    unitPrice: number;
-    total: number;
-    variantName?: string;
-  }>;
-}
-
-export interface CartHistoryResponse {
-  carts: any[];
-  total: number;
-  page: number;
-  totalPages: number;
-  limit: number;
-}
-
-export interface SyncResult {
-  valid: boolean;
-  issues: string[];
-}
 
 export interface CheckoutOptions {
   customerId?: string;
@@ -113,11 +52,11 @@ export interface CheckoutOptions {
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
   notes?: string;
-  tipAmount?: number;
   /**
-   * Optional idempotency key. When provided, the same value sent twice
-   * results in the same sale being returned — no duplicate. Generate
-   * with `newIdempotencyKey()` and reuse it across retries.
+   * Optional idempotency key. When omitted, `checkoutCart` generates a
+   * fresh one via `newIdempotencyKey()`. If you plan to retry the same
+   * logical submission, generate the key ONCE at the call site and pass
+   * it in — a new key on every retry defeats the protection.
    */
   idempotencyKey?: string;
   /**
@@ -129,15 +68,20 @@ export interface CheckoutOptions {
   discount?: number;
   /** Override the business unit for this checkout. */
   businessUnitId?: string;
-}
-
-export interface CartCountResponse {
-  count: number;
+  // NOTE: `tipAmount` is intentionally NOT accepted here. The backend
+  // `checkoutSchema` does not declare it, and no downstream service
+  // reads it. Passing it would be stripped by Zod with no effect —
+  // better to fail the type check than mislead the caller.
 }
 
 export interface ExportOptions {
   format: 'csv' | 'excel' | 'json' | 'pdf';
-  metrics: string[];
+  /**
+   * Only meaningful for `/cart/analytics/export`. The
+   * `/cart/history/export` and `/cart/abandoned/export` endpoints do
+   * not consume `metrics`; omit it (or pass `[]`) for those.
+   */
+  metrics?: string[];
   dateRange: string;
   startDate?: string;
   endDate?: string;
@@ -163,18 +107,6 @@ export interface ExportAbandonedOptions {
   includeCustomerDetails?: boolean;
 }
 
-export interface RecoverCartOptions {
-  cartId: string;
-  notifyUser?: boolean;
-  message?: string;
-}
-
-export interface SendReminderOptions {
-  cartId: string;
-  message?: string;
-  email?: string;
-}
-
 // ============================================
 // IDEMPOTENCY HELPER
 // ============================================
@@ -191,15 +123,11 @@ export function newIdempotencyKey(): string {
   ) {
     return (crypto as any).randomUUID();
   }
-  // Fallback for older environments.
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(
-    /[xy]/g,
-    (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    },
-  );
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 // ============================================
@@ -228,6 +156,66 @@ function extractErrorMessage(error: any): string | null {
   return null;
 }
 
+/**
+ * Normalize an axios-shaped response. Handles three cases:
+ *
+ *   1. The `api` wrapper already unwrapped `response.data` → return as-is.
+ *   2. The caller received the raw axios envelope → return `.data`.
+ *   3. Fallback → return the value unchanged.
+ *
+ * Used for both JSON and blob responses so callers get a consistent
+ * shape regardless of how the underlying wrapper evolves.
+ */
+function unwrapResponse<T>(response: any): T {
+  if (response == null) return response as T;
+  if (typeof response === 'object' && 'data' in response) {
+    // Heuristic: an axios response has `status`, `headers`, and `config`.
+    // A domain object with a `data` field would not.
+    const looksLikeAxiosEnvelope =
+      'status' in response && 'headers' in response;
+    if (looksLikeAxiosEnvelope) {
+      return (response as any).data as T;
+    }
+  }
+  return response as T;
+}
+
+/**
+ * Coerce the result of a blob-typed request into an actual `Blob`.
+ * Falls back to wrapping the payload so callers always receive a
+ * `Blob` (even a diagnostic one) instead of `undefined`.
+ */
+function ensureBlob(response: any): Blob {
+  if (response instanceof Blob) return response;
+  const unwrapped = unwrapResponse<any>(response);
+  if (unwrapped instanceof Blob) return unwrapped;
+  return new Blob([unwrapped as any]);
+}
+
+/**
+ * When a blob-typed response fails, axios stores the server's JSON
+ * error body as a `Blob`. Read it, parse it, and return the message
+ * so callers see a useful error instead of `[object Blob]`.
+ */
+async function extractBlobErrorMessage(
+  error: any,
+): Promise<string | null> {
+  const direct = extractErrorMessage(error);
+  if (direct) return direct;
+
+  const data = error?.response?.data;
+  if (data && typeof data.text === 'function') {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      if (parsed?.message) return String(parsed.message);
+    } catch {
+      // Body was not JSON — fall through.
+    }
+  }
+  return null;
+}
+
 // ============================================
 // CART SERVICE
 // ============================================
@@ -237,31 +225,21 @@ export const cartService = {
   // CORE CART OPERATIONS
   // ============================================
 
-  /**
-   * Get current user's cart
-   * GET /cart
-   */
+  /** GET /cart */
   async getCart(): Promise<Cart> {
     try {
-      const response = await api.get<Cart>('/cart');
-      return response;
+      return await api.get<Cart>('/cart');
     } catch (error: any) {
       logCartError('❌ Failed to fetch cart:', error);
       throw error;
     }
   },
 
-  /**
-   * Get cart by ID
-   * GET /cart/:id
-   */
+  /** GET /cart/:id */
   async getCartById(id: string): Promise<Cart> {
-    if (!id) {
-      throw new Error('Cart ID is required');
-    }
+    if (!id) throw new Error('Cart ID is required');
     try {
-      const response = await api.get<Cart>(`/cart/${id}`);
-      return response;
+      return await api.get<Cart>(`/cart/${id}`);
     } catch (error: any) {
       logCartError(`❌ Failed to fetch cart ${id}:`, error);
       throw error;
@@ -269,43 +247,41 @@ export const cartService = {
   },
 
   /**
-   * Get cart count
    * GET /cart/count
+   *
+   * Non-fatal: returns `{ count: 0 }` on failure so a broken count
+   * request never breaks the header. Logged at `warn` level to avoid
+   * spamming `console.error` when the network is flaky.
    */
   async getCartCount(): Promise<CartCountResponse> {
     try {
-      const response = await api.get<CartCountResponse>('/cart/count');
-      return response;
+      return await api.get<CartCountResponse>('/cart/count');
     } catch (error: any) {
-      logCartError('❌ Failed to fetch cart count:', error);
+      console.warn('⚠️ Failed to fetch cart count:', {
+        message: error?.response?.data?.message || error?.message,
+        status: error?.response?.status,
+      });
       return { count: 0 };
     }
   },
 
   /**
-   * Add item to cart
    * POST /cart/items
    *
-   * Note: no `unitPrice` is sent. The server looks it up.
+   * No `unitPrice` is sent — the server looks it up.
    */
-  async addItem(data: {
-    productId: string;
-    variantId?: string | null;
-    quantity?: number;
-  }): Promise<Cart> {
-    if (!data.productId) {
-      throw new Error('Product ID is required');
-    }
+  async addItem(data: CartItemInput): Promise<Cart> {
+    if (!data.productId) throw new Error('Product ID is required');
 
     const payload = {
       productId: data.productId,
       variantId: data.variantId ?? undefined,
-      quantity: data.quantity || 1,
+      quantity: data.quantity ?? 1,
+      ...(data.notes !== undefined ? { notes: data.notes } : {}),
     };
 
     try {
-      const response = await api.post<Cart>('/cart/items', payload);
-      return response;
+      return await api.post<Cart>('/cart/items', payload);
     } catch (error: any) {
       logCartError('❌ CartService.addItem - Error:', error);
       const message = extractErrorMessage(error);
@@ -314,21 +290,11 @@ export const cartService = {
     }
   },
 
-  /**
-   * Add multiple items to cart
-   * POST /cart/items/bulk
-   */
-  async addMultipleItems(
-    items: Array<{
-      productId: string;
-      variantId?: string | null;
-      quantity?: number;
-    }>,
-  ): Promise<Cart> {
+  /** POST /cart/items/bulk */
+  async addMultipleItems(items: CartItemInput[]): Promise<Cart> {
     if (!items || items.length === 0) {
       throw new Error('At least one item is required');
     }
-
     for (const item of items) {
       if (!item.productId) {
         throw new Error('All items must have a product ID');
@@ -338,14 +304,14 @@ export const cartService = {
     const normalizedItems = items.map((item) => ({
       productId: item.productId,
       variantId: item.variantId ?? undefined,
-      quantity: item.quantity || 1,
+      quantity: item.quantity ?? 1,
+      ...(item.notes !== undefined ? { notes: item.notes } : {}),
     }));
 
-    const payload = { items: normalizedItems };
-
     try {
-      const response = await api.post<Cart>('/cart/items/bulk', payload);
-      return response;
+      return await api.post<Cart>('/cart/items/bulk', {
+        items: normalizedItems,
+      });
     } catch (error: any) {
       logCartError('❌ CartService.addMultipleItems - Error:', error);
       const message = extractErrorMessage(error);
@@ -354,26 +320,13 @@ export const cartService = {
     }
   },
 
-  /**
-   * Update cart item quantity
-   * PUT /cart/items/:itemId
-   */
-  async updateItemQuantity(
-    itemId: string,
-    quantity: number,
-  ): Promise<Cart> {
-    if (!itemId) {
-      throw new Error('Item ID is required');
-    }
-    if (quantity < 0) {
-      throw new Error('Quantity cannot be negative');
-    }
+  /** PUT /cart/items/:itemId */
+  async updateItemQuantity(itemId: string, quantity: number): Promise<Cart> {
+    if (!itemId) throw new Error('Item ID is required');
+    if (quantity < 0) throw new Error('Quantity cannot be negative');
 
     try {
-      const response = await api.put<Cart>(`/cart/items/${itemId}`, {
-        quantity,
-      });
-      return response;
+      return await api.put<Cart>(`/cart/items/${itemId}`, { quantity });
     } catch (error: any) {
       logCartError(`❌ Failed to update item ${itemId}:`, error);
       const message = extractErrorMessage(error);
@@ -382,20 +335,12 @@ export const cartService = {
     }
   },
 
-  /**
-   * Remove item from cart
-   * DELETE /cart/items/:itemId
-   */
+  /** DELETE /cart/items/:itemId */
   async removeItem(itemId: string): Promise<Cart> {
-    if (!itemId) {
-      throw new Error('Item ID is required');
-    }
+    if (!itemId) throw new Error('Item ID is required');
 
     try {
-      const response = await api.delete<Cart>(
-        `/cart/items/${itemId}`,
-      );
-      return response;
+      return await api.delete<Cart>(`/cart/items/${itemId}`);
     } catch (error: any) {
       logCartError(`❌ Failed to remove item ${itemId}:`, error);
       const message = extractErrorMessage(error);
@@ -404,14 +349,10 @@ export const cartService = {
     }
   },
 
-  /**
-   * Clear cart
-   * DELETE /cart
-   */
+  /** DELETE /cart */
   async clearCart(): Promise<Cart> {
     try {
-      const response = await api.delete<Cart>('/cart');
-      return response;
+      return await api.delete<Cart>('/cart');
     } catch (error: any) {
       logCartError('❌ Failed to clear cart:', error);
       const message = extractErrorMessage(error);
@@ -424,26 +365,18 @@ export const cartService = {
   // DISCOUNTS & PROMOTIONS
   // ============================================
 
-  /**
-   * Apply discount to cart
-   * POST /cart/discount
-   */
+  /** POST /cart/discount */
   async applyDiscount(
     discount: number,
     discountType?: 'PERCENTAGE' | 'FIXED',
   ): Promise<Cart> {
-    if (discount < 0) {
-      throw new Error('Discount cannot be negative');
-    }
-
-    const payload = {
-      discount,
-      discountType: discountType || 'FIXED',
-    };
+    if (discount < 0) throw new Error('Discount cannot be negative');
 
     try {
-      const response = await api.post<Cart>('/cart/discount', payload);
-      return response;
+      return await api.post<Cart>('/cart/discount', {
+        discount,
+        discountType: discountType ?? 'FIXED',
+      });
     } catch (error: any) {
       logCartError('❌ Failed to apply discount:', error);
       const message = extractErrorMessage(error);
@@ -452,20 +385,12 @@ export const cartService = {
     }
   },
 
-  /**
-   * Apply promotion to cart
-   * POST /cart/promotion
-   */
+  /** POST /cart/promotion */
   async applyPromotion(promotionCode: string): Promise<Cart> {
-    if (!promotionCode) {
-      throw new Error('Promotion code is required');
-    }
+    if (!promotionCode) throw new Error('Promotion code is required');
 
     try {
-      const response = await api.post<Cart>('/cart/promotion', {
-        promotionCode,
-      });
-      return response;
+      return await api.post<Cart>('/cart/promotion', { promotionCode });
     } catch (error: any) {
       logCartError('❌ Failed to apply promotion:', error);
       const message = extractErrorMessage(error);
@@ -474,27 +399,13 @@ export const cartService = {
     }
   },
 
-  /**
-   * Apply loyalty points to cart
-   * POST /cart/loyalty
-   */
-  async applyLoyaltyPoints(
-    customerId: string,
-    points: number,
-  ): Promise<Cart> {
-    if (!customerId) {
-      throw new Error('Customer ID is required');
-    }
-    if (points <= 0) {
-      throw new Error('Points must be positive');
-    }
+  /** POST /cart/loyalty */
+  async applyLoyaltyPoints(customerId: string, points: number): Promise<Cart> {
+    if (!customerId) throw new Error('Customer ID is required');
+    if (points <= 0) throw new Error('Points must be positive');
 
     try {
-      const response = await api.post<Cart>('/cart/loyalty', {
-        customerId,
-        points,
-      });
-      return response;
+      return await api.post<Cart>('/cart/loyalty', { customerId, points });
     } catch (error: any) {
       logCartError('❌ Failed to apply loyalty points:', error);
       const message = extractErrorMessage(error);
@@ -507,20 +418,12 @@ export const cartService = {
   // CUSTOMER ASSOCIATION
   // ============================================
 
-  /**
-   * Associate customer with cart
-   * POST /cart/customer
-   */
+  /** POST /cart/customer */
   async associateCustomer(customerId: string): Promise<Cart> {
-    if (!customerId) {
-      throw new Error('Customer ID is required');
-    }
+    if (!customerId) throw new Error('Customer ID is required');
 
     try {
-      const response = await api.post<Cart>('/cart/customer', {
-        customerId,
-      });
-      return response;
+      return await api.post<Cart>('/cart/customer', { customerId });
     } catch (error: any) {
       logCartError('❌ Failed to associate customer:', error);
       const message = extractErrorMessage(error);
@@ -530,13 +433,17 @@ export const cartService = {
   },
 
   /**
-   * Update cart notes
    * PATCH /cart/notes
+   *
+   * The backend stores `notes || ''`, so an empty string and
+   * `undefined` are equivalent server-side. We send `''` explicitly to
+   * keep the JSON payload stable across retries.
    */
-  async updateCartNotes(notes: string): Promise<Cart> {
+  async updateCartNotes(notes?: string): Promise<Cart> {
+    const payload = { notes: notes ?? '' };
+
     try {
-      const response = await api.patch<Cart>('/cart/notes', { notes });
-      return response;
+      return await api.patch<Cart>('/cart/notes', payload);
     } catch (error: any) {
       logCartError('❌ Failed to update cart notes:', error);
       const message = extractErrorMessage(error);
@@ -549,34 +456,23 @@ export const cartService = {
   // SUMMARY & HISTORY
   // ============================================
 
-  /**
-   * Get cart summary
-   * GET /cart/summary
-   */
+  /** GET /cart/summary */
   async getCartSummary(): Promise<CartSummary> {
     try {
-      const response = await api.get<CartSummary>('/cart/summary');
-      return response;
+      return await api.get<CartSummary>('/cart/summary');
     } catch (error: any) {
       logCartError('❌ Failed to fetch cart summary:', error);
       throw error;
     }
   },
 
-  /**
-   * Get cart history
-   * GET /cart/history
-   */
+  /** GET /cart/history */
   async getCartHistory(params?: {
     page?: number;
     limit?: number;
   }): Promise<CartHistoryResponse> {
     try {
-      const response = await api.get<CartHistoryResponse>(
-        '/cart/history',
-        { params },
-      );
-      return response;
+      return await api.get<CartHistoryResponse>('/cart/history', { params });
     } catch (error: any) {
       logCartError('❌ Failed to fetch cart history:', error);
       throw error;
@@ -587,14 +483,10 @@ export const cartService = {
   // SYNC & SAVE
   // ============================================
 
-  /**
-   * Sync cart with inventory
-   * POST /cart/sync
-   */
+  /** POST /cart/sync */
   async syncCart(): Promise<SyncResult> {
     try {
-      const response = await api.post<SyncResult>('/cart/sync');
-      return response;
+      return await api.post<SyncResult>('/cart/sync');
     } catch (error: any) {
       logCartError('❌ Failed to sync cart:', error);
       const message = extractErrorMessage(error);
@@ -603,14 +495,10 @@ export const cartService = {
     }
   },
 
-  /**
-   * Save cart for later
-   * POST /cart/save-for-later
-   */
+  /** POST /cart/save-for-later */
   async saveCartForLater(): Promise<Cart> {
     try {
-      const response = await api.post<Cart>('/cart/save-for-later');
-      return response;
+      return await api.post<Cart>('/cart/save-for-later');
     } catch (error: any) {
       logCartError('❌ Failed to save cart for later:', error);
       const message = extractErrorMessage(error);
@@ -619,20 +507,12 @@ export const cartService = {
     }
   },
 
-  /**
-   * Restore a saved cart
-   * POST /cart/restore
-   */
+  /** POST /cart/restore */
   async restoreSavedCart(savedCartId: string): Promise<Cart> {
-    if (!savedCartId) {
-      throw new Error('Saved cart ID is required');
-    }
+    if (!savedCartId) throw new Error('Saved cart ID is required');
 
     try {
-      const response = await api.post<Cart>('/cart/restore', {
-        savedCartId,
-      });
-      return response;
+      return await api.post<Cart>('/cart/restore', { savedCartId });
     } catch (error: any) {
       logCartError('❌ Failed to restore saved cart:', error);
       const message = extractErrorMessage(error);
@@ -641,27 +521,16 @@ export const cartService = {
     }
   },
 
-  /**
-   * Transfer cart to another user
-   * POST /cart/transfer
-   */
-  async transferCart(
-    fromUserId: string,
-    toUserId: string,
-  ): Promise<Cart> {
-    if (!fromUserId) {
-      throw new Error('Source user ID is required');
-    }
-    if (!toUserId) {
-      throw new Error('Target user ID is required');
-    }
+  /** POST /cart/transfer */
+  async transferCart(fromUserId: string, toUserId: string): Promise<Cart> {
+    if (!fromUserId) throw new Error('Source user ID is required');
+    if (!toUserId) throw new Error('Target user ID is required');
 
     try {
-      const response = await api.post<Cart>('/cart/transfer', {
+      return await api.post<Cart>('/cart/transfer', {
         fromUserId,
         toUserId,
       });
-      return response;
     } catch (error: any) {
       logCartError('❌ Failed to transfer cart:', error);
       const message = extractErrorMessage(error);
@@ -670,27 +539,20 @@ export const cartService = {
     }
   },
 
-  /**
-   * Split cart
-   * POST /cart/split
-   */
+  /** POST /cart/split */
   async splitCart(
     items: Array<{
       cartItemId: string;
       quantity: number;
       targetUserId: string;
     }>,
-  ): Promise<any> {
+  ): Promise<SplitCartResult> {
     if (!items || items.length === 0) {
       throw new Error('At least one item split is required');
     }
 
     try {
-      const response = await api.post<{
-        sourceCart: Cart;
-        targetCarts: Cart[];
-      }>('/cart/split', { items });
-      return response;
+      return await api.post<SplitCartResult>('/cart/split', { items });
     } catch (error: any) {
       logCartError('❌ Failed to split cart:', error);
       const message = extractErrorMessage(error);
@@ -706,16 +568,19 @@ export const cartService = {
   /**
    * Checkout cart.
    *
-   * Delegates to the canonical `POST /checkout` endpoint via the
-   * `checkoutService` module. Kept here for backward compatibility with
-   * callers that already use `cartService.checkoutCart`.
+   * Delegates to the canonical `POST /checkout` endpoint. Kept here
+   * for backward compatibility with callers that already use
+   * `cartService.checkoutCart`.
    *
    * Because it goes through the same endpoint as
    * `checkoutService.processCheckout`, there is exactly one server-side
    * implementation of the money math and inventory mutation.
    *
-   * Callers must supply `idempotencyKey` to guard against double-submit.
-   * Use `newIdempotencyKey()` from this module.
+   * An `idempotencyKey` is generated automatically when the caller
+   * does not supply one. If you plan to retry the same logical
+   * submission, generate the key ONCE at the call site with
+   * `newIdempotencyKey()` and pass it in — a new key on every retry
+   * defeats the protection.
    */
   async checkoutCart(options: CheckoutOptions): Promise<any> {
     if (!options.paymentMethod) {
@@ -725,9 +590,8 @@ export const cartService = {
       throw new Error('Paid amount cannot be negative');
     }
 
-    // Fetch the active cart to obtain its ID. The backend does not
-    // accept a bare "checkout the current user's cart" call — it wants
-    // an explicit cartId.
+    // Resolve the active cart. The backend requires an explicit
+    // `cartId`; it does not accept a bare "checkout the current cart".
     let cartId: string;
     try {
       const cart = await this.getCart();
@@ -740,6 +604,9 @@ export const cartService = {
       throw new Error('No active cart to checkout');
     }
 
+    const idempotencyKey =
+      options.idempotencyKey ?? newIdempotencyKey();
+
     const payload = {
       cartId,
       customerId: options.customerId,
@@ -751,12 +618,11 @@ export const cartService = {
       discount: options.discount,
       applyLoyaltyPoints: options.applyLoyaltyPoints ?? false,
       businessUnitId: options.businessUnitId,
-      idempotencyKey: options.idempotencyKey,
+      idempotencyKey,
     };
 
     try {
-      const response = await api.post<any>('/checkout', payload);
-      return response;
+      return await api.post<any>('/checkout', payload);
     } catch (error: any) {
       logCartError('❌ Failed to checkout:', error);
       const message = extractErrorMessage(error);
@@ -769,118 +635,78 @@ export const cartService = {
   // ANALYTICS & EXPORT
   // ============================================
 
-  /**
-   * Get cart analytics
-   * GET /cart/analytics
-   */
+  /** GET /cart/analytics */
   async getAnalytics(params?: {
     startDate?: string;
     endDate?: string;
     period?: string;
   }): Promise<any> {
     try {
-      const response = await api.get('/cart/analytics', { params });
-      return response;
+      return await api.get('/cart/analytics', { params });
     } catch (error: any) {
       logCartError('❌ Failed to fetch cart analytics:', error);
       throw error;
     }
   },
 
-  /**
-   * Export cart analytics
-   * POST /cart/analytics/export
-   */
+  /** POST /cart/analytics/export */
   async exportAnalytics(options: ExportOptions): Promise<Blob> {
-    if (!options.format) {
-      throw new Error('Export format is required');
-    }
+    if (!options.format) throw new Error('Export format is required');
     if (!options.metrics || options.metrics.length === 0) {
       throw new Error('At least one metric is required');
     }
 
     try {
-      const response = (await api.post(
+      const response = await api.post(
         '/cart/analytics/export',
         options,
         { responseType: 'blob' },
-      )) as Blob;
-      return response;
+      );
+      return ensureBlob(response);
     } catch (error: any) {
       logCartError('❌ Failed to export analytics:', error);
-      if (error?.response?.data) {
-        try {
-          const text = await error.response.data.text();
-          const parsed = JSON.parse(text);
-          throw new Error(parsed?.message || 'Export failed');
-        } catch {
-          throw error;
-        }
-      }
+      const message = await extractBlobErrorMessage(error);
+      if (message) throw new Error(message);
       throw error;
     }
   },
 
-  /**
-   * Export cart history
-   * POST /cart/history/export
-   */
+  /** POST /cart/history/export */
   async exportHistory(options: ExportHistoryOptions): Promise<Blob> {
-    if (!options.format) {
-      throw new Error('Export format is required');
-    }
+    if (!options.format) throw new Error('Export format is required');
 
     try {
-      const response = (await api.post(
+      const response = await api.post(
         '/cart/history/export',
         options,
         { responseType: 'blob' },
-      )) as Blob;
-      return response;
+      );
+      return ensureBlob(response);
     } catch (error: any) {
       logCartError('❌ Failed to export cart history:', error);
-      if (error?.response?.data) {
-        try {
-          const text = await error.response.data.text();
-          const parsed = JSON.parse(text);
-          throw new Error(parsed?.message || 'Export failed');
-        } catch {
-          throw error;
-        }
-      }
+      const message = await extractBlobErrorMessage(error);
+      if (message) throw new Error(message);
       throw error;
     }
   },
 
-  /**
-   * Export abandoned carts
-   * POST /cart/abandoned/export
-   */
+  /** POST /cart/abandoned/export */
   async exportAbandonedCarts(
     options: ExportAbandonedOptions,
   ): Promise<Blob> {
-    if (!options.format) {
-      throw new Error('Export format is required');
-    }
+    if (!options.format) throw new Error('Export format is required');
 
     try {
-      const response = (await api.post(
+      const response = await api.post(
         '/cart/abandoned/export',
         options,
         { responseType: 'blob' },
-      )) as Blob;
-      return response;
+      );
+      return ensureBlob(response);
     } catch (error: any) {
       logCartError('❌ Failed to export abandoned carts:', error);
-      if (error?.response?.data) {
-        try {
-          const text = await error.response.data.text();
-          const parsed = JSON.parse(text);
-          throw new Error(parsed?.message || 'Export failed');
-        } catch {
-          throw error;
-        }
-      }
+      const message = await extractBlobErrorMessage(error);
+      if (message) throw new Error(message);
       throw error;
     }
   },
@@ -889,10 +715,7 @@ export const cartService = {
   // ABANDONED CART MANAGEMENT
   // ============================================
 
-  /**
-   * Get abandoned carts
-   * GET /cart/abandoned
-   */
+  /** GET /cart/abandoned */
   async getAbandonedCarts(params?: {
     hours?: number;
     minValue?: number;
@@ -900,99 +723,89 @@ export const cartService = {
     limit?: number;
   }): Promise<any> {
     try {
-      const response = await api.get('/cart/abandoned', { params });
-      return response;
+      return await api.get('/cart/abandoned', { params });
     } catch (error: any) {
       logCartError('❌ Failed to fetch abandoned carts:', error);
       throw error;
     }
   },
 
-  /**
-   * Recover an abandoned cart
-   * POST /cart/recover
-   */
-  async recoverCart(options: RecoverCartOptions): Promise<any> {
-    if (!options.cartId) {
-      throw new Error('Cart ID is required');
-    }
-
-    try {
-      const response = await api.post('/cart/recover', options);
-      return response;
-    } catch (error: any) {
-      logCartError('❌ Failed to recover cart:', error);
-      const message = extractErrorMessage(error);
-      if (message) throw new Error(message);
-      throw error;
-    }
-  },
-
-  /**
-   * Send a reminder for an abandoned cart
-   * POST /cart/send-reminder
-   */
-  async sendReminder(options: SendReminderOptions): Promise<any> {
-    if (!options.cartId) {
-      throw new Error('Cart ID is required');
-    }
-
-    try {
-      const response = await api.post('/cart/send-reminder', options);
-      return response;
-    } catch (error: any) {
-      logCartError('❌ Failed to send reminder:', error);
-      const message = extractErrorMessage(error);
-      if (message) throw new Error(message);
-      throw error;
-    }
-  },
+  // NOTE: `recoverCart()` and `sendReminder()` were removed.
+  //
+  // The backend route file (`packages/backend/src/routes/cart.ts`)
+  // does NOT register `/cart/recover` or `/cart/send-reminder`. Any
+  // call to those paths returned a 404. Exposing them from the client
+  // service encouraged callers to depend on a nonexistent endpoint.
+  //
+  // When the backend adds these routes, re-add the methods here using
+  // the same error-handling shape as `getAbandonedCarts`.
 
   // ============================================
   // POS / ORDER FORM ALIASES
   // ============================================
   //
   // Convenience wrappers used by OrderForm.tsx. They delegate to the
-  // methods above so behaviour stays identical and there's a single
-  // source of truth.
+  // canonical methods above so behaviour stays identical and there is
+  // a single source of truth.
+  //
+  // @deprecated Prefer the canonical method names in new code.
 
   /**
-   * Alias for getCart(). The active cart is the current user's
-   * cart — the backend lazily creates one on first access.
+   * Alias for `getCart()`.
+   *
+   * @deprecated Use `getCart()` directly.
+   *
+   * NOTE: `businessUnitId` is accepted for call-site compatibility but
+   * is not sent as a request parameter. The backend derives the
+   * effective unit from the `x-business-unit-id` header (populated by
+   * the request interceptor in `api.ts`) or from the user record.
    */
   async getActiveCart(_businessUnitId?: string): Promise<Cart> {
     return this.getCart();
   },
 
   /**
-   * Attach or clear a customer on the active cart. Delegates to
-   * `associateCustomer` when a customer is provided; posts a null
-   * customerId when the caller wants to clear.
+   * Attach a customer to the active cart.
+   *
+   * Clearing is unsupported: the backend `associateCustomerSchema`
+   * requires a non-empty `customerId` and there is no dedicated
+   * "unset customer" endpoint. Rather than fire a request that is
+   * guaranteed to 400, this method throws a descriptive error when
+   * `customerId` is falsy.
+   *
+   * If the product needs to genuinely detach a customer, the correct
+   * user-facing action is "Clear Cart" (`clearCart()`) followed by
+   * re-adding items — or a new backend endpoint
+   * (`DELETE /cart/customer`).
+   *
+   * @deprecated Use `associateCustomer(customerId)` for the
+   *   supported path. Do not call with `null` expecting a clear.
    */
   async setCustomer(customerId: string | null): Promise<Cart> {
     if (!customerId) {
-      try {
-        const response = await api.post<Cart>('/cart/customer', {
-          customerId: null,
-        });
-        return response;
-      } catch (error: any) {
-        logCartError('❌ Failed to clear cart customer:', error);
-        throw error;
-      }
+      throw new Error(
+        'Clearing a cart customer is not supported by the backend. ' +
+          'Call clearCart() to reset the cart, or associate a different customer.',
+      );
     }
     return this.associateCustomer(customerId);
   },
 
   /**
-   * Alias for updateItemQuantity. Used by OrderForm's +/- buttons.
+   * Alias for `updateItemQuantity`. Used by OrderForm's +/- buttons.
+   *
+   * @deprecated Use `updateItemQuantity(itemId, quantity)` directly.
+   *
+   * `discount` is accepted for signature compatibility but is not
+   * forwarded — per-line discounts are computed server-side from
+   * cart-level discount / promotion state. If you need to change a
+   * cart-wide discount, use `applyDiscount()`.
    */
   async updateItem(
     itemId: string,
     data: { quantity?: number; discount?: number },
   ): Promise<Cart> {
     if (data.quantity === undefined) {
-      // Nothing to update — re-fetch and return current state.
       return this.getCart();
     }
     return this.updateItemQuantity(itemId, data.quantity);

@@ -12,7 +12,8 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
-    "clean": "rimraf dist release"
+    "clean": "rimraf dist release",
+    "postinstall": "pnpm exec electron-rebuild -f -w serialport"
   },
   "dependencies": {
     "dotenv": "^18.0.1",
@@ -22,7 +23,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.4",
-    "sql.js": "^1.14.2"
+    "sql.js": "^1.14.2",
+    "@pos/scanner": "workspace:*",
+    "serialport": "^12.0.0",
+    "@serialport/parser-readline": "^12.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
@@ -30,6 +34,7 @@
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@types/sql.js": "^1.4.11",
+    "cross-env": "^7.0.3",
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
     "rimraf": "^5.0.10",

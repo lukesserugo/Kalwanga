@@ -11,6 +11,7 @@ import { createTray } from './tray.js';
 import { setupIPC } from './ipc.js';
 import { logger } from './logger.js';
 import { getSyncService, closeSyncService } from './sync.js';
+import { shutdownScanner } from './scanner.js';
 
 // Load environment variables from .env file
 const envPath = path.join(__dirname, '../../.env');
@@ -244,6 +245,16 @@ app.whenReady().then(async () => {
     setupIPC(mainWindow, store);
     console.log('[debug] after setupIPC');
 
+    console.log('[debug] before setupIPC');
+    setupIPC(mainWindow, store);
+    console.log('[debug] after setupIPC');
+
+    // Log the serial bridge as available. No devices are connected yet;
+    // the renderer initiates that via `scanner:request-device`.
+    logger.info(
+      'Scanner bridge ready — renderer can enumerate serial devices via scanner:list-devices',
+    );
+
     console.log('[debug] before setupAutoUpdater');
     setupAutoUpdater();
     console.log('[debug] after setupAutoUpdater');
@@ -279,6 +290,34 @@ app.on('activate', () => {
     createWindow();
   } else {
     mainWindow.show();
+  }
+});
+
+app.on('before-quit', () => {
+  logger.info('Application quitting...');
+
+  try {
+    shutdownScanner().then(() => {
+      logger.info('Scanner shut down');
+    }).catch((error) => {
+      logger.error('Error shutting down scanner:', error);
+    });
+  } catch (error) {
+    logger.error('Error initiating scanner shutdown:', error);
+  }
+
+  try {
+    closeSyncService();
+    logger.info('Sync service closed');
+  } catch (error) {
+    logger.error('Error closing sync service:', error);
+  }
+
+  try {
+    closeDatabase();
+    logger.info('Database closed');
+  } catch (error) {
+    logger.error('Error closing database:', error);
   }
 });
 

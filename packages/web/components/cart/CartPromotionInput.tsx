@@ -10,7 +10,14 @@ import { useAuth } from '../../hooks/useAuth';
 interface CartPromotionInputProps {
   onPromotionApplied?: (result: unknown) => void;
   currentPromotionCode?: string;
-  onPromotionRemoved?: () => void;
+  /**
+   * Notifies the parent that the user cleared the local input.
+   *
+   * IMPORTANT: the backend has no "remove promotion" endpoint. Calling
+   * this callback does NOT clear the server-side promotion. To replace
+   * a promotion, call `applyPromotion` again with a new code.
+   */
+  onPromotionCleared?: () => void;
   disabled?: boolean;
   className?: string;
 }
@@ -20,7 +27,7 @@ type ApplyState = 'idle' | 'applying' | 'applied';
 export function CartPromotionInput({
   onPromotionApplied,
   currentPromotionCode,
-  onPromotionRemoved,
+  onPromotionCleared,
   disabled = false,
   className = '',
 }: CartPromotionInputProps) {
@@ -82,15 +89,15 @@ export function CartPromotionInput({
     [promotionCode, currentPromotionCode, activeCartService, onPromotionApplied],
   );
 
-  const handleClear = useCallback(() => {
+  const handleClearInput = useCallback(() => {
     setPromotionCode('');
     setError(null);
   }, []);
 
-  const handleRemoveApplied = useCallback(() => {
+  const handleClearLocal = useCallback(() => {
     setError(null);
-    onPromotionRemoved?.();
-  }, [onPromotionRemoved]);
+    onPromotionCleared?.();
+  }, [onPromotionCleared]);
 
   const isApplying = state === 'applying';
   const justApplied = state === 'applied';
@@ -110,13 +117,13 @@ export function CartPromotionInput({
               applied
             </span>
           </div>
-          {onPromotionRemoved && (
+          {onPromotionCleared && (
             <button
               type="button"
-              onClick={handleRemoveApplied}
+              onClick={handleClearLocal}
               disabled={disabled}
               className="shrink-0 p-1 rounded-md text-secondary-600 hover:bg-secondary-100 dark:text-secondary-400 dark:hover:bg-secondary-900/40 transition-colors disabled:opacity-50 focus-ring"
-              aria-label="Remove applied promotion"
+              aria-label="Clear local promotion display"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -163,10 +170,10 @@ export function CartPromotionInput({
           {promotionCode && (
             <button
               type="button"
-              onClick={handleClear}
+              onClick={handleClearInput}
               disabled={inputDisabled}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-orange-50 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50 focus-ring"
-              aria-label="Clear promotion code"
+              aria-label="Clear promotion code input"
             >
               <X className="w-3.5 h-3.5" />
             </button>

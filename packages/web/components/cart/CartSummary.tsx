@@ -22,7 +22,14 @@ import { formatCurrency } from '../../utils/formatters';
 
 interface CartSummaryProps {
   cart: Cart;
-  onApplyDiscount: (code: string) => Promise<void>;
+  /**
+   * Apply a numeric discount. The `type` is explicit — this component
+   * no longer guesses between PERCENTAGE and FIXED from the raw input.
+   */
+  onApplyDiscountValue: (
+    value: number,
+    type: 'PERCENTAGE' | 'FIXED',
+  ) => Promise<void>;
   onApplyPromotion: (code: string) => Promise<void>;
   onApplyLoyalty: (points: number) => Promise<void>;
   onCheckout: () => void;
@@ -34,7 +41,7 @@ interface CartSummaryProps {
 
 export const CartSummary: React.FC<CartSummaryProps> = ({
   cart,
-  onApplyDiscount,
+  onApplyDiscountValue,
   onApplyPromotion,
   onApplyLoyalty,
   onCheckout,
@@ -43,7 +50,10 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
   loyaltyPoints = 0,
   isAuthenticated = true,
 }) => {
-  const [discountCode, setDiscountCode] = useState('');
+  const [discountValue, setDiscountValue] = useState('');
+  const [discountType, setDiscountType] = useState<
+    'PERCENTAGE' | 'FIXED'
+  >('FIXED');
   const [promotionCode, setPromotionCode] = useState('');
   const [loyaltyPointsToUse, setLoyaltyPointsToUse] = useState(0);
   const [showDiscountInput, setShowDiscountInput] = useState(false);
@@ -52,14 +62,20 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
   const [applying, setApplying] = useState(false);
 
   const handleApplyDiscount = async () => {
-    if (!discountCode.trim()) {
-      toast.error('Please enter a discount code');
+    const parsed = parseFloat(discountValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast.error('Please enter a valid discount');
       return;
     }
+    if (discountType === 'PERCENTAGE' && parsed > 100) {
+      toast.error('Percentage cannot exceed 100%');
+      return;
+    }
+
     setApplying(true);
     try {
-      await onApplyDiscount(discountCode.trim());
-      setDiscountCode('');
+      await onApplyDiscountValue(parsed, discountType);
+      setDiscountValue('');
       setShowDiscountInput(false);
       toast.success('Discount applied successfully');
     } catch (error: any) {
@@ -70,13 +86,14 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
   };
 
   const handleApplyPromotion = async () => {
-    if (!promotionCode.trim()) {
+    const code = promotionCode.trim().toUpperCase();
+    if (!code) {
       toast.error('Please enter a promotion code');
       return;
     }
     setApplying(true);
     try {
-      await onApplyPromotion(promotionCode.trim().toUpperCase());
+      await onApplyPromotion(code);
       setPromotionCode('');
       setShowPromotionInput(false);
       toast.success('Promotion applied successfully');
@@ -92,7 +109,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
       toast.info('Sign in to use loyalty points');
       return;
     }
-    if (loyaltyPointsToUse <= 0) {
+    if (!Number.isFinite(loyaltyPointsToUse) || loyaltyPointsToUse <= 0) {
       toast.error('Please enter valid points');
       return;
     }
@@ -119,9 +136,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
     (cart.loyaltyDiscount || 0) > 0;
 
   const isEmpty =
-    !cart.items ||
-    cart.items.length === 0 ||
-    cart.itemCount === 0;
+    !cart.items || cart.items.length === 0 || cart.itemCount === 0;
 
   const canUseLoyalty =
     isAuthenticated && Boolean(customerId) && loyaltyPoints > 0;
@@ -152,9 +167,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           </span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600 dark:text-gray-400">
-            Tax
-          </span>
+          <span className="text-gray-600 dark:text-gray-400">Tax</span>
           <span className="font-medium text-gray-900 dark:text-white tabular-nums">
             {formatCurrency(cart.tax)}
           </span>
@@ -162,7 +175,9 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
         {(cart.discount || 0) > 0 && (
           <div className="flex justify-between text-sm text-success-600 dark:text-success-400">
             <span>Discount</span>
-            <span className="tabular-nums">-{formatCurrency(cart.discount)}</span>
+            <span className="tabular-nums">
+              -{formatCurrency(cart.discount)}
+            </span>
           </div>
         )}
         {(cart.promotionDiscount || 0) > 0 && (
@@ -190,6 +205,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
       </div>
 
       <div className="space-y-2 mt-4">
+        {/* Discount (numeric) */}
         <div>
           <button
             type="button"
@@ -201,7 +217,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
               <Percent className="w-4 h-4" />
               {(cart.discount || 0) > 0
                 ? 'Edit Discount'
-                : 'Add Discount Code'}
+                : 'Add Discount'}
             </span>
             {showDiscountInput ? (
               <ChevronUp className="w-4 h-4" />
@@ -218,17 +234,39 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                 className="mt-2 flex gap-2"
               >
                 <input
-                  type="text"
-                  value={discountCode}
-                  onChange={(e) => setDiscountCode(e.target.value)}
-                  placeholder="Enter discount code"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={discountType === 'PERCENTAGE' ? 100 : undefined}
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                  placeholder={
+                    discountType === 'PERCENTAGE'
+                      ? 'Discount %'
+                      : 'Discount amount'
+                  }
+                  inputMode="decimal"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm tabular-nums"
                   disabled={applying || loading}
                 />
+                <select
+                  value={discountType}
+                  onChange={(e) =>
+                    setDiscountType(
+                      e.target.value as 'PERCENTAGE' | 'FIXED',
+                    )
+                  }
+                  disabled={applying || loading}
+                  className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white"
+                  aria-label="Discount type"
+                >
+                  <option value="FIXED">$</option>
+                  <option value="PERCENTAGE">%</option>
+                </select>
                 <button
                   type="button"
                   onClick={handleApplyDiscount}
-                  disabled={applying || loading}
+                  disabled={applying || loading || !discountValue}
                   className="px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all disabled:opacity-50 text-sm whitespace-nowrap focus-ring"
                 >
                   {applying ? (
@@ -242,12 +280,11 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           </AnimatePresence>
         </div>
 
+        {/* Promotion (string code) */}
         <div>
           <button
             type="button"
-            onClick={() =>
-              setShowPromotionInput(!showPromotionInput)
-            }
+            onClick={() => setShowPromotionInput(!showPromotionInput)}
             className="flex items-center gap-2 text-sm text-secondary-600 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300 transition-colors w-full justify-between focus-ring rounded"
             aria-expanded={showPromotionInput}
           >
@@ -284,7 +321,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                 <button
                   type="button"
                   onClick={handleApplyPromotion}
-                  disabled={applying || loading}
+                  disabled={applying || loading || !promotionCode.trim()}
                   className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg transition-colors disabled:opacity-50 text-sm whitespace-nowrap focus-ring"
                 >
                   {applying ? (
@@ -298,6 +335,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
           </AnimatePresence>
         </div>
 
+        {/* Loyalty */}
         {canUseLoyalty && (
           <div>
             <button
@@ -331,12 +369,13 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                 >
                   <input
                     type="number"
-                    value={loyaltyPointsToUse}
-                    onChange={(e) =>
+                    value={Number.isFinite(loyaltyPointsToUse) ? loyaltyPointsToUse : ''}
+                    onChange={(e) => {
+                      const parsed = parseInt(e.target.value, 10);
                       setLoyaltyPointsToUse(
-                        parseInt(e.target.value) || 0,
-                      )
-                    }
+                        Number.isFinite(parsed) ? parsed : 0,
+                      );
+                    }}
                     placeholder="Points to use"
                     min="0"
                     max={loyaltyPoints}
@@ -347,9 +386,7 @@ export const CartSummary: React.FC<CartSummaryProps> = ({
                     type="button"
                     onClick={handleApplyLoyalty}
                     disabled={
-                      applying ||
-                      loading ||
-                      loyaltyPointsToUse <= 0
+                      applying || loading || loyaltyPointsToUse <= 0
                     }
                     className="px-4 py-2 bg-secondary-600 hover:bg-secondary-700 text-white rounded-lg transition-colors disabled:opacity-50 text-sm whitespace-nowrap focus-ring"
                   >

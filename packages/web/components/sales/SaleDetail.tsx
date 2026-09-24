@@ -31,8 +31,12 @@ import {
   History,
   Send,
   Award,
+  Tag,
+  Star,
+  Sparkles,
 } from 'lucide-react';
-import { saleService } from '../../services/saleService';
+import { saleService, DISCOUNT_TYPE_LABELS } from '../../services/saleService';
+import type { DiscountType } from '../../services/saleService';
 import { toast } from '../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
@@ -129,6 +133,17 @@ interface SaleData {
   saleDate: string;
   createdAt: string;
   updatedAt: string;
+
+  // ── Promotion / loyalty breakdown ────────────────────────────
+  // Persisted on the backend for every create path. All optional so
+  // this shape stays compatible with sales created before the
+  // migration added the columns.
+  discountType?: DiscountType | string | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+  loyaltyPointsUsed?: number;
+  loyaltyDiscount?: number;
+
   customer?: {
     id: string;
     firstName: string;
@@ -314,6 +329,75 @@ const StatCard: React.FC<{
   );
 };
 
+/**
+ * Promotion / loyalty breakdown panel.
+ *
+ * Reads the five breakdown fields off the sale via
+ * `saleService.extractBreakdown`, and returns `null` when the sale
+ * has none — so it's safe to render unconditionally.
+ */
+const SaleBreakdownPanel: React.FC<{
+  sale: SaleData;
+  currencySymbol?: string;
+}> = ({ sale, currencySymbol = '$' }) => {
+  if (!saleService.hasBreakdown(sale)) return null;
+
+  const breakdown = saleService.extractBreakdown(sale);
+
+  const promotionLabel = breakdown.discountType
+    ? DISCOUNT_TYPE_LABELS[breakdown.discountType as DiscountType] ??
+      String(breakdown.discountType)
+    : 'Discount';
+
+  const hasPromotion = (breakdown.promotionDiscount ?? 0) > 0;
+  const hasLoyalty = (breakdown.loyaltyPointsUsed ?? 0) > 0;
+
+  return (
+    <section
+      className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 space-y-2 mb-6"
+      aria-label="Discount breakdown"
+    >
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+        <Sparkles className="w-4 h-4 text-blue-500" />
+        Discount breakdown
+      </h3>
+
+      {hasPromotion && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400 flex-wrap">
+            <Tag className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span>{promotionLabel}</span>
+            {breakdown.promotionCode && (
+              <code className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-[11px] font-mono tabular-nums">
+                {breakdown.promotionCode}
+              </code>
+            )}
+          </span>
+          <span className="tabular-nums font-medium text-green-600 dark:text-green-400 shrink-0">
+            -{currencySymbol}
+            {(breakdown.promotionDiscount ?? 0).toFixed(2)}
+          </span>
+        </div>
+      )}
+
+      {hasLoyalty && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            <Star className="w-3.5 h-3.5 text-yellow-500 fill-current shrink-0" />
+            <span className="tabular-nums">
+              {breakdown.loyaltyPointsUsed} loyalty points
+            </span>
+          </span>
+          <span className="tabular-nums font-medium text-green-600 dark:text-green-400 shrink-0">
+            -{currencySymbol}
+            {(breakdown.loyaltyDiscount ?? 0).toFixed(2)}
+          </span>
+        </div>
+      )}
+    </section>
+  );
+};
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -379,6 +463,29 @@ export function SaleDetail() {
       return;
     }
 
+    // Build the breakdown snippet once so the template stays readable.
+    const breakdown = saleService.extractBreakdown(sale);
+    const promotionDiscount = breakdown.promotionDiscount ?? 0;
+    const promotionCode = breakdown.promotionCode ?? null;
+    const loyaltyPointsUsed = breakdown.loyaltyPointsUsed ?? 0;
+    const loyaltyDiscount = breakdown.loyaltyDiscount ?? 0;
+
+    const promotionLine =
+      promotionDiscount > 0
+        ? `
+          <div class="total-row"><span>Promotion${
+            promotionCode ? ` (${promotionCode})` : ''
+          }</span><span>-$${promotionDiscount.toFixed(2)}</span></div>
+        `
+        : '';
+
+    const loyaltyLine =
+      loyaltyPointsUsed > 0
+        ? `
+          <div class="total-row"><span>${loyaltyPointsUsed} loyalty points</span><span>-$${loyaltyDiscount.toFixed(2)}</span></div>
+        `
+        : '';
+
     printWindow.document.write(`
       <html>
         <head>
@@ -427,8 +534,10 @@ export function SaleDetail() {
           <div class="total">
             <div class="total-row"><span>Subtotal</span><span>$${sale.subtotal.toFixed(2)}</span></div>
             <div class="total-row"><span>Tax</span><span>$${sale.tax.toFixed(2)}</span></div>
+            ${promotionLine}
+            ${loyaltyLine}
             ${
-              sale.discount > 0
+              sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
                 ? `<div class="total-row"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>`
                 : ''
             }
@@ -555,6 +664,17 @@ export function SaleDetail() {
 
   const customerEmail = sale?.customer?.email || 'N/A';
   const customerPhone = sale?.customer?.phoneNumber || 'N/A';
+
+  /**
+   * A small summary of the applied discount, ready to render in the
+   * StatCard subtext.
+   */
+  const discountSummary = useMemo(() => {
+    if (!sale) return { hasAny: false, describe: '' };
+    const hasAny = saleService.hasBreakdown(sale);
+    const describe = hasAny ? saleService.describeBreakdown(sale) : '';
+    return { hasAny, describe };
+  }, [sale]);
 
   // ============================================
   // MODAL OPENERS (open with sensible defaults)
@@ -721,7 +841,13 @@ export function SaleDetail() {
           }
           icon={TrendingDown}
           color={sale.discount > 0 ? 'green' : 'gray'}
-          subtext={sale.discount > 0 ? 'Applied' : 'No discount'}
+          subtext={
+            discountSummary.hasAny
+              ? discountSummary.describe
+              : sale.discount > 0
+              ? 'Applied'
+              : 'No discount'
+          }
         />
         <StatCard
           label="Change"
@@ -873,12 +999,47 @@ export function SaleDetail() {
                 {formatCurrency(sale.tax)}
               </span>
             </div>
-            {sale.discount > 0 && (
+            {(saleService.extractBreakdown(sale).promotionDiscount ?? 0) > 0 && (
               <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
-                <span>Discount</span>
-                <span>-{formatCurrency(sale.discount)}</span>
+                <span className="flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5" />
+                  Promotion
+                  {saleService.extractBreakdown(sale).promotionCode && (
+                    <code className="px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-950/40 text-[10px] font-mono">
+                      {saleService.extractBreakdown(sale).promotionCode}
+                    </code>
+                  )}
+                </span>
+                <span className="tabular-nums">
+                  -{formatCurrency(
+                    saleService.extractBreakdown(sale).promotionDiscount ?? 0
+                  )}
+                </span>
               </div>
             )}
+            {(saleService.extractBreakdown(sale).loyaltyPointsUsed ?? 0) > 0 && (
+              <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                <span className="flex items-center gap-1.5">
+                  <Star className="w-3.5 h-3.5 fill-current" />
+                  <span className="tabular-nums">
+                    {saleService.extractBreakdown(sale).loyaltyPointsUsed}{' '}
+                    loyalty points
+                  </span>
+                </span>
+                <span className="tabular-nums">
+                  -{formatCurrency(
+                    saleService.extractBreakdown(sale).loyaltyDiscount ?? 0
+                  )}
+                </span>
+              </div>
+            )}
+            {sale.discount > 0 &&
+              !saleService.hasBreakdown(sale) && (
+                <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
+                  <span>Discount</span>
+                  <span>-{formatCurrency(sale.discount)}</span>
+                </div>
+              )}
             <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200 dark:border-gray-700">
               <span className="text-gray-900 dark:text-white">Total</span>
               <span className="text-gray-900 dark:text-white">
@@ -888,6 +1049,10 @@ export function SaleDetail() {
           </div>
         </div>
       </div>
+
+      {/* Discount breakdown panel — renders only when the sale
+          carries a promotion / loyalty attribution. */}
+      <SaleBreakdownPanel sale={sale} />
 
       {/* Notes */}
       {sale.notes && (

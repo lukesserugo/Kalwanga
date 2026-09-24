@@ -2,34 +2,94 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Plus, Edit, Trash2, RefreshCw, Loader2,
-  CreditCard, Banknote, Wallet, Building, Gift, Star,
-  Smartphone, Landmark, QrCode, CheckCircle, XCircle,
-  AlertCircle, Shield, Zap, TrendingUp, TrendingDown,
-  Search, Filter, ChevronDown, ChevronUp, X,
-  Settings, Power, PowerOff, Eye, EyeOff,
-  Copy, Download, Printer, Calendar, Clock,
-  DollarSign, Percent, Tag, Layers, Box,
-  Check, AlertTriangle, Info, HelpCircle,
-  Globe, Shield as ShieldIcon, Lock, Unlock
+  ArrowLeft,
+  Plus,
+  Edit,
+  Trash2,
+  RefreshCw,
+  Loader2,
+  CreditCard,
+  Banknote,
+  Wallet,
+  Building,
+  Gift,
+  Star,
+  Smartphone,
+  Landmark,
+  QrCode,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Shield,
+  Zap,
+  TrendingUp,
+  TrendingDown,
+  Search,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Settings,
+  Power,
+  PowerOff,
+  Eye,
+  EyeOff,
+  Copy,
+  Download,
+  Printer,
+  Calendar,
+  Clock,
+  DollarSign,
+  Percent,
+  Tag,
+  Layers,
+  Box,
+  Check,
+  AlertTriangle,
+  Info,
+  HelpCircle,
+  Globe,
+  Shield as ShieldIcon,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
 import { useThemeStore } from '../../../../stores/themeStore';
 import { toast } from '../../../../../utils/toast-manager';
-import { formatCurrency, formatDate } from '../../../../../utils/formatters';
-import { paymentService, PaymentProviderStatus, CreatePaymentProviderRequest, UpdatePaymentProviderRequest } from '../../../../../services/paymentService';
+import {
+  formatCurrency,
+  formatDate,
+} from '../../../../../utils/formatters';
+import {
+  paymentService,
+  type PaymentProviderStatus,
+  type CreatePaymentProviderRequest,
+  type UpdatePaymentProviderRequest,
+} from '../../../../../services/paymentService';
 
 // ============================================
 // TYPES
 // ============================================
 
+/**
+ * Local view-model.
+ *
+ * Extends the service's `PaymentProviderStatus` with the fields the
+ * page always populates after fetching. `type` and `order` are made
+ * required here because the mapping step guarantees they exist.
+ */
 interface PaymentProvider extends PaymentProviderStatus {
   id: string;
   provider: string;
@@ -101,41 +161,111 @@ interface UpdateProviderData {
 }
 
 // ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Normalize a raw backend provider row into the local view-model.
+ * Every field is coerced to a safe default so the render code never
+ * sees `undefined` where it expects a value.
+ */
+function toViewProvider(raw: Partial<PaymentProviderStatus>): PaymentProvider {
+  const providerCode = (raw.provider || raw.code || 'UNKNOWN') as string;
+  const type = (raw.type || 'ONLINE') as 'ONLINE' | 'OFFLINE' | 'HYBRID';
+
+  return {
+    id: raw.id || `provider_${providerCode.toLowerCase()}`,
+    provider: providerCode,
+    name: raw.name || providerCode,
+    code: raw.code || providerCode,
+    type,
+    isActive: raw.isActive ?? true,
+    isHealthy: raw.isHealthy ?? true,
+    configured: raw.configured ?? false,
+    transactions24h: raw.transactions24h ?? 0,
+    volume24h: raw.volume24h ?? 0,
+    transactions7d: raw.transactions7d ?? 0,
+    volume7d: raw.volume7d ?? 0,
+    transactions30d: raw.transactions30d ?? 0,
+    volume30d: raw.volume30d ?? 0,
+    config: raw.config
+      ? {
+          name: raw.config.name || raw.name || providerCode,
+          type: raw.config.type || type.toLowerCase(),
+          supportedCurrencies: raw.config.supportedCurrencies || ['USD'],
+          supportedMethods: raw.config.supportedMethods || [],
+          description:
+            raw.config.description ||
+            `${raw.name || providerCode} payment provider`,
+          icon: raw.config.icon || '💳',
+          minAmount: raw.config.minAmount ?? 0,
+          maxAmount: raw.config.maxAmount ?? 100000,
+          feePercentage: raw.config.feePercentage ?? 0,
+          feeFixed: raw.config.feeFixed ?? 0,
+        }
+      : {
+          name: raw.name || providerCode,
+          type: type.toLowerCase(),
+          supportedCurrencies: ['USD'],
+          supportedMethods: [],
+          description: `${raw.name || providerCode} payment provider`,
+          icon: '💳',
+          minAmount: 0,
+          maxAmount: 100000,
+          feePercentage: 0,
+          feeFixed: 0,
+        },
+    settings: (raw.settings as Record<string, any>) || {},
+    order: raw.order ?? 0,
+    createdAt: raw.createdAt || new Date().toISOString(),
+    updatedAt: raw.updatedAt || new Date().toISOString(),
+  };
+}
+
+// ============================================
 // CONSTANTS - EXACT PROVIDER IMAGE URLs
 // ============================================
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
 const PROVIDER_ICONS: Record<string, any> = {
@@ -147,7 +277,6 @@ const PROVIDER_ICONS: Record<string, any> = {
   LOYALTY_POINTS: Star,
   PAYPAL: CreditCard,
   FLUTTERWAVE: CreditCard,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
   MTN: Smartphone,
   AIRTEL: Smartphone,
@@ -155,10 +284,6 @@ const PROVIDER_ICONS: Record<string, any> = {
   VODAFONE: Smartphone,
 };
 
-// Brand-aligned gradients — using semantic + brand tokens.
-// Stripe/PayPal map to primary; Cash to success; Mobile Money to brand;
-// Bank Transfer to indigo; Gift Card to brand; Loyalty to warning;
-// Flutterwave to cyan; Paystack to sky; Square to gray; telcos to brand/warning/danger.
 const PROVIDER_COLORS: Record<string, string> = {
   CASH: 'from-success-500 to-emerald-600',
   STRIPE: 'from-primary-500 to-indigo-600',
@@ -168,7 +293,6 @@ const PROVIDER_COLORS: Record<string, string> = {
   LOYALTY_POINTS: 'from-warning-500 to-amber-600',
   PAYPAL: 'from-primary-400 to-sky-500',
   FLUTTERWAVE: 'from-emerald-500 to-teal-600',
-  PAYSTACK: 'from-cyan-500 to-primary-600',
   SQUARE: 'from-gray-700 to-gray-900',
   MTN: 'from-warning-500 to-amber-600',
   AIRTEL: 'from-danger-500 to-rose-600',
@@ -183,15 +307,42 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-  inactive: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  healthy: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-  unhealthy: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-  configured: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  not_configured: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-  online: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  offline: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  hybrid: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  active:
+    'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  inactive:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  healthy:
+    'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+  unhealthy:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  configured:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  not_configured:
+    'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  online:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  offline:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  hybrid:
+    'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+};
+
+const EMPTY_NEW_PROVIDER: CreateProviderData = {
+  name: '',
+  code: '',
+  type: 'ONLINE',
+  config: {
+    name: '',
+    type: 'online',
+    supportedCurrencies: ['USD'],
+    supportedMethods: [],
+    description: '',
+    icon: '💳',
+    minAmount: 0,
+    maxAmount: 10000,
+    feePercentage: 0,
+    feeFixed: 0,
+  },
 };
 
 // ============================================
@@ -209,108 +360,89 @@ export default function PaymentProvidersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [selectedProvider, setSelectedProvider] = useState<PaymentProvider | null>(null);
+  const [selectedProvider, setSelectedProvider] =
+    useState<PaymentProvider | null>(null);
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [submitting, setSubmitting] = useState(false);
 
-  // Form state for add provider
-  const [newProvider, setNewProvider] = useState<CreateProviderData>({
-    name: '',
-    code: '',
-    type: 'ONLINE',
-    config: {
-      name: '',
-      type: 'online',
-      supportedCurrencies: ['USD'],
-      supportedMethods: [],
-      description: '',
-      icon: '💳',
-      minAmount: 0,
-      maxAmount: 10000,
-      feePercentage: 0,
-      feeFixed: 0,
-    },
-  });
+  const [newProvider, setNewProvider] =
+    useState<CreateProviderData>(EMPTY_NEW_PROVIDER);
 
-  // Form state for settings
   const [settingsData, setSettingsData] = useState<UpdateProviderData>({});
 
-  const canManageProviders = canManage(PermissionResource.PAYMENT) || canManage(PermissionResource.SETTINGS);
-  const canViewProviders = canView(PermissionResource.PAYMENT) || canView(PermissionResource.SETTINGS);
+  const canManageProviders =
+    canManage(PermissionResource.PAYMENT) ||
+    canManage(PermissionResource.SETTINGS);
+  const canViewProviders =
+    canView(PermissionResource.PAYMENT) ||
+    canView(PermissionResource.SETTINGS);
 
   // ============================================
   // DATA FETCHING
   // ============================================
+  //
+  // `paymentService.getPaymentProviders()` returns
+  // `{ success: boolean, data: PaymentProviderStatus[] }`.
+  // The old code assumed `response.data` was the top-level array and
+  // would throw if the backend wrapped the payload or returned
+  // anything other than an array. The new code handles:
+  //
+  //   1. `{ success, data: [...] }`     — canonical ApiResponse
+  //   2. `[...]`                        — bare array (older backends)
+  //   3. `{ success: false, ... }`      — error envelope
+  //   4. Anything else                  — treated as empty
 
   const fetchProviders = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Use the payment service to fetch providers
       const response = await paymentService.getPaymentProviders();
 
-      if (response.success && response.data) {
-        // Map the response data to our provider type
-        const mappedProviders = response.data.map((p: any) => ({
-          ...p,
-          id: p.id || `provider_${p.provider}`,
-          provider: p.provider,
-          name: p.name || p.provider,
-          code: p.code || p.provider,
-          type: p.type || 'ONLINE',
-          isActive: p.isActive !== undefined ? p.isActive : true,
-          isHealthy: p.isHealthy !== undefined ? p.isHealthy : true,
-          configured: p.configured !== undefined ? p.configured : false,
-          transactions24h: p.transactions24h || 0,
-          volume24h: p.volume24h || 0,
-          transactions7d: p.transactions7d || 0,
-          volume7d: p.volume7d || 0,
-          transactions30d: p.transactions30d || 0,
-          volume30d: p.volume30d || 0,
-          config: p.config || {
-            name: p.name || p.provider,
-            type: p.type?.toLowerCase() || 'online',
-            supportedCurrencies: ['USD'],
-            supportedMethods: [],
-            description: `${p.provider} payment provider`,
-            icon: '💳',
-            minAmount: 0,
-            maxAmount: 100000,
-            feePercentage: 0,
-            feeFixed: 0,
-          },
-          settings: p.settings || {},
-          order: p.order || 0,
-          createdAt: p.createdAt || new Date().toISOString(),
-          updatedAt: p.updatedAt || new Date().toISOString(),
-        }));
+      // Unwrap whichever shape the service returned.
+      let rawList: any[] = [];
 
-        setProviders(mappedProviders);
-
-        if (mappedProviders.length === 0) {
-          toast.info('No payment providers found. Create your first provider.');
+      if (Array.isArray(response)) {
+        // Older service versions returned a bare array.
+        rawList = response;
+      } else if (response && typeof response === 'object') {
+        if (Array.isArray((response as any).data)) {
+          rawList = (response as any).data;
+        } else if (
+          (response as any).success === false &&
+          Array.isArray((response as any).data)
+        ) {
+          rawList = (response as any).data;
         }
-      } else {
-        setProviders([]);
-        toast.info('No payment providers configured yet.');
+      }
+
+      const mapped = rawList.map(toViewProvider);
+      setProviders(mapped);
+
+      if (mapped.length === 0) {
+        toast.info(
+          'No payment providers found. Create your first provider.',
+        );
       }
     } catch (error: any) {
       console.error('Failed to fetch payment providers:', error);
 
-      // Handle 404 gracefully
       if (error?.response?.status === 404) {
-        toast.info('Payment providers endpoint not found. Please set up your payment providers.');
-        setProviders([]);
+        toast.info(
+          'Payment providers endpoint not found. Please set up your payment providers.',
+        );
       } else if (error?.response?.status === 401) {
         toast.error('Authentication required. Please log in again.');
       } else {
-        const errorMessage = error?.response?.data?.message || error?.message || 'Failed to load payment providers';
+        const errorMessage =
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to load payment providers';
         toast.error(errorMessage);
-        setProviders([]);
       }
+      setProviders([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -318,14 +450,14 @@ export default function PaymentProvidersPage() {
   }, []);
 
   useEffect(() => {
-    fetchProviders();
+    void fetchProviders();
   }, [fetchProviders]);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchProviders();
     toast.success('Providers refreshed');
-  };
+  }, [fetchProviders]);
 
   // ============================================
   // FILTERS & SEARCH
@@ -336,26 +468,27 @@ export default function PaymentProvidersPage() {
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(p =>
-        p.name?.toLowerCase().includes(query) ||
-        p.code?.toLowerCase().includes(query) ||
-        p.provider?.toLowerCase().includes(query)
+      filtered = filtered.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(query) ||
+          p.code?.toLowerCase().includes(query) ||
+          p.provider?.toLowerCase().includes(query),
       );
     }
 
     if (filterType !== 'all') {
-      filtered = filtered.filter(p => p.type === filterType);
+      filtered = filtered.filter((p) => p.type === filterType);
     }
 
     if (filterStatus !== 'all') {
       if (filterStatus === 'active') {
-        filtered = filtered.filter(p => p.isActive);
+        filtered = filtered.filter((p) => p.isActive);
       } else if (filterStatus === 'inactive') {
-        filtered = filtered.filter(p => !p.isActive);
+        filtered = filtered.filter((p) => !p.isActive);
       } else if (filterStatus === 'healthy') {
-        filtered = filtered.filter(p => p.isHealthy);
+        filtered = filtered.filter((p) => p.isHealthy);
       } else if (filterStatus === 'unhealthy') {
-        filtered = filtered.filter(p => !p.isHealthy);
+        filtered = filtered.filter((p) => !p.isHealthy);
       }
     }
 
@@ -366,10 +499,8 @@ export default function PaymentProvidersPage() {
   // CRUD OPERATIONS
   // ============================================
 
-  // Create a new payment provider
-  const handleAddProvider = async () => {
+  const handleAddProvider = useCallback(async () => {
     try {
-      // Validate required fields
       if (!newProvider.name.trim()) {
         toast.error('Provider name is required');
         return;
@@ -381,7 +512,6 @@ export default function PaymentProvidersPage() {
 
       setSubmitting(true);
 
-      // Prepare the data for the API
       const providerData: CreatePaymentProviderRequest = {
         provider: newProvider.code.toUpperCase(),
         name: newProvider.name,
@@ -406,176 +536,166 @@ export default function PaymentProvidersPage() {
         order: providers.length + 1,
       };
 
-      // Send to API using payment service
-      const response = await paymentService.createPaymentProvider(providerData);
+      const response = await paymentService.createPaymentProvider(
+        providerData,
+      );
 
       if (response.success && response.data) {
-        // Add new provider to local state
-        const newProviderData: PaymentProvider = {
-          ...response.data,
-          id: response.data.id || `provider_${response.data.provider}`,
-          provider: response.data.provider,
-          name: response.data.name || response.data.provider,
-          code: response.data.code || response.data.provider,
-          type: response.data.type || 'ONLINE',
-          isActive: response.data.isActive !== undefined ? response.data.isActive : true,
-          isHealthy: response.data.isHealthy !== undefined ? response.data.isHealthy : true,
-          configured: response.data.configured !== undefined ? response.data.configured : true,
-          transactions24h: response.data.transactions24h || 0,
-          volume24h: response.data.volume24h || 0,
-          transactions7d: response.data.transactions7d || 0,
-          volume7d: response.data.volume7d || 0,
-          transactions30d: response.data.transactions30d || 0,
-          volume30d: response.data.volume30d || 0,
-          config: response.data.config || providerData.config,
-          settings: response.data.settings || {},
-          order: response.data.order || providers.length + 1,
-          createdAt: response.data.createdAt || new Date().toISOString(),
-          updatedAt: response.data.updatedAt || new Date().toISOString(),
-        };
-
-        setProviders(prev => [...prev, newProviderData]);
+        setProviders((prev) => [
+          ...prev,
+          toViewProvider(response.data as Partial<PaymentProviderStatus>),
+        ]);
         toast.success('Provider added successfully');
+        setShowProviderModal(false);
+        setNewProvider(EMPTY_NEW_PROVIDER);
       } else {
         toast.error(response.message || 'Failed to add provider');
       }
-
-      setShowProviderModal(false);
-
-      // Reset form
-      setNewProvider({
-        name: '',
-        code: '',
-        type: 'ONLINE',
-        config: {
-          name: '',
-          type: 'online',
-          supportedCurrencies: ['USD'],
-          supportedMethods: [],
-          description: '',
-          icon: '💳',
-          minAmount: 0,
-          maxAmount: 10000,
-          feePercentage: 0,
-          feeFixed: 0,
-        },
-      });
-
     } catch (error: any) {
       console.error('Failed to add provider:', error);
 
       if (error?.response?.status === 404) {
-        toast.error('Payment providers API not available. Please contact support.');
+        toast.error(
+          'Payment providers API not available. Please contact support.',
+        );
       } else if (error?.response?.status === 400) {
-        const errorMessage = error?.response?.data?.message || 'Validation error. Please check your input.';
+        const errorMessage =
+          error?.response?.data?.message ||
+          'Validation error. Please check your input.';
         toast.error(errorMessage);
       } else {
-        const errorMessage = error?.response?.data?.message || error?.message || 'Failed to add provider';
+        const errorMessage =
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to add provider';
         toast.error(errorMessage);
       }
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [newProvider, providers.length]);
 
-  // Update an existing provider
-  const handleUpdateProvider = async () => {
+  const handleUpdateProvider = useCallback(async () => {
     if (!selectedProvider) return;
 
     try {
       setSubmitting(true);
 
-      const response = await paymentService.updatePaymentProvider(selectedProvider.id, settingsData);
+      const response = await paymentService.updatePaymentProvider(
+        selectedProvider.id,
+        settingsData,
+      );
 
       if (response.success && response.data) {
-        // Update local state
-        const updatedProvider: PaymentProvider = {
-          ...selectedProvider,
-          ...response.data,
-          config: {
-            ...selectedProvider.config,
-            ...(response.data.config || {}),
-          },
-        };
-
-        setProviders(prev => prev.map(p =>
-          p.id === selectedProvider.id ? updatedProvider : p
-        ));
+        setProviders((prev) =>
+          prev.map((p) =>
+            p.id === selectedProvider.id
+              ? toViewProvider({
+                  ...p,
+                  ...(response.data as Partial<PaymentProviderStatus>),
+                })
+              : p,
+          ),
+        );
 
         toast.success('Settings updated successfully');
+        setShowSettingsModal(false);
+        setSelectedProvider(null);
+        setSettingsData({});
       } else {
         toast.error(response.message || 'Failed to update provider');
       }
-
-      setShowSettingsModal(false);
-      setSelectedProvider(null);
-      setSettingsData({});
-
     } catch (error: any) {
       console.error('Failed to update provider:', error);
 
       if (error?.response?.status === 404) {
-        toast.error('Payment providers API not available. Please contact support.');
+        toast.error(
+          'Payment providers API not available. Please contact support.',
+        );
       } else if (error?.response?.status === 400) {
-        const errorMessage = error?.response?.data?.message || 'Validation error. Please check your input.';
+        const errorMessage =
+          error?.response?.data?.message ||
+          'Validation error. Please check your input.';
         toast.error(errorMessage);
       } else {
-        const errorMessage = error?.response?.data?.message || error?.message || 'Failed to update provider';
-        toast.error(errorMessage);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Toggle provider active status
-  const handleToggleProvider = async (providerId: string) => {
-    try {
-      const provider = providers.find(p => p.id === providerId);
-      if (!provider) return;
-
-      setSubmitting(true);
-
-      const response = await paymentService.togglePaymentProvider(providerId, !provider.isActive);
-
-      if (response.success) {
-        // Update local state
-        setProviders(prev => prev.map(p =>
-          p.id === providerId ? { ...p, isActive: !p.isActive } : p
-        ));
-
-        toast.success(`Provider ${provider.isActive ? 'deactivated' : 'activated'} successfully`);
-      } else {
-        toast.error(response.message || 'Failed to toggle provider');
-      }
-    } catch (error: any) {
-      console.error('Failed to toggle provider:', error);
-
-      if (error?.response?.status === 404) {
-        toast.error('Payment providers API not available. Please contact support.');
-      } else {
-        const errorMessage = error?.response?.data?.message || error?.message || 'Failed to toggle provider';
+        const errorMessage =
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to update provider';
         toast.error(errorMessage);
       }
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [selectedProvider, settingsData]);
 
-  // Delete a provider
-  const handleDeleteProvider = async () => {
+  const handleToggleProvider = useCallback(
+    async (providerId: string) => {
+      try {
+        const provider = providers.find((p) => p.id === providerId);
+        if (!provider) return;
+
+        setSubmitting(true);
+
+        const response = await paymentService.togglePaymentProvider(
+          providerId,
+          !provider.isActive,
+        );
+
+        if (response.success) {
+          setProviders((prev) =>
+            prev.map((p) =>
+              p.id === providerId
+                ? { ...p, isActive: !p.isActive }
+                : p,
+            ),
+          );
+
+          toast.success(
+            `Provider ${
+              provider.isActive ? 'deactivated' : 'activated'
+            } successfully`,
+          );
+        } else {
+          toast.error(response.message || 'Failed to toggle provider');
+        }
+      } catch (error: any) {
+        console.error('Failed to toggle provider:', error);
+
+        if (error?.response?.status === 404) {
+          toast.error(
+            'Payment providers API not available. Please contact support.',
+          );
+        } else {
+          const errorMessage =
+            error?.response?.data?.message ||
+            error?.message ||
+            'Failed to toggle provider';
+          toast.error(errorMessage);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [providers],
+  );
+
+  const handleDeleteProvider = useCallback(async () => {
     if (!selectedProvider) return;
 
     try {
       setSubmitting(true);
 
-      const response = await paymentService.deletePaymentProvider(selectedProvider.id);
+      const response = await paymentService.deletePaymentProvider(
+        selectedProvider.id,
+      );
 
       if (response.success) {
-        setProviders(prev => prev.filter(p => p.id !== selectedProvider.id));
+        setProviders((prev) =>
+          prev.filter((p) => p.id !== selectedProvider.id),
+        );
         setShowDeleteModal(false);
         setSelectedProvider(null);
-
         toast.success('Provider deleted successfully');
       } else {
         toast.error(response.message || 'Failed to delete provider');
@@ -584,51 +704,64 @@ export default function PaymentProvidersPage() {
       console.error('Failed to delete provider:', error);
 
       if (error?.response?.status === 404) {
-        toast.error('Payment providers API not available. Please contact support.');
+        toast.error(
+          'Payment providers API not available. Please contact support.',
+        );
       } else {
-        const errorMessage = error?.response?.data?.message || error?.message || 'Failed to delete provider';
+        const errorMessage =
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to delete provider';
         toast.error(errorMessage);
       }
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [selectedProvider]);
 
   // ============================================
   // UI HELPERS
   // ============================================
 
-  const getStatusColor = (status: string) => {
-    return STATUS_COLORS[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
-  };
+  const getStatusColor = useCallback((status: string) => {
+    return (
+      STATUS_COLORS[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
+    );
+  }, []);
 
-  const getProviderIcon = (providerCode: string) => {
-    const Icon = PROVIDER_ICONS[providerCode] || CreditCard;
-    return Icon;
-  };
+  const getProviderIcon = useCallback((providerCode: string) => {
+    return PROVIDER_ICONS[providerCode] || CreditCard;
+  }, []);
 
-  const getProviderColor = (providerCode: string) => {
-    return PROVIDER_COLORS[providerCode] || 'from-primary-500 to-secondary-600';
-  };
+  const getProviderColor = useCallback((providerCode: string) => {
+    return (
+      PROVIDER_COLORS[providerCode] ||
+      'from-primary-500 to-secondary-600'
+    );
+  }, []);
 
-  const getProviderImageUrl = (providerCode: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-      : PROVIDER_IMAGE_URLS[providerCode] || '';
-  };
+  const getProviderImageUrl = useCallback(
+    (providerCode: string): string => {
+      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
+        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
+        : PROVIDER_IMAGE_URLS[providerCode] || '';
+    },
+    [isDark],
+  );
 
-  const getTypeLabel = (type: string) => {
+  const getTypeLabel = useCallback((type: string) => {
     return PROVIDER_TYPE_LABELS[type] || type;
-  };
+  }, []);
 
-  const formatNumber = (num: number) => {
+  const formatNumber = useCallback((num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
     return num.toString();
-  };
+  }, []);
 
   // ============================================
-  // PERMISSION CHECK
+  // PERMISSION GATE
   // ============================================
 
   if (!canViewProviders) {
@@ -637,8 +770,12 @@ export default function PaymentProvidersPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to manage payment providers.</p>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You don't have permission to manage payment providers.
+        </p>
         <button
           onClick={() => router.push('/admin/dashboard')}
           className="mt-4 btn-brand"
@@ -650,7 +787,7 @@ export default function PaymentProvidersPage() {
   }
 
   // ============================================
-  // RENDER
+  // LOADING
   // ============================================
 
   if (loading) {
@@ -658,17 +795,26 @@ export default function PaymentProvidersPage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-brand-600 dark:text-brand-400 mx-auto" />
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading payment providers...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading payment providers...
+          </p>
         </div>
       </div>
     );
   }
 
-  // Render provider card
-  const renderProviderCard = (provider: PaymentProvider, index: number) => {
+  // ============================================
+  // RENDER — Provider card
+  // ============================================
+
+  const renderProviderCard = (
+    provider: PaymentProvider,
+    index: number,
+  ) => {
     const ProviderIcon = getProviderIcon(provider.provider);
     const imageUrl = getProviderImageUrl(provider.provider);
-    const isActive = provider.isActive && provider.isHealthy && provider.configured;
+    const isActive =
+      provider.isActive && provider.isHealthy && provider.configured;
 
     return (
       <motion.div
@@ -687,7 +833,11 @@ export default function PaymentProvidersPage() {
         }`}
       >
         {/* Header */}
-        <div className={`p-4 bg-gradient-to-r ${getProviderColor(provider.provider)}`}>
+        <div
+          className={`p-4 bg-gradient-to-r ${getProviderColor(
+            provider.provider,
+          )}`}
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {imageUrl ? (
@@ -699,12 +849,16 @@ export default function PaymentProvidersPage() {
                     height={40}
                     className="rounded object-contain"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      const parent = (e.target as HTMLImageElement).parentElement;
+                      (e.target as HTMLImageElement).style.display =
+                        'none';
+                      const parent = (e.target as HTMLImageElement)
+                        .parentElement;
                       if (parent) {
-                        const fallback = document.createElement('span');
+                        const fallback =
+                          document.createElement('span');
                         fallback.className = 'text-white text-2xl';
-                        fallback.textContent = provider.config?.icon || '💳';
+                        fallback.textContent =
+                          provider.config?.icon || '💳';
                         parent.appendChild(fallback);
                       }
                     }}
@@ -716,17 +870,27 @@ export default function PaymentProvidersPage() {
                 </div>
               )}
               <div>
-                <h3 className="text-white font-semibold text-lg">{provider.name}</h3>
-                <p className="text-white/70 text-sm font-mono tabular-nums">{provider.code}</p>
+                <h3 className="text-white font-semibold text-lg">
+                  {provider.name}
+                </h3>
+                <p className="text-white/70 text-sm font-mono tabular-nums">
+                  {provider.code}
+                </p>
               </div>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <span className={`px-2 py-0.5 rounded-full text-2xs font-medium bg-white/20 text-white`}>
+              <span className="px-2 py-0.5 rounded-full text-2xs font-medium bg-white/20 text-white">
                 {getTypeLabel(provider.type)}
               </span>
               <div className="flex items-center gap-1">
-                <span className={`w-2 h-2 rounded-full ${provider.isActive ? 'bg-success-400' : 'bg-danger-400'}`} />
-                <span className="text-2xs text-white/70">{provider.isActive ? 'Active' : 'Inactive'}</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    provider.isActive ? 'bg-success-400' : 'bg-danger-400'
+                  }`}
+                />
+                <span className="text-2xs text-white/70">
+                  {provider.isActive ? 'Active' : 'Inactive'}
+                </span>
               </div>
             </div>
           </div>
@@ -735,28 +899,55 @@ export default function PaymentProvidersPage() {
         {/* Body */}
         <div className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-              <p className="text-2xs text-gray-500 dark:text-gray-400">24h Transactions</p>
-              <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{provider.transactions24h || 0}</p>
+            <div
+              className={`p-2 rounded-lg ${
+                isDark ? 'bg-gray-700/30' : 'bg-gray-50'
+              }`}
+            >
+              <p className="text-2xs text-gray-500 dark:text-gray-400">
+                24h Transactions
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
+                {provider.transactions24h || 0}
+              </p>
             </div>
-            <div className={`p-2 rounded-lg ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'}`}>
-              <p className="text-2xs text-gray-500 dark:text-gray-400">24h Volume</p>
-              <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{formatCurrency(provider.volume24h || 0)}</p>
+            <div
+              className={`p-2 rounded-lg ${
+                isDark ? 'bg-gray-700/30' : 'bg-gray-50'
+              }`}
+            >
+              <p className="text-2xs text-gray-500 dark:text-gray-400">
+                24h Volume
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
+                {formatCurrency(provider.volume24h || 0)}
+              </p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {(provider.config?.supportedCurrencies || []).map((currency) => (
-              <span key={currency} className={`px-2 py-0.5 rounded text-2xs font-medium ${
-                isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-              }`}>
-                {currency}
-              </span>
-            ))}
+            {(provider.config?.supportedCurrencies || []).map(
+              (currency) => (
+                <span
+                  key={currency}
+                  className={`px-2 py-0.5 rounded text-2xs font-medium ${
+                    isDark
+                      ? 'bg-gray-700 text-gray-300'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {currency}
+                </span>
+              ),
+            )}
           </div>
 
           {provider.config?.description && (
-            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'} line-clamp-2`}>
+            <p
+              className={`text-sm ${
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              } line-clamp-2`}
+            >
               {provider.config.description}
             </p>
           )}
@@ -795,8 +986,14 @@ export default function PaymentProvidersPage() {
                     className={`p-1.5 rounded-lg transition duration-250 focus-ring ${
                       isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                     } disabled:opacity-50`}
-                    title={provider.isActive ? 'Deactivate' : 'Activate'}
-                    aria-label={provider.isActive ? 'Deactivate provider' : 'Activate provider'}
+                    title={
+                      provider.isActive ? 'Deactivate' : 'Activate'
+                    }
+                    aria-label={
+                      provider.isActive
+                        ? 'Deactivate provider'
+                        : 'Activate provider'
+                    }
                   >
                     {provider.isActive ? (
                       <PowerOff className="w-4 h-4 text-danger-500" />
@@ -845,17 +1042,31 @@ export default function PaymentProvidersPage() {
     );
   };
 
-  // Render provider row (list view)
+  // ============================================
+  // RENDER — Provider row (list view)
+  // ============================================
+
   const renderProviderRow = (provider: PaymentProvider) => {
     const ProviderIcon = getProviderIcon(provider.provider);
     const imageUrl = getProviderImageUrl(provider.provider);
 
     return (
-      <tr key={provider.id} className={`${isDark ? 'bg-gray-800 hover:bg-gray-700/50' : 'bg-white hover:bg-gray-50'} transition-colors duration-250`}>
+      <tr
+        key={provider.id}
+        className={`${
+          isDark
+            ? 'bg-gray-800 hover:bg-gray-700/50'
+            : 'bg-white hover:bg-gray-50'
+        } transition-colors duration-250`}
+      >
         <td className="px-4 py-3">
           <div className="flex items-center gap-3">
             {imageUrl ? (
-              <div className={`relative w-10 h-10 rounded-lg overflow-hidden bg-gradient-to-r ${getProviderColor(provider.provider)} flex items-center justify-center p-1`}>
+              <div
+                className={`relative w-10 h-10 rounded-lg overflow-hidden bg-gradient-to-r ${getProviderColor(
+                  provider.provider,
+                )} flex items-center justify-center p-1`}
+              >
                 <Image
                   src={imageUrl}
                   alt={provider.name}
@@ -863,68 +1074,123 @@ export default function PaymentProvidersPage() {
                   height={32}
                   className="rounded object-contain"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                    const parent = (e.target as HTMLImageElement).parentElement;
+                    (e.target as HTMLImageElement).style.display =
+                      'none';
+                    const parent = (e.target as HTMLImageElement)
+                      .parentElement;
                     if (parent) {
-                      const fallback = document.createElement('span');
+                      const fallback =
+                        document.createElement('span');
                       fallback.className = 'text-white text-xl';
-                      fallback.textContent = provider.config?.icon || '💳';
+                      fallback.textContent =
+                        provider.config?.icon || '💳';
                       parent.appendChild(fallback);
                     }
                   }}
                 />
               </div>
             ) : (
-              <div className={`w-10 h-10 rounded-lg bg-gradient-to-r ${getProviderColor(provider.provider)} flex items-center justify-center`}>
+              <div
+                className={`w-10 h-10 rounded-lg bg-gradient-to-r ${getProviderColor(
+                  provider.provider,
+                )} flex items-center justify-center`}
+              >
                 <ProviderIcon className="w-5 h-5 text-white" />
               </div>
             )}
             <div>
-              <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>{provider.name}</p>
-              <p className={`text-xs font-mono tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{provider.code}</p>
+              <p
+                className={`font-medium ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}
+              >
+                {provider.name}
+              </p>
+              <p
+                className={`text-xs font-mono tabular-nums ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}
+              >
+                {provider.code}
+              </p>
             </div>
           </div>
         </td>
         <td className="px-4 py-3">
-          <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${getStatusColor(provider.type?.toLowerCase() || '')}`}>
+          <span
+            className={`px-2 py-0.5 rounded-full text-2xs font-medium ${getStatusColor(
+              provider.type?.toLowerCase() || '',
+            )}`}
+          >
             {getTypeLabel(provider.type)}
           </span>
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-col gap-1">
-            <span className={`px-2 py-0.5 rounded-full text-2xs font-medium w-fit ${getStatusColor(provider.isActive ? 'active' : 'inactive')}`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-2xs font-medium w-fit ${getStatusColor(
+                provider.isActive ? 'active' : 'inactive',
+              )}`}
+            >
               {provider.isActive ? 'Active' : 'Inactive'}
             </span>
-            <span className={`px-2 py-0.5 rounded-full text-2xs font-medium w-fit ${getStatusColor(provider.isHealthy ? 'healthy' : 'unhealthy')}`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-2xs font-medium w-fit ${getStatusColor(
+                provider.isHealthy ? 'healthy' : 'unhealthy',
+              )}`}
+            >
               {provider.isHealthy ? 'Healthy' : 'Unhealthy'}
             </span>
           </div>
         </td>
         <td className="px-4 py-3 text-right">
-          <p className={`font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <p
+            className={`font-medium tabular-nums ${
+              isDark ? 'text-white' : 'text-gray-900'
+            }`}
+          >
             {formatCurrency(provider.volume24h || 0)}
           </p>
-          <p className={`text-xs tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p
+            className={`text-xs tabular-nums ${
+              isDark ? 'text-gray-400' : 'text-gray-500'
+            }`}
+          >
             {provider.transactions24h || 0} transactions
           </p>
         </td>
         <td className="px-4 py-3 text-right">
-          <p className={`font-medium tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+          <p
+            className={`font-medium tabular-nums ${
+              isDark ? 'text-white' : 'text-gray-900'
+            }`}
+          >
             {formatCurrency(provider.volume30d || 0)}
           </p>
-          <p className={`text-xs tabular-nums ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p
+            className={`text-xs tabular-nums ${
+              isDark ? 'text-gray-400' : 'text-gray-500'
+            }`}
+          >
             {provider.transactions30d || 0} transactions
           </p>
         </td>
         <td className="px-4 py-3">
           <div className="flex flex-wrap gap-1">
-            {(provider.config?.supportedCurrencies || []).map((currency) => (
-              <span key={currency} className={`px-2 py-0.5 rounded text-2xs font-medium ${
-                isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-              }`}>
-                {currency}
-              </span>
-            ))}
+            {(provider.config?.supportedCurrencies || []).map(
+              (currency) => (
+                <span
+                  key={currency}
+                  className={`px-2 py-0.5 rounded text-2xs font-medium ${
+                    isDark
+                      ? 'bg-gray-700 text-gray-300'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {currency}
+                </span>
+              ),
+            )}
           </div>
         </td>
         <td className="px-4 py-3 text-right">
@@ -938,7 +1204,11 @@ export default function PaymentProvidersPage() {
                     isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
                   } disabled:opacity-50`}
                   title={provider.isActive ? 'Deactivate' : 'Activate'}
-                  aria-label={provider.isActive ? 'Deactivate provider' : 'Activate provider'}
+                  aria-label={
+                    provider.isActive
+                      ? 'Deactivate provider'
+                      : 'Activate provider'
+                  }
                 >
                   {provider.isActive ? (
                     <PowerOff className="w-4 h-4 text-danger-500" />
@@ -986,25 +1256,43 @@ export default function PaymentProvidersPage() {
     );
   };
 
+  // ============================================
+  // RENDER — Main
+  // ============================================
+
   return (
-    <div className={`min-h-screen p-6 ${isDark ? 'dark bg-gray-950' : 'bg-gray-50'} transition-colors duration-300`}>
+    <div
+      className={`min-h-screen p-6 ${
+        isDark ? 'dark bg-gray-950' : 'bg-gray-50'
+      } transition-colors duration-300`}
+    >
       <div className="max-w-container mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in">
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.push('/admin/dashboard')}
-              className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'
+              }`}
               aria-label="Back to dashboard"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'} flex items-center gap-3`}>
+              <h1
+                className={`text-2xl font-bold ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                } flex items-center gap-3`}
+              >
                 <CreditCard className="w-7 h-7 text-brand-500" />
                 Payment Providers
               </h1>
-              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+              <p
+                className={`text-sm ${
+                  isDark ? 'text-gray-400' : 'text-gray-600'
+                }`}
+              >
                 Manage your payment providers and their configurations
               </p>
             </div>
@@ -1013,22 +1301,40 @@ export default function PaymentProvidersPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-white hover:bg-gray-100 text-gray-700'} border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
+              className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                isDark
+                  ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                  : 'bg-white hover:bg-gray-100 text-gray-700'
+              } border ${
+                isDark ? 'border-gray-700' : 'border-gray-300'
+              } disabled:opacity-50`}
               aria-label="Refresh providers"
             >
-              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-5 h-5 ${
+                  refreshing ? 'animate-spin' : ''
+                }`}
+              />
             </button>
             <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-lg transition duration-250 focus-ring ${viewMode === 'grid' ? 'bg-brand-gradient text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                  viewMode === 'grid'
+                    ? 'bg-brand-gradient text-white'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
                 aria-label="Grid view"
               >
                 <Layers className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-lg transition duration-250 focus-ring ${viewMode === 'list' ? 'bg-brand-gradient text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                  viewMode === 'list'
+                    ? 'bg-brand-gradient text-white'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
                 aria-label="List view"
               >
                 <Box className="w-4 h-4" />
@@ -1049,10 +1355,39 @@ export default function PaymentProvidersPage() {
         {/* Stats Overview */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Total Providers', value: providers.length, icon: CreditCard, color: 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400' },
-            { label: 'Active', value: providers.filter(p => p.isActive).length, icon: CheckCircle, color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400' },
-            { label: 'Healthy', value: providers.filter(p => p.isHealthy).length, icon: Shield, color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400' },
-            { label: '24h Volume', value: `$${formatNumber(providers.reduce((sum, p) => sum + (p.volume24h || 0), 0))}`, icon: TrendingUp, color: 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400' },
+            {
+              label: 'Total Providers',
+              value: providers.length,
+              icon: CreditCard,
+              color:
+                'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
+            },
+            {
+              label: 'Active',
+              value: providers.filter((p) => p.isActive).length,
+              icon: CheckCircle,
+              color:
+                'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
+            },
+            {
+              label: 'Healthy',
+              value: providers.filter((p) => p.isHealthy).length,
+              icon: Shield,
+              color:
+                'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
+            },
+            {
+              label: '24h Volume',
+              value: `$${formatNumber(
+                providers.reduce(
+                  (sum, p) => sum + (p.volume24h || 0),
+                  0,
+                ),
+              )}`,
+              icon: TrendingUp,
+              color:
+                'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
+            },
           ].map((stat, index) => (
             <motion.div
               key={index}
@@ -1063,8 +1398,20 @@ export default function PaymentProvidersPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{stat.label}</p>
-                  <p className={`text-2xl font-bold mt-2 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>{stat.value}</p>
+                  <p
+                    className={`text-sm font-medium ${
+                      isDark ? 'text-gray-400' : 'text-gray-600'
+                    }`}
+                  >
+                    {stat.label}
+                  </p>
+                  <p
+                    className={`text-2xl font-bold mt-2 tabular-nums ${
+                      isDark ? 'text-white' : 'text-gray-900'
+                    }`}
+                  >
+                    {stat.value}
+                  </p>
                 </div>
                 <div className={`p-3 rounded-lg ${stat.color}`}>
                   <stat.icon className="w-5 h-5" />
@@ -1120,7 +1467,9 @@ export default function PaymentProvidersPage() {
               <option value="healthy">Healthy</option>
               <option value="unhealthy">Unhealthy</option>
             </select>
-            {(searchQuery || filterType !== 'all' || filterStatus !== 'all') && (
+            {(searchQuery ||
+              filterType !== 'all' ||
+              filterStatus !== 'all') && (
               <button
                 onClick={() => {
                   setSearchQuery('');
@@ -1140,9 +1489,21 @@ export default function PaymentProvidersPage() {
         {filteredProviders.length === 0 ? (
           <div className="card-brand text-center py-12">
             <CreditCard className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-            <h3 className={`text-lg font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>No providers found</h3>
-            <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-              {providers.length === 0 ? 'No payment providers configured yet' : 'Try adjusting your filters or search terms'}
+            <h3
+              className={`text-lg font-medium ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}
+            >
+              No providers found
+            </h3>
+            <p
+              className={`text-sm mt-1 ${
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              }`}
+            >
+              {providers.length === 0
+                ? 'No payment providers configured yet'
+                : 'Try adjusting your filters or search terms'}
             </p>
             {providers.length === 0 && canManageProviders && (
               <button
@@ -1155,38 +1516,82 @@ export default function PaymentProvidersPage() {
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProviders.map((provider, index) => renderProviderCard(provider, index))}
+            {filteredProviders.map((provider, index) =>
+              renderProviderCard(provider, index),
+            )}
           </div>
         ) : (
-          <div className={`rounded-2xl overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'} shadow-soft`}>
+          <div
+            className={`rounded-2xl overflow-hidden border ${
+              isDark ? 'border-gray-700' : 'border-gray-200'
+            } shadow-soft`}
+          >
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full">
-                <thead className={`${isDark ? 'bg-gray-800' : 'bg-gray-50'} border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                <thead
+                  className={`${
+                    isDark ? 'bg-gray-800' : 'bg-gray-50'
+                  } border-b ${
+                    isDark ? 'border-gray-700' : 'border-gray-200'
+                  }`}
+                >
                   <tr>
-                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       Provider
                     </th>
-                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       Type
                     </th>
-                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       Status
                     </th>
-                    <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       24h Volume
                     </th>
-                    <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       30d Volume
                     </th>
-                    <th className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-left text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       Currencies
                     </th>
-                    <th className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <th
+                      className={`px-4 py-3 text-right text-2xs font-medium uppercase tracking-wider eyebrow ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className={`divide-y ${isDark ? 'divide-gray-700' : 'divide-gray-200'}`}>
+                <tbody
+                  className={`divide-y ${
+                    isDark ? 'divide-gray-700' : 'divide-gray-200'
+                  }`}
+                >
                   {filteredProviders.map(renderProviderRow)}
                 </tbody>
               </table>
@@ -1199,32 +1604,93 @@ export default function PaymentProvidersPage() {
           <div className="card-brand shadow-soft mt-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total Providers</p>
-                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>{filteredProviders.length}</p>
-              </div>
-              <div>
-                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total 24h Volume</p>
-                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {formatCurrency(filteredProviders.reduce((sum, p) => sum + (p.volume24h || 0), 0))}
+                <p
+                  className={`${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  Total Providers
+                </p>
+                <p
+                  className={`text-lg font-semibold tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  {filteredProviders.length}
                 </p>
               </div>
               <div>
-                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Total 30d Volume</p>
-                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {formatCurrency(filteredProviders.reduce((sum, p) => sum + (p.volume30d || 0), 0))}
+                <p
+                  className={`${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  Total 24h Volume
+                </p>
+                <p
+                  className={`text-lg font-semibold tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  {formatCurrency(
+                    filteredProviders.reduce(
+                      (sum, p) => sum + (p.volume24h || 0),
+                      0,
+                    ),
+                  )}
                 </p>
               </div>
               <div>
-                <p className={`${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Avg. Fee</p>
-                <p className={`text-lg font-semibold tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {(filteredProviders.reduce((sum, p) => sum + (p.config?.feePercentage || 0), 0) / filteredProviders.length).toFixed(1)}%
+                <p
+                  className={`${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  Total 30d Volume
+                </p>
+                <p
+                  className={`text-lg font-semibold tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  {formatCurrency(
+                    filteredProviders.reduce(
+                      (sum, p) => sum + (p.volume30d || 0),
+                      0,
+                    ),
+                  )}
+                </p>
+              </div>
+              <div>
+                <p
+                  className={`${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  Avg. Fee
+                </p>
+                <p
+                  className={`text-lg font-semibold tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  {(
+                    filteredProviders.reduce(
+                      (sum, p) =>
+                        sum + (p.config?.feePercentage || 0),
+                      0,
+                    ) / filteredProviders.length
+                  ).toFixed(1)}
+                  %
                 </p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Delete Provider Modal */}
+        {/* ============================================ */}
+        {/* DELETE PROVIDER MODAL */}
+        {/* ============================================ */}
         <AnimatePresence>
           {showDeleteModal && selectedProvider && (
             <motion.div
@@ -1237,20 +1703,44 @@ export default function PaymentProvidersPage() {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className={`max-w-md w-full rounded-2xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'}`}
+                className={`max-w-md w-full rounded-2xl shadow-xl p-6 ${
+                  isDark ? 'bg-gray-800' : 'bg-white'
+                }`}
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-danger-100 dark:bg-danger-900/30 rounded-lg">
                     <AlertTriangle className="w-6 h-6 text-danger-600 dark:text-danger-400" />
                   </div>
                   <div>
-                    <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Delete Provider</h3>
-                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>This action cannot be undone</p>
+                    <h3
+                      className={`text-lg font-bold ${
+                        isDark ? 'text-white' : 'text-gray-900'
+                      }`}
+                    >
+                      Delete Provider
+                    </h3>
+                    <p
+                      className={`text-sm ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
+                      This action cannot be undone
+                    </p>
                   </div>
                 </div>
-                <p className={`text-gray-600 dark:text-gray-300 mb-6`}>
-                  Are you sure you want to delete <strong className={isDark ? 'text-white' : 'text-gray-900'}>{selectedProvider.name}</strong>?
-                  This will permanently remove the provider and all associated data.
+                <p
+                  className={`text-gray-600 dark:text-gray-300 mb-6`}
+                >
+                  Are you sure you want to delete{' '}
+                  <strong
+                    className={
+                      isDark ? 'text-white' : 'text-gray-900'
+                    }
+                  >
+                    {selectedProvider.name}
+                  </strong>
+                  ? This will permanently remove the provider and all
+                  associated data.
                 </p>
                 <div className="flex justify-end gap-3">
                   <button
@@ -1264,7 +1754,11 @@ export default function PaymentProvidersPage() {
                     disabled={submitting}
                     className="px-4 py-2 bg-gradient-to-r from-danger-500 to-brand-accent-500 hover:from-danger-600 hover:to-brand-accent-600 text-white rounded-xl transition duration-250 flex items-center gap-2 disabled:opacity-50 focus-ring shadow-brand"
                   >
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {submitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
                     Delete
                   </button>
                 </div>
@@ -1273,7 +1767,9 @@ export default function PaymentProvidersPage() {
           )}
         </AnimatePresence>
 
-        {/* Add Provider Modal */}
+        {/* ============================================ */}
+        {/* ADD PROVIDER MODAL */}
+        {/* ============================================ */}
         <AnimatePresence>
           {showProviderModal && (
             <motion.div
@@ -1286,13 +1782,23 @@ export default function PaymentProvidersPage() {
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className={`max-w-lg w-full rounded-2xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'} max-h-[90vh] overflow-y-auto custom-scrollbar`}
+                className={`max-w-lg w-full rounded-2xl shadow-xl p-6 ${
+                  isDark ? 'bg-gray-800' : 'bg-white'
+                } max-h-[90vh] overflow-y-auto custom-scrollbar`}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Add Payment Provider</h3>
+                  <h3
+                    className={`text-lg font-bold ${
+                      isDark ? 'text-white' : 'text-gray-900'
+                    }`}
+                  >
+                    Add Payment Provider
+                  </h3>
                   <button
                     onClick={() => setShowProviderModal(false)}
-                    className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                    className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                      isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                    }`}
                     aria-label="Close modal"
                   >
                     <X className="w-5 h-5" />
@@ -1300,13 +1806,22 @@ export default function PaymentProvidersPage() {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Provider Name *
                     </label>
                     <input
                       type="text"
                       value={newProvider.name}
-                      onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })}
+                      onChange={(e) =>
+                        setNewProvider({
+                          ...newProvider,
+                          name: e.target.value,
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
@@ -1316,13 +1831,22 @@ export default function PaymentProvidersPage() {
                     />
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Provider Code *
                     </label>
                     <input
                       type="text"
                       value={newProvider.code}
-                      onChange={(e) => setNewProvider({ ...newProvider, code: e.target.value.toUpperCase() })}
+                      onChange={(e) =>
+                        setNewProvider({
+                          ...newProvider,
+                          code: e.target.value.toUpperCase(),
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
@@ -1332,12 +1856,24 @@ export default function PaymentProvidersPage() {
                     />
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Type
                     </label>
                     <select
                       value={newProvider.type}
-                      onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value as 'ONLINE' | 'OFFLINE' | 'HYBRID' })}
+                      onChange={(e) =>
+                        setNewProvider({
+                          ...newProvider,
+                          type: e.target.value as
+                            | 'ONLINE'
+                            | 'OFFLINE'
+                            | 'HYBRID',
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white'
@@ -1350,15 +1886,24 @@ export default function PaymentProvidersPage() {
                     </select>
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Description
                     </label>
                     <textarea
                       value={newProvider.config.description || ''}
-                      onChange={(e) => setNewProvider({
-                        ...newProvider,
-                        config: { ...newProvider.config, description: e.target.value }
-                      })}
+                      onChange={(e) =>
+                        setNewProvider({
+                          ...newProvider,
+                          config: {
+                            ...newProvider.config,
+                            description: e.target.value,
+                          },
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
@@ -1370,16 +1915,26 @@ export default function PaymentProvidersPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Min Amount
                       </label>
                       <input
                         type="number"
                         value={newProvider.config.minAmount || 0}
-                        onChange={(e) => setNewProvider({
-                          ...newProvider,
-                          config: { ...newProvider.config, minAmount: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setNewProvider({
+                            ...newProvider,
+                            config: {
+                              ...newProvider.config,
+                              minAmount:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1388,16 +1943,26 @@ export default function PaymentProvidersPage() {
                       />
                     </div>
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Max Amount
                       </label>
                       <input
                         type="number"
                         value={newProvider.config.maxAmount || 0}
-                        onChange={(e) => setNewProvider({
-                          ...newProvider,
-                          config: { ...newProvider.config, maxAmount: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setNewProvider({
+                            ...newProvider,
+                            config: {
+                              ...newProvider.config,
+                              maxAmount:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1408,17 +1973,27 @@ export default function PaymentProvidersPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Fee Percentage (%)
                       </label>
                       <input
                         type="number"
                         step="0.01"
                         value={newProvider.config.feePercentage || 0}
-                        onChange={(e) => setNewProvider({
-                          ...newProvider,
-                          config: { ...newProvider.config, feePercentage: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setNewProvider({
+                            ...newProvider,
+                            config: {
+                              ...newProvider.config,
+                              feePercentage:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1427,17 +2002,27 @@ export default function PaymentProvidersPage() {
                       />
                     </div>
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Fixed Fee
                       </label>
                       <input
                         type="number"
                         step="0.01"
                         value={newProvider.config.feeFixed || 0}
-                        onChange={(e) => setNewProvider({
-                          ...newProvider,
-                          config: { ...newProvider.config, feeFixed: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setNewProvider({
+                            ...newProvider,
+                            config: {
+                              ...newProvider.config,
+                              feeFixed:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1447,19 +2032,30 @@ export default function PaymentProvidersPage() {
                     </div>
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Supported Currencies (comma separated)
                     </label>
                     <input
                       type="text"
-                      value={newProvider.config.supportedCurrencies.join(', ')}
-                      onChange={(e) => setNewProvider({
-                        ...newProvider,
-                        config: {
-                          ...newProvider.config,
-                          supportedCurrencies: e.target.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-                        }
-                      })}
+                      value={newProvider.config.supportedCurrencies.join(
+                        ', ',
+                      )}
+                      onChange={(e) =>
+                        setNewProvider({
+                          ...newProvider,
+                          config: {
+                            ...newProvider.config,
+                            supportedCurrencies: e.target.value
+                              .split(',')
+                              .map((s) => s.trim().toUpperCase())
+                              .filter(Boolean),
+                          },
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
@@ -1480,7 +2076,11 @@ export default function PaymentProvidersPage() {
                       disabled={submitting}
                       className="btn-brand disabled:opacity-50"
                     >
-                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      {submitting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Plus className="w-4 h-4" />
+                      )}
                       Add Provider
                     </button>
                   </div>
@@ -1490,7 +2090,9 @@ export default function PaymentProvidersPage() {
           )}
         </AnimatePresence>
 
-        {/* Settings Modal */}
+        {/* ============================================ */}
+        {/* SETTINGS MODAL */}
+        {/* ============================================ */}
         <AnimatePresence>
           {showSettingsModal && selectedProvider && (
             <motion.div
@@ -1503,20 +2105,32 @@ export default function PaymentProvidersPage() {
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                className={`max-w-2xl w-full rounded-2xl shadow-xl p-6 ${isDark ? 'bg-gray-800' : 'bg-white'} max-h-[90vh] overflow-y-auto custom-scrollbar`}
+                className={`max-w-2xl w-full rounded-2xl shadow-xl p-6 ${
+                  isDark ? 'bg-gray-800' : 'bg-white'
+                } max-h-[90vh] overflow-y-auto custom-scrollbar`}
               >
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    <h3
+                      className={`text-lg font-bold ${
+                        isDark ? 'text-white' : 'text-gray-900'
+                      }`}
+                    >
                       {selectedProvider.name} Settings
                     </h3>
-                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <p
+                      className={`text-sm ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
                       Configure provider settings and preferences
                     </p>
                   </div>
                   <button
                     onClick={() => setShowSettingsModal(false)}
-                    className={`p-2 rounded-lg transition duration-250 focus-ring ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                    className={`p-2 rounded-lg transition duration-250 focus-ring ${
+                      isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                    }`}
                     aria-label="Close settings"
                   >
                     <X className="w-5 h-5" />
@@ -1524,13 +2138,22 @@ export default function PaymentProvidersPage() {
                 </div>
                 <div className="space-y-4">
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Provider Name
                     </label>
                     <input
                       type="text"
                       value={settingsData.name || ''}
-                      onChange={(e) => setSettingsData({ ...settingsData, name: e.target.value })}
+                      onChange={(e) =>
+                        setSettingsData({
+                          ...settingsData,
+                          name: e.target.value,
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white'
@@ -1540,16 +2163,26 @@ export default function PaymentProvidersPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Min Amount
                       </label>
                       <input
                         type="number"
                         value={settingsData.config?.minAmount || 0}
-                        onChange={(e) => setSettingsData({
-                          ...settingsData,
-                          config: { ...settingsData.config, minAmount: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setSettingsData({
+                            ...settingsData,
+                            config: {
+                              ...settingsData.config,
+                              minAmount:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1558,16 +2191,26 @@ export default function PaymentProvidersPage() {
                       />
                     </div>
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Max Amount
                       </label>
                       <input
                         type="number"
                         value={settingsData.config?.maxAmount || 0}
-                        onChange={(e) => setSettingsData({
-                          ...settingsData,
-                          config: { ...settingsData.config, maxAmount: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setSettingsData({
+                            ...settingsData,
+                            config: {
+                              ...settingsData.config,
+                              maxAmount:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1578,17 +2221,27 @@ export default function PaymentProvidersPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Fee Percentage (%)
                       </label>
                       <input
                         type="number"
                         step="0.01"
                         value={settingsData.config?.feePercentage || 0}
-                        onChange={(e) => setSettingsData({
-                          ...settingsData,
-                          config: { ...settingsData.config, feePercentage: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setSettingsData({
+                            ...settingsData,
+                            config: {
+                              ...settingsData.config,
+                              feePercentage:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1597,17 +2250,27 @@ export default function PaymentProvidersPage() {
                       />
                     </div>
                     <div>
-                      <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      <label
+                        className={`block text-sm font-medium mb-1 ${
+                          isDark ? 'text-gray-300' : 'text-gray-700'
+                        }`}
+                      >
                         Fixed Fee
                       </label>
                       <input
                         type="number"
                         step="0.01"
                         value={settingsData.config?.feeFixed || 0}
-                        onChange={(e) => setSettingsData({
-                          ...settingsData,
-                          config: { ...settingsData.config, feeFixed: parseFloat(e.target.value) || 0 }
-                        })}
+                        onChange={(e) =>
+                          setSettingsData({
+                            ...settingsData,
+                            config: {
+                              ...settingsData.config,
+                              feeFixed:
+                                parseFloat(e.target.value) || 0,
+                            },
+                          })
+                        }
                         className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 tabular-nums ${
                           isDark
                             ? 'bg-gray-700 border-gray-600 text-white'
@@ -1617,19 +2280,30 @@ export default function PaymentProvidersPage() {
                     </div>
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${
+                        isDark ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
                       Supported Currencies (comma separated)
                     </label>
                     <input
                       type="text"
-                      value={(settingsData.config?.supportedCurrencies || []).join(', ')}
-                      onChange={(e) => setSettingsData({
-                        ...settingsData,
-                        config: {
-                          ...settingsData.config,
-                          supportedCurrencies: e.target.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-                        }
-                      })}
+                      value={(
+                        settingsData.config?.supportedCurrencies || []
+                      ).join(', ')}
+                      onChange={(e) =>
+                        setSettingsData({
+                          ...settingsData,
+                          config: {
+                            ...settingsData.config,
+                            supportedCurrencies: e.target.value
+                              .split(',')
+                              .map((s) => s.trim().toUpperCase())
+                              .filter(Boolean),
+                          },
+                        })
+                      }
                       className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none transition duration-250 ${
                         isDark
                           ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
@@ -1650,7 +2324,11 @@ export default function PaymentProvidersPage() {
                       disabled={submitting}
                       className="btn-brand disabled:opacity-50"
                     >
-                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {submitting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
                       Save Settings
                     </button>
                   </div>

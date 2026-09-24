@@ -36,6 +36,74 @@ interface QRCodeData {
   [key: string]: any;
 }
 
+/**
+ * Normalized result of a read-only scan (`scanBarcode`).
+ * Consumers (POS, checkout, inventory lookup) read from here.
+ */
+interface ScanResult {
+  matchType: 'PRODUCT' | 'VARIANT';
+  barcode: string;
+  product: {
+    id: string;
+    name: string;
+    sku: string;
+    unitPrice: number;
+    barcode: string | null;
+    businessUnitId: string;
+    categoryId: string | null;
+  };
+  variant: {
+    id: string;
+    name: string;
+    sku: string;
+    price: number;
+    barcode: string | null;
+    attributes: unknown;
+  } | null;
+  inventory: {
+    id: string;
+    quantity: number;
+    reserved: number;
+    available: number;
+    reorderPoint: number;
+  } | null;
+  images: {
+    barcodeUrl: string;
+    qrCodeUrl: string;
+  };
+}
+
+/**
+ * Input for the write-path scan (`recordScan`). This is what a POS
+ * calls when a physical scanner fires during a sale — it decrements
+ * inventory and writes an audit transaction atomically.
+ */
+interface RecordScanInput {
+  barcode: string;
+  businessUnitId: string;
+  userId: string;
+  /** Optional: when the scan belongs to a specific sale. */
+  saleId?: string;
+  /** How many units the operator scanned. Defaults to 1. */
+  quantity?: number;
+  /** Free-form note for the audit trail (only used when no idempotency key). */
+  note?: string;
+  /**
+   * Caller-supplied idempotency key.
+   *
+   * When two transports (e.g. USB HID + BLE) fire the same physical
+   * scan and drift past the dispatcher's 250 ms debounce, the two
+   * requests would both hit the backend. With the key set, the second
+   * request short-circuits with 409 instead of double-decrementing
+   * stock.
+   *
+   * The backend writes the key into `InventoryTransaction.notes` as
+   * `scan:<key>` and checks for an existing row before the
+   * transaction begins.
+   */
+  scanIdempotencyKey?: string;
+}
+
 // ============================================
 // BARCODE SERVICE
 // ============================================
@@ -47,18 +115,70 @@ export class BarcodeService {
 
   constructor() {
     this.appUrl = process.env.APP_URL || 'http://localhost:3000';
-    this.barcodeApiUrl = process.env.BARCODE_API_URL || 'https://barcode.tec-it.com/barcode.ashx';
-    this.qrApiUrl = process.env.QR_API_URL || 'https://api.qrserver.com/v1/create-qr-code';
+    this.barcodeApiUrl =
+      process.env.BARCODE_API_URL ||
+      'https://barcode.tec-it.com/barcode.ashx';
+    this.qrApiUrl =
+      process.env.QR_API_URL ||
+      'https://api.qrserver.com/v1/create-qr-code';
+  }
+
+  // ==========================================
+  // INTERNAL HELPERS
+  // ==========================================
+
+  /**
+   * Build the external barcode-image URL for a code. Single point of
+   * truth so all endpoints emit an identical format — this is what
+   * scanners re-read, so the parameters must not drift.
+   */
+  private buildBarcodeUrl(code: string, format = 'EAN13'): string {
+    return `${this.barcodeApiUrl}?data=${encodeURIComponent(
+      code,
+    )}&code=${format}&dpi=96&datatype=Content`;
   }
 
   /**
-   * Get product barcode - returns existing or generates new
+   * Build the external QR-image URL for a payload object. Payload is
+   * JSON-stringified then URL-encoded. The scanner parses the JSON on
+   * read, so this shape must match what consumers expect.
    */
-  async getProductBarcode(productId: string): Promise<{ barcode: string; productId: string; generatedAt: Date }> {
+  private buildQrUrl(payload: Record<string, unknown>): string {
+    return `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(
+      JSON.stringify(payload),
+    )}`;
+  }
+
+  /**
+   * Normalize a raw scanned string. Strips whitespace, control
+   * characters, and the artifacts USB HID scanners emit
+   * (`\r`, `\n`, `\t`). Single sanitization point before any DB
+   * lookup.
+   */
+  private normalizeScannedCode(raw: string): string {
+    return raw
+      .replace(/[\r\n\t]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+  }
+
+  // ==========================================
+  // CORE: GET / GENERATE PRODUCT BARCODE
+  // ==========================================
+
+  async getProductBarcode(
+    productId: string,
+  ): Promise<{ barcode: string; productId: string; generatedAt: Date }> {
     try {
       const product = await prisma.product.findUnique({
         where: { id: productId },
-        select: { id: true, barcode: true, sku: true, name: true, unitPrice: true },
+        select: {
+          id: true,
+          barcode: true,
+          sku: true,
+          name: true,
+          unitPrice: true,
+        },
       });
 
       if (!product) {
@@ -66,7 +186,7 @@ export class BarcodeService {
       }
 
       let barcode = product.barcode;
-      
+
       if (!barcode) {
         barcode = this.generateEAN13();
         await prisma.product.update({
@@ -87,11 +207,8 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate unique barcode with options
-   */
   async generateUniqueBarcode(
-    options?: GenerateBarcodeOptions
+    options?: GenerateBarcodeOptions,
   ): Promise<{ barcode: string }> {
     try {
       const prefix = String(options?.prefix ?? 'PRD').toUpperCase();
@@ -107,22 +224,24 @@ export class BarcodeService {
 
       do {
         if (digitsOnly) {
-          // ── EAN-13 path ─────────────────────────────────────
-          // Compute a numeric payload of the desired length minus
-          // the check digit, then append a valid EAN-13 check.
-          const bodyLength = Math.max(2, desiredLength - 1 - prefix.length);
-          const randomPart = Math.floor(Math.random() * Math.pow(10, bodyLength))
+          const bodyLength = Math.max(
+            2,
+            desiredLength - 1 - prefix.length,
+          );
+          const randomPart = Math.floor(
+            Math.random() * Math.pow(10, bodyLength),
+          )
             .toString()
             .padStart(bodyLength, '0');
 
-          const base = prefix + randomPart; // all digits
+          const base = prefix + randomPart;
           let sum = 0;
           for (let i = 0; i < base.length; i++) {
             const digit = Number(base[i]);
             if (!Number.isFinite(digit)) {
               throw new AppError(
                 'Internal barcode generation error: non-numeric character in numeric path',
-                500
+                500,
               );
             }
             sum += digit * (i % 2 === 0 ? 1 : 3);
@@ -130,9 +249,6 @@ export class BarcodeService {
           const checkDigit = (10 - (sum % 10)) % 10;
           barcode = `${base}${checkDigit}`;
         } else {
-          // ── Alphanumeric path ───────────────────────────────
-          // No checksum. Build `<PREFIX><timestamp><random>` and
-          // slice to the desired length.
           const tsPart = Date.now().toString(36).toUpperCase();
           const randPart = Math.random()
             .toString(36)
@@ -140,18 +256,17 @@ export class BarcodeService {
             .replace(/[^A-Z0-9]/g, '');
           const body = `${tsPart}${randPart}`.slice(
             0,
-            Math.max(4, desiredLength - prefix.length)
+            Math.max(4, desiredLength - prefix.length),
           );
           barcode = `${prefix}${body}`;
         }
 
-        // Defensive: reject anything that leaked a bad token.
         if (/nan|undefined|null/i.test(barcode)) {
           attempts++;
           if (attempts >= maxAttempts) {
             throw new AppError(
               'Barcode generation produced an invalid value after maximum attempts',
-              500
+              500,
             );
           }
           continue;
@@ -171,7 +286,7 @@ export class BarcodeService {
         if (attempts >= maxAttempts) {
           throw new AppError(
             'Could not generate unique barcode after maximum attempts',
-            500
+            500,
           );
         }
       } while (true);
@@ -184,19 +299,17 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate barcode image from barcode string
-   */
-  async generateBarcodeImage(barcode: string, format?: 'EAN-13' | 'UPC-A' | 'CODE128'): Promise<{ barcodeUrl: string }> {
+  async generateBarcodeImage(
+    barcode: string,
+    format?: 'EAN-13' | 'UPC-A' | 'CODE128',
+  ): Promise<{ barcodeUrl: string }> {
     try {
       if (!barcode) {
         throw new AppError('Barcode is required', 400);
       }
 
       const codeFormat = format || 'EAN13';
-      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=${codeFormat}&dpi=96&datatype=Content`;
-      
-      return { barcodeUrl };
+      return { barcodeUrl: this.buildBarcodeUrl(barcode, codeFormat) };
     } catch (error) {
       console.error('Generate barcode image error:', error);
       if (error instanceof AppError) throw error;
@@ -204,25 +317,25 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate QR code from data
-   */
-  async generateQRCode(data: QRCodeData): Promise<{ qrCodeUrl: string; qrData: QRCodeData }> {
+  async generateQRCode(
+    data: QRCodeData,
+  ): Promise<{ qrCodeUrl: string; qrData: QRCodeData }> {
     try {
       if (!data) {
-        throw new AppError('Data is required for QR code generation', 400);
+        throw new AppError(
+          'Data is required for QR code generation',
+          400,
+        );
       }
 
-      const qrData = {
+      const qrData: QRCodeData = {
         type: 'PRODUCT',
         ...data,
         timestamp: new Date().toISOString(),
       };
 
-      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
-
       return {
-        qrCodeUrl,
+        qrCodeUrl: this.buildQrUrl(qrData),
         qrData,
       };
     } catch (error) {
@@ -232,17 +345,24 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Validate barcode uniqueness
-   */
-  async validateBarcode(barcode: string, excludeProductId?: string): Promise<{ valid: boolean; message?: string }> {
+  // ==========================================
+  // CORE: VALIDATE
+  // ==========================================
+
+  async validateBarcode(
+    barcode: string,
+    excludeProductId?: string,
+  ): Promise<{ valid: boolean; message?: string }> {
     try {
       if (!barcode) {
         return { valid: false, message: 'Barcode is required' };
       }
 
       if (!/^\d{13}$/.test(barcode)) {
-        return { valid: false, message: 'Invalid barcode format. Must be 13 digits.' };
+        return {
+          valid: false,
+          message: 'Invalid barcode format. Must be 13 digits.',
+        };
       }
 
       let sum = 0;
@@ -254,7 +374,7 @@ export class BarcodeService {
         return { valid: false, message: 'Invalid barcode checksum' };
       }
 
-      const where: any = { barcode };
+      const where: Record<string, unknown> = { barcode };
       if (excludeProductId) {
         where.id = { not: excludeProductId };
       }
@@ -265,9 +385,9 @@ export class BarcodeService {
       });
 
       if (existing) {
-        return { 
-          valid: false, 
-          message: `Barcode is already assigned to product "${existing.name}"` 
+        return {
+          valid: false,
+          message: `Barcode is already assigned to product "${existing.name}"`,
         };
       }
 
@@ -278,10 +398,14 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Associate barcode with a product
-   */
-  async associateBarcode(productId: string, barcode: string): Promise<{ success: boolean; message: string }> {
+  // ==========================================
+  // CORE: ASSOCIATE
+  // ==========================================
+
+  async associateBarcode(
+    productId: string,
+    barcode: string,
+  ): Promise<{ success: boolean; message: string }> {
     try {
       if (!productId) {
         throw new AppError('Product ID is required', 400);
@@ -308,7 +432,10 @@ export class BarcodeService {
       });
 
       if (existing) {
-        throw new AppError(`Barcode is already assigned to product "${existing.name}"`, 409);
+        throw new AppError(
+          `Barcode is already assigned to product "${existing.name}"`,
+          409,
+        );
       }
 
       await prisma.product.update({
@@ -316,9 +443,9 @@ export class BarcodeService {
         data: { barcode },
       });
 
-      return { 
-        success: true, 
-        message: `Barcode "${barcode}" associated with product "${product.name}"` 
+      return {
+        success: true,
+        message: `Barcode "${barcode}" associated with product "${product.name}"`,
       };
     } catch (error) {
       console.error('Associate barcode error:', error);
@@ -327,10 +454,15 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate product QR code
-   */
-  async generateProductQRCode(productId: string): Promise<{ qrCodeUrl: string; qrData: any; generatedAt: Date }> {
+  // ==========================================
+  // CORE: QR GENERATION FOR PRODUCT / RECEIPT
+  // ==========================================
+
+  async generateProductQRCode(productId: string): Promise<{
+    qrCodeUrl: string;
+    qrData: Record<string, unknown>;
+    generatedAt: Date;
+  }> {
     try {
       const product = await prisma.product.findUnique({
         where: { id: productId },
@@ -363,15 +495,13 @@ export class BarcodeService {
         sku: product.sku,
         name: product.name,
         price: product.unitPrice,
-        barcode: barcode,
+        barcode,
         description: product.description || '',
         timestamp: new Date().toISOString(),
       };
 
-      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
-
       return {
-        qrCodeUrl,
+        qrCodeUrl: this.buildQrUrl(qrData),
         qrData,
         generatedAt: new Date(),
       };
@@ -382,10 +512,11 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate receipt QR code
-   */
-  async generateReceiptQRCode(receiptNumber: string): Promise<{ qrCodeUrl: string; qrData: any; generatedAt: Date }> {
+  async generateReceiptQRCode(receiptNumber: string): Promise<{
+    qrCodeUrl: string;
+    qrData: Record<string, unknown>;
+    generatedAt: Date;
+  }> {
     try {
       const receipt = await prisma.receipt.findUnique({
         where: { receiptNumber },
@@ -394,7 +525,6 @@ export class BarcodeService {
           receiptNumber: true,
           createdAt: true,
           saleId: true,
-          total: true,
         },
       });
 
@@ -402,20 +532,29 @@ export class BarcodeService {
         throw new AppError('Receipt not found', 404);
       }
 
+      // Receipt has no `total` column in the schema — pull it from
+      // the linked Sale instead.
+      let total = 0;
+      if (receipt.saleId) {
+        const sale = await prisma.sale.findUnique({
+          where: { id: receipt.saleId },
+          select: { total: true },
+        });
+        total = sale?.total ?? 0;
+      }
+
       const qrData = {
         type: 'RECEIPT',
         receiptNumber: receipt.receiptNumber,
         receiptId: receipt.id,
         saleId: receipt.saleId,
-        total: receipt.total || 0,
-        timestamp: receipt.createdAt || new Date(),
+        total,
+        timestamp: receipt.createdAt ?? new Date(),
         verificationUrl: `${this.appUrl}/verify/${receipt.receiptNumber}`,
       };
 
-      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
-
       return {
-        qrCodeUrl,
+        qrCodeUrl: this.buildQrUrl(qrData),
         qrData,
         generatedAt: new Date(),
       };
@@ -426,10 +565,14 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate barcode for a product
-   */
-  async generateBarcode(productId: string, type: string = 'EAN13'): Promise<{ barcode: string; productId: string }> {
+  // ==========================================
+  // CORE: GENERATE (SIMPLE)
+  // ==========================================
+
+  async generateBarcode(
+    productId: string,
+    _type: string = 'EAN13',
+  ): Promise<{ barcode: string; productId: string }> {
     try {
       const product = await prisma.product.findUnique({
         where: { id: productId },
@@ -449,10 +592,7 @@ export class BarcodeService {
         });
       }
 
-      return {
-        barcode,
-        productId: product.id,
-      };
+      return { barcode, productId: product.id };
     } catch (error) {
       console.error('Generate barcode error:', error);
       if (error instanceof AppError) throw error;
@@ -460,9 +600,6 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate SVG barcode
-   */
   async generateSVGBarcode(productId: string): Promise<string> {
     try {
       const product = await prisma.product.findUnique({
@@ -491,9 +628,6 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Render SVG barcode
-   */
   private renderSVGBarcode(barcode: string): string {
     const bars: string[] = [];
     const barWidth = 2;
@@ -505,7 +639,9 @@ export class BarcodeService {
       for (let i = 0; i < 7; i++) {
         const isBar = (code >> i) & 1;
         if (isBar) {
-          bars.push(`<rect x="${x}" y="0" width="${barWidth}" height="${barHeight}" fill="black"/>`);
+          bars.push(
+            `<rect x="${x}" y="0" width="${barWidth}" height="${barHeight}" fill="black"/>`,
+          );
         }
         x += barWidth;
       }
@@ -520,27 +656,25 @@ export class BarcodeService {
     `;
   }
 
-  /**
-   * Generate EAN-13 barcode
-   */
+  // ==========================================
+  // CORE: EAN-13 PRIMITIVES
+  // ==========================================
+
   private generateEAN13(): string {
     let barcode = '2';
     for (let i = 0; i < 11; i++) {
       barcode += Math.floor(Math.random() * 10);
     }
-    
+
     let sum = 0;
     for (let i = 0; i < 12; i++) {
       sum += parseInt(barcode[i]) * (i % 2 === 0 ? 1 : 3);
     }
     const checkDigit = (10 - (sum % 10)) % 10;
-    
+
     return barcode + checkDigit;
   }
 
-  /**
-   * Validate EAN-13 barcode
-   */
   validateBarcodeFormat(barcode: string): boolean {
     if (!/^\d{13}$/.test(barcode)) {
       return false;
@@ -551,13 +685,14 @@ export class BarcodeService {
       sum += parseInt(barcode[i]) * (i % 2 === 0 ? 1 : 3);
     }
     const checkDigit = (10 - (sum % 10)) % 10;
-    
+
     return checkDigit === parseInt(barcode[12]);
   }
 
-  /**
-   * Get product by barcode
-   */
+  // ==========================================
+  // CORE: LOOKUP BY BARCODE
+  // ==========================================
+
   async getProductByBarcode(barcode: string): Promise<any> {
     try {
       if (!this.validateBarcodeFormat(barcode)) {
@@ -571,9 +706,7 @@ export class BarcodeService {
           businessUnit: true,
           supplier: true,
           inventory: true,
-          variants: {
-            where: { isActive: true },
-          },
+          variants: { where: { isActive: true } },
         },
       });
 
@@ -589,9 +722,10 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Get product barcode info (full details)
-   */
+  // ==========================================
+  // CORE: PRODUCT BARCODE INFO
+  // ==========================================
+
   async getProductBarcodeInfo(productId: string): Promise<BarcodeInfo> {
     try {
       const product = await prisma.product.findUnique({
@@ -618,17 +752,17 @@ export class BarcodeService {
         });
       }
 
-      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
+      const barcodeUrl = this.buildBarcodeUrl(barcode, 'EAN13');
       const qrData = {
         type: 'PRODUCT',
         id: product.id,
         sku: product.sku,
         name: product.name,
         price: product.unitPrice,
-        barcode: barcode,
+        barcode,
         timestamp: new Date().toISOString(),
       };
-      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
+      const qrCodeUrl = this.buildQrUrl(qrData);
 
       return {
         barcode,
@@ -648,10 +782,13 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Generate barcode for variant
-   */
-  async generateVariantBarcode(variantId: string): Promise<{ barcode: string; variantId: string }> {
+  // ==========================================
+  // CORE: VARIANT BARCODE
+  // ==========================================
+
+  async generateVariantBarcode(
+    variantId: string,
+  ): Promise<{ barcode: string; variantId: string }> {
     try {
       const variant = await prisma.productVariant.findUnique({
         where: { id: variantId },
@@ -671,10 +808,7 @@ export class BarcodeService {
         });
       }
 
-      return {
-        barcode,
-        variantId: variant.id,
-      };
+      return { barcode, variantId: variant.id };
     } catch (error) {
       console.error('Generate variant barcode error:', error);
       if (error instanceof AppError) throw error;
@@ -682,17 +816,18 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Bulk generate barcodes for products without barcodes
-   */
-  async bulkGenerateBarcodes(): Promise<{ generated: number; failed: number }> {
+  // ==========================================
+  // CORE: BULK GENERATION
+  // ==========================================
+
+  async bulkGenerateBarcodes(): Promise<{
+    generated: number;
+    failed: number;
+  }> {
     try {
       const productsWithoutBarcodes = await prisma.product.findMany({
         where: {
-          OR: [
-            { barcode: null },
-            { barcode: '' },
-          ],
+          OR: [{ barcode: null }, { barcode: '' }],
         },
         select: { id: true },
       });
@@ -709,7 +844,10 @@ export class BarcodeService {
           });
           generated++;
         } catch (error) {
-          console.error(`Failed to generate barcode for product ${product.id}:`, error);
+          console.error(
+            `Failed to generate barcode for product ${product.id}:`,
+            error,
+          );
           failed++;
         }
       }
@@ -721,43 +859,57 @@ export class BarcodeService {
     }
   }
 
-  /**
-   * Scan barcode and return product info
-   */
-  async scanBarcode(barcode: string, businessUnitId?: string): Promise<{
-    product: any;
-    inventory?: { quantity: number; reserved: number; available: number };
-    barcodeInfo: { barcode: string; barcodeUrl: string; qrCodeUrl: string };
-    variant?: any;
-  }> {
+  // ==========================================
+  // CORE: SCAN (READ-ONLY LOOKUP)
+  //
+  // Resolves a scanned code to product/variant + inventory, and
+  // bumps the scan counters on any matching BarcodeImageRecord /
+  // QRCodeRecord. Does NOT mutate inventory — that's `recordScan`.
+  // ==========================================
+
+  async scanBarcode(
+    rawBarcode: string,
+    businessUnitId?: string,
+  ): Promise<ScanResult> {
     try {
-      if (!barcode) {
+      if (!rawBarcode) {
         throw new AppError('Barcode is required', 400);
       }
 
+      const barcode = this.normalizeScannedCode(rawBarcode);
+      if (!barcode) {
+        throw new AppError(
+          'Barcode is empty after normalization',
+          400,
+        );
+      }
+
+      // ── 1. Try Product.barcode ───────────────────────────────
       let product = await prisma.product.findFirst({
-        where: { 
+        where: {
           barcode,
           ...(businessUnitId ? { businessUnitId } : {}),
+          deletedAt: null,
         },
         include: {
           inventory: true,
-          variants: {
-            where: { isActive: true },
-          },
           category: true,
           businessUnit: true,
+          images: { orderBy: { order: 'asc' }, take: 1 },
         },
       });
 
-      let variant = null;
-      let productFromVariant = null;
+      let variant: ScanResult['variant'] = null;
 
+      // ── 2. Fall back to ProductVariant.barcode ───────────────
       if (!product) {
-        variant = await prisma.productVariant.findFirst({
-          where: { 
+        const variantRow = await prisma.productVariant.findFirst({
+          where: {
             barcode,
-            ...(businessUnitId ? { product: { businessUnitId } } : {}),
+            ...(businessUnitId
+              ? { product: { businessUnitId } }
+              : {}),
+            deletedAt: null,
           },
           include: {
             product: {
@@ -765,14 +917,22 @@ export class BarcodeService {
                 inventory: true,
                 category: true,
                 businessUnit: true,
+                images: { orderBy: { order: 'asc' }, take: 1 },
               },
             },
           },
         });
 
-        if (variant) {
-          productFromVariant = variant.product as any;
-          product = productFromVariant;
+        if (variantRow) {
+          variant = {
+            id: variantRow.id,
+            name: variantRow.name,
+            sku: variantRow.sku,
+            price: variantRow.price,
+            barcode: variantRow.barcode,
+            attributes: variantRow.attributes,
+          };
+          product = variantRow.product as typeof product;
         }
       }
 
@@ -780,47 +940,97 @@ export class BarcodeService {
         throw new AppError('Product not found for this barcode', 404);
       }
 
-      let inventory = null;
-      if (product.inventory) {
-        inventory = product.inventory;
-      } else {
-        inventory = await prisma.inventory.findFirst({
+      // ── 3. Resolve inventory (variant-first if a variant) ───
+      let inventoryRow: {
+        id: string;
+        quantity: number;
+        reserved: number;
+        reorderPoint: number;
+      } | null = null;
+
+      if (variant) {
+        const vInv = await prisma.productVariant.findUnique({
+          where: { id: variant.id },
+          select: {
+            inventory: {
+              select: {
+                id: true,
+                quantity: true,
+                reserved: true,
+                reorderPoint: true,
+              },
+            },
+          },
+        });
+        inventoryRow = vInv?.inventory ?? null;
+      }
+
+      if (!inventoryRow && product.inventory) {
+        inventoryRow = {
+          id: product.inventory.id,
+          quantity: product.inventory.quantity,
+          reserved: product.inventory.reserved,
+          reorderPoint: product.inventory.reorderPoint,
+        };
+      }
+
+      if (!inventoryRow) {
+        const fallback = await prisma.inventory.findFirst({
           where: {
             productId: product.id,
             ...(businessUnitId ? { businessUnitId } : {}),
           },
           select: {
+            id: true,
             quantity: true,
             reserved: true,
+            reorderPoint: true,
           },
         });
+        inventoryRow = fallback ?? null;
       }
 
-      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
-      const qrData = {
+      // ── 4. Increment scan counters (fire-and-forget) ────────
+      void this.incrementScanCounters(barcode);
+
+      // ── 5. Build the response ───────────────────────────────
+      const qrPayload = {
         type: 'PRODUCT',
         id: product.id,
         sku: product.sku,
         name: product.name,
         price: product.unitPrice,
-        barcode: barcode,
+        barcode,
         timestamp: new Date().toISOString(),
       };
-      const qrCodeUrl = `${this.qrApiUrl}?size=300x300&data=${encodeURIComponent(JSON.stringify(qrData))}`;
 
       return {
-        product,
-        inventory: inventory ? {
-          quantity: inventory.quantity || 0,
-          reserved: inventory.reserved || 0,
-          available: (inventory.quantity || 0) - (inventory.reserved || 0),
-        } : undefined,
-        barcodeInfo: {
-          barcode,
-          barcodeUrl,
-          qrCodeUrl,
+        matchType: variant ? 'VARIANT' : 'PRODUCT',
+        barcode,
+        product: {
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          unitPrice: product.unitPrice,
+          barcode: product.barcode,
+          businessUnitId: product.businessUnitId,
+          categoryId: product.categoryId,
         },
-        variant: variant || undefined,
+        variant,
+        inventory: inventoryRow
+          ? {
+              id: inventoryRow.id,
+              quantity: inventoryRow.quantity,
+              reserved: inventoryRow.reserved,
+              available:
+                inventoryRow.quantity - inventoryRow.reserved,
+              reorderPoint: inventoryRow.reorderPoint,
+            }
+          : null,
+        images: {
+          barcodeUrl: this.buildBarcodeUrl(barcode, 'EAN13'),
+          qrCodeUrl: this.buildQrUrl(qrPayload),
+        },
       };
     } catch (error) {
       console.error('Scan barcode error:', error);
@@ -830,9 +1040,261 @@ export class BarcodeService {
   }
 
   /**
-   * Generate barcode image for product (overload for productId)
+   * Fire-and-forget scan-counter increments. Never throws — a
+   * missing audit row must never block a live scan.
    */
-  async generateBarcodeImageForProduct(productId: string): Promise<{ barcodeUrl: string; barcode: string; generatedAt: Date }> {
+  private async incrementScanCounters(barcode: string): Promise<void> {
+    try {
+      const now = new Date();
+
+      await prisma.barcodeImageRecord
+        .updateMany({
+          where: { barcode, isActive: true },
+          data: { scans: { increment: 1 }, lastScanned: now },
+        })
+        .catch((err) => {
+          console.warn(
+            'BarcodeImageRecord scan increment failed:',
+            err,
+          );
+        });
+
+      await prisma.qRCodeRecord
+        .updateMany({
+          where: { code: barcode, isActive: true },
+          data: { scans: { increment: 1 }, lastScanned: now },
+        })
+        .catch((err) => {
+          console.warn('QRCodeRecord scan increment failed:', err);
+        });
+    } catch (err) {
+      console.warn('incrementScanCounters failed:', err);
+    }
+  }
+
+  // ==========================================
+  // CORE: RECORD SCAN (WRITE — SALE-READY)
+  //
+  // The endpoint a POS hits when a scanner-driven sale is being
+  // rung up. It:
+  //   1. Enforces the caller-supplied idempotency key (if any) by
+  //      checking InventoryTransaction.notes for `scan:<key>` BEFORE
+  //      opening the transaction. A duplicate short-circuits with
+  //      409.
+  //   2. Resolves the barcode (product-first, then variant).
+  //   3. Writes an InventoryTransaction row (SALE, negative qty)
+  //      with `notes: scan:<key>` so the next duplicate is caught.
+  //   4. Decrements Inventory.quantity and recomputes `available`.
+  //   5. Bumps BarcodeImageRecord / QRCodeRecord scan counters.
+  //
+  // Steps 3–5 happen inside a single Prisma transaction so a
+  // failure cannot leave stock and audit trails out of sync.
+  // ==========================================
+
+  async recordScan(input: RecordScanInput): Promise<{
+    transactionId: string;
+    matchType: 'PRODUCT' | 'VARIANT';
+    barcode: string;
+    productId: string;
+    variantId: string | null;
+    quantityScanned: number;
+    remainingQuantity: number;
+  }> {
+    const {
+      barcode: rawBarcode,
+      businessUnitId,
+      userId,
+      saleId,
+      quantity = 1,
+      note,
+      scanIdempotencyKey,
+    } = input;
+
+    if (!rawBarcode) throw new AppError('Barcode is required', 400);
+    if (!businessUnitId) {
+      throw new AppError('businessUnitId is required', 400);
+    }
+    if (!userId) throw new AppError('userId is required', 400);
+    if (quantity <= 0) {
+      throw new AppError('quantity must be greater than zero', 400);
+    }
+
+    const barcode = this.normalizeScannedCode(rawBarcode);
+    if (!barcode) {
+      throw new AppError('Barcode is empty after normalization', 400);
+    }
+
+    // ── Idempotency check (pre-transaction) ────────────────────
+    //
+    // Two transports (HID + BLE) can fire the same physical scan
+    // and drift past the dispatcher's 250 ms debounce. The caller
+    // supplies a key; we look for `scan:<key>` in the notes of an
+    // existing InventoryTransaction. If it exists, the scan has
+    // already been counted — reject with 409 so the client can
+    // ignore it silently.
+    if (scanIdempotencyKey) {
+      const existing = await prisma.inventoryTransaction.findFirst({
+        where: {
+          businessUnitId,
+          notes: `scan:${scanIdempotencyKey}`,
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        throw new AppError('Duplicate scan ignored', 409);
+      }
+    }
+
+    const txNote = scanIdempotencyKey
+      ? `scan:${scanIdempotencyKey}`
+      : note ?? `Scanned via barcode ${barcode}`;
+
+    return prisma.$transaction(async (tx) => {
+      // ── 1. Resolve product / variant ────────────────────────
+      let product = await tx.product.findFirst({
+        where: {
+          barcode,
+          businessUnitId,
+          deletedAt: null,
+        },
+      });
+
+      let variant: { id: string; productId: string } | null = null;
+
+      if (!product) {
+        const v = await tx.productVariant.findFirst({
+          where: {
+            barcode,
+            product: { businessUnitId },
+            deletedAt: null,
+          },
+          select: { id: true, productId: true },
+        });
+        if (v) {
+          variant = v;
+          product = await tx.product.findUnique({
+            where: { id: v.productId },
+          });
+        }
+      }
+
+      if (!product) {
+        throw new AppError('Product not found for this barcode', 404);
+      }
+
+      // ── 2. Resolve inventory row ────────────────────────────
+      let inventory: {
+        id: string;
+        quantity: number;
+        reserved: number;
+      } | null = null;
+
+      if (variant) {
+        const vFull = await tx.productVariant.findUnique({
+          where: { id: variant.id },
+          select: {
+            inventory: {
+              select: { id: true, quantity: true, reserved: true },
+            },
+          },
+        });
+        inventory = vFull?.inventory ?? null;
+      }
+
+      if (!inventory && product.inventoryId) {
+        const i = await tx.inventory.findUnique({
+          where: { id: product.inventoryId },
+          select: { id: true, quantity: true, reserved: true },
+        });
+        inventory = i ?? null;
+      }
+
+      if (!inventory) {
+        const i = await tx.inventory.findFirst({
+          where: { productId: product.id, businessUnitId },
+          select: { id: true, quantity: true, reserved: true },
+        });
+        inventory = i ?? null;
+      }
+
+      if (!inventory) {
+        throw new AppError(
+          'No inventory record found for this product in this business unit',
+          409,
+        );
+      }
+
+      if (inventory.quantity < quantity) {
+        throw new AppError(
+          `Insufficient stock: ${inventory.quantity} available, ${quantity} requested`,
+          409,
+        );
+      }
+
+      // ── 3. InventoryTransaction ─────────────────────────────
+      const invTx = await tx.inventoryTransaction.create({
+        data: {
+          transactionType: 'SALE',
+          quantity: -Math.abs(quantity),
+          notes: txNote,
+          reference: barcode,
+          productId: product.id,
+          variantId: variant?.id ?? null,
+          inventoryId: inventory.id,
+          businessUnitId,
+          userId,
+          saleId: saleId ?? null,
+        },
+      });
+
+      // ── 4. Decrement inventory ──────────────────────────────
+      const newQuantity = inventory.quantity - quantity;
+      const available = newQuantity - inventory.reserved;
+
+      await tx.inventory.update({
+        where: { id: inventory.id },
+        data: { quantity: newQuantity, available },
+      });
+
+      // ── 5. Bump scan counters ───────────────────────────────
+      const now = new Date();
+      await tx.barcodeImageRecord
+        .updateMany({
+          where: { barcode, isActive: true },
+          data: { scans: { increment: 1 }, lastScanned: now },
+        })
+        .catch(() => undefined);
+      await tx.qRCodeRecord
+        .updateMany({
+          where: { code: barcode, isActive: true },
+          data: { scans: { increment: 1 }, lastScanned: now },
+        })
+        .catch(() => undefined);
+
+      return {
+        transactionId: invTx.id,
+        matchType: variant
+          ? ('VARIANT' as const)
+          : ('PRODUCT' as const),
+        barcode,
+        productId: product.id,
+        variantId: variant?.id ?? null,
+        quantityScanned: quantity,
+        remainingQuantity: newQuantity,
+      };
+    });
+  }
+
+  // ==========================================
+  // CORE: IMAGE FOR PRODUCT (LEGACY)
+  // ==========================================
+
+  async generateBarcodeImageForProduct(productId: string): Promise<{
+    barcodeUrl: string;
+    barcode: string;
+    generatedAt: Date;
+  }> {
     try {
       const product = await prisma.product.findUnique({
         where: { id: productId },
@@ -852,15 +1314,16 @@ export class BarcodeService {
         });
       }
 
-      const barcodeUrl = `${this.barcodeApiUrl}?data=${encodeURIComponent(barcode)}&code=EAN13&dpi=96&datatype=Content`;
-
       return {
-        barcodeUrl,
+        barcodeUrl: this.buildBarcodeUrl(barcode, 'EAN13'),
         barcode,
         generatedAt: new Date(),
       };
     } catch (error) {
-      console.error('Generate barcode image for product error:', error);
+      console.error(
+        'Generate barcode image for product error:',
+        error,
+      );
       if (error instanceof AppError) throw error;
       throw new AppError('Failed to generate barcode image', 500);
     }

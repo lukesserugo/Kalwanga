@@ -3,6 +3,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import type { Notification } from '../types/notification';
 
 export type StreamStatus =
@@ -23,6 +24,21 @@ export interface UseNotificationStreamResult {
   reconnect: () => void;
 }
 
+/**
+ * Returns true when an error is an intentional abort (React Strict Mode
+ * remount, component unmount, explicit reconnect, etc.) so we can ignore it
+ * instead of logging spurious errors.
+ */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof Error) {
+    if (err.name === 'AbortError') return true;
+    // Some browsers/runtimes surface aborts as a plain Error with a message.
+    if (/aborted|abort/i.test(err.message)) return true;
+  }
+  return false;
+}
+
 export function useNotificationStream(
   options: UseNotificationStreamOptions = {},
 ): UseNotificationStreamResult {
@@ -32,20 +48,42 @@ export function useNotificationStream(
     enabled = true,
   } = options;
 
+  // Clerk gives us a fresh token on every call. We grab it inside `connect`
+  // so reconnects always use a non-expired token.
+  const { getToken, isSignedIn } = useAuth();
+
   const [status, setStatus] = useState<StreamStatus>(
     enabled ? 'connecting' : 'disconnected',
   );
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
 
+  // Keep the latest callback in a ref so `connect` doesn't need to
+  // re-run (and therefore reconnect) whenever the caller re-renders.
   const onNotificationRef = useRef(onNotification);
   useEffect(() => {
     onNotificationRef.current = onNotification;
   }, [onNotification]);
 
+  // Keep the latest getToken in a ref too, so `connect` stays stable
+  // even if Clerk's `getToken` identity changes between renders.
+  const getTokenRef = useRef(getToken);
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   const abortRef = useRef<AbortController | null>(null);
   const retryRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manuallyClosedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Track mount/unmount so async callbacks don't set state after unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const cleanup = useCallback(() => {
     manuallyClosedRef.current = true;
@@ -61,17 +99,40 @@ export function useNotificationStream(
 
   const connect = useCallback(async () => {
     if (!enabled) return;
+    if (!isSignedIn) {
+      // Wait for auth to be ready before opening a stream.
+      if (mountedRef.current) setStatus('disconnected');
+      return;
+    }
+
     manuallyClosedRef.current = false;
 
-    const token =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('accessToken') ||
-          localStorage.getItem('token') ||
-          ''
-        : '';
+    // Get a fresh Clerk token. If this fails (network hiccup, session
+    // expiry), we fall through to the retry logic below.
+    let token = '';
+    try {
+      token = (await getTokenRef.current()) ?? '';
+    } catch (err) {
+      if (!manuallyClosedRef.current && !isAbortError(err)) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to get Clerk token for notification stream', err);
+      }
+    }
+
+    if (!token) {
+      if (mountedRef.current) setStatus('reconnecting');
+      const delay = Math.min(1000 * 2 ** retryRef.current, 30000);
+      retryRef.current += 1;
+      retryTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) void connect();
+      }, delay);
+      return;
+    }
 
     const url = `${baseUrl}/notifications/stream`;
-    setStatus(retryRef.current === 0 ? 'connecting' : 'reconnecting');
+    if (mountedRef.current) {
+      setStatus(retryRef.current === 0 ? 'connecting' : 'reconnecting');
+    }
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -81,17 +142,26 @@ export function useNotificationStream(
         method: 'GET',
         headers: {
           Accept: 'text/event-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          // We're using fetch + ReadableStream, not native EventSource,
+          // so we CAN send an Authorization header.
+          Authorization: `Bearer ${token}`,
         },
         credentials: 'include',
         signal: controller.signal,
       });
 
       if (!response.ok || !response.body) {
+        // If the token was rejected, clear it and try again — but don't
+        // log a scary error for the common 401-on-reconnect case.
+        if (response.status === 401) {
+          throw new Error('Stream failed: 401');
+        }
         throw new Error(`Stream failed: ${response.status}`);
       }
 
-      setStatus('connected');
+      if (mountedRef.current) {
+        setStatus('connected');
+      }
       retryRef.current = 0;
 
       const reader = response.body.getReader();
@@ -109,6 +179,7 @@ export function useNotificationStream(
           const rawEvent = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
 
+          // Skip SSE comment frames (lines starting with ':').
           if (!rawEvent.startsWith(':')) {
             const lines = rawEvent.split('\n');
             let dataLine = '';
@@ -125,7 +196,9 @@ export function useNotificationStream(
                   payload.type === 'notification' &&
                   payload.data
                 ) {
-                  setLastEventAt(Date.now());
+                  if (mountedRef.current) {
+                    setLastEventAt(Date.now());
+                  }
                   onNotificationRef.current?.(payload.data);
                 }
               } catch {
@@ -138,24 +211,40 @@ export function useNotificationStream(
         }
       }
 
+      // Stream ended without an explicit close → treat as a disconnect and retry.
       if (!manuallyClosedRef.current) {
         throw new Error('Stream ended');
       }
     } catch (err: unknown) {
-      if (manuallyClosedRef.current) return;
+      // Intentional aborts (Strict Mode remount, unmount, reconnect) are
+      // expected — never log or retry them.
+      if (manuallyClosedRef.current || isAbortError(err)) {
+        return;
+      }
 
-      // eslint-disable-next-line no-console
-      console.warn('Notification stream error:', err);
-      setStatus('reconnecting');
+      // Suppress the noisy "Stream failed: 401" log — it's expected while
+      // the backend is restarted or the token is being refreshed.
+      const is401 =
+        err instanceof Error && /Stream failed:\s*401/.test(err.message);
+      if (!is401) {
+        // eslint-disable-next-line no-console
+        console.warn('Notification stream error:', err);
+      }
+
+      if (mountedRef.current) {
+        setStatus('reconnecting');
+      }
 
       const delay = Math.min(1000 * 2 ** retryRef.current, 30000);
       retryRef.current += 1;
 
       retryTimerRef.current = setTimeout(() => {
-        void connect();
+        if (mountedRef.current) {
+          void connect();
+        }
       }, delay);
     }
-  }, [baseUrl, enabled]);
+  }, [baseUrl, enabled, isSignedIn]);
 
   useEffect(() => {
     if (!enabled) {
@@ -164,19 +253,32 @@ export function useNotificationStream(
       return;
     }
 
+    if (!isSignedIn) {
+      // Clerk hasn't finished restoring the session yet. Wait for the
+      // next render (when isSignedIn flips to true) to open the stream.
+      setStatus('disconnected');
+      return;
+    }
+
     void connect();
 
     return () => {
       cleanup();
-      setStatus('disconnected');
+      if (mountedRef.current) {
+        setStatus('disconnected');
+      }
     };
-  }, [enabled, connect, cleanup]);
+  }, [enabled, isSignedIn, connect, cleanup]);
 
   const reconnect = useCallback(() => {
     cleanup();
     retryRef.current = 0;
+    // Reset the manual-close flag so the new connect attempt runs.
+    manuallyClosedRef.current = false;
     setTimeout(() => {
-      void connect();
+      if (mountedRef.current) {
+        void connect();
+      }
     }, 100);
   }, [cleanup, connect]);
 

@@ -3,6 +3,7 @@ import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { generateReceiptNumber, calculateTotal, calculateTax } from '../utils/helpers.js';
 import { Prisma } from '../generated/prisma/index.js';
+import type { DiscountType } from '../generated/prisma/index.js';
 import { realtimeService } from './realtimeService.js';
 import { notificationService } from './notificationService.js';
 import { logger } from '../lib/logger.js';
@@ -39,6 +40,17 @@ interface CreateSaleData {
    * key returns the original sale instead of creating a duplicate.
    */
   idempotencyKey?: string;
+
+  // ── Promotion / loyalty passthrough ─────────────────────────
+  // These ride through to the corresponding columns on `Sale`.
+  // `discountType` is inferred when omitted (LOYALTY / MANUAL).
+  //
+  // Typed as the Prisma `DiscountType` enum — PERCENTAGE | FIXED |
+  // LOYALTY | MANUAL. Controllers narrow the incoming string to this
+  // union before forwarding; unknown values are dropped.
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
 }
 
 /**
@@ -63,6 +75,12 @@ interface SalePaymentData {
    * key returns the original sale instead of creating a duplicate.
    */
   idempotencyKey?: string;
+
+  // ── Promotion / loyalty passthrough ─────────────────────────
+  // Same narrowing as `CreateSaleData`.
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
 }
 
 interface SalesStatsResult {
@@ -100,6 +118,40 @@ interface RefundItemInput {
 const LOYALTY_POINT_VALUE = 0.1;
 const LOYALTY_EARN_DIVISOR = 10;
 const DEFAULT_REORDER_POINT = 10;
+
+// ============================================
+// DISCOUNT-TYPE INFERENCE
+// ============================================
+
+/**
+ * Infer `Sale.discountType` when the caller didn't supply one.
+ * Mirrors `inferDiscountType` in `checkoutService.ts` so both write
+ * paths produce identical attribution.
+ *
+ *   - explicit value supplied → returned unchanged
+ *   - loyalty only            → 'LOYALTY'
+ *   - loyalty + promotion     → 'MANUAL'
+ *   - promotion only          → 'MANUAL'
+ *   - a bare `discount` set   → 'MANUAL'
+ *   - none of the above       → null
+ *
+ * The return type is the Prisma `DiscountType` union, so the result
+ * can be written straight into `tx.sale.create({ data: { discountType } })`
+ * without a cast.
+ */
+function inferDiscountType(input: {
+  explicit?: DiscountType | null;
+  hasLoyalty: boolean;
+  hasPromotion: boolean;
+  hasBareDiscount: boolean;
+}): DiscountType | null {
+  if (input.explicit) return input.explicit;
+  if (input.hasLoyalty && !input.hasPromotion) return 'LOYALTY';
+  if (input.hasLoyalty && input.hasPromotion) return 'MANUAL';
+  if (input.hasPromotion) return 'MANUAL';
+  if (input.hasBareDiscount) return 'MANUAL';
+  return null;
+}
 
 // ============================================
 // PRISMA ERROR GUARDS
@@ -1089,6 +1141,14 @@ export class SaleService extends BaseService {
    *   - Otherwise, the transaction runs and the key is stored on the sale.
    *   - Concurrent retries with the same key are collapsed via the
    *     unique index + P2002 catch in `withIdempotency`.
+   *
+   * Promotion / loyalty attribution is persisted on the Sale row so
+   * the record self-documents how its discount was derived:
+   *   - discountType       PERCENTAGE | FIXED | LOYALTY | MANUAL | null
+   *   - promotionCode      the code that was applied, if any
+   *   - promotionDiscount  the promotion's contribution
+   *   - loyaltyPointsUsed  points burned on this sale
+   *   - loyaltyDiscount    the currency value of those points
    */
   async createSale(data: CreateSaleData, userId: string) {
     try {
@@ -1147,12 +1207,34 @@ export class SaleService extends BaseService {
               : total;
           const changeAmount = Math.max(0, paidAmount - total);
 
+          // ── Promotion / loyalty breakdown ──────────────────────
+          // Computed once, reused for the sale write and the audit log.
+          const promotionDiscount =
+            Math.round((data.promotionDiscount ?? discount) * 100) / 100;
+          const loyaltyDiscountRounded =
+            Math.round(loyaltyDiscount * 100) / 100;
+          const resolvedDiscountType = inferDiscountType({
+            explicit: data.discountType ?? null,
+            hasLoyalty: loyaltyDiscount > 0,
+            hasPromotion: promotionDiscount > 0,
+            hasBareDiscount: discount > 0,
+          });
+          const loyaltyPointsUsed = data.loyaltyPointsUsed ?? 0;
+
           const sale = await tx.sale.create({
             data: {
               receiptNumber,
               subtotal,
               tax,
               discount: discount + loyaltyDiscount,
+
+              // ── Promotion / loyalty audit fields ───────────────
+              discountType: resolvedDiscountType,
+              promotionCode: data.promotionCode ?? null,
+              promotionDiscount,
+              loyaltyPointsUsed,
+              loyaltyDiscount: loyaltyDiscountRounded,
+
               total,
               paidAmount,
               changeAmount,
@@ -1216,7 +1298,7 @@ export class SaleService extends BaseService {
               userId,
               total,
               receiptNumber,
-              data.loyaltyPointsUsed || 0
+              loyaltyPointsUsed
             );
           }
 
@@ -1232,6 +1314,13 @@ export class SaleService extends BaseService {
               paymentMethod: data.paymentMethod,
               cashRegisterSessionId,
               idempotencyKey: data.idempotencyKey ?? null,
+
+              // ── Promotion / loyalty breakdown ─────────────────
+              discountType: resolvedDiscountType,
+              promotionCode: data.promotionCode ?? null,
+              promotionDiscount,
+              loyaltyPointsUsed,
+              loyaltyDiscount: loyaltyDiscountRounded,
             },
             'INFO'
           );
@@ -1256,6 +1345,9 @@ export class SaleService extends BaseService {
    *
    * Idempotent when `paymentData.idempotencyKey` is provided. Same
    * semantics as `createSale`.
+   *
+   * Promotion / loyalty attribution is persisted on the Sale row so
+   * the record self-documents how its discount was derived.
    */
   async createSaleFromCart(
     cartId: string,
@@ -1378,12 +1470,32 @@ export class SaleService extends BaseService {
               ? paymentData.notes
               : `Checkout from cart: ${cartId}`;
 
+          // ── Promotion / loyalty breakdown ──────────────────────
+          const promotionDiscount =
+            Math.round((paymentData.promotionDiscount ?? extraDiscount) * 100) / 100;
+          const loyaltyDiscountRounded =
+            Math.round(loyaltyDiscount * 100) / 100;
+          const resolvedDiscountType = inferDiscountType({
+            explicit: paymentData.discountType ?? null,
+            hasLoyalty: loyaltyDiscount > 0,
+            hasPromotion: promotionDiscount > 0,
+            hasBareDiscount: (cart.discount + extraDiscount) > 0,
+          });
+
           const sale = await tx.sale.create({
             data: {
               receiptNumber,
               subtotal: cart.subtotal,
               tax: cart.tax,
               discount: cart.discount + extraDiscount + loyaltyDiscount,
+
+              // ── Promotion / loyalty audit fields ───────────────
+              discountType: resolvedDiscountType,
+              promotionCode: paymentData.promotionCode ?? null,
+              promotionDiscount,
+              loyaltyPointsUsed,
+              loyaltyDiscount: loyaltyDiscountRounded,
+
               total,
               paidAmount,
               changeAmount,
@@ -1444,8 +1556,17 @@ export class SaleService extends BaseService {
             );
           }
 
-          // Reset the cart. Zeroes the totals, clears the customer, wipes
-          // notes, and restores the ACTIVE status.
+          // Reset the cart. Zeroes the totals, clears the customer,
+          // wipes notes, and restores the ACTIVE status.
+          //
+          // ⚠ The `Cart` model only has: id, userId, businessUnitId,
+          // customerId, subtotal, tax, discount, total, notes, status,
+          // createdAt, updatedAt. The promotion/loyalty columns live
+          // on `Sale`, and are written above.
+          //
+          // ⚠ Prisma hides the scalar `customerId` on models that
+          // declare a `customer` relation. Null it out via the
+          // relation-level disconnect.
           await tx.cartItem.deleteMany({ where: { cartId } });
           await tx.cart.update({
             where: { id: cartId },
@@ -1454,15 +1575,10 @@ export class SaleService extends BaseService {
               tax: 0,
               discount: 0,
               total: 0,
-              customerId: null,
+              customer: { disconnect: true },
               notes: null,
               status: 'ACTIVE',
               updatedAt: new Date(),
-              // Uncomment if present on your Cart model:
-              // loyaltyPointsUsed: 0,
-              // loyaltyDiscount: 0,
-              // promotionCode: null,
-              // promotionDiscount: 0,
             },
           });
 
@@ -1481,6 +1597,12 @@ export class SaleService extends BaseService {
               extraDiscount,
               loyaltyPointsUsed,
               idempotencyKey: paymentData.idempotencyKey ?? null,
+
+              // ── Promotion / loyalty breakdown ─────────────────
+              discountType: resolvedDiscountType,
+              promotionCode: paymentData.promotionCode ?? null,
+              promotionDiscount,
+              loyaltyDiscount: loyaltyDiscountRounded,
             },
             'INFO'
           );

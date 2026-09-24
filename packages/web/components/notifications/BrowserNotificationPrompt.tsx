@@ -69,21 +69,21 @@ export function BrowserNotificationPrompt() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
-          className="fixed bottom-6 right-6 z-40 w-80 max-w-[calc(100vw-3rem)] bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-2xl p-4"
+          className="fixed bottom-6 right-6 z-fab w-80 max-w-[calc(100vw-3rem)] bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-card p-4"
           role="dialog"
           aria-labelledby="push-prompt-title"
         >
           <button
             type="button"
             onClick={handleDismiss}
-            className="absolute top-3 right-3 p-1 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="absolute top-3 right-3 p-1 rounded-lg text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition duration-250 focus-ring"
             aria-label="Dismiss"
           >
             <X className="w-3.5 h-3.5" />
           </button>
 
           <div className="flex items-start gap-3">
-            <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 text-white shadow-md shrink-0">
+            <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-brand-gradient text-white shadow-brand shrink-0">
               <Bell className="w-5 h-5" />
             </span>
             <div className="flex-1 min-w-0 pt-0.5">
@@ -101,9 +101,9 @@ export function BrowserNotificationPrompt() {
           </div>
 
           {permission === 'denied' && (
-            <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-              <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+            <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800">
+              <AlertTriangle className="w-3.5 h-3.5 text-warning-600 dark:text-warning-400 mt-0.5 shrink-0" />
+              <p className="text-2xs text-warning-800 dark:text-warning-300 leading-relaxed">
                 You've blocked notifications. Enable them from your browser's
                 site settings.
               </p>
@@ -114,7 +114,7 @@ export function BrowserNotificationPrompt() {
             <button
               type="button"
               onClick={handleDismiss}
-              className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition duration-250 focus-ring"
             >
               Not now
             </button>
@@ -123,7 +123,7 @@ export function BrowserNotificationPrompt() {
                 type="button"
                 onClick={handleEnable}
                 disabled={working}
-                className="flex-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                className="flex-1 btn-brand text-xs"
               >
                 {working ? 'Enabling…' : 'Enable'}
               </button>

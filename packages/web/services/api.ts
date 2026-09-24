@@ -2,40 +2,9 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
-// ============================================
-// REQUEST CONFIG EXTENSIONS
-// ============================================
-//
-// `silent` — set on a per-request basis to suppress the automatic
-// error logging that normally happens in `handleResponseError`.
-//
-// Use case: `safeFetch` in dashboard pages treats a 404 as "endpoint
-// not implemented yet" and does its own (informational) logging.
-// Without this flag, `handleResponseError` emits three red-error lines
-// before the caller gets a chance to handle the rejection, which
-// clutters the console with noise that is not actionable.
-
 interface SilentableRequestConfig extends AxiosRequestConfig {
   silent?: boolean;
 }
-
-// ============================================
-// PAGINATION ATTACHMENT
-// ============================================
-//
-// When the backend returns `{ success, data: T[], pagination, stats }`,
-// `extractData` returns `data` — the array — and needs to attach the
-// sibling fields so callers can read them.
-//
-// The original implementation used `Object.defineProperty` with
-// `enumerable: false`. That made the fields invisible to
-// `JSON.stringify`, `Object.keys`, and — critically — `for...in`,
-// which broke some consumers that expected to see them.
-//
-// The new implementation uses a Symbol-keyed non-enumerable property
-// **plus** enumerable assignment when the value is an array. Arrays
-// never have their own `pagination`/`stats`/`scope` keys, so setting
-// them directly doesn't overwrite anything the array actually owns.
 
 const PAGINATION_KEY = Symbol.for('api.pagination');
 const STATS_KEY = Symbol.for('api.stats');
@@ -443,21 +412,87 @@ class ApiService {
     }
   }
 
-  private handleResponseError(error: any): Promise<any> {
-    const config = error.config as SilentableRequestConfig | undefined;
+  private async handleResponseError(error: any): Promise<any> {
+    const config = error.config as
+      | (SilentableRequestConfig & { _retry?: boolean })
+      | undefined;
     const silent = config?.silent === true;
+
+    // ── 401 refresh-and-retry ────────────────────────────────
+    //
+    // On the first 401 for a non-auth URL, attempt one token
+    // refresh and re-issue the original request. This is critical
+    // for POS and scanner flows: a single stale token must not
+    // drop a live cart. Only if the retry also 401s do we wipe
+    // the session.
+    if (
+      error.response?.status === 401 &&
+      !config?._retry &&
+      !config?.url?.includes('/auth/')
+    ) {
+      if (!silent) {
+        console.warn(
+          '⚠️ 401 — attempting one refresh-and-retry before logout',
+        );
+      }
+
+      // Reset the token cooldown so getAuthHeaders actually
+      // attempts a fresh Clerk token instead of falling back to
+      // the stale backend token.
+      this.resetTokenState();
+
+      const original = config ?? {};
+      (original as any)._retry = true;
+
+      const freshHeaders = await this.getAuthHeaders();
+
+      // If we got nothing fresh, we can't retry meaningfully —
+      // fall through to the destructive path below.
+      if (!freshHeaders.Authorization) {
+        if (!silent) {
+          console.error(
+            '❌ No fresh token available — clearing session',
+          );
+        }
+        this.clearAuthState();
+        return Promise.reject(error);
+      }
+
+      try {
+        const retryConfig: AxiosRequestConfig = {
+          ...original,
+          headers: {
+            ...(original.headers ?? {}),
+            Authorization: freshHeaders.Authorization,
+          },
+        };
+
+        const retried = await this.client.request(retryConfig);
+
+        if (!silent) {
+          console.log(
+            `✅ Retry after 401 succeeded: ${retried.config.method?.toUpperCase()} ${retried.config.url}`,
+          );
+        }
+
+        return retried;
+      } catch (retryError: any) {
+        if (!silent) {
+          console.error(
+            '❌ Retry after 401 also failed — clearing session',
+          );
+        }
+        if (retryError?.response?.status === 401) {
+          this.clearAuthState();
+        }
+        return Promise.reject(retryError);
+      }
+    }
 
     if (silent) {
       if (error.response?.status === 401) {
         if (!error.config?.url?.includes('/auth/')) {
-          try {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user');
-            localStorage.removeItem('businessUnitId');
-          } catch {
-            /* ignore */
-          }
-          this.resetTokenState();
+          this.clearAuthState();
         }
       }
       return Promise.reject(error);
@@ -512,17 +547,10 @@ class ApiService {
       }
 
       if (error.response?.status === 401) {
-        console.error('❌ 401 Unauthorized - Token invalid or expired');
-        if (!error.config?.url?.includes('/auth/')) {
-          try {
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user');
-            localStorage.removeItem('businessUnitId');
-          } catch {
-            /* ignore */
-          }
-          this.resetTokenState();
-        }
+        console.error(
+          '❌ 401 Unauthorized — retry already exhausted',
+        );
+        this.clearAuthState();
       }
     } else if (error.code === 'ERR_NETWORK') {
       console.error('❌ NETWORK ERROR - Cannot reach backend');
@@ -534,6 +562,22 @@ class ApiService {
     }
 
     return Promise.reject(error);
+  }
+
+  /**
+   * Single place that clears persisted auth state. Called only when
+   * a 401 has survived the refresh-and-retry, or when no fresh token
+   * could be obtained.
+   */
+  private clearAuthState(): void {
+    try {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('businessUnitId');
+    } catch {
+      /* ignore */
+    }
+    this.resetTokenState();
   }
 
   /**

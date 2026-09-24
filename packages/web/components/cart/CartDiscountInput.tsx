@@ -12,7 +12,14 @@ interface CartDiscountInputProps {
   onDiscountApplied?: (result: unknown) => void;
   currentDiscount?: number;
   currentDiscountType?: 'PERCENTAGE' | 'FIXED';
-  onDiscountRemoved?: () => void;
+  /**
+   * Notifies the parent that the user cleared the local input.
+   *
+   * IMPORTANT: the backend has no "remove discount" endpoint. Calling
+   * this callback does NOT clear the server-side discount. To replace a
+   * discount, call `applyDiscount` again with a new value.
+   */
+  onDiscountCleared?: () => void;
   disabled?: boolean;
   className?: string;
 }
@@ -21,7 +28,7 @@ export function CartDiscountInput({
   onDiscountApplied,
   currentDiscount = 0,
   currentDiscountType,
-  onDiscountRemoved,
+  onDiscountCleared,
   disabled = false,
   className = '',
 }: CartDiscountInputProps) {
@@ -87,15 +94,15 @@ export function CartDiscountInput({
     [discount, discountType, isAuthenticated, onDiscountApplied],
   );
 
-  const handleClearDiscount = useCallback(() => {
+  const handleClearInput = useCallback(() => {
     setDiscount('');
     setError(null);
   }, []);
 
-  const handleRemoveApplied = useCallback(() => {
+  const handleClearLocal = useCallback(() => {
     setError(null);
-    onDiscountRemoved?.();
-  }, [onDiscountRemoved]);
+    onDiscountCleared?.();
+  }, [onDiscountCleared]);
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -113,13 +120,13 @@ export function CartDiscountInput({
                 : ''}
             </span>
           </div>
-          {onDiscountRemoved && (
+          {onDiscountCleared && (
             <button
               type="button"
-              onClick={handleRemoveApplied}
+              onClick={handleClearLocal}
               disabled={disabled}
               className="shrink-0 p-1 rounded-md text-success-600 hover:bg-success-100 dark:text-success-400 dark:hover:bg-success-900/40 transition-colors disabled:opacity-50 focus-ring"
-              aria-label="Remove applied discount"
+              aria-label="Clear local discount display"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -165,7 +172,7 @@ export function CartDiscountInput({
           {discount && (
             <button
               type="button"
-              onClick={handleClearDiscount}
+              onClick={handleClearInput}
               disabled={disabled || isLoading}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-orange-50 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Clear discount input"

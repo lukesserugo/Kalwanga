@@ -1,34 +1,117 @@
 // D:\Projects\Kalwanga\packages\desktop\main\database.ts
-
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+import initSqlJs from 'sql.js';
 import { logger } from './logger.js';
 
 const DB_PATH = path.join(app.getPath('userData'), 'pos.db');
 
-let db: SqlJsDatabase | null = null;
+// sql.js runtime + raw database handle
 let SQL: any = null;
-
-// ============================================
-// PUBLIC API — identical shape to the previous better-sqlite3 version
-// ============================================
+let rawDb: any = null;
 
 /**
- * Return a live handle to the SQLite database.
- * Throws if `initializeDatabase()` hasn't completed yet.
+ * Adapter that presents a better-sqlite3-like API on top of sql.js.
  *
- * The returned object supports the same call surface the rest of the
- * codebase already uses:
- *
- *   db.exec(sql)                     — run one or more statements
- *   db.run(sql, params)              — run a single parameterized statement
- *   db.prepare(sql).run(params)      — parameterized run
- *   db.prepare(sql).all(params)      — array of rows
- *   db.prepare(sql).get(params)      — first row or undefined
+ *   db.prepare(sql).run(...params)
+ *   db.prepare(sql).all(...params)   → array of row objects
+ *   db.prepare(sql).get(...params)   → first row object or undefined
+ *   db.exec(sql)                     → run one or more statements (raw)
+ *   db.run(sql, params)              → parameterized run (raw convenience)
  */
-export function getDatabase(): SqlJsDatabase {
+class Statement {
+  constructor(private stmt: any) {}
+
+  /**
+   * Bind all params. sql.js's stmt.bind() accepts a single array OR an
+   * object; we always pass an array so positional `?` placeholders work.
+   */
+  private bind(params: any[]): void {
+    if (params.length === 0) return;
+    this.stmt.bind(params);
+  }
+
+  run(...params: any[]): void {
+    try {
+      this.bind(params);
+      this.stmt.step();
+    } finally {
+      this.stmt.free();
+    }
+  }
+
+  all(...params: any[]): any[] {
+    const rows: any[] = [];
+    try {
+      this.bind(params);
+      while (this.stmt.step()) {
+        rows.push(this.stmt.getAsObject());
+      }
+    } finally {
+      this.stmt.free();
+    }
+    return rows;
+  }
+
+  get(...params: any[]): any | undefined {
+    try {
+      this.bind(params);
+      if (this.stmt.step()) {
+        return this.stmt.getAsObject();
+      }
+      return undefined;
+    } finally {
+      this.stmt.free();
+    }
+  }
+}
+
+class DatabaseAdapter {
+  constructor(private db: any) {}
+
+  prepare(sql: string): Statement {
+    return new Statement(this.db.prepare(sql));
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+
+  /**
+   * Convenience that mirrors `db.run(sql, params)` used in migrations.
+   * Accepts either spread params or a single array.
+   */
+  run(sql: string, params?: any[] | any): void {
+    const stmt = this.db.prepare(sql);
+    try {
+      if (Array.isArray(params)) {
+        if (params.length > 0) stmt.bind(params);
+      } else if (params !== undefined && params !== null) {
+        stmt.bind([params]);
+      }
+      stmt.step();
+    } finally {
+      stmt.free();
+    }
+  }
+
+  export(): Uint8Array {
+    return this.db.export();
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
+
+let db: DatabaseAdapter | null = null;
+
+// ============================================
+// PUBLIC API
+// ============================================
+
+export function getDatabase(): DatabaseAdapter {
   if (!db) {
     throw new Error(
       'Database not initialized. Call initializeDatabase() first.',
@@ -37,14 +120,6 @@ export function getDatabase(): SqlJsDatabase {
   return db;
 }
 
-/**
- * Persist the in-memory database to disk.
- *
- * sql.js keeps the whole database in memory. Every write happens to RAM
- * only; nothing reaches the filesystem until this function runs. Call it
- * after any write operation you care about surviving a crash, and on a
- * timer (see main/index.ts) as a safety net.
- */
 export function saveDatabase(): void {
   if (!db) return;
   try {
@@ -58,8 +133,6 @@ export function saveDatabase(): void {
 
 export async function initializeDatabase(): Promise<void> {
   try {
-    // Locate the WASM runtime that ships inside sql.js. require.resolve
-    // finds it inside node_modules regardless of the process cwd.
     const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
 
     SQL = await initSqlJs({
@@ -68,18 +141,16 @@ export async function initializeDatabase(): Promise<void> {
 
     if (fs.existsSync(DB_PATH)) {
       logger.info('Loading existing database from:', DB_PATH);
-
       const buffer = fs.readFileSync(DB_PATH);
       const localDb = new SQL.Database(buffer);
-      db = localDb;
-
+      rawDb = localDb;
+      db = new DatabaseAdapter(localDb);
       await runMigrations(localDb);
     } else {
       logger.info('Creating new database at:', DB_PATH);
-
       const localDb = new SQL.Database();
-      db = localDb;
-
+      rawDb = localDb;
+      db = new DatabaseAdapter(localDb);
       await initializeSchema(localDb);
       saveDatabase();
     }
@@ -104,6 +175,7 @@ export function closeDatabase(): void {
     }
     db.close();
     db = null;
+    rawDb = null;
   }
 }
 
@@ -111,11 +183,8 @@ export function closeDatabase(): void {
 // PRIVATE — SCHEMA AND MIGRATIONS
 // ============================================
 
-async function initializeSchema(
-  database: SqlJsDatabase,
-): Promise<void> {
+async function initializeSchema(database: any): Promise<void> {
   database.exec(`
-    -- Settings table
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       key TEXT UNIQUE NOT NULL,
@@ -123,7 +192,6 @@ async function initializeSchema(
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Sync metadata
     CREATE TABLE IF NOT EXISTS sync_metadata (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entity_type TEXT NOT NULL,
@@ -134,7 +202,6 @@ async function initializeSchema(
       UNIQUE(entity_type)
     );
 
-    -- Local products (mirrors backend Product)
     CREATE TABLE IF NOT EXISTS local_products (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -157,7 +224,6 @@ async function initializeSchema(
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Local sales (mirrors backend Sale)
     CREATE TABLE IF NOT EXISTS local_sales (
       id TEXT PRIMARY KEY,
       receipt_number TEXT UNIQUE NOT NULL,
@@ -179,7 +245,6 @@ async function initializeSchema(
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Local sale items
     CREATE TABLE IF NOT EXISTS local_sale_items (
       id TEXT PRIMARY KEY,
       sale_id TEXT NOT NULL,
@@ -192,7 +257,6 @@ async function initializeSchema(
       FOREIGN KEY (sale_id) REFERENCES local_sales(id) ON DELETE CASCADE
     );
 
-    -- Local customers (mirrors backend Customer)
     CREATE TABLE IF NOT EXISTS local_customers (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE,
@@ -216,7 +280,6 @@ async function initializeSchema(
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Offline queue
     CREATE TABLE IF NOT EXISTS offline_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       operation TEXT NOT NULL,
@@ -231,7 +294,6 @@ async function initializeSchema(
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Sync logs
     CREATE TABLE IF NOT EXISTS sync_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       type TEXT NOT NULL,
@@ -241,7 +303,6 @@ async function initializeSchema(
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Indexes
     CREATE INDEX IF NOT EXISTS idx_products_sku
       ON local_products(sku);
     CREATE INDEX IF NOT EXISTS idx_products_sync_status
@@ -264,20 +325,18 @@ async function initializeSchema(
       ON sync_logs(created_at);
   `);
 
-  database.run(`
-    INSERT OR IGNORE INTO settings (key, value) VALUES
+  database.run(
+    `INSERT OR IGNORE INTO settings (key, value) VALUES
       ('last_sync', '1970-01-01T00:00:00.000Z'),
       ('auto_sync', 'true'),
       ('sync_interval', '300'),
-      ('offline_mode', 'false')
-  `);
+      ('offline_mode', 'false')`
+  );
 
   logger.info('Database schema initialized');
 }
 
-async function runMigrations(
-  database: SqlJsDatabase,
-): Promise<void> {
+async function runMigrations(database: any): Promise<void> {
   try {
     database.exec(`
       CREATE TABLE IF NOT EXISTS migrations (
@@ -287,12 +346,8 @@ async function runMigrations(
       )
     `);
 
-    // sql.js returns query results as { columns, values } tuples rather
-    // than an array of plain row objects. Flatten into a Set of names.
     const appliedNames = new Set<string>();
-    const result = database.exec(
-      'SELECT name FROM migrations ORDER BY id',
-    );
+    const result = database.exec('SELECT name FROM migrations ORDER BY id');
     if (result.length > 0) {
       for (const row of result[0].values) {
         appliedNames.add(String(row[0]));
@@ -306,7 +361,7 @@ async function runMigrations(
 
     const migrationFiles = fs
       .readdirSync(migrationsPath)
-      .filter((file) => file.endsWith('.sql'))
+      .filter((file: string) => file.endsWith('.sql'))
       .sort();
 
     for (const migrationFile of migrationFiles) {
@@ -315,24 +370,18 @@ async function runMigrations(
       logger.info(`Applying migration: ${migrationFile}`);
       const sql = fs.readFileSync(
         path.join(migrationsPath, migrationFile),
-        'utf-8',
+        'utf-8'
       );
 
       database.exec('BEGIN TRANSACTION');
       try {
         database.exec(sql);
-        database.run(
-          'INSERT INTO migrations (name) VALUES (?)',
-          [migrationFile],
-        );
+        database.run('INSERT INTO migrations (name) VALUES (?)', [migrationFile]);
         database.exec('COMMIT');
         logger.info(`Migration applied: ${migrationFile}`);
       } catch (error) {
         database.exec('ROLLBACK');
-        logger.error(
-          `Failed to apply migration ${migrationFile}:`,
-          error,
-        );
+        logger.error(`Failed to apply migration ${migrationFile}:`, error);
         throw error;
       }
     }

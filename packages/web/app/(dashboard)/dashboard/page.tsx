@@ -334,6 +334,58 @@ async function safeFetch<T = any>(
   }
 }
 
+/**
+ * Normalize a raw top-product payload into the canonical `TopProduct`
+ * shape and guarantee a **unique, stable `id`**.
+ *
+ * The backend may return identifiers under any of:
+ *   id | productId | _id | sku | code
+ * and may use alternate names for other fields. Missing ids are the
+ * #1 cause of React's "unique key" warning — so we synthesize one
+ * as a last resort.
+ */
+function normalizeTopProduct(raw: any, index: number): TopProduct {
+  const id =
+    raw?.id ??
+    raw?.productId ??
+    raw?._id ??
+    raw?.sku ??
+    raw?.code ??
+    `tp-${index}`;
+
+  return {
+    id: String(id),
+    name: raw?.name ?? raw?.productName ?? raw?.title ?? 'Unnamed product',
+    sku: raw?.sku ?? raw?.code ?? '',
+    sales: Number(raw?.sales ?? raw?.quantitySold ?? raw?.qty ?? 0),
+    revenue: Number(raw?.revenue ?? raw?.totalRevenue ?? raw?.amount ?? 0),
+    stock: Number(raw?.stock ?? raw?.quantity ?? raw?.stockLevel ?? 0),
+    category: raw?.category ?? raw?.categoryName ?? '',
+    growth: Number(raw?.growth ?? raw?.growthRate ?? 0),
+  };
+}
+
+/**
+ * Normalize a raw notification payload into the canonical
+ * `Notification` shape and guarantee a unique `id`.
+ */
+function normalizeNotification(raw: any, index: number): Notification {
+  const id = raw?.id ?? raw?._id ?? raw?.notificationId ?? `n-${index}`;
+
+  return {
+    id: String(id),
+    title: raw?.title ?? raw?.subject ?? 'Notification',
+    message: raw?.message ?? raw?.body ?? raw?.description ?? '',
+    type: raw?.type ?? 'info',
+    timestamp:
+      raw?.timestamp ??
+      raw?.createdAt ??
+      raw?.created_at ??
+      new Date().toISOString(),
+    isRead: Boolean(raw?.isRead ?? raw?.read ?? false),
+  };
+}
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -458,8 +510,11 @@ export default function DashboardPage() {
       const response = await apiService.get('/notifications', {
         params: { limit: 10, unread: true },
       });
-      const data = unwrap<Notification[]>(response);
-      setNotifications(Array.isArray(data) ? data : []);
+      const data = unwrap<any[]>(response);
+      const list = Array.isArray(data)
+        ? data.map(normalizeNotification)
+        : [];
+      setNotifications(list);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
       setNotifications([]);
@@ -568,8 +623,10 @@ export default function DashboardPage() {
         }
 
         if (bySlot.topProducts) {
-          const data = bySlot.topProducts as TopProduct[];
-          if (Array.isArray(data) && data.length > 0) {
+          const raw = bySlot.topProducts as any[];
+          if (Array.isArray(raw) && raw.length > 0) {
+            // Normalize so every product has a unique, stable id.
+            const data = raw.map(normalizeTopProduct);
             setTopProducts(data);
             hasData = true;
           }
@@ -929,9 +986,9 @@ export default function DashboardPage() {
                     <p>No notifications</p>
                   </div>
                 ) : (
-                  notifications.map((notification) => (
+                  notifications.map((notification, index) => (
                     <div
-                      key={notification.id}
+                      key={notification.id ?? `notif-${index}`}
                       onClick={() =>
                         setNotifications((prev) =>
                           prev.map((n) =>
@@ -1225,7 +1282,7 @@ export default function DashboardPage() {
                       {topProductsSlice.length > 0 ? (
                         topProductsSlice.map((product, index) => (
                           <div
-                            key={product.id}
+                            key={product.id ?? `tp-${index}`}
                             className="flex items-center gap-3"
                           >
                             <div

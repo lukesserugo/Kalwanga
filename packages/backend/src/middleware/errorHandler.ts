@@ -12,6 +12,15 @@ export class AppError extends Error {
     this.name = this.constructor.name;
     Error.captureStackTrace(this, this.constructor);
   }
+
+  /**
+   * Alias for `status`. Some callers (and NestJS-style code) expect
+   * this name. Kept as a getter so the internal field stays `status`
+   * and existing code that reads `error.status` continues to work.
+   */
+  get statusCode(): number {
+    return this.status;
+  }
 }
 
 export const errorHandler = (

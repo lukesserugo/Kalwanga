@@ -52,7 +52,9 @@ export function CartItemCard({
   disabled = false,
 }: CartItemCardProps) {
   const atMinimum = quantity <= 1;
-  const atMaximum = availableStock > 0 && quantity >= availableStock;
+  // An out-of-stock line can never be increased, even if the stock
+  // value is stale or zero.
+  const atMaximum = !isInStock || (availableStock > 0 && quantity >= availableStock);
 
   const handleQuantityChange = (newQuantity: number) => {
     if (isUpdating || disabled) return;
@@ -248,4 +250,3 @@ function QuantityStepper({
 }
 
 export default CartItemCard;
-

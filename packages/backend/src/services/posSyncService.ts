@@ -2,6 +2,7 @@
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
+import type { DiscountType } from '../generated/prisma/index.js';
 import { CartService } from './cartService.js';
 import { CheckoutService } from './checkoutService.js';
 import { SaleService } from './saleService.js';
@@ -51,6 +52,19 @@ interface POSCheckoutData {
    * uniqueness check against `sales.idempotencyKey`.
    */
   idempotencyKey?: string;
+
+  // ── Promotion / loyalty passthrough ────────────────────────────
+  // These ride through to the corresponding columns on `Sale`.
+  // `discountType` is inferred downstream when omitted.
+  //
+  // Typed as the Prisma `DiscountType` enum — PERCENTAGE | FIXED |
+  // LOYALTY | MANUAL. The controller (`posController.readPromotionFields`)
+  // narrows the incoming wire string to this union before forwarding;
+  // unknown values are silently dropped and the sale service infers
+  // a valid type from the discount amounts instead.
+  discountType?: DiscountType | null;
+  promotionCode?: string | null;
+  promotionDiscount?: number;
 }
 
 interface POSCustomerData {
@@ -442,6 +456,17 @@ export class POSService extends BaseService {
    *   - Otherwise the key is forwarded to `checkoutService.processCheckout`
    *     → `saleService.createSaleFromCart`, which stores it on the sale
    *     and collapses concurrent retries via the unique index.
+   *
+   * Promotion / loyalty passthrough fields (`discountType`,
+   * `promotionCode`, `promotionDiscount`) are forwarded to
+   * `checkoutService.processCheckout`, which persists them on the
+   * resulting `Sale` row alongside the loyalty breakdown it computes
+   * from `applyLoyaltyPoints`.
+   *
+   * `discountType` is already narrowed to the Prisma `DiscountType`
+   * enum by the controller, so no additional validation is required
+   * here — the value flowing in is either one of the four enum
+   * members, `null`, or `undefined`.
    */
   async processCheckout(userId: string, businessUnitId: string, data: POSCheckoutData) {
     try {
@@ -509,6 +534,10 @@ export class POSService extends BaseService {
           applyLoyaltyPoints: data.applyLoyaltyPoints,
           // ✅ Forward the key so the sale layer can persist it.
           idempotencyKey: data.idempotencyKey,
+          // ✅ Forward promotion / loyalty passthrough.
+          discountType: data.discountType ?? null,
+          promotionCode: data.promotionCode ?? null,
+          promotionDiscount: data.promotionDiscount,
         },
         userId
       );
@@ -581,7 +610,25 @@ export class POSService extends BaseService {
   }
 
   /**
-   * Get product by barcode using ProductService
+   * Get product by barcode.
+   *
+   * Resolution order:
+   *   1. Product barcode via `ProductService.getProductByBarcode`
+   *      — returns the richer shape (images, category, costPrice).
+   *   2. Variant barcode via `barcodeService.scanBarcode`
+   *      — read-only lookup, no inventory decrement.
+   *
+   * The variant fallback is required because the POS UI fires this
+   * method on physical scans, and `/barcodes/record-scan` (the write
+   * path) accepts both product and variant barcodes. Without the
+   * fallback, a scan of a variant barcode would 404 here even though
+   * the same code is valid on the write path.
+   *
+   * `barcodeService.scanBarcode` is read-only. It resolves the code
+   * to a product/variant and bumps the audit scan-counter; it does
+   * NOT decrement `Inventory.quantity` or write an
+   * `InventoryTransaction`. The decrement happens later via
+   * `recordScan` or the checkout flow.
    */
   async getProductByBarcode(businessUnitId: string, barcode: string) {
     try {
@@ -589,33 +636,131 @@ export class POSService extends BaseService {
         throw new AppError('Barcode is required', 400);
       }
 
-      const product = await this.productService.getProductByBarcode(barcode, businessUnitId);
+      // ── 1. Product barcode (richer shape) ────────────────────
+      try {
+        const product = await this.productService.getProductByBarcode(
+          barcode,
+          businessUnitId,
+        );
 
-      if (!product) {
-        throw new AppError('Product not found', 404);
+        if (product) {
+          const inventory = product.inventory;
+
+          return {
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            barcode: product.barcode,
+            unitPrice: product.unitPrice,
+            costPrice: product.costPrice,
+            images: product.images || [],
+            category: product.category?.name || null,
+            categoryId: product.category?.id || null,
+            inventory: inventory
+              ? {
+                  id: inventory.id,
+                  quantity: inventory.quantity,
+                  reserved: inventory.reserved || 0,
+                  available: Math.max(
+                    0,
+                    inventory.quantity - (inventory.reserved || 0),
+                  ),
+                  location: (inventory as any).location ?? null,
+                }
+              : null,
+            variants: product.variants || [],
+            matchedVariant: null,
+            matchType: 'PRODUCT' as const,
+            isAvailable: inventory
+              ? inventory.quantity - (inventory.reserved || 0) > 0
+              : false,
+          };
+        }
+      } catch (err: any) {
+        // Only a 404 falls through to the variant lookup. Any other
+        // error (DB down, validation) should propagate unchanged.
+        const status =
+          err instanceof AppError
+            ? (err as any).status ?? (err as any).statusCode
+            : null;
+        if (status !== 404) throw err;
       }
 
-      const inventory = product.inventory;
+      // ── 2. Variant barcode fallback ──────────────────────────
+      // Lazy import to avoid a top-level circular dependency:
+      // barcodeService imports from middleware/auth which imports
+      // from lib/permissions, but not from posService — still, lazy
+      // keeps the graph acyclic and cold-starts faster.
+      const { barcodeService } = await import('./barcodeService.js');
+      const scan = await barcodeService.scanBarcode(barcode, businessUnitId);
+
+      if (!scan.variant) {
+        // scanBarcode found a product but this branch is only
+        // reached when ProductService missed. That means the
+        // variant-first path in scanBarcode resolved to a product
+        // whose barcode was stored differently — surface it anyway
+        // rather than 404ing inconsistently.
+        const inventory = scan.inventory;
+        return {
+          id: scan.product.id,
+          name: scan.product.name,
+          sku: scan.product.sku,
+          barcode: scan.product.barcode,
+          unitPrice: scan.product.unitPrice,
+          costPrice: undefined,
+          images: [],
+          category: null,
+          categoryId: scan.product.categoryId,
+          inventory: inventory
+            ? {
+                id: inventory.id,
+                quantity: inventory.quantity,
+                reserved: inventory.reserved,
+                available: inventory.available,
+                location: null,
+              }
+            : null,
+          variants: [],
+          matchedVariant: null,
+          matchType: scan.matchType,
+          isAvailable: inventory ? inventory.available > 0 : false,
+        };
+      }
+
+      const inventory = scan.inventory;
 
       return {
-        id: product.id,
-        name: product.name,
-        sku: product.sku,
-        barcode: product.barcode,
-        unitPrice: product.unitPrice,
-        costPrice: product.costPrice,
-        images: product.images || [],
-        category: product.category?.name || null,
-        inventory: inventory ? {
-          id: inventory.id,
-          quantity: inventory.quantity,
-          reserved: inventory.reserved || 0,
-          available: Math.max(0, inventory.quantity - (inventory.reserved || 0)),
-        } : null,
-        variants: product.variants || [],
-        isAvailable: inventory
-          ? (inventory.quantity - (inventory.reserved || 0)) > 0
-          : false,
+        id: scan.product.id,
+        name: scan.product.name,
+        sku: scan.variant.sku,
+        barcode: scan.variant.barcode,
+        unitPrice: scan.variant.price,
+        costPrice: undefined,
+        images: [],
+        category: null,
+        categoryId: scan.product.categoryId,
+        inventory: inventory
+          ? {
+              id: inventory.id,
+              quantity: inventory.quantity,
+              reserved: inventory.reserved,
+              available: inventory.available,
+              location: null,
+            }
+          : null,
+        variants: [scan.variant],
+        // Surface the matched variant so the POS UI can add the
+        // exact line to the cart without a second lookup.
+        matchedVariant: {
+          id: scan.variant.id,
+          name: scan.variant.name,
+          sku: scan.variant.sku,
+          price: scan.variant.price,
+          barcode: scan.variant.barcode,
+          attributes: scan.variant.attributes,
+        },
+        matchType: 'VARIANT' as const,
+        isAvailable: inventory ? inventory.available > 0 : false,
       };
     } catch (error) {
       this.handleError(error, 'POSService.getProductByBarcode');

@@ -2,16 +2,6 @@
 
 import { api } from './api';
 
-// ============================================
-// TYPES
-// ============================================
-//
-// These mirror the server-side contract. `NotificationType` and
-// `NotificationPriority` are string unions because the client doesn't
-// load the generated Prisma enums directly — but they list exactly the
-// same members, so a value that satisfies the backend's Zod schema
-// will satisfy these types too.
-
 export type NotificationType =
   | 'SALE'
   | 'INVENTORY'

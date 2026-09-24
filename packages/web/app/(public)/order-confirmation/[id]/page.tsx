@@ -1,282 +1,107 @@
-// D:\Projects\Kalwanga\packages\web\app\order-confirmation\[id]\page.tsx
+// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\orders\[id]\page.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
-import { motion } from 'framer-motion';
 import {
-  CheckCircle,
-  Package,
-  Truck,
-  Clock,
-  Receipt,
-  Download,
-  Printer,
-  Share2,
   ArrowLeft,
+  Package,
+  User,
   Mail,
   Phone,
   MapPin,
-  User,
-  ShoppingBag,
+  Clock,
+  Calendar,
   Loader2,
-  AlertCircle,
-  Gift,
-  CreditCard,
-  Banknote,
-  Wallet,
-  Star,
-  Smartphone,
-  Landmark,
-  Globe,
+  XCircle,
+  RefreshCw,
+  TrendingUp,
+  Printer,
+  ExternalLink,
   FileText,
+  DollarSign,
+  Truck,
+  AlertCircle,
 } from 'lucide-react';
-import { orderService } from '../../../services/orderService';
+import {
+  orderService,
+  type Order,
+  type OrderHistoryEntry,
+  type OrderTimelineEntry,
+} from '../../../../services/orderService';
+import { OrderStatus } from '../../../../types/enums';
+import { OrderStatusBadge } from '../../../../components/orders/OrderStatusBadge';
+import { OrderTimeline } from '../../../../components/orders/OrderTimeline';
+import { OrderSummaryCard } from '../../../../components/orders/OrderSummaryCard';
+import { Modal } from '../../../../components/common/Modal';
+import { toast } from '../../../../utils/toast-manager';
 import {
   formatCurrency,
-  formatDate,
   formatDateTime,
-} from '../../../utils/formatters';
-import { toast } from '../../../utils/toast-manager';
-import { useThemeStore } from '../../stores/themeStore';
+} from '../../../../utils/formatters';
 
 // ============================================
-// TYPES
+// CONSTANTS
 // ============================================
 
-type OrderStatus =
-  | 'PENDING'
-  | 'PROCESSING'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'REFUNDED'
-  | 'ON_HOLD';
+const UPDATABLE_STATUSES: OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.PROCESSING,
+  OrderStatus.COMPLETED,
+  OrderStatus.REFUNDED,
+  OrderStatus.ON_HOLD,
+];
 
-type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'PARTIAL';
+const CANCELLABLE_STATUSES = new Set<string>([
+  OrderStatus.PENDING,
+  OrderStatus.PROCESSING,
+  OrderStatus.ON_HOLD,
+]);
 
-interface OrderItem {
-  id: string;
-  productId: string;
-  productName: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-  variantName?: string;
-  product?: {
-    id: string;
-    name: string;
-    images: string[];
-  };
-}
+const CONVERTIBLE_STATUSES = new Set<string>([OrderStatus.PENDING]);
 
-interface OrderPayment {
-  id: string;
-  amount: number;
-  paymentMethod: string;
-  status: string;
-  processedAt: string;
-  provider?: string;
-  gatewayId?: string;
-  reference?: string;
-}
-
-interface Order {
-  id: string;
-  orderNumber: string;
-  status: OrderStatus;
-  subtotal: number;
-  tax: number;
-  discount: number;
-  total: number;
-  paidAmount: number;
-  changeAmount?: number;
-  paymentStatus: PaymentStatus;
-  notes?: string;
-  createdAt: string;
-  updatedAt?: string;
-  customerId?: string;
-  customer?: {
-    id?: string;
-    firstName?: string;
-    lastName?: string;
-    email?: string;
-    phoneNumber?: string;
-    address?: string;
-  };
-  items: OrderItem[];
-  payment?: OrderPayment;
-  saleId?: string;
-}
-
-// ============================================
-// HELPERS
-// ============================================
-
-function normalizeOrder(raw: any): Order {
-  const payment =
-    raw.payment ||
-    (Array.isArray(raw.payments) && raw.payments.length > 0
-      ? raw.payments[0]
-      : undefined);
-
-  const items: OrderItem[] = (raw.items || []).map((item: any) => ({
-    id: item.id,
-    productId: item.productId,
-    productName:
-      item.product?.name || item.productName || item.name || 'Item',
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    total: item.total,
-    variantName: item.variant?.name || item.variantName,
-    product: item.product
-      ? {
-          id: item.product.id,
-          name: item.product.name,
-          images: item.product.images || [],
-        }
-      : undefined,
-  }));
-
-  const derivedPaymentStatus: PaymentStatus =
-    raw.paymentStatus ||
-    (payment?.status === 'PAID'
-      ? 'PAID'
-      : payment?.status === 'PARTIAL'
-        ? 'PARTIAL'
-        : payment?.status === 'REFUNDED'
-          ? 'REFUNDED'
-          : payment?.status === 'FAILED'
-            ? 'FAILED'
-            : raw.status === 'COMPLETED'
-              ? 'PAID'
-              : 'PENDING');
-
-  const customer = raw.customer || {};
-
-  return {
-    id: raw.id,
-    orderNumber:
-      raw.orderNumber ||
-      raw.receiptNumber ||
-      raw.id?.slice(0, 8) ||
-      'N/A',
-    status: (raw.status || 'PENDING') as OrderStatus,
-    subtotal: raw.subtotal || 0,
-    tax: raw.tax || 0,
-    discount: raw.discount || 0,
-    total: raw.total || 0,
-    paidAmount: raw.paidAmount || payment?.amount || 0,
-    changeAmount: raw.changeAmount || 0,
-    paymentStatus: derivedPaymentStatus,
-    notes: raw.notes,
-    createdAt: raw.createdAt || raw.saleDate,
-    updatedAt: raw.updatedAt,
-    customerId: raw.customerId,
-    customer: {
-      id: customer.id,
-      firstName: customer.firstName,
-      lastName: customer.lastName,
-      email: customer.email,
-      phoneNumber: customer.phoneNumber || customer.phone,
-      address: customer.address,
-    },
-    items,
-    payment: payment
-      ? {
-          id: payment.id,
-          amount: payment.amount,
-          paymentMethod: payment.paymentMethod,
-          status: payment.status,
-          processedAt: payment.processedAt,
-          provider: payment.provider,
-          gatewayId: payment.gatewayId,
-          reference: payment.reference,
-        }
-      : undefined,
-    saleId: raw.saleId,
-  };
-}
-
-/** Status → progress percentage (0-100) for the shipping bar */
-function getProgressPercent(status: OrderStatus): number {
-  switch (status) {
-    case 'PENDING':
-      return 15;
-    case 'PROCESSING':
-    case 'ON_HOLD':
-      return 40;
-    case 'COMPLETED':
-      return 100;
-    case 'CANCELLED':
-    case 'REFUNDED':
-      return 0;
-    default:
-      return 25;
-  }
-}
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  CASH: 'Cash',
-  CREDIT_CARD: 'Credit Card',
-  DEBIT_CARD: 'Debit Card',
-  MOBILE_MONEY: 'Mobile Money',
-  BANK_TRANSFER: 'Bank Transfer',
-  GIFT_CARD: 'Gift Card',
-  LOYALTY_POINTS: 'Loyalty Points',
-  CHECK: 'Check',
-  PAYPAL: 'PayPal',
-  FLUTTERWAVE: 'Flutterwave',
-  PAYSTACK: 'Paystack',
-  SQUARE: 'Square',
-  MTN: 'MTN Mobile Money',
-  AIRTEL: 'Airtel Money',
-  TIGO: 'Tigo Pesa',
-  VODAFONE: 'Vodafone Cash',
-};
-
-const PAYMENT_METHOD_ICONS: Record<string, React.ElementType> = {
-  CASH: Banknote,
-  CREDIT_CARD: CreditCard,
-  DEBIT_CARD: Wallet,
-  MOBILE_MONEY: Smartphone,
-  BANK_TRANSFER: Landmark,
-  GIFT_CARD: Gift,
-  LOYALTY_POINTS: Star,
-  CHECK: FileText,
-  PAYPAL: Globe,
-  FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
-  SQUARE: CreditCard,
-  MTN: Smartphone,
-  AIRTEL: Smartphone,
-  TIGO: Smartphone,
-  VODAFONE: Smartphone,
+const PRIORITY_BADGE_CLASSES: Record<string, string> = {
+  LOW: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  MEDIUM:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  HIGH: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  URGENT:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
 };
 
 // ============================================
-// MAIN COMPONENT
+// PAGE
 // ============================================
 
-export default function OrderConfirmationPage() {
+export default function AdminOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params?.id as string;
-  const { isDark } = useThemeStore();
+  const id = params.id as string;
 
   const [order, setOrder] = useState<Order | null>(null);
+  const [timeline, setTimeline] = useState<OrderTimelineEntry[]>([]);
+  const [history, setHistory] = useState<OrderHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isClient, setIsClient] = useState(false);
 
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [newStatus, setNewStatus] = useState<OrderStatus | ''>('');
+  const [cancelReason, setCancelReason] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  const isMountedRef = useRef(true);
   useEffect(() => {
-    setIsClient(true);
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   // ============================================
-  // LOAD ORDER — try by ID first, then by order number
+  // DATA LOADING
   // ============================================
 
   const loadOrder = useCallback(async () => {
@@ -286,587 +111,623 @@ export default function OrderConfirmationPage() {
       setLoading(true);
       setError(null);
 
-      let data: any = null;
+      // Load the order plus its timeline and history in parallel.
+      // Timeline and history are non-fatal — a failure to load them
+      // does not prevent the order itself from rendering.
+      const [orderResult, timelineResult, historyResult] =
+        await Promise.allSettled([
+          orderService.getOrderById(id),
+          orderService.getOrderTimeline(id),
+          orderService.getOrderHistory(id),
+        ]);
 
-      // Try by ID first (works for CUIDs returned from order list)
-      try {
-        data = await orderService.getOrderById(id);
-      } catch (err: any) {
-        // If that fails, try by order number (works when URL uses ORD-xxx)
-        console.warn(
-          'Order lookup by ID failed, trying by number:',
-          err?.message,
-        );
-        try {
-          data = await orderService.getOrderByNumber(id);
-        } catch (innerErr: any) {
-          throw new Error(
-            innerErr?.response?.data?.message ||
-              innerErr?.message ||
-              'Order not found',
-          );
-        }
+      if (!isMountedRef.current) return;
+
+      if (orderResult.status === 'rejected') {
+        throw orderResult.reason;
       }
 
-      setOrder(normalizeOrder(data));
-    } catch (error: any) {
-      console.error('Failed to load order:', error);
+      setOrder(orderResult.value);
+      setTimeline(
+        timelineResult.status === 'fulfilled' ? timelineResult.value : [],
+      );
+      setHistory(
+        historyResult.status === 'fulfilled' ? historyResult.value : [],
+      );
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+      console.error('Failed to load order:', err);
       setError(
-        error?.response?.data?.message ||
-          error?.message ||
+        err?.response?.data?.message ||
+          err?.message ||
           'Failed to load order',
       );
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    if (isClient && id) {
-      loadOrder();
-    }
-  }, [isClient, id, loadOrder]);
+    void loadOrder();
+  }, [loadOrder]);
 
   // ============================================
   // HANDLERS
   // ============================================
 
-  const handlePrint = () => {
-    router.push(`/order-confirmation/${id}/print`);
-  };
+  const handleStatusUpdate = useCallback(async () => {
+    if (!order || !newStatus) return;
 
-  const handleDownload = () => {
-    if (!order) return;
-    const data = {
-      order,
-      downloadedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `order-${order.orderNumber}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast.success('Order downloaded');
-  };
-
-  const handleShare = async () => {
-    if (!order) return;
-    const shareUrl = `${window.location.origin}/order-confirmation/${order.id}`;
-    const shareData = {
-      title: `Order #${order.orderNumber}`,
-      text: `Check out my order #${order.orderNumber}`,
-      url: shareUrl,
-    };
-
-    if (navigator.share) {
-      try {
-        await navigator.share(shareData);
-      } catch {
-        // user cancelled or share failed — no-op
-      }
-    } else {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        toast.success('Order link copied');
-      } catch {
-        toast.error('Failed to copy link');
-      }
+    setProcessing(true);
+    try {
+      await orderService.updateOrderStatus(order.id, newStatus);
+      toast.success('Order status updated');
+      setShowStatusModal(false);
+      setNewStatus('');
+      await loadOrder();
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to update status',
+      );
+    } finally {
+      if (isMountedRef.current) setProcessing(false);
     }
-  };
+  }, [order, newStatus, loadOrder]);
+
+  const handleCancel = useCallback(async () => {
+    if (!order || !cancelReason.trim()) return;
+
+    setProcessing(true);
+    try {
+      await orderService.cancelOrder(order.id, cancelReason.trim());
+      toast.success('Order cancelled');
+      setShowCancelModal(false);
+      setCancelReason('');
+      await loadOrder();
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to cancel order',
+      );
+    } finally {
+      if (isMountedRef.current) setProcessing(false);
+    }
+  }, [order, cancelReason, loadOrder]);
+
+  const handleConvert = useCallback(async () => {
+    if (!order) return;
+
+    setProcessing(true);
+    try {
+      const sale = await orderService.convertOrderToSale(order.id);
+      toast.success('Order converted to sale');
+      // Reload so the UI reflects the new status, then optionally
+      // navigate to the sale detail page. The backend exposes the
+      // sale through the order detail payload after conversion.
+      await loadOrder();
+      if (sale?.id) {
+        router.push(`/admin/sales/${sale.id}`);
+      }
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to convert order',
+      );
+    } finally {
+      if (isMountedRef.current) setProcessing(false);
+    }
+  }, [order, loadOrder, router]);
 
   // ============================================
-  // LOADING STATE
+  // RENDER — loading / error
   // ============================================
 
-  if (!isClient || loading) {
+  if (loading) {
     return (
-      <div
-        className={`min-h-screen ${
-          isDark ? 'dark bg-gray-950' : 'bg-gray-50'
-        }`}
-      >
-        <div className="flex items-center justify-center min-h-[60vh] pt-24 md:pt-28">
-          <div className="text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-orange-600 mx-auto" />
-            <p className="mt-4 text-gray-600 dark:text-gray-400">
-              Loading order...
-            </p>
-          </div>
+      <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-brand-600 mx-auto" />
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading order…
+          </p>
         </div>
       </div>
     );
   }
-
-  // ============================================
-  // ERROR STATE
-  // ============================================
 
   if (error || !order) {
     return (
-      <div
-        className={`min-h-screen ${
-          isDark ? 'dark bg-gray-950' : 'bg-gray-50'
-        }`}
-      >
-        <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 pt-32">
-          <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
-            Order Not Found
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2 text-center">
-            {error || "The order you're looking for doesn't exist."}
-          </p>
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={loadOrder}
-              className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => router.push('/account/orders')}
-              className="px-6 py-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-lg transition-colors flex items-center gap-2 shadow-md"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              My Orders
-            </button>
-          </div>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900 p-8">
+        <XCircle className="w-16 h-16 text-danger-500 mb-4" />
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Order Not Found
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
+          {error || "The order you're looking for doesn't exist."}
+        </p>
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={loadOrder}
+            className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Try Again
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/admin/orders')}
+            className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Orders
+          </button>
         </div>
       </div>
     );
   }
 
   // ============================================
-  // DERIVED DATA
+  // DERIVED
   // ============================================
 
-  const estimatedDelivery = new Date(order.createdAt);
-  estimatedDelivery.setDate(estimatedDelivery.getDate() + 3);
+  const customerName = order.customer
+    ? `${order.customer.firstName ?? ''} ${order.customer.lastName ?? ''}`.trim() ||
+      'Customer'
+    : 'Guest';
 
-  const progressPercent = getProgressPercent(order.status);
+  const canCancel = CANCELLABLE_STATUSES.has(order.status);
+  const canConvert = CONVERTIBLE_STATUSES.has(order.status);
 
-  const PaymentIcon =
-    PAYMENT_METHOD_ICONS[order.payment?.paymentMethod || ''] || CreditCard;
-
-  const paymentMethodLabel =
-    PAYMENT_METHOD_LABELS[order.payment?.paymentMethod || ''] ||
-    order.payment?.paymentMethod ||
-    '—';
+  const priorityClass =
+    PRIORITY_BADGE_CLASSES[order.priority ?? 'MEDIUM'] ??
+    PRIORITY_BADGE_CLASSES.MEDIUM;
 
   // ============================================
-  // RENDER
+  // RENDER — main
   // ============================================
 
   return (
-    <div
-      className={`min-h-screen ${
-        isDark ? 'dark bg-gray-950' : 'bg-gray-50'
-      }`}
-    >
-      <div className="max-w-4xl mx-auto px-4 pt-24 md:pt-28 pb-8">
-        {/* Success Header */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center mb-8"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
-            className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
-              order.status === 'CANCELLED' || order.status === 'REFUNDED'
-                ? 'bg-red-100 dark:bg-red-900/30'
-                : 'bg-green-100 dark:bg-green-900/30'
-            }`}
-          >
-            {order.status === 'CANCELLED' || order.status === 'REFUNDED' ? (
-              <AlertCircle className="w-10 h-10 text-red-600 dark:text-red-400" />
-            ) : (
-              <CheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
-            )}
-          </motion.div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {order.status === 'CANCELLED'
-              ? 'Order Cancelled'
-              : order.status === 'REFUNDED'
-                ? 'Order Refunded'
-                : 'Order Confirmed!'}
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">
-            {order.status === 'CANCELLED'
-              ? 'This order was cancelled. If this was a mistake, please contact support.'
-              : order.status === 'REFUNDED'
-                ? 'This order was refunded. The amount will appear on your original payment method.'
-                : "Thank you for your order. We'll send you a confirmation email shortly."}
-          </p>
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-            <Receipt className="w-4 h-4 text-gray-500" />
-            <span className="font-mono text-sm text-gray-700 dark:text-gray-300">
-              Order #{order.orderNumber}
-            </span>
-          </div>
-          <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Placed on {formatDateTime(order.createdAt)}
-          </div>
-        </motion.div>
-
-        {/* Order Status */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8"
-        >
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-orange-500" />
-            Order Status
-          </h2>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-3 h-3 rounded-full ${
-                  order.status === 'COMPLETED'
-                    ? 'bg-green-500'
-                    : order.status === 'CANCELLED' ||
-                        order.status === 'REFUNDED'
-                      ? 'bg-red-500'
-                      : order.status === 'PROCESSING' ||
-                          order.status === 'ON_HOLD'
-                        ? 'bg-orange-500'
-                        : 'bg-yellow-500'
-                }`}
-              />
-              <span className="text-sm font-medium text-gray-900 dark:text-white">
-                {order.status.charAt(0) +
-                  order.status.slice(1).toLowerCase().replace('_', ' ')}
-              </span>
-            </div>
-            {order.status !== 'CANCELLED' &&
-              order.status !== 'REFUNDED' && (
-                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                  <Truck className="w-4 h-4" />
-                  <span>
-                    Estimated delivery: {formatDate(estimatedDelivery)}
-                  </span>
-                </div>
-              )}
-          </div>
-
-          {order.status !== 'CANCELLED' &&
-            order.status !== 'REFUNDED' && (
-              <>
-                <div className="mt-4 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  <span>Order Placed</span>
-                  <span>Processing</span>
-                  <span>Shipped</span>
-                  <span>Delivered</span>
-                </div>
-              </>
-            )}
-
-          {order.notes && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                Notes
-              </p>
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                {order.notes}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => router.push('/admin/orders')}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+              aria-label="Back to orders"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+            </button>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3 flex-wrap">
+                Order
+                <span className="font-mono tabular-nums">
+                  #{order.orderNumber}
+                </span>
+                <OrderStatusBadge status={order.status} size="md" />
+                <span
+                  className={`px-2 py-1 rounded-full text-2xs font-medium ${priorityClass}`}
+                >
+                  {order.priority ?? 'MEDIUM'}
+                </span>
+              </h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" />
+                {formatDateTime(order.createdAt)}
               </p>
             </div>
-          )}
-        </motion.div>
+          </div>
 
-        {/* Order Items */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8"
-        >
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <Package className="w-5 h-5 text-orange-500" />
-            Order Items ({order.items.length})
-          </h2>
-          <div className="space-y-4">
-            {order.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-0"
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/admin/orders/${order.id}/print`}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-700 dark:text-gray-300 text-sm focus-ring"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </Link>
+            {canCancel && (
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(true)}
+                disabled={processing}
+                className="px-4 py-2 border border-danger-300 dark:border-danger-800 text-danger-600 dark:text-danger-400 rounded-lg hover:bg-danger-50 dark:hover:bg-danger-900/20 transition-colors flex items-center gap-2 text-sm disabled:opacity-50 focus-ring"
               >
-                <div className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-700 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                  {item.product?.images?.[0] ? (
-                    <Image
-                      src={item.product.images[0]}
-                      alt={item.productName}
-                      width={64}
-                      height={64}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (
-                          e.target as HTMLImageElement
-                        ).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <Package className="w-6 h-6 text-gray-400" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">
-                    {item.productName}
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {item.quantity} × {formatCurrency(item.unitPrice)}
-                    {item.variantName && (
-                      <span className="ml-2 text-xs">
-                        ({item.variantName})
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <span className="font-medium text-gray-900 dark:text-white whitespace-nowrap">
-                  {formatCurrency(item.total)}
-                </span>
-              </div>
-            ))}
+                <XCircle className="w-4 h-4" />
+                Cancel
+              </button>
+            )}
+            {canConvert && (
+              <button
+                type="button"
+                onClick={handleConvert}
+                disabled={processing}
+                className="px-4 py-2 bg-success-600 hover:bg-success-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm disabled:opacity-50 focus-ring"
+              >
+                {processing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <TrendingUp className="w-4 h-4" />
+                )}
+                Convert to Sale
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setNewStatus(order.status);
+                setShowStatusModal(true);
+              }}
+              disabled={processing}
+              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex items-center gap-2 text-sm disabled:opacity-50 focus-ring"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Update Status
+            </button>
           </div>
-        </motion.div>
+        </div>
 
-        {/* Customer & Payment Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
-          >
-            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
-              <User className="w-4 h-4 text-orange-500" />
-              Customer Details
-            </h3>
-            <div className="space-y-2 text-sm">
-              <p className="text-gray-900 dark:text-white">
-                {order.customer?.firstName || order.customer?.lastName
-                  ? `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim()
-                  : 'Guest'}
-              </p>
-              {order.customer?.email && (
-                <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  {order.customer.email}
-                </p>
-              )}
-              {order.customer?.phoneNumber && (
-                <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
-                  {order.customer.phoneNumber}
-                </p>
-              )}
-              {order.customer?.address && (
-                <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
-                  {order.customer.address}
-                </p>
-              )}
-            </div>
-          </motion.div>
+        {/* Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left column */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Items */}
+            <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                <Package className="w-5 h-5 text-brand-500" />
+                Items ({order.items?.length ?? 0})
+              </h2>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
-          >
-            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4 flex items-center gap-2">
-              <Receipt className="w-4 h-4 text-green-500" />
-              Payment Summary
-            </h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">
-                  Subtotal
-                </span>
-                <span className="text-gray-900 dark:text-white">
-                  {formatCurrency(order.subtotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Tax</span>
-                <span className="text-gray-900 dark:text-white">
-                  {formatCurrency(order.tax)}
-                </span>
-              </div>
-              {order.discount > 0 && (
-                <div className="flex justify-between text-green-600 dark:text-green-400">
-                  <span>Discount</span>
-                  <span>-{formatCurrency(order.discount)}</span>
+              {order.items && order.items.length > 0 ? (
+                <div className="space-y-3">
+                  {order.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-4 py-3 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                    >
+                      <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
+                        {item.product?.images?.[0] ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.product.images[0]}
+                            alt={item.product.name}
+                            className="w-full h-full object-cover rounded-lg"
+                          />
+                        ) : (
+                          <Package className="w-5 h-5 text-gray-400" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 dark:text-white truncate">
+                          {item.product?.name ?? 'Product'}
+                        </p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                          {item.quantity} ×{' '}
+                          {formatCurrency(item.unitPrice)}
+                          {item.variant?.name && (
+                            <span className="ml-2 text-xs">
+                              ({item.variant.name})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <p className="font-medium text-gray-900 dark:text-white tabular-nums">
+                          {formatCurrency(item.total)}
+                        </p>
+                        {item.discount > 0 && (
+                          <p className="text-xs text-success-600 dark:text-success-400 tabular-nums">
+                            −{formatCurrency(item.discount)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No items on this order.
+                </p>
               )}
-              <div className="flex justify-between font-bold pt-2 border-t border-gray-200 dark:border-gray-700">
-                <span className="text-gray-900 dark:text-white">Total</span>
-                <span className="text-gray-900 dark:text-white">
-                  {formatCurrency(order.total)}
-                </span>
+            </section>
+
+            {/* Notes */}
+            {order.notes && (
+              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                  <FileText className="w-5 h-5 text-brand-500" />
+                  Notes
+                </h2>
+                <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                  {order.notes}
+                </p>
+              </section>
+            )}
+
+            {/* Timeline */}
+            <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                <Clock className="w-5 h-5 text-brand-500" />
+                Activity
+              </h2>
+              <OrderTimeline
+                entries={timeline}
+                reverse
+                loading={false}
+              />
+              {history.length > 0 && timeline.length === 0 && (
+                <ul className="space-y-2 mt-4 text-sm text-gray-600 dark:text-gray-400">
+                  {history.map((h) => (
+                    <li key={h.id}>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {h.action}
+                      </span>{' '}
+                      — {formatDateTime(h.createdAt)}
+                      {h.notes && ` · ${h.notes}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          {/* Right column */}
+          <div className="space-y-6">
+            {/* Summary */}
+            <OrderSummaryCard
+              totals={{
+                subtotal: order.subtotal,
+                tax: order.tax,
+                discount: order.discount,
+                total: order.total,
+              }}
+              sticky={false}
+            />
+
+            {/* Customer */}
+            <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                <User className="w-4 h-4 text-brand-500" />
+                Customer
+              </h2>
+              <div className="space-y-2 text-sm">
+                <p className="font-medium text-gray-900 dark:text-white">
+                  {customerName}
+                </p>
+                {order.customer?.email && (
+                  <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                    <Mail className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {order.customer.email}
+                    </span>
+                  </p>
+                )}
+                {order.customer?.phoneNumber && (
+                  <p className="text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                    <Phone className="w-4 h-4 shrink-0" />
+                    {order.customer.phoneNumber}
+                  </p>
+                )}
+                {order.shippingAddress && (
+                  <p className="text-gray-500 dark:text-gray-400 flex items-start gap-2">
+                    <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{order.shippingAddress}</span>
+                  </p>
+                )}
+                {!order.customer && (
+                  <p className="text-gray-500 dark:text-gray-400">
+                    Walk-in / no customer record attached.
+                  </p>
+                )}
               </div>
-              {order.paidAmount > 0 && (
-                <>
+            </section>
+
+            {/* Payment */}
+            {order.payment && (
+              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                  <DollarSign className="w-4 h-4 text-success-500" />
+                  Payment
+                </h2>
+                <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-500 dark:text-gray-400">
-                      Paid
+                      Amount
                     </span>
-                    <span className="text-gray-900 dark:text-white">
-                      {formatCurrency(order.paidAmount)}
+                    <span className="text-gray-900 dark:text-white tabular-nums">
+                      {formatCurrency(order.payment.amount)}
                     </span>
                   </div>
-                  {order.changeAmount && order.changeAmount > 0 && (
+                  {order.payment.paymentMethod && (
                     <div className="flex justify-between">
                       <span className="text-gray-500 dark:text-gray-400">
-                        Change
+                        Method
                       </span>
-                      <span className="text-gray-900 dark:text-white">
-                        {formatCurrency(order.changeAmount)}
+                      <span className="text-gray-900 dark:text-white capitalize">
+                        {String(order.payment.paymentMethod)
+                          .toLowerCase()
+                          .replace(/_/g, ' ')}
                       </span>
                     </div>
                   )}
-                </>
-              )}
-              {order.payment && (
-                <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-700">
-                  <span className="text-gray-500 dark:text-gray-400">
-                    Payment Method
-                  </span>
-                  <span className="text-gray-900 dark:text-white flex items-center gap-1.5">
-                    <PaymentIcon className="w-4 h-4" />
-                    {paymentMethodLabel}
-                  </span>
+                  {order.payment.status && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500 dark:text-gray-400">
+                        Status
+                      </span>
+                      <span className="text-gray-900 dark:text-white">
+                        {order.payment.status}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
-              {order.paymentStatus && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">
-                    Payment Status
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      order.paymentStatus === 'PAID'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-                        : order.paymentStatus === 'PENDING'
-                          ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
-                          : order.paymentStatus === 'REFUNDED'
-                            ? 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
-                            : order.paymentStatus === 'FAILED'
-                              ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                              : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
-                    }`}
-                  >
-                    {order.paymentStatus}
-                  </span>
+              </section>
+            )}
+
+            {/* Related */}
+            {(order.sale || order.receipt) && (
+              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                  <ExternalLink className="w-4 h-4 text-brand-500" />
+                  Related records
+                </h2>
+                <div className="space-y-2">
+                  {order.sale?.id && (
+                    <Link
+                      href={`/admin/sales/${order.sale.id}`}
+                      className="block text-sm text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
+                    >
+                      View sale #{order.sale.receiptNumber ?? order.sale.id}
+                    </Link>
+                  )}
+                  {order.receipt?.id && (
+                    <Link
+                      href={`/admin/receipts/${order.receipt.id}`}
+                      className="block text-sm text-brand-600 dark:text-brand-400 hover:underline focus-ring rounded"
+                    >
+                      View receipt #{order.receipt.receiptNumber}
+                    </Link>
+                  )}
                 </div>
-              )}
-            </div>
-          </motion.div>
+              </section>
+            )}
+
+            {/* Shipping */}
+            {order.expectedDeliveryDate && (
+              <section className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                  <Truck className="w-4 h-4 text-brand-500" />
+                  Delivery
+                </h2>
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  Expected:{' '}
+                  <span className="tabular-nums">
+                    {formatDateTime(order.expectedDeliveryDate)}
+                  </span>
+                </p>
+              </section>
+            )}
+          </div>
         </div>
-
-        {/* Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="flex flex-wrap gap-3 mt-8"
-        >
-          <button
-            onClick={() => router.push('/shop')}
-            className="flex-1 min-w-[180px] px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md"
-          >
-            <ShoppingBag className="w-5 h-5" />
-            Continue Shopping
-          </button>
-          <button
-            onClick={handlePrint}
-            className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-700 dark:text-gray-300"
-          >
-            <Printer className="w-5 h-5" />
-            Print
-          </button>
-          <button
-            onClick={handleDownload}
-            className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-700 dark:text-gray-300"
-          >
-            <Download className="w-5 h-5" />
-            Download
-          </button>
-          <button
-            onClick={handleShare}
-            className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-700 dark:text-gray-300"
-          >
-            <Share2 className="w-5 h-5" />
-            Share
-          </button>
-        </motion.div>
-
-        {/* Loyalty Points Earned */}
-        {order.status === 'COMPLETED' && order.total > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="mt-8 p-4 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/20 rounded-xl border border-orange-200 dark:border-orange-800"
-          >
-            <div className="flex items-center gap-3">
-              <Gift className="w-6 h-6 text-orange-600 dark:text-orange-400" />
-              <div>
-                <p className="text-sm font-medium text-orange-700 dark:text-orange-300">
-                  You earned {Math.floor(order.total / 10)} loyalty points!
-                </p>
-                <p className="text-xs text-orange-600 dark:text-orange-400">
-                  {Math.floor(order.total / 10)} points ={' '}
-                  {formatCurrency(Math.floor(order.total / 10) * 0.1)}{' '}
-                  discount on your next order
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Help */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.7 }}
-          className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400"
-        >
-          <p>
-            Need help with your order?{' '}
-            <Link
-              href="/contact"
-              className="text-orange-600 dark:text-orange-400 hover:underline"
-            >
-              Contact Support
-            </Link>
-          </p>
-          <p className="mt-2">
-            <Link
-              href="/account/orders"
-              className="text-orange-600 dark:text-orange-400 hover:underline"
-            >
-              View all my orders →
-            </Link>
-          </p>
-        </motion.div>
       </div>
+
+      {/* ============================================ */}
+      {/* STATUS UPDATE MODAL                          */}
+      {/* ============================================ */}
+      <Modal
+        isOpen={showStatusModal}
+        onClose={() => setShowStatusModal(false)}
+        title="Update Order Status"
+      >
+        <div className="p-6 bg-white dark:bg-gray-800">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Current:{' '}
+            <OrderStatusBadge status={order.status} size="sm" />
+          </p>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            New status
+          </label>
+          <select
+            value={newStatus}
+            onChange={(e) =>
+              setNewStatus(e.target.value as OrderStatus | '')
+            }
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
+          >
+            <option value="">Select status</option>
+            {UPDATABLE_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s.charAt(0) + s.slice(1).toLowerCase().replace('_', ' ')}
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            Use the Cancel action for cancellations — a reason is
+            required.
+          </p>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              type="button"
+              onClick={() => setShowStatusModal(false)}
+              className="btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleStatusUpdate}
+              disabled={processing || !newStatus}
+              className="btn-brand disabled:opacity-50"
+            >
+              {processing && (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )}
+              Update
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ============================================ */}
+      {/* CANCEL MODAL                                 */}
+      {/* ============================================ */}
+      <Modal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        title="Cancel Order"
+      >
+        <div className="p-6 bg-white dark:bg-gray-800">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Order{' '}
+            <span className="font-mono tabular-nums">
+              #{order.orderNumber}
+            </span>{' '}
+            — {formatCurrency(order.total)}
+          </p>
+
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Reason for cancellation
+          </label>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            rows={3}
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-danger-500 focus:outline-none resize-none"
+            placeholder="Explain why this order is being cancelled…"
+          />
+
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              type="button"
+              onClick={() => setShowCancelModal(false)}
+              className="btn-secondary"
+            >
+              Keep Order
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={processing || !cancelReason.trim()}
+              className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 focus-ring"
+            >
+              {processing && (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              )}
+              Cancel Order
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

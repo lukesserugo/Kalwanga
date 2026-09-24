@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -18,60 +18,96 @@ import {
   Shield,
   Lock,
   MessageCircle,
+  Copy,
 } from 'lucide-react';
 import { useThemeStore } from '../../../stores/themeStore';
+import { toast } from '../../../utils/toast-manager';
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const PROVIDER_NAMES: Record<string, string> = {
+  STRIPE: 'Stripe',
+  PAYPAL: 'PayPal',
+  FLUTTERWAVE: 'Flutterwave',
+  PAYSTACK: 'Paystack',
+  SQUARE: 'Square',
+  MTN: 'MTN Mobile Money',
+  AIRTEL: 'Airtel Money',
+  TIGO: 'Tigo Pesa',
+  VODAFONE: 'Vodafone Cash',
+  CASH: 'Cash',
+  MOBILE_MONEY: 'Mobile Money',
+  BANK_TRANSFER: 'Bank Transfer',
+  GIFT_CARD: 'Gift Card',
+  LOYALTY_POINTS: 'Loyalty Points',
+};
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export default function PaymentCancelPage() {
   const { isDark } = useThemeStore();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [provider, setProvider] = useState<string | null>(null);
-  const [reference, setReference] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState(5);
+  // ── Parse the URL once ───────────────────────────────────────
+  //
+  // Doing this inside a `useMemo` means the parse runs once per
+  // mount and the derived values are stable identities for the
+  // rest of the component's life.
+  const { provider, reference } = useMemo(() => {
+    const providerParam =
+      searchParams.get('provider') ||
+      searchParams.get('gateway') ||
+      null;
+    const referenceParam =
+      searchParams.get('reference') ||
+      searchParams.get('session_id') ||
+      searchParams.get('payment_intent') ||
+      searchParams.get('tx_ref') ||
+      searchParams.get('saleId') ||
+      null;
 
-  // Get query params
-  useEffect(() => {
-    const providerParam = searchParams.get('provider');
-    const referenceParam = searchParams.get('reference');
-    const sessionId = searchParams.get('session_id');
-
-    if (providerParam) setProvider(providerParam);
-    if (referenceParam) setReference(referenceParam);
-    if (sessionId) setReference(sessionId);
+    return {
+      provider: providerParam,
+      reference: referenceParam,
+    };
   }, [searchParams]);
 
-  // Auto-redirect to cart after countdown
+  const [countdown, setCountdown] = useState(5);
+
+  // ── Countdown to auto-redirect ───────────────────────────────
+
   useEffect(() => {
-    if (countdown > 0) {
-      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (countdown === 0) {
+    if (countdown <= 0) {
       router.push('/cart');
+      return;
     }
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
   }, [countdown, router]);
 
-  const getProviderName = (providerCode: string | null): string => {
-    const names: Record<string, string> = {
-      STRIPE: 'Stripe',
-      PAYPAL: 'PayPal',
-      FLUTTERWAVE: 'Flutterwave',
-      PAYSTACK: 'Paystack',
-      SQUARE: 'Square',
-      MTN: 'MTN Mobile Money',
-      AIRTEL: 'Airtel Money',
-      TIGO: 'Tigo Pesa',
-      VODAFONE: 'Vodafone Cash',
-      CASH: 'Cash',
-      MOBILE_MONEY: 'Mobile Money',
-      BANK_TRANSFER: 'Bank Transfer',
-      GIFT_CARD: 'Gift Card',
-      LOYALTY_POINTS: 'Loyalty Points',
-    };
-    return providerCode
-      ? names[providerCode] || providerCode
-      : 'payment provider';
-  };
+  // ── Handlers ─────────────────────────────────────────────────
+
+  const getProviderName = useCallback((providerCode: string | null) => {
+    if (!providerCode) return null;
+    return PROVIDER_NAMES[providerCode] || providerCode;
+  }, []);
+
+  const handleCopyReference = useCallback(() => {
+    if (!reference) return;
+    navigator.clipboard
+      .writeText(reference)
+      .then(() => toast.success('Reference copied to clipboard'))
+      .catch(() => toast.error('Failed to copy reference'));
+  }, [reference]);
+
+  const providerName = getProviderName(provider);
+
+  // ── Render ───────────────────────────────────────────────────
 
   return (
     <div
@@ -110,31 +146,53 @@ export default function PaymentCancelPage() {
             account.
           </p>
 
-          {/* Provider info if available */}
-          {provider && (
-            <div
-              className={`mt-4 p-3 rounded-lg ${
-                isDark ? 'bg-gray-700/30' : 'bg-gray-50'
+          {/* Provider info — shown when we know which gateway
+              returned the user, otherwise a generic note. */}
+          <div
+            className={`mt-4 p-3 rounded-lg ${
+              isDark ? 'bg-gray-700/30' : 'bg-gray-50'
+            }`}
+          >
+            <p
+              className={`text-sm ${
+                isDark ? 'text-gray-300' : 'text-gray-700'
               }`}
             >
-              <p
-                className={`text-sm ${
-                  isDark ? 'text-gray-300' : 'text-gray-700'
-                }`}
-              >
-                <CreditCard className="w-4 h-4 inline mr-2 text-gray-400" />
-                Payment via{' '}
-                <span className="font-medium">
-                  {getProviderName(provider)}
+              <CreditCard className="w-4 h-4 inline mr-2 text-gray-400" />
+              {providerName ? (
+                <>
+                  Payment via{' '}
+                  <span className="font-medium">{providerName}</span>
+                </>
+              ) : (
+                <>Your payment session was cancelled</>
+              )}
+            </p>
+            {reference && (
+              <div className="mt-2 flex items-center justify-center gap-2">
+                <span
+                  className={`text-xs font-mono break-all ${
+                    isDark ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  Ref: {reference}
                 </span>
-                {reference && (
-                  <span className="text-xs block mt-1 font-mono text-gray-500 dark:text-gray-400">
-                    Reference: {reference.slice(0, 20)}...
-                  </span>
-                )}
-              </p>
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={handleCopyReference}
+                  className={`p-1 rounded transition-colors focus-ring ${
+                    isDark
+                      ? 'hover:bg-gray-600 text-gray-400 hover:text-gray-300'
+                      : 'hover:bg-gray-200 text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="Copy reference"
+                  aria-label="Copy reference"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
 
           <div
             className={`mt-6 p-4 rounded-lg ${
@@ -222,7 +280,7 @@ export default function PaymentCancelPage() {
             }`}
           >
             <p
-              className={`text-xs ${
+              className={`text-xs tabular-nums ${
                 isDark ? 'text-gray-500' : 'text-gray-400'
               }`}
             >

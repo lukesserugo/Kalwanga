@@ -8,8 +8,26 @@ import {
   ProcessPaymentRequest,
   RefundPaymentRequest,
   CheckoutSessionRequest,
-  PaginatedPaymentResponse
+  PaginatedPaymentResponse,
 } from '../types/payment';
+
+// ============================================
+// ENDPOINT PREFIXES
+// ============================================
+//
+// The backend mounts three routers that this service touches:
+//
+//   /api/payments        → paymentController       (this file, mostly)
+//   /api/mpesa           → mpesaController         (STK push, B2C)
+//   /api/mobile-money    → mobileMoneyController   (MTN, Airtel)
+//
+// The `api` client prepends `NEXT_PUBLIC_API_URL`. If your client
+// already includes `/api` in its baseURL, drop the `/api` prefix
+// from the three constants below.
+
+const PAYMENTS_BASE = '/payments';
+const MPESA_BASE = '/mpesa';
+const MOBILE_MONEY_BASE = '/mobile-money';
 
 // ============================================
 // MULTI-PROVIDER TYPES
@@ -24,11 +42,20 @@ export enum PaymentProvider {
   LOYALTY_POINTS = 'loyalty_points',
   PAYPAL = 'paypal',
   FLUTTERWAVE = 'flutterwave',
-  PAYSTACK = 'paystack',
   SQUARE = 'square',
   MTN = 'mtn',
   AIRTEL = 'airtel',
+  MPESA = 'mpesa',
 }
+
+/**
+ * Mobile-money sub-providers the backend can actually route.
+ *
+ * The backend `mobileMoneyController.initiatePaymentSchema` accepts
+ * only `MTN` and `AIRTEL`. M-Pesa is routed through a separate
+ * service (`mpesaService`) and its own controller.
+ */
+export type MobileMoneyProvider = 'MTN' | 'AIRTEL' | 'MPESA';
 
 export interface ProviderPaymentRequest extends ProcessPaymentRequest {
   provider?: PaymentProvider;
@@ -48,7 +75,7 @@ export interface ProviderPaymentRequest extends ProcessPaymentRequest {
 
 export interface MobileMoneyPaymentRequest extends ProcessPaymentRequest {
   metadata: {
-    provider: 'MTN' | 'TIGO' | 'AIRTEL' | 'VODAFONE';
+    provider: 'MTN' | 'AIRTEL';
     phoneNumber: string;
   };
 }
@@ -60,7 +87,7 @@ export interface BankTransferPaymentRequest extends ProcessPaymentRequest {
 }
 
 export interface GiftCardPaymentRequest extends ProcessPaymentRequest {
-  gatewayId: string; // Gift card code
+  gatewayId: string;
 }
 
 export interface LoyaltyPointsPaymentRequest extends ProcessPaymentRequest {
@@ -78,12 +105,23 @@ export interface CashPaymentRequest extends ProcessPaymentRequest {
   };
 }
 
+/**
+ * PayPal request payload.
+ *
+ * ⚠ Prefer `processOnlineCheckout` over `processPayPalPayment` for
+ *   the full redirect flow. `processPayPalPayment` posts to
+ *   `/payments` and returns only the local Payment row — it does
+ *   not surface the `approvalUrl` you need to redirect the user
+ *   to PayPal.
+ */
 export interface PayPalPaymentRequest extends ProcessPaymentRequest {
   metadata: {
     customerEmail?: string;
     customerName?: string;
     returnUrl?: string;
     cancelUrl?: string;
+    saleId?: string;
+    orderId?: string;
   };
 }
 
@@ -97,16 +135,8 @@ export interface FlutterwavePaymentRequest extends ProcessPaymentRequest {
   };
 }
 
-export interface PaystackPaymentRequest extends ProcessPaymentRequest {
-  metadata: {
-    customerEmail?: string;
-    customerName?: string;
-    phoneNumber?: string;
-    redirectUrl?: string;
-  };
-}
-
-export interface SquarePaymentRequest extends Omit<ProcessPaymentRequest, 'metadata'> {
+export interface SquarePaymentRequest
+  extends Omit<ProcessPaymentRequest, 'metadata'> {
   cardNonce: string;
   metadata?: {
     customerEmail?: string;
@@ -241,7 +271,6 @@ export interface CreatePaymentIntentResponse {
   status: string;
 }
 
-// ✅ FIXED: Complete ApiResponse interface with proper data handling
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -256,12 +285,21 @@ export interface ApiResponse<T = any> {
   errors?: Array<{ field: string; message: string }>;
 }
 
+// ============================================
+// M-PESA TYPES
+// ============================================
+
 export interface MpesaSTKPushRequest {
   phoneNumber: string;
   amount: number;
   accountReference?: string;
   transactionDesc?: string;
   callbackUrl?: string;
+  saleId?: string;
+  orderId?: string;
+  customerId?: string;
+  businessUnitId?: string;
+  idempotencyKey?: string;
 }
 
 export interface MpesaSTKPushResponse {
@@ -270,6 +308,65 @@ export interface MpesaSTKPushResponse {
   ResponseCode: string;
   ResponseDescription: string;
   CustomerMessage: string;
+}
+
+// ============================================
+// MOBILE MONEY (MTN / AIRTEL) TYPES
+// ============================================
+
+export interface InitiateMobileMoneyPaymentInput {
+  provider: 'MTN' | 'AIRTEL';
+  phoneNumber: string;
+  amount: number;
+  currency?: string;
+  reference?: string;
+  description?: string;
+  callbackUrl?: string;
+  /** POS / cart linkage — packed into the Payment metadata. */
+  saleId?: string;
+  orderId?: string;
+  customerId?: string;
+  businessUnitId?: string;
+  idempotencyKey?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface InitiateMobileMoneyPaymentResponse {
+  success: boolean;
+  data: {
+    transactionId: string;
+    status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'PROCESSING';
+    reference: string;
+    message?: string;
+    provider: string;
+    paymentId?: string;
+  };
+  message: string;
+}
+
+/**
+ * Response shape for `GET /api/mobile-money/status/:provider/:reference`.
+ *
+ * ⚠ The `payment` object lives at `data.payment`, not at the top
+ *   level.
+ */
+export interface GetMobileMoneyStatusResponse {
+  success: boolean;
+  data: {
+    /** 'SUCCESS' | 'PENDING' | 'FAILED' | 'PROCESSING' */
+    status: string;
+    reference: string;
+    isSuccess: boolean;
+    amount?: number;
+    currency?: string;
+    provider: string;
+    /** Raw provider response body — shape depends on provider. */
+    data?: Record<string, any>;
+    /** The local `Payment` row after the status check. */
+    payment?: Payment | null;
+    [key: string]: any;
+  };
+  message: string;
 }
 
 // ============================================
@@ -311,36 +408,24 @@ export interface FlutterwaveVirtualAccountResponse {
 }
 
 // ============================================
-// PAYSTACK TYPES
-// ============================================
-
-export interface PaystackVerifyRequest {
-  reference: string;
-}
-
-export interface PaystackVerifyResponse {
-  success: boolean;
-  status: string;
-  amount: number;
-  currency: string;
-  reference: string;
-  gatewayResponse: string;
-  transactionData: any;
-}
-
-// ============================================
 // SQUARE TYPES
 // ============================================
 
-export interface SquarePaymentRequest extends Omit<ProcessPaymentRequest, 'metadata'> {
+export interface SquarePaymentApiRequest
+  extends Omit<ProcessPaymentRequest, 'metadata'> {
   amount: number;
   cardNonce: string;
   currency?: string;
   customerId?: string;
   description?: string;
+  saleId?: string;
+  orderId?: string;
+  businessUnitId?: string;
   metadata?: {
     customerEmail?: string;
     customerName?: string;
+    saleId?: string;
+    orderId?: string;
     [key: string]: any;
   };
 }
@@ -372,13 +457,19 @@ export interface SquareCustomerResponse {
 }
 
 // ============================================
+// ONLINE CHECKOUT — RE-EXPORTS
+// ============================================
+
+export type {
+  NextAction,
+  OnlineCheckoutRequest,
+  OnlineCheckoutResponse,
+} from './checkoutService';
+
+// ============================================
 // POS / ORDER FORM HELPER TYPES
 // ============================================
 
-/**
- * Payment method union used by the POS / OrderForm.
- * Mirrors the backend `processPaymentSchema` enum.
- */
 export type PosPaymentMethod =
   | 'CASH'
   | 'CREDIT_CARD'
@@ -390,7 +481,6 @@ export type PosPaymentMethod =
   | 'CHECK'
   | 'PAYPAL'
   | 'FLUTTERWAVE'
-  | 'PAYSTACK'
   | 'SQUARE';
 
 export interface ProcessOrderPaymentInput {
@@ -417,6 +507,9 @@ export interface InitiateMpesaSTKPushInput {
   callbackUrl?: string;
   saleId?: string;
   orderId?: string;
+  customerId?: string;
+  businessUnitId?: string;
+  idempotencyKey?: string;
 }
 
 // ============================================
@@ -428,225 +521,280 @@ export const paymentService = {
   // CORE PAYMENT OPERATIONS
   // ============================================
 
-  /**
-   * Process payment (supports all providers)
-   * POST /payments
-   */
   async processPayment(data: ProviderPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', data);
-    return response;
+    return api.post<Payment>(PAYMENTS_BASE, data);
   },
 
-  /**
-   * Process cash payment
-   * POST /payments
-   */
+  async processOnlineCheckout(
+    data: import('./checkoutService').OnlineCheckoutRequest,
+  ): Promise<import('./checkoutService').OnlineCheckoutResponse> {
+    const { checkoutService } = await import('./checkoutService');
+    return checkoutService.processOnlineCheckout(data);
+  },
+
   async processCashPayment(data: CashPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'CASH',
       provider: PaymentProvider.CASH,
     });
-    return response;
   },
 
-  /**
-   * Process mobile money payment
-   * POST /payments
-   */
-  async processMobileMoneyPayment(data: MobileMoneyPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+  async processMobileMoneyPayment(
+    data: MobileMoneyPaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'MOBILE_MONEY',
       provider: PaymentProvider.MOBILE_MONEY,
     });
-    return response;
   },
 
-  /**
-   * Process bank transfer payment
-   * POST /payments
-   */
-  async processBankTransferPayment(data: BankTransferPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+  async processBankTransferPayment(
+    data: BankTransferPaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'BANK_TRANSFER',
       provider: PaymentProvider.BANK_TRANSFER,
     });
-    return response;
   },
 
-  /**
-   * Process gift card payment
-   * POST /payments
-   */
-  async processGiftCardPayment(data: GiftCardPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+  async processGiftCardPayment(
+    data: GiftCardPaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'GIFT_CARD',
       provider: PaymentProvider.GIFT_CARD,
     });
-    return response;
   },
 
-  /**
-   * Process loyalty points payment
-   * POST /payments
-   */
-  async processLoyaltyPointsPayment(data: LoyaltyPointsPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+  async processLoyaltyPointsPayment(
+    data: LoyaltyPointsPaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'LOYALTY_POINTS',
       provider: PaymentProvider.LOYALTY_POINTS,
     });
-    return response;
   },
 
-  /**
-   * Process Stripe card payment
-   * POST /payments
-   */
   async processCardPayment(data: ProcessPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       provider: PaymentProvider.STRIPE,
     });
-    return response;
   },
 
-  /**
-   * Process PayPal payment
-   * POST /payments
-   */
-  async processPayPalPayment(data: PayPalPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+  async processPayPalPayment(
+    data: PayPalPaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'PAYPAL',
       provider: PaymentProvider.PAYPAL,
     });
-    return response;
   },
 
-  /**
-   * Process Flutterwave payment
-   * POST /payments
-   */
-  async processFlutterwavePayment(data: FlutterwavePaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
+  async processFlutterwavePayment(
+    data: FlutterwavePaymentRequest,
+  ): Promise<Payment> {
+    return api.post<Payment>(PAYMENTS_BASE, {
       ...data,
       paymentMethod: 'FLUTTERWAVE',
       provider: PaymentProvider.FLUTTERWAVE,
     });
-    return response;
   },
 
-  /**
-   * Process Paystack payment
-   * POST /payments
-   */
-  async processPaystackPayment(data: PaystackPaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments', {
-      ...data,
-      paymentMethod: 'PAYSTACK',
-      provider: PaymentProvider.PAYSTACK,
-    });
-    return response;
-  },
-
-  /**
-   * Process Square payment
-   * POST /payments/square/payment
-   */
   async processSquarePayment(data: SquarePaymentRequest): Promise<Payment> {
-    const response = await api.post<Payment>('/payments/square/payment', {
+    return api.post<Payment>(`${PAYMENTS_BASE}/square/payment`, {
       ...data,
       paymentMethod: 'SQUARE',
       provider: PaymentProvider.SQUARE,
     });
-    return response;
   },
 
-  /**
-   * Refund payment
-   * POST /payments/:id/refund
-   */
-  async refundPayment(paymentId: string, data: RefundPaymentRequest): Promise<{
+  async refundPayment(
+    paymentId: string,
+    data: RefundPaymentRequest,
+  ): Promise<{
     refund: any;
     payment: Payment;
     refundedAmount: number;
     totalRefunded: number;
   }> {
-    const response = await api.post<{
+    return api.post<{
       refund: any;
       payment: Payment;
       refundedAmount: number;
       totalRefunded: number;
-    }>(`/payments/${paymentId}/refund`, data);
-    return response;
+    }>(`${PAYMENTS_BASE}/${paymentId}/refund`, data);
   },
 
-  /**
-   * Get payment status
-   * GET /payments/:id
-   */
   async getPaymentStatus(id: string): Promise<Payment> {
-    const response = await api.get<Payment>(`/payments/${id}`);
-    return response;
+    return api.get<Payment>(`${PAYMENTS_BASE}/${id}`);
   },
 
-  /**
-   * Get payment summary
-   * GET /payments/summary
-   */
   async getPaymentSummary(params?: {
     startDate?: string;
     endDate?: string;
     businessUnitId?: string;
     status?: string;
     paymentMethod?: string;
-    provider?: string;
   }): Promise<PaymentSummary> {
-    const response = await api.get<PaymentSummary>('/payments/summary', { params });
-    return response;
+    return api.get<PaymentSummary>(`${PAYMENTS_BASE}/summary`, {
+      params,
+    });
   },
 
-  /**
-   * Get all payments with filters
-   * GET /payments
-   */
-  async getPayments(params?: PaymentFilters & { provider?: string }): Promise<PaginatedPaymentResponse> {
-    const response = await api.get<PaginatedPaymentResponse>('/payments', { params });
-    return response;
+  async getPayments(
+    params?: PaymentFilters & { provider?: string },
+  ): Promise<PaginatedPaymentResponse> {
+    return api.get<PaginatedPaymentResponse>(PAYMENTS_BASE, { params });
+  },
+
+  // ============================================
+  // MOBILE MONEY (MTN / AIRTEL)
+  // ============================================
+
+  async initiateMobileMoneyPayment(
+    data: InitiateMobileMoneyPaymentInput,
+  ): Promise<InitiateMobileMoneyPaymentResponse> {
+    const payload = {
+      provider: data.provider,
+      phoneNumber: data.phoneNumber,
+      amount: data.amount,
+      currency: data.currency,
+      reference: data.reference,
+      description: data.description,
+      callbackUrl: data.callbackUrl,
+      saleId: data.saleId,
+      orderId: data.orderId,
+      metadata: {
+        ...(data.metadata ?? {}),
+        saleId: data.saleId,
+        orderId: data.orderId,
+        customerId: data.customerId,
+        businessUnitId: data.businessUnitId,
+        idempotencyKey: data.idempotencyKey,
+      },
+    };
+
+    return api.post<InitiateMobileMoneyPaymentResponse>(
+      `${MOBILE_MONEY_BASE}/pay`,
+      payload,
+    );
+  },
+
+  async getMobileMoneyStatus(
+    provider: 'MTN' | 'AIRTEL',
+    reference: string,
+  ): Promise<GetMobileMoneyStatusResponse> {
+    return api.get<GetMobileMoneyStatusResponse>(
+      `${MOBILE_MONEY_BASE}/status/${provider}/${reference}`,
+    );
+  },
+
+  async validateMobileMoneyAccount(
+    provider: 'MTN' | 'AIRTEL',
+    phoneNumber: string,
+  ): Promise<{
+    success: boolean;
+    data: any;
+    message: string;
+  }> {
+    return api.post<{
+      success: boolean;
+      data: any;
+      message: string;
+    }>(`${MOBILE_MONEY_BASE}/validate`, { provider, phoneNumber });
+  },
+
+  // ============================================
+  // M-PESA
+  // ============================================
+
+  async initiateMpesaSTKPush(data: MpesaSTKPushRequest): Promise<{
+    success: boolean;
+    data: MpesaSTKPushResponse & { paymentId?: string };
+    message: string;
+  }> {
+    return api.post<{
+      success: boolean;
+      data: MpesaSTKPushResponse & { paymentId?: string };
+      message: string;
+    }>(`${MPESA_BASE}/stk-push`, data);
+  },
+
+  async initiatePosMpesaSTKPush(data: InitiateMpesaSTKPushInput): Promise<{
+    success: boolean;
+    data: MpesaSTKPushResponse & { paymentId?: string };
+    message: string;
+  }> {
+    const { saleId, orderId, ...stkData } = data;
+
+    return api.post<{
+      success: boolean;
+      data: MpesaSTKPushResponse & { paymentId?: string };
+      message: string;
+    }>(`${MPESA_BASE}/stk-push`, {
+      ...stkData,
+      saleId,
+      orderId,
+    });
+  },
+
+  async queryMpesaStatus(transactionId: string): Promise<{
+    success: boolean;
+    data: any;
+    payment: any;
+    message: string;
+  }> {
+    return api.get<{
+      success: boolean;
+      data: any;
+      payment: any;
+      message: string;
+    }>(`${PAYMENTS_BASE}/mpesa-status/${transactionId}`);
+  },
+
+  async processMpesaB2C(data: {
+    phoneNumber: string;
+    amount: number;
+    commandId?: 'BusinessPayment' | 'SalaryPayment' | 'PromotionPayment';
+    remarks?: string;
+    occasion?: string;
+  }): Promise<{
+    success: boolean;
+    data: any;
+    message: string;
+  }> {
+    return api.post<{
+      success: boolean;
+      data: any;
+      message: string;
+    }>(`${MPESA_BASE}/b2c`, data);
   },
 
   // ============================================
   // PAYMENT PROVIDER MANAGEMENT
   // ============================================
 
-  /**
-   * Get all active payment providers
-   * GET /payment-providers
-   */
   async getPaymentProviders(params?: {
     businessUnitId?: string;
     isActive?: boolean;
     type?: string;
   }): Promise<ApiResponse<PaymentProviderStatus[]>> {
     try {
-      const response = await api.get<ApiResponse<PaymentProviderStatus[]>>('/payment-providers', { params });
+      const response = await api.get<
+        ApiResponse<PaymentProviderStatus[]>
+      >(`${PAYMENTS_BASE}/payment-providers`, { params });
 
       if (response && typeof response === 'object') {
-        if ('data' in response) {
-          return response;
-        }
+        if ('data' in response) return response;
         if (Array.isArray(response)) {
-          return {
-            success: true,
-            data: response,
-          };
-        }
-        if ('success' in response && 'data' in response) {
-          return response;
+          return { success: true, data: response };
         }
       }
 
@@ -665,16 +813,15 @@ export const paymentService = {
     }
   },
 
-  /**
-   * Get payment provider status
-   * GET /payment-providers/:provider/status
-   */
-  async getProviderStatus(provider: string, businessUnitId?: string): Promise<ApiResponse<PaymentProviderStatus>> {
+  async getProviderStatus(
+    provider: string,
+    businessUnitId?: string,
+  ): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
-      const response = await api.get<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${provider}/status`, {
-        params: { businessUnitId }
-      });
-      return response;
+      return await api.get<ApiResponse<PaymentProviderStatus>>(
+        `${PAYMENTS_BASE}/payment-providers/${provider}/status`,
+        { params: { businessUnitId } },
+      );
     } catch (error: any) {
       console.error('Error fetching provider status:', error);
       return {
@@ -685,187 +832,208 @@ export const paymentService = {
     }
   },
 
-  /**
-   * Create a new payment provider
-   * POST /payment-providers
-   */
-  async createPaymentProvider(data: CreatePaymentProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
+  async createPaymentProvider(
+    data: CreatePaymentProviderRequest,
+  ): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
-      const response = await api.post<ApiResponse<PaymentProviderStatus>>('/payment-providers', data);
-      return response;
+      return await api.post<ApiResponse<PaymentProviderStatus>>(
+        `${PAYMENTS_BASE}/payment-providers`,
+        data,
+      );
     } catch (error: any) {
       console.error('Error creating payment provider:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to create provider',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to create provider',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Update a payment provider
-   * PATCH /payment-providers/:id
-   */
-  async updatePaymentProvider(id: string, data: UpdatePaymentProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
+  async updatePaymentProvider(
+    id: string,
+    data: UpdatePaymentProviderRequest,
+  ): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
-      const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}`, data);
-      return response;
+      return await api.patch<ApiResponse<PaymentProviderStatus>>(
+        `${PAYMENTS_BASE}/payment-providers/${id}`,
+        data,
+      );
     } catch (error: any) {
       console.error('Error updating payment provider:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to update provider',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to update provider',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Toggle a payment provider's active status
-   * PATCH /payment-providers/:id
-   */
-  async togglePaymentProvider(id: string, isActive: boolean): Promise<ApiResponse<PaymentProviderStatus>> {
+  async togglePaymentProvider(
+    id: string,
+    isActive: boolean,
+  ): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
       if (!id || id.startsWith('default_')) {
-        console.warn('⚠️ Cannot toggle default provider - provider must be created in database first');
+        console.warn(
+          '⚠️ Cannot toggle default provider — create it in the DB first',
+        );
         return {
           success: false,
-          message: 'Cannot toggle default provider. Please create a provider first.',
+          message:
+            'Cannot toggle default provider. Please create a provider first.',
           data: undefined as any,
         };
       }
 
-      const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}`, { isActive });
-      return response;
+      return await api.patch<ApiResponse<PaymentProviderStatus>>(
+        `${PAYMENTS_BASE}/payment-providers/${id}`,
+        { isActive },
+      );
     } catch (error: any) {
       console.error('Toggle provider error:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to toggle provider',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to toggle provider',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Delete a payment provider (soft delete)
-   * DELETE /payment-providers/:id
-   */
   async deletePaymentProvider(id: string): Promise<ApiResponse<void>> {
     try {
-      const response = await api.delete<ApiResponse<void>>(`/payment-providers/${id}`);
-      return response;
+      return await api.delete<ApiResponse<void>>(
+        `${PAYMENTS_BASE}/payment-providers/${id}`,
+      );
     } catch (error: any) {
       console.error('Error deleting payment provider:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to delete provider',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to delete provider',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Update provider health status
-   * PATCH /payment-providers/:id/health
-   */
-  async updateProviderHealth(id: string, isHealthy: boolean): Promise<ApiResponse<PaymentProviderStatus>> {
+  async updateProviderHealth(
+    id: string,
+    isHealthy: boolean,
+  ): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
-      const response = await api.patch<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}/health`, { isHealthy });
-      return response;
+      return await api.patch<ApiResponse<PaymentProviderStatus>>(
+        `${PAYMENTS_BASE}/payment-providers/${id}/health`,
+        { isHealthy },
+      );
     } catch (error: any) {
       console.error('Error updating provider health:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to update provider health',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to update provider health',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Configure a payment provider
-   * POST /payment-providers/:id/configure
-   */
-  async configurePaymentProvider(id: string, data: ConfigureProviderRequest): Promise<ApiResponse<PaymentProviderStatus>> {
+  async configurePaymentProvider(
+    id: string,
+    data: ConfigureProviderRequest,
+  ): Promise<ApiResponse<PaymentProviderStatus>> {
     try {
       if (!id || id.startsWith('default_')) {
-        console.warn('⚠️ Cannot configure default provider - provider must be created in database first');
+        console.warn(
+          '⚠️ Cannot configure default provider — create it in the DB first',
+        );
         return {
           success: false,
-          message: 'Cannot configure default provider. Please create a provider first.',
+          message:
+            'Cannot configure default provider. Please create a provider first.',
           data: undefined as any,
         };
       }
 
-      const response = await api.post<ApiResponse<PaymentProviderStatus>>(`/payment-providers/${id}/configure`, data);
-      return response;
+      return await api.post<ApiResponse<PaymentProviderStatus>>(
+        `${PAYMENTS_BASE}/payment-providers/${id}/configure`,
+        data,
+      );
     } catch (error: any) {
       console.error('Configure provider error:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to configure provider',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to configure provider',
         data: undefined as any,
       };
     }
   },
 
-  // ============================================
-  // PAYMENT PROVIDER CURRENCY METHODS
-  // ============================================
-
-  /**
-   * Add currency to a provider
-   * POST /payment-providers/:id/currencies
-   */
-  async addProviderCurrency(providerId: string, currency: string, conversionRate?: number): Promise<ApiResponse<any>> {
+  async addProviderCurrency(
+    providerId: string,
+    currency: string,
+    conversionRate?: number,
+  ): Promise<ApiResponse<any>> {
     try {
-      const response = await api.post<ApiResponse<any>>(`/payment-providers/${providerId}/currencies`, {
-        currency,
-        conversionRate
-      });
-      return response;
+      return await api.post<ApiResponse<any>>(
+        `${PAYMENTS_BASE}/payment-providers/${providerId}/currencies`,
+        { currency, conversionRate },
+      );
     } catch (error: any) {
       console.error('Error adding provider currency:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to add currency',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to add currency',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Remove currency from a provider
-   * DELETE /payment-providers/:id/currencies/:currency
-   */
-  async removeProviderCurrency(providerId: string, currency: string): Promise<ApiResponse<void>> {
+  async removeProviderCurrency(
+    providerId: string,
+    currency: string,
+  ): Promise<ApiResponse<void>> {
     try {
-      const response = await api.delete<ApiResponse<void>>(`/payment-providers/${providerId}/currencies/${currency}`);
-      return response;
+      return await api.delete<ApiResponse<void>>(
+        `${PAYMENTS_BASE}/payment-providers/${providerId}/currencies/${currency}`,
+      );
     } catch (error: any) {
       console.error('Error removing provider currency:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to remove currency',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to remove currency',
         data: undefined as any,
       };
     }
   },
 
-  // ============================================
-  // PAYMENT METHOD CONFIG METHODS
-  // ============================================
-
-  /**
-   * Get payment methods for a provider
-   * GET /payment-providers/:id/methods
-   */
-  async getProviderPaymentMethods(providerId: string): Promise<ApiResponse<any[]>> {
+  async getProviderPaymentMethods(
+    providerId: string,
+  ): Promise<ApiResponse<any[]>> {
     try {
-      const response = await api.get<ApiResponse<any[]>>(`/payment-providers/${providerId}/methods`);
-      return response;
+      return await api.get<ApiResponse<any[]>>(
+        `${PAYMENTS_BASE}/payment-providers/${providerId}/methods`,
+      );
     } catch (error: any) {
       console.error('Error fetching provider payment methods:', error);
       return {
@@ -876,55 +1044,67 @@ export const paymentService = {
     }
   },
 
-  /**
-   * Create a payment method for a provider
-   * POST /payment-providers/:id/methods
-   */
-  async createProviderPaymentMethod(providerId: string, data: any): Promise<ApiResponse<any>> {
+  async createProviderPaymentMethod(
+    providerId: string,
+    data: any,
+  ): Promise<ApiResponse<any>> {
     try {
-      const response = await api.post<ApiResponse<any>>(`/payment-providers/${providerId}/methods`, data);
-      return response;
+      return await api.post<ApiResponse<any>>(
+        `${PAYMENTS_BASE}/payment-providers/${providerId}/methods`,
+        data,
+      );
     } catch (error: any) {
       console.error('Error creating provider payment method:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to create payment method',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to create payment method',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Update a payment method
-   * PATCH /payment-providers/:id/methods/:methodId
-   */
-  async updateProviderPaymentMethod(providerId: string, methodId: string, data: any): Promise<ApiResponse<any>> {
+  async updateProviderPaymentMethod(
+    providerId: string,
+    methodId: string,
+    data: any,
+  ): Promise<ApiResponse<any>> {
     try {
-      const response = await api.patch<ApiResponse<any>>(`/payment-providers/${providerId}/methods/${methodId}`, data);
-      return response;
+      return await api.patch<ApiResponse<any>>(
+        `${PAYMENTS_BASE}/payment-providers/${providerId}/methods/${methodId}`,
+        data,
+      );
     } catch (error: any) {
       console.error('Error updating provider payment method:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to update payment method',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to update payment method',
         data: undefined as any,
       };
     }
   },
 
-  /**
-   * Delete a payment method
-   * DELETE /payment-providers/:id/methods/:methodId
-   */
-  async deleteProviderPaymentMethod(providerId: string, methodId: string): Promise<ApiResponse<void>> {
+  async deleteProviderPaymentMethod(
+    providerId: string,
+    methodId: string,
+  ): Promise<ApiResponse<void>> {
     try {
-      const response = await api.delete<ApiResponse<void>>(`/payment-providers/${providerId}/methods/${methodId}`);
-      return response;
+      return await api.delete<ApiResponse<void>>(
+        `${PAYMENTS_BASE}/payment-providers/${providerId}/methods/${methodId}`,
+      );
     } catch (error: any) {
       console.error('Error deleting provider payment method:', error);
       return {
         success: false,
-        message: error?.response?.data?.message || error?.message || 'Failed to delete payment method',
+        message:
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to delete payment method',
         data: undefined as any,
       };
     }
@@ -934,359 +1114,253 @@ export const paymentService = {
   // STRIPE SPECIFIC METHODS
   // ============================================
 
-  /**
-   * Create a payment intent (Stripe)
-   * POST /payments/create-payment-intent
-   */
-  async createPaymentIntent(data: CreatePaymentIntentRequest): Promise<CreatePaymentIntentResponse> {
-    const response = await api.post<CreatePaymentIntentResponse>('/payments/create-payment-intent', data);
-    return response;
+  async createPaymentIntent(
+    data: CreatePaymentIntentRequest,
+  ): Promise<CreatePaymentIntentResponse> {
+    return api.post<CreatePaymentIntentResponse>(
+      `${PAYMENTS_BASE}/create-payment-intent`,
+      data,
+    );
   },
 
-  /**
-   * Create Stripe checkout session
-   * POST /payments/checkout-session
-   */
   async createCheckoutSession(data: CheckoutSessionRequest): Promise<any> {
-    const response = await api.post<any>('/payments/checkout-session', data);
-    return response;
+    return api.post<any>(`${PAYMENTS_BASE}/checkout-session`, data);
   },
 
-  /**
-   * Create Stripe customer
-   * POST /payments/customer
-   */
   async createStripeCustomer(): Promise<{
     customerId: string;
     alreadyExists: boolean;
   }> {
-    const response = await api.post<{
+    return api.post<{
       customerId: string;
       alreadyExists: boolean;
-    }>('/payments/customer');
-    return response;
+    }>(`${PAYMENTS_BASE}/customer`);
   },
 
-  /**
-   * Get customer payment methods (Stripe)
-   * GET /payments/payment-methods
-   */
   async getCustomerPaymentMethods(): Promise<any> {
-    const response = await api.get<any>('/payments/payment-methods');
-    return response;
+    return api.get<any>(`${PAYMENTS_BASE}/payment-methods`);
   },
 
-  /**
-   * Attach payment method (Stripe)
-   * POST /payments/payment-methods/attach
-   */
   async attachPaymentMethod(paymentMethodId: string): Promise<any> {
-    const response = await api.post<any>('/payments/payment-methods/attach', { paymentMethodId });
-    return response;
+    return api.post<any>(`${PAYMENTS_BASE}/payment-methods/attach`, {
+      paymentMethodId,
+    });
   },
 
-  /**
-   * Detach payment method (Stripe)
-   * DELETE /payments/payment-methods/:id
-   */
   async detachPaymentMethod(paymentMethodId: string): Promise<any> {
-    const response = await api.delete<any>(`/payments/payment-methods/${paymentMethodId}`);
-    return response;
-  },
-
-  // ============================================
-  // M-PESA SPECIFIC METHODS
-  // ============================================
-
-  /**
-   * Initiate M-Pesa STK Push payment (BASE — no sale/order linkage).
-   * POST /payments/mpesa-stk-push
-   */
-  async initiateMpesaSTKPush(data: MpesaSTKPushRequest): Promise<{
-    success: boolean;
-    data: MpesaSTKPushResponse & { paymentId?: string };
-    message: string;
-  }> {
-    const response = await api.post<{
-      success: boolean;
-      data: MpesaSTKPushResponse & { paymentId?: string };
-      message: string;
-    }>('/payments/mpesa-stk-push', data);
-    return response;
-  },
-
-  /**
-   * Query M-Pesa transaction status
-   * GET /payments/mpesa-status/:transactionId
-   */
-  async queryMpesaStatus(transactionId: string): Promise<{
-    success: boolean;
-    data: any;
-    payment: any;
-    message: string;
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: any;
-      payment: any;
-      message: string;
-    }>(`/payments/mpesa-status/${transactionId}`);
-    return response;
-  },
-
-  /**
-   * Process M-Pesa B2C payment
-   * POST /payments/mpesa-b2c
-   */
-  async processMpesaB2C(data: {
-    phoneNumber: string;
-    amount: number;
-    commandId?: 'BusinessPayment' | 'SalaryPayment' | 'PromotionPayment';
-    remarks?: string;
-    occasion?: string;
-  }): Promise<{
-    success: boolean;
-    data: any;
-    message: string;
-  }> {
-    const response = await api.post<{
-      success: boolean;
-      data: any;
-      message: string;
-    }>('/payments/mpesa-b2c', data);
-    return response;
+    return api.delete<any>(
+      `${PAYMENTS_BASE}/payment-methods/${paymentMethodId}`,
+    );
   },
 
   // ============================================
   // PAYPAL SPECIFIC METHODS
   // ============================================
 
-  /**
-   * Capture PayPal order (after user approval)
-   * POST /payments/paypal/capture
-   */
   async capturePayPalOrder(orderId: string): Promise<{
     success: boolean;
     data: PayPalCaptureResponse;
     message: string;
   }> {
-    const response = await api.post<{
+    return api.post<{
       success: boolean;
       data: PayPalCaptureResponse;
       message: string;
-    }>('/payments/paypal/capture', { orderId });
-    return response;
+    }>(`${PAYMENTS_BASE}/paypal/capture`, { orderId });
   },
 
   // ============================================
   // FLUTTERWAVE SPECIFIC METHODS
   // ============================================
 
-  /**
-   * Create Flutterwave virtual account
-   * POST /payments/flutterwave/virtual-account
-   */
-  async createFlutterwaveVirtualAccount(data: FlutterwaveVirtualAccountRequest): Promise<{
+  async createFlutterwaveVirtualAccount(
+    data: FlutterwaveVirtualAccountRequest,
+  ): Promise<{
     success: boolean;
     data: FlutterwaveVirtualAccountResponse;
     message: string;
   }> {
-    const response = await api.post<{
+    return api.post<{
       success: boolean;
       data: FlutterwaveVirtualAccountResponse;
       message: string;
-    }>('/payments/flutterwave/virtual-account', data);
-    return response;
-  },
-
-  // ============================================
-  // PAYSTACK SPECIFIC METHODS
-  // ============================================
-
-  /**
-   * Verify Paystack payment
-   * POST /payments/paystack/verify
-   */
-  async verifyPaystackPayment(reference: string): Promise<{
-    success: boolean;
-    data: PaystackVerifyResponse;
-    message: string;
-  }> {
-    const response = await api.post<{
-      success: boolean;
-      data: PaystackVerifyResponse;
-      message: string;
-    }>('/payments/paystack/verify', { reference });
-    return response;
-  },
-
-  /**
-   * Verify Paystack payment with reference in URL
-   * GET /payments/paystack/verify/:reference
-   */
-  async verifyPaystackPaymentByReference(reference: string): Promise<{
-    success: boolean;
-    data: PaystackVerifyResponse;
-    message: string;
-  }> {
-    const response = await api.get<{
-      success: boolean;
-      data: PaystackVerifyResponse;
-      message: string;
-    }>(`/payments/paystack/verify/${reference}`);
-    return response;
+    }>(`${PAYMENTS_BASE}/flutterwave/virtual-account`, data);
   },
 
   // ============================================
   // SQUARE SPECIFIC METHODS
   // ============================================
 
-  /**
-   * Process Square payment using card nonce
-   * POST /payments/square/payment
-   */
-  async processSquareCardPayment(data: SquarePaymentRequest): Promise<{
+  async processSquareCardPayment(data: SquarePaymentApiRequest): Promise<{
     success: boolean;
     data: Payment;
     message: string;
   }> {
-    const response = await api.post<{
+    return api.post<{
       success: boolean;
       data: Payment;
       message: string;
-    }>('/payments/square/payment', data);
-    return response;
+    }>(`${PAYMENTS_BASE}/square/payment`, data);
   },
 
-  /**
-   * Create Square customer
-   * POST /payments/square/customer
-   */
   async createSquareCustomer(data: SquareCustomerRequest): Promise<{
     success: boolean;
     data: SquareCustomerResponse;
     message: string;
   }> {
-    const response = await api.post<{
+    return api.post<{
       success: boolean;
       data: SquareCustomerResponse;
       message: string;
-    }>('/payments/square/customer', data);
-    return response;
+    }>(`${PAYMENTS_BASE}/square/customer`, data);
+  },
+
+  // ============================================
+  // POS / ORDER FORM HELPERS
+  // ============================================
+
+  async processOrderPayment(data: ProcessOrderPaymentInput): Promise<any> {
+    const {
+      saleId,
+      amount,
+      paymentMethod,
+      customerId,
+      cashRegisterId,
+      cashRegisterSessionId,
+      currency = 'USD',
+      description,
+      metadata,
+      tipAmount,
+      source,
+      gatewayId,
+      cardNonce,
+    } = data;
+
+    const enrichedMetadata = {
+      ...(metadata || {}),
+      saleId,
+      source: metadata?.source ?? 'pos',
+    };
+
+    const payload: Record<string, any> = {
+      amount,
+      paymentMethod,
+      saleId,
+      currency,
+      description: description ?? `Payment for sale ${saleId}`,
+      metadata: enrichedMetadata,
+      idempotencyKey: `pos_${saleId}_${Date.now()}`,
+    };
+
+    if (customerId) payload.customerId = customerId;
+    if (cashRegisterId) payload.cashRegisterId = cashRegisterId;
+    if (cashRegisterSessionId)
+      payload.cashRegisterSessionId = cashRegisterSessionId;
+    if (typeof tipAmount === 'number') payload.tipAmount = tipAmount;
+    if (source) payload.source = source;
+    if (gatewayId) payload.gatewayId = gatewayId;
+    if (cardNonce) payload.cardNonce = cardNonce;
+
+    const response = await api.post<any>(PAYMENTS_BASE, payload);
+    return (response as any)?.data ?? response;
   },
 
   // ============================================
   // PAYMENT UTILITY METHODS
   // ============================================
 
-  /**
-   * Get payment method icon
-   */
   getPaymentMethodIcon(method: string): string {
     const icons: Record<string, string> = {
-      'CASH': '💰',
-      'CREDIT_CARD': '💳',
-      'DEBIT_CARD': '💳',
-      'MOBILE_MONEY': '📱',
-      'BANK_TRANSFER': '🏦',
-      'GIFT_CARD': '🎁',
-      'LOYALTY_POINTS': '⭐',
-      'CHECK': '📝',
-      'PAYPAL': '💸',
-      'FLUTTERWAVE': '🌊',
-      'PAYSTACK': '🔷',
-      'SQUARE': '⬜',
-      'MTN': '📱',
-      'AIRTEL': '📱',
+      CASH: '💰',
+      CREDIT_CARD: '💳',
+      DEBIT_CARD: '💳',
+      MOBILE_MONEY: '📱',
+      BANK_TRANSFER: '🏦',
+      GIFT_CARD: '🎁',
+      LOYALTY_POINTS: '⭐',
+      CHECK: '📝',
+      PAYPAL: '💸',
+      FLUTTERWAVE: '🌊',
+      SQUARE: '⬜',
+      MPESA: '📱',
+      MTN: '📱',
+      AIRTEL: '📱',
     };
     return icons[method] || '💳';
   },
 
-  /**
-   * Get payment method label
-   */
   getPaymentMethodLabel(method: string): string {
     const labels: Record<string, string> = {
-      'CASH': 'Cash',
-      'CREDIT_CARD': 'Credit Card',
-      'DEBIT_CARD': 'Debit Card',
-      'MOBILE_MONEY': 'Mobile Money',
-      'BANK_TRANSFER': 'Bank Transfer',
-      'GIFT_CARD': 'Gift Card',
-      'LOYALTY_POINTS': 'Loyalty Points',
-      'CHECK': 'Check',
-      'PAYPAL': 'PayPal',
-      'FLUTTERWAVE': 'Flutterwave',
-      'PAYSTACK': 'Paystack',
-      'SQUARE': 'Square',
-      'MTN': 'MTN Mobile Money',
-      'AIRTEL': 'Airtel Money',
+      CASH: 'Cash',
+      CREDIT_CARD: 'Credit Card',
+      DEBIT_CARD: 'Debit Card',
+      MOBILE_MONEY: 'Mobile Money',
+      BANK_TRANSFER: 'Bank Transfer',
+      GIFT_CARD: 'Gift Card',
+      LOYALTY_POINTS: 'Loyalty Points',
+      CHECK: 'Check',
+      PAYPAL: 'PayPal',
+      FLUTTERWAVE: 'Flutterwave',
+      SQUARE: 'Square',
+      MPESA: 'M-Pesa',
+      MTN: 'MTN Mobile Money',
+      AIRTEL: 'Airtel Money',
     };
     return labels[method] || method;
   },
 
-  /**
-   * Get payment status color
-   */
   getPaymentStatusColor(status: string): string {
     const colors: Record<string, string> = {
-      'PAID': 'green',
-      'PENDING': 'yellow',
-      'FAILED': 'red',
-      'REFUNDED': 'gray',
-      'PARTIAL': 'blue',
-      'PROCESSING': 'purple',
-      'AUTHORIZED': 'indigo',
-      'DECLINED': 'red',
-      'DISPUTED': 'orange',
-      'CANCELLED': 'gray',
+      PAID: 'green',
+      PENDING: 'yellow',
+      FAILED: 'red',
+      REFUNDED: 'gray',
+      PARTIAL: 'blue',
+      PROCESSING: 'purple',
+      AUTHORIZED: 'indigo',
+      DECLINED: 'red',
+      DISPUTED: 'orange',
+      CANCELLED: 'gray',
     };
     return colors[status] || 'gray';
   },
 
-  /**
-   * Get provider name
-   */
   getProviderName(provider: string): string {
     const names: Record<string, string> = {
-      'STRIPE': 'Stripe',
-      'CASH': 'Cash',
-      'MOBILE_MONEY': 'Mobile Money',
-      'BANK_TRANSFER': 'Bank Transfer',
-      'GIFT_CARD': 'Gift Card',
-      'LOYALTY_POINTS': 'Loyalty Points',
-      'PAYPAL': 'PayPal',
-      'FLUTTERWAVE': 'Flutterwave',
-      'PAYSTACK': 'Paystack',
-      'SQUARE': 'Square',
-      'MTN': 'MTN Mobile Money',
-      'AIRTEL': 'Airtel Money',
+      STRIPE: 'Stripe',
+      CASH: 'Cash',
+      MOBILE_MONEY: 'Mobile Money',
+      BANK_TRANSFER: 'Bank Transfer',
+      GIFT_CARD: 'Gift Card',
+      LOYALTY_POINTS: 'Loyalty Points',
+      PAYPAL: 'PayPal',
+      FLUTTERWAVE: 'Flutterwave',
+      SQUARE: 'Square',
+      MPESA: 'M-Pesa',
+      MTN: 'MTN Mobile Money',
+      AIRTEL: 'Airtel Money',
     };
     return names[provider] || provider;
   },
 
-  /**
-   * Get provider icon
-   */
   getProviderIcon(provider: string): string {
     const icons: Record<string, string> = {
-      'STRIPE': '💳',
-      'CASH': '💰',
-      'MOBILE_MONEY': '📱',
-      'BANK_TRANSFER': '🏦',
-      'GIFT_CARD': '🎁',
-      'LOYALTY_POINTS': '⭐',
-      'PAYPAL': '💸',
-      'FLUTTERWAVE': '🌊',
-      'PAYSTACK': '🔷',
-      'SQUARE': '⬜',
+      STRIPE: '💳',
+      CASH: '💰',
+      MOBILE_MONEY: '📱',
+      BANK_TRANSFER: '🏦',
+      GIFT_CARD: '🎁',
+      LOYALTY_POINTS: '⭐',
+      PAYPAL: '💸',
+      FLUTTERWAVE: '🌊',
+      SQUARE: '⬜',
+      MPESA: '📱',
+      MTN: '📱',
+      AIRTEL: '📱',
     };
     return icons[provider] || '💳';
   },
 
-  /**
-   * Format payment method for display
-   */
   formatPaymentMethod(method: string, details?: any): string {
     let label = this.getPaymentMethodLabel(method);
 
@@ -1305,54 +1379,62 @@ export const paymentService = {
     return label;
   },
 
-  /**
-   * Check if payment method is card
-   */
   isCardPayment(method: string): boolean {
-    return method === 'CREDIT_CARD' || method === 'DEBIT_CARD';
+    return (
+      method === 'CREDIT_CARD' ||
+      method === 'DEBIT_CARD' ||
+      method === 'SQUARE'
+    );
   },
 
-  /**
-   * Check if payment method requires redirect
-   */
   requiresRedirect(method: string): boolean {
-    return method === 'CREDIT_CARD' || method === 'DEBIT_CARD' ||
-           method === 'BANK_TRANSFER' || method === 'PAYPAL' ||
-           method === 'FLUTTERWAVE' || method === 'PAYSTACK';
+    return method === 'PAYPAL' || method === 'FLUTTERWAVE';
   },
 
-  /**
-   * Check if payment method is instant
-   */
+  requiresRedirectUrl(method: string): boolean {
+    return this.requiresRedirect(method);
+  },
+
   isInstantPayment(method: string): boolean {
-    return method === 'CASH' || method === 'CREDIT_CARD' || method === 'DEBIT_CARD' ||
-           method === 'MOBILE_MONEY' || method === 'LOYALTY_POINTS' || method === 'GIFT_CARD' ||
-           method === 'SQUARE';
+    return (
+      method === 'CASH' ||
+      method === 'CREDIT_CARD' ||
+      method === 'DEBIT_CARD' ||
+      method === 'MOBILE_MONEY' ||
+      method === 'LOYALTY_POINTS' ||
+      method === 'GIFT_CARD' ||
+      method === 'SQUARE'
+    );
   },
 
-  /**
-   * Get supported providers for a payment method
-   */
   getSupportedProviders(paymentMethod: string): PaymentProvider[] {
     const providerMap: Record<string, PaymentProvider[]> = {
-      'CASH': [PaymentProvider.CASH],
-      'CREDIT_CARD': [PaymentProvider.STRIPE, PaymentProvider.PAYSTACK, PaymentProvider.FLUTTERWAVE, PaymentProvider.SQUARE],
-      'DEBIT_CARD': [PaymentProvider.STRIPE, PaymentProvider.PAYSTACK, PaymentProvider.FLUTTERWAVE, PaymentProvider.SQUARE],
-      'MOBILE_MONEY': [PaymentProvider.MOBILE_MONEY, PaymentProvider.MTN, PaymentProvider.AIRTEL, PaymentProvider.FLUTTERWAVE, PaymentProvider.PAYSTACK],
-      'BANK_TRANSFER': [PaymentProvider.BANK_TRANSFER, PaymentProvider.FLUTTERWAVE, PaymentProvider.PAYSTACK],
-      'GIFT_CARD': [PaymentProvider.GIFT_CARD],
-      'LOYALTY_POINTS': [PaymentProvider.LOYALTY_POINTS],
-      'PAYPAL': [PaymentProvider.PAYPAL],
-      'FLUTTERWAVE': [PaymentProvider.FLUTTERWAVE],
-      'PAYSTACK': [PaymentProvider.PAYSTACK],
-      'SQUARE': [PaymentProvider.SQUARE],
+      CASH: [PaymentProvider.CASH],
+      CREDIT_CARD: [
+        PaymentProvider.STRIPE,
+        PaymentProvider.SQUARE,
+        PaymentProvider.FLUTTERWAVE,
+      ],
+      DEBIT_CARD: [
+        PaymentProvider.STRIPE,
+        PaymentProvider.SQUARE,
+        PaymentProvider.FLUTTERWAVE,
+      ],
+      MOBILE_MONEY: [
+        PaymentProvider.MPESA,
+        PaymentProvider.MTN,
+        PaymentProvider.AIRTEL,
+      ],
+      BANK_TRANSFER: [PaymentProvider.BANK_TRANSFER],
+      GIFT_CARD: [PaymentProvider.GIFT_CARD],
+      LOYALTY_POINTS: [PaymentProvider.LOYALTY_POINTS],
+      PAYPAL: [PaymentProvider.PAYPAL],
+      FLUTTERWAVE: [PaymentProvider.FLUTTERWAVE],
+      SQUARE: [PaymentProvider.SQUARE],
     };
     return providerMap[paymentMethod] || [];
   },
 
-  /**
-   * Get provider display name
-   */
   getProviderDisplayName(provider: PaymentProvider): string {
     const names: Record<PaymentProvider, string> = {
       [PaymentProvider.STRIPE]: 'Stripe',
@@ -1363,38 +1445,26 @@ export const paymentService = {
       [PaymentProvider.LOYALTY_POINTS]: 'Loyalty Points',
       [PaymentProvider.PAYPAL]: 'PayPal',
       [PaymentProvider.FLUTTERWAVE]: 'Flutterwave',
-      [PaymentProvider.PAYSTACK]: 'Paystack',
       [PaymentProvider.SQUARE]: 'Square',
       [PaymentProvider.MTN]: 'MTN Mobile Money',
       [PaymentProvider.AIRTEL]: 'Airtel Money',
+      [PaymentProvider.MPESA]: 'M-Pesa',
     };
     return names[provider] || provider;
   },
 
-  /**
-   * Check if a provider is configured
-   */
   isProviderConfigured(provider: PaymentProviderStatus): boolean {
     return provider.configured === true;
   },
 
-  /**
-   * Check if a provider is active
-   */
   isProviderActive(provider: PaymentProviderStatus): boolean {
     return provider.isActive === true;
   },
 
-  /**
-   * Check if a provider is healthy
-   */
   isProviderHealthy(provider: PaymentProviderStatus): boolean {
     return provider.isHealthy === true;
   },
 
-  /**
-   * Get provider status badge color
-   */
   getProviderStatusColor(provider: PaymentProviderStatus): string {
     if (!provider.isActive) return 'bg-gray-500';
     if (!provider.isHealthy) return 'bg-red-500';
@@ -1402,9 +1472,6 @@ export const paymentService = {
     return 'bg-green-500';
   },
 
-  /**
-   * Get provider status label
-   */
   getProviderStatusLabel(provider: PaymentProviderStatus): string {
     if (!provider.isActive) return 'Inactive';
     if (!provider.isHealthy) return 'Unhealthy';
@@ -1412,213 +1479,61 @@ export const paymentService = {
     return 'Active';
   },
 
-  /**
-   * Calculate total volume across all providers
-   */
   getTotalVolume(providers: PaymentProviderStatus[]): number {
     return providers.reduce((sum, p) => sum + (p.volume24h || 0), 0);
   },
 
-  /**
-   * Calculate total transactions across all providers
-   */
   getTotalTransactions(providers: PaymentProviderStatus[]): number {
-    return providers.reduce((sum, p) => sum + (p.transactions24h || 0), 0);
-  },
-
-  /**
-   * Get the most used provider
-   */
-  getMostUsedProvider(providers: PaymentProviderStatus[]): PaymentProviderStatus | null {
-    if (!providers || providers.length === 0) return null;
-    return providers.reduce((max, p) =>
-      (p.transactions24h || 0) > (max.transactions24h || 0) ? p : max
+    return providers.reduce(
+      (sum, p) => sum + (p.transactions24h || 0),
+      0,
     );
   },
 
-  /**
-   * Get the provider with highest volume
-   */
-  getHighestVolumeProvider(providers: PaymentProviderStatus[]): PaymentProviderStatus | null {
+  getMostUsedProvider(
+    providers: PaymentProviderStatus[],
+  ): PaymentProviderStatus | null {
     if (!providers || providers.length === 0) return null;
     return providers.reduce((max, p) =>
-      (p.volume24h || 0) > (max.volume24h || 0) ? p : max
+      (p.transactions24h || 0) > (max.transactions24h || 0) ? p : max,
     );
   },
 
-  /**
-   * Check if provider requires card nonce (Square)
-   */
+  getHighestVolumeProvider(
+    providers: PaymentProviderStatus[],
+  ): PaymentProviderStatus | null {
+    if (!providers || providers.length === 0) return null;
+    return providers.reduce((max, p) =>
+      (p.volume24h || 0) > (max.volume24h || 0) ? p : max,
+    );
+  },
+
   requiresCardNonce(method: string): boolean {
     return method === 'SQUARE';
   },
 
-  /**
-   * Check if provider requires redirect URL
-   */
-  requiresRedirectUrl(method: string): boolean {
-    return method === 'PAYPAL' || method === 'FLUTTERWAVE' || method === 'PAYSTACK';
-  },
-
-  /**
-   * Get payment method type category
-   */
-  getPaymentMethodCategory(method: string): 'card' | 'mobile' | 'bank' | 'cash' | 'digital' | 'other' {
-    const categories: Record<string, 'card' | 'mobile' | 'bank' | 'cash' | 'digital' | 'other'> = {
-      'CREDIT_CARD': 'card',
-      'DEBIT_CARD': 'card',
-      'MOBILE_MONEY': 'mobile',
-      'MTN': 'mobile',
-      'AIRTEL': 'mobile',
-      'BANK_TRANSFER': 'bank',
-      'CASH': 'cash',
-      'GIFT_CARD': 'digital',
-      'LOYALTY_POINTS': 'digital',
-      'PAYPAL': 'digital',
-      'FLUTTERWAVE': 'digital',
-      'PAYSTACK': 'digital',
-      'SQUARE': 'card',
+  getPaymentMethodCategory(
+    method: string,
+  ): 'card' | 'mobile' | 'bank' | 'cash' | 'digital' | 'other' {
+    const categories: Record<
+      string,
+      'card' | 'mobile' | 'bank' | 'cash' | 'digital' | 'other'
+    > = {
+      CREDIT_CARD: 'card',
+      DEBIT_CARD: 'card',
+      MOBILE_MONEY: 'mobile',
+      MPESA: 'mobile',
+      MTN: 'mobile',
+      AIRTEL: 'mobile',
+      BANK_TRANSFER: 'bank',
+      CASH: 'cash',
+      GIFT_CARD: 'digital',
+      LOYALTY_POINTS: 'digital',
+      PAYPAL: 'digital',
+      FLUTTERWAVE: 'digital',
+      SQUARE: 'card',
     };
     return categories[method] || 'other';
-  },
-
-  /**
-   * Add item to cart with proper validation
-   * (Kept here for backwards compatibility — prefer cartService.addItem)
-   */
-  async addItem(productId: string, quantity: number = 1, variantId?: string): Promise<any> {
-    try {
-      if (!productId || productId.trim() === '') {
-        throw new Error('Product ID is required');
-      }
-
-      const sanitizedProductId = productId.trim();
-
-      const payload = {
-        productId: sanitizedProductId,
-        quantity: Math.max(1, quantity),
-        ...(variantId && { variantId: variantId.trim() }),
-      };
-
-      console.log('🛒 CartService.addItem - Sending payload:', payload);
-
-      const response = await api.post('/cart/items', payload);
-      return response;
-    } catch (error: any) {
-      console.error('❌ CartService.addItem - Error:', error);
-      if (error?.response?.status === 400) {
-        const errorData = error.response?.data;
-        if (errorData?.errors) {
-          const errorMessages = errorData.errors.map((e: any) => `${e.field}: ${e.message}`).join(', ');
-          throw new Error(`Validation error: ${errorMessages}`);
-        }
-        if (errorData?.message) {
-          throw new Error(errorData.message);
-        }
-      }
-      throw error;
-    }
-  },
-
-  // ============================================
-  // POS / ORDER FORM HELPERS
-  // ============================================
-  //
-  // Purpose-built wrappers used by OrderForm.tsx and the POS.
-  // They delegate to the existing processPayment() and
-  // initiateMpesaSTKPush() so there's a single code path per
-  // payment method, but they accept the looser "POS" shape the
-  // order form works with (saleId-required, no provider enum,
-  // optional cash register/session ids).
-
-  /**
-   * Records a payment against a completed Sale.
-   *
-   * The backend `POST /payments` endpoint accepts all these fields
-   * via `processPaymentSchema`; this wrapper just shapes the call
-   * so OrderForm doesn't have to know about `ProviderPaymentRequest`.
-   */
-  async processOrderPayment(data: ProcessOrderPaymentInput): Promise<any> {
-    const {
-      saleId,
-      amount,
-      paymentMethod,
-      customerId,
-      cashRegisterId,
-      cashRegisterSessionId,
-      currency = 'USD',
-      description,
-      metadata,
-      tipAmount,
-      source,
-      gatewayId,
-      cardNonce,
-    } = data;
-
-    // Ensure linkage is preserved through metadata as well as the
-    // top-level `saleId` field — some backends read one, some the
-    // other, and the payment service's createPaymentNotification
-    // walks metadata for sale context.
-    const enrichedMetadata = {
-      ...(metadata || {}),
-      saleId,
-      source: metadata?.source ?? 'pos',
-    };
-
-    const payload: Record<string, any> = {
-      amount,
-      paymentMethod,
-      saleId,
-      currency,
-      description:
-        description ?? `Payment for sale ${saleId}`,
-      metadata: enrichedMetadata,
-      idempotencyKey: `pos_${saleId}_${Date.now()}`,
-    };
-
-    if (customerId) payload.customerId = customerId;
-    if (cashRegisterId) payload.cashRegisterId = cashRegisterId;
-    if (cashRegisterSessionId) payload.cashRegisterSessionId = cashRegisterSessionId;
-    if (typeof tipAmount === 'number') payload.tipAmount = tipAmount;
-    if (source) payload.source = source;
-    if (gatewayId) payload.gatewayId = gatewayId;
-    if (cardNonce) payload.cardNonce = cardNonce;
-
-    const response = await api.post<any>('/payments', payload);
-    return (response as any)?.data ?? response;
-  },
-
-  /**
-   * Initiate M-Pesa STK Push for a POS sale.
-   *
-   * The backend `mpesaSTKPushSchema` does NOT accept a top-level
-   * `saleId`, so this wrapper packs the sale/order linkage into
-   * `metadata` — the payment controller's callback handler reads
-   * it back and reconciles the sale.
-   */
-  async initiatePosMpesaSTKPush(data: InitiateMpesaSTKPushInput): Promise<{
-    success: boolean;
-    data: MpesaSTKPushResponse & { paymentId?: string };
-    message: string;
-  }> {
-    const { saleId, orderId, ...stkData } = data;
-
-    const payload = {
-      ...stkData,
-      metadata: {
-        saleId,
-        orderId,
-        source: 'pos',
-      },
-    };
-
-    const response = await api.post<{
-      success: boolean;
-      data: MpesaSTKPushResponse & { paymentId?: string };
-      message: string;
-    }>('/payments/mpesa-stk-push', payload);
-
-    return response;
   },
 };
 

@@ -24,6 +24,15 @@ interface Customer {
 interface CartCustomerSelectorProps {
   selectedCustomerId?: string;
   onCustomerSelected?: (customerId: string) => void;
+  /**
+   * Fired after the user clears the selection.
+   *
+   * NOTE: the backend has no "unset customer" endpoint. Clearing is a
+   * client-side operation only — the cart on the server keeps its
+   * `customerId` until a new one is associated or the cart is cleared.
+   * Callers that need to truly detach the customer must first clear the
+   * cart (DELETE /cart), which drops all line items as well.
+   */
   onCustomerCleared?: () => void;
   disabled?: boolean;
   className?: string;
@@ -31,6 +40,19 @@ interface CartCustomerSelectorProps {
 
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_SEARCH_LENGTH = 2;
+
+/**
+ * The `api` wrapper may or may not unwrap `response.data`. This helper
+ * accepts either and returns the payload.
+ */
+function unwrapApiResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response === 'object' && 'data' in (response as any)) {
+    const inner = (response as any).data;
+    if (inner && typeof inner === 'object') return inner as T;
+  }
+  return response as T;
+}
 
 export function CartCustomerSelector({
   selectedCustomerId,
@@ -71,15 +93,12 @@ export function CartCustomerSelector({
 
     const fetchCustomer = async () => {
       try {
-        const response = await api.get<Customer>(
-          `/customers/${selectedCustomerId}`,
-        );
+        const response = await api.get(`/customers/${selectedCustomerId}`);
+        const payload = unwrapApiResponse<Customer>(response);
         if (cancelled || !isMountedRef.current) return;
-        const payload =
-          response && typeof response === 'object' && 'id' in response
-            ? (response as Customer)
-            : (response as unknown as { data: Customer })?.data;
-        if (payload) setSelectedCustomer(payload);
+        if (payload && typeof payload.id === 'string') {
+          setSelectedCustomer(payload);
+        }
       } catch (err) {
         if (!cancelled && isMountedRef.current) {
           console.warn('Failed to fetch customer details:', err);
@@ -103,16 +122,13 @@ export function CartCustomerSelector({
 
     try {
       setIsSearching(true);
-      const response = await api.get<Customer[]>(
+      const response = await api.get(
         `/customers/search?q=${encodeURIComponent(trimmed)}`,
       );
       if (!isMountedRef.current) return;
 
-      const list = Array.isArray(response)
-        ? response
-        : Array.isArray((response as unknown as { data: Customer[] })?.data)
-        ? (response as unknown as { data: Customer[] }).data
-        : [];
+      const payload = unwrapApiResponse<Customer[]>(response);
+      const list = Array.isArray(payload) ? payload : [];
 
       setCustomers(list);
       setShowDropdown(true);
@@ -197,25 +213,27 @@ export function CartCustomerSelector({
     [disabled, isAssociating, onCustomerSelected],
   );
 
+  /**
+   * Client-side clear only. The backend has no "unset customer" endpoint
+   * and `associateCustomerSchema` requires a non-empty `customerId`, so
+   * there is no request we could make that would accomplish this.
+   *
+   * If a backend endpoint is added later (`DELETE /cart/customer`),
+   * replace the local state reset below with a real call.
+   */
   const handleClearCustomer = useCallback(async () => {
     if (disabled || isAssociating) return;
 
-    const previous = selectedCustomer;
     setSelectedCustomer(null);
     setSearchTerm('');
     setCustomers([]);
     setShowDropdown(false);
 
-    try {
-      await cartService.associateCustomer('');
-      window.dispatchEvent(new CustomEvent('cart:updated'));
-      onCustomerCleared?.();
-      toast.info('Customer removed from cart');
-    } catch (err) {
-      if (previous) setSelectedCustomer(previous);
-      toast.error('Failed to remove customer');
-    }
-  }, [disabled, isAssociating, selectedCustomer, onCustomerCleared]);
+    onCustomerCleared?.();
+    toast.info(
+      'Customer removed from view. The server cart still references the previous customer until a new one is set.',
+    );
+  }, [disabled, isAssociating, onCustomerCleared]);
 
   if (!isAuthenticated) {
     return null;
@@ -264,7 +282,7 @@ export function CartCustomerSelector({
             onClick={handleClearCustomer}
             disabled={disabled || isAssociating}
             className="shrink-0 p-1.5 rounded-md hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors disabled:opacity-50 focus-ring"
-            aria-label="Remove customer from cart"
+            aria-label="Remove customer from view"
           >
             <X className="w-4 h-4 text-brand-600 dark:text-brand-400" />
           </button>

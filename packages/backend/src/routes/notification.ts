@@ -6,7 +6,20 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-// All notification routes require authentication
+// ============================================================
+// AUTH
+// ============================================================
+// Every notification route requires an authenticated user.
+// `requireAuth` must set `req.user` (not `req.auth`) — the SSE
+// controller reads `req.user.id` and bails with 401 otherwise.
+//
+// If you see 401s on /stream while REST routes work, the cause is
+// almost always one of:
+//   1. requireAuth reads the token from a header the browser
+//      doesn't send on the SSE request.
+//   2. The SSE handler runs its own auth check against a field
+//      that requireAuth didn't populate.
+//   3. A CORS preflight failure prevents the request entirely.
 router.use(requireAuth);
 
 // ============================================================
@@ -14,13 +27,14 @@ router.use(requireAuth);
 // ============================================================
 //
 // Express matches in declaration order. Any literal-prefixed route
-// (`/stats`, `/unread-count`, `/preferences`, `/templates`, …) must
-// come BEFORE the parameterized `/:id` routes, or it will be captured
-// as an id and the literal handler will never run.
+// (`/stats`, `/unread-count`, `/preferences`, `/templates`,
+// `/stream`, …) must come BEFORE the parameterized `/:id` routes,
+// or it will be captured as an id and the literal handler will
+// never run.
 //
-// The same applies to sub-paths like `/:id/read` — those capture the
-// first segment as an id, so they must come after every route whose
-// first segment is a literal.
+// The same applies to sub-paths like `/:id/read` — those capture
+// the first segment as an id, so they must come after every route
+// whose first segment is a literal.
 
 // ============================================
 // COLLECTION-LEVEL GETS (literal prefixes)
@@ -44,6 +58,8 @@ router.get('/stats', notificationController.getStats);
  * Get detailed statistics with trends
  * GET /notifications/stats/detailed
  * Returns: total, unread, byType, byPriority, trend.daily/weekly/monthly
+ *
+ * Declared before /stats/:id (if you ever add one) and before /:id.
  */
 router.get('/stats/detailed', notificationController.getDetailedStats);
 
@@ -88,6 +104,9 @@ router.put('/preferences', notificationController.updatePreferences);
 /**
  * Reset notification preferences to defaults
  * POST /notifications/preferences/reset
+ *
+ * Declared before /preferences/:id if you ever add one, and
+ * before /:id.
  */
 router.post('/preferences/reset', notificationController.resetPreferences);
 
@@ -197,6 +216,27 @@ router.post(
  * Real-time notification stream (SSE)
  * GET /notifications/stream
  * Returns: Server-Sent Events stream
+ *
+ * Diagnostics:
+ *   The log at the top of this handler tells you whether the
+ *   request actually reached the controller (i.e. requireAuth
+ *   passed) or was rejected earlier. If you never see this log
+ *   when the client connects, the 401 is happening inside
+ *   `requireAuth` (or CORS preflight is failing).
+ *
+ * Auth contract:
+ *   - `requireAuth` must populate `req.user` with at least an id.
+ *   - If it populates a different field (e.g. `req.auth`), either
+ *     rename it here or update requireAuth to set `req.user` too.
+ *
+ * Headers:
+ *   - `Content-Type: text/event-stream`
+ *   - `Cache-Control: no-cache, no-transform`
+ *   - `Connection: keep-alive`
+ *   - `X-Accel-Buffering: no` (disable nginx/proxy buffering)
+ *
+ * The controller is responsible for sending an initial `: connected`
+ * comment and a periodic heartbeat; see notificationController.
  */
 router.get('/stream', notificationController.notificationStream);
 

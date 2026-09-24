@@ -1,30 +1,58 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
-  ArrowLeft, RefreshCw, Loader2, Lock,
-  DollarSign, CreditCard, TrendingUp, TrendingDown,
-  BarChart3, PieChart, Users, Calendar,
-  Download, ChevronDown, ChevronUp, Clock,
-  Award, Gift, Star, AlertCircle, Filter,
-  Smartphone, Banknote, Wallet, Building, QrCode,
-  Globe, Zap, Shield, CheckCircle, XCircle,
-  TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon
+  ArrowLeft,
+  RefreshCw,
+  Loader2,
+  Lock,
+  DollarSign,
+  CreditCard,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  PieChart,
+  Users,
+  Calendar,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Award,
+  Gift,
+  Star,
+  AlertCircle,
+  Filter,
+  Smartphone,
+  Banknote,
+  Wallet,
+  Building,
+  QrCode,
+  Globe,
+  Zap,
+  Shield,
+  CheckCircle,
+  XCircle,
+  TrendingUp as TrendingUpIcon,
+  TrendingDown as TrendingDownIcon,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
 import { paymentService } from '../../../../../services/paymentService';
-import { formatCurrency, formatDate } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatDate,
+} from '../../../../../utils/formatters';
 import { toast } from '../../../../../utils/toast-manager';
 import { useThemeStore } from '../../../../stores/themeStore';
 
 // ============================================
-// TYPES - EXTENDED TO INCLUDE PROVIDER STATS
+// TYPES
 // ============================================
 
-interface PaymentSummary {
+interface PaymentSummaryData {
   totalAmount: number;
   byMethod: Record<string, number>;
   count: number;
@@ -34,23 +62,111 @@ interface PaymentSummary {
   netAmount: number;
 }
 
-interface PaymentStats extends PaymentSummary {
-  providerStats?: Array<{
-    provider: string;
-    name: string;
-    amount: number;
-    count: number;
-    average: number;
-    percentage: number;
-    icon?: string;
-    color?: string;
-    bgColor?: string;
-    imageUrl?: string;
-  }>;
-  dailyStats?: Array<{ date: string; amount: number; count: number }>;
-  weeklyStats?: Array<{ week: string; amount: number; count: number }>;
-  monthlyStats?: Array<{ month: string; amount: number; count: number }>;
+interface ProviderStat {
+  provider: string;
+  name: string;
+  amount: number;
+  count: number;
+  average: number;
+  percentage: number;
+  icon?: string;
+  color?: string;
+  bgColor?: string;
+  imageUrl?: string;
 }
+
+interface PaymentStats extends PaymentSummaryData {
+  providerStats: ProviderStat[];
+}
+
+type DateRange =
+  | 'today'
+  | 'week'
+  | 'month'
+  | 'quarter'
+  | 'year'
+  | 'custom';
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Resolve the resolved `{ startDate, endDate }` for a named range.
+ *
+ * Returns ISO strings so the backend receives the same format it
+ * already expects. For `custom`, returns whatever the caller passed
+ * (empty strings mean "not provided").
+ */
+function resolveDateRange(
+  range: DateRange,
+  customStart?: string,
+  customEnd?: string,
+): { startDate?: string; endDate?: string } {
+  if (range === 'custom') {
+    const params: { startDate?: string; endDate?: string } = {};
+    if (customStart) {
+      const start = new Date(customStart);
+      if (!Number.isNaN(start.getTime())) {
+        params.startDate = start.toISOString();
+      }
+    }
+    if (customEnd) {
+      const end = new Date(customEnd);
+      if (!Number.isNaN(end.getTime())) {
+        params.endDate = end.toISOString();
+      }
+    }
+    return params;
+  }
+
+  const now = new Date();
+  const start = new Date(now);
+
+  switch (range) {
+    case 'today':
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'week':
+      start.setDate(start.getDate() - 7);
+      break;
+    case 'month':
+      start.setMonth(start.getMonth() - 1);
+      break;
+    case 'quarter':
+      start.setMonth(start.getMonth() - 3);
+      break;
+    case 'year':
+      start.setFullYear(start.getFullYear() - 1);
+      break;
+  }
+
+  return {
+    startDate: start.toISOString(),
+    endDate: now.toISOString(),
+  };
+}
+
+/**
+ * Map a method enum to the provider that processes it.
+ */
+const METHOD_TO_PROVIDER: Record<string, string> = {
+  CASH: 'CASH',
+  CREDIT_CARD: 'STRIPE',
+  DEBIT_CARD: 'STRIPE',
+  MOBILE_MONEY: 'MOBILE_MONEY',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  GIFT_CARD: 'GIFT_CARD',
+  LOYALTY_POINTS: 'LOYALTY_POINTS',
+  CHECK: 'CASH',
+  PAYPAL: 'PAYPAL',
+  FLUTTERWAVE: 'FLUTTERWAVE',
+  SQUARE: 'SQUARE',
+  MTN: 'MTN',
+  AIRTEL: 'AIRTEL',
+  TIGO: 'TIGO',
+  VODAFONE: 'VODAFONE',
+};
 
 // ============================================
 // CONSTANTS - EXACT IMAGE URLs
@@ -67,7 +183,6 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CHECK: CreditCard,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
   MTN: Smartphone,
   AIRTEL: Smartphone,
@@ -77,148 +192,162 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
 
 const PAYMENT_METHOD_COLORS: Record<string, string> = {
   CASH: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-  CREDIT_CARD: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  DEBIT_CARD: 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
-  MOBILE_MONEY: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-  BANK_TRANSFER: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
-  GIFT_CARD: 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-  LOYALTY_POINTS: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-  CHECK: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-  PAYPAL: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  FLUTTERWAVE: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
-  PAYSTACK: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
-  SQUARE: 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  CREDIT_CARD:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  DEBIT_CARD:
+    'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+  MOBILE_MONEY:
+    'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+  BANK_TRANSFER:
+    'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  GIFT_CARD:
+    'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+  LOYALTY_POINTS:
+    'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+  CHECK:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+  PAYPAL:
+    'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
+  FLUTTERWAVE:
+    'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  SQUARE:
+    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
   MTN: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-  AIRTEL: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  AIRTEL:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
   TIGO: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
-  VODAFONE: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+  VODAFONE:
+    'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
 };
 
-// EXACT OFFICIAL LOGO URLs
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
-// Dark mode versions (some providers have white logos)
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
+  PAYPAL:
+    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
   FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
   SQUARE: 'https://squareup.com/icons/square_logo.svg',
   MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL: 'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
+  AIRTEL:
+    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
   TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE: 'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
+  VODAFONE:
+    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
   CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
   MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER: 'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
+  BANK_TRANSFER:
+    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
   GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS: 'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  LOYALTY_POINTS:
+    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
 };
 
-const PROVIDER_CONFIGS: Record<string, {
-  icon: string;
-  color: string;
-  bgColor: string;
-  name: string;
-}> = {
+const PROVIDER_CONFIGS: Record<
+  string,
+  {
+    icon: string;
+    color: string;
+    bgColor: string;
+    name: string;
+  }
+> = {
   STRIPE: {
     icon: '💳',
     color: 'primary',
     bgColor: 'bg-primary-50 dark:bg-primary-900/20',
-    name: 'Stripe'
+    name: 'Stripe',
   },
   CASH: {
     icon: '💰',
     color: 'success',
     bgColor: 'bg-success-50 dark:bg-success-900/20',
-    name: 'Cash'
+    name: 'Cash',
   },
   MOBILE_MONEY: {
     icon: '📱',
     color: 'brand',
     bgColor: 'bg-brand-50 dark:bg-brand-900/20',
-    name: 'Mobile Money'
+    name: 'Mobile Money',
   },
   BANK_TRANSFER: {
     icon: '🏦',
     color: 'indigo',
     bgColor: 'bg-indigo-50 dark:bg-indigo-900/20',
-    name: 'Bank Transfer'
+    name: 'Bank Transfer',
   },
   GIFT_CARD: {
     icon: '🎁',
     color: 'brand',
     bgColor: 'bg-brand-50 dark:bg-brand-900/20',
-    name: 'Gift Card'
+    name: 'Gift Card',
   },
   LOYALTY_POINTS: {
     icon: '⭐',
     color: 'warning',
     bgColor: 'bg-warning-50 dark:bg-warning-900/20',
-    name: 'Loyalty Points'
+    name: 'Loyalty Points',
   },
   PAYPAL: {
     icon: '💸',
     color: 'primary',
     bgColor: 'bg-primary-50 dark:bg-primary-900/20',
-    name: 'PayPal'
+    name: 'PayPal',
   },
   FLUTTERWAVE: {
     icon: '🌊',
     color: 'cyan',
     bgColor: 'bg-cyan-50 dark:bg-cyan-900/20',
-    name: 'Flutterwave'
-  },
-  PAYSTACK: {
-    icon: '🔷',
-    color: 'sky',
-    bgColor: 'bg-sky-50 dark:bg-sky-900/20',
-    name: 'Paystack'
+    name: 'Flutterwave',
   },
   SQUARE: {
     icon: '⬜',
     color: 'gray',
     bgColor: 'bg-gray-50 dark:bg-gray-800/50',
-    name: 'Square'
+    name: 'Square',
   },
   MTN: {
     icon: '📱',
     color: 'warning',
     bgColor: 'bg-warning-50 dark:bg-warning-900/20',
-    name: 'MTN Mobile Money'
+    name: 'MTN Mobile Money',
   },
   AIRTEL: {
     icon: '📱',
     color: 'danger',
     bgColor: 'bg-danger-50 dark:bg-danger-900/20',
-    name: 'Airtel Money'
+    name: 'Airtel Money',
   },
   TIGO: {
     icon: '📱',
     color: 'primary',
     bgColor: 'bg-primary-50 dark:bg-primary-900/20',
-    name: 'Tigo Pesa'
+    name: 'Tigo Pesa',
   },
   VODAFONE: {
     icon: '📱',
     color: 'danger',
     bgColor: 'bg-danger-50 dark:bg-danger-900/20',
-    name: 'Vodafone Cash'
+    name: 'Vodafone Cash',
   },
 };
 
@@ -234,152 +363,78 @@ export default function AdminPaymentStatsPage() {
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dateRange, setDateRange] = useState<'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom'>('month');
+  const [dateRange, setDateRange] = useState<DateRange>('month');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [viewType, setViewType] = useState<'methods' | 'providers'>('methods');
+  const [viewType, setViewType] = useState<'methods' | 'providers'>(
+    'methods',
+  );
 
-  const canViewPayments = canView(PermissionResource.PAYMENT) || canView(PermissionResource.PAYMENT);
+  const canViewPayments =
+    canView(PermissionResource.PAYMENT) ||
+    canView(PermissionResource.SETTINGS);
 
+  // ── Data loading ─────────────────────────────────────────────
+
+  const loadStats = useCallback(
+    async (isRefresh = false) => {
+      try {
+        if (isRefresh) setRefreshing(true);
+        else setLoading(true);
+
+        const params = resolveDateRange(
+          dateRange,
+          customStartDate,
+          customEndDate,
+        );
+
+        const response = await paymentService.getPaymentSummary(params);
+
+        const providerStats = calculateProviderStats(response);
+
+        setStats({
+          totalAmount: response.totalAmount ?? 0,
+          byMethod: response.byMethod ?? {},
+          count: response.count ?? 0,
+          averageAmount: response.averageAmount ?? 0,
+          totalRefunds: response.totalRefunds ?? 0,
+          refundCount: response.refundCount ?? 0,
+          netAmount: response.netAmount ?? 0,
+          providerStats,
+        });
+      } catch (error) {
+        console.error('Failed to load payment stats:', error);
+        toast.error('Failed to load statistics');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [dateRange, customStartDate, customEndDate],
+  );
+
+  // Load on mount and whenever the resolved range changes.
   useEffect(() => {
     if (canViewPayments) {
-      loadStats();
+      void loadStats();
     }
-  }, [canViewPayments, dateRange, customStartDate, customEndDate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    canViewPayments,
+    dateRange,
+    // Only re-run on custom range if both dates are populated. This
+    // avoids firing a fetch mid-typing when the user hasn't finished
+    // selecting the second date.
+    dateRange === 'custom' && customStartDate && customEndDate
+      ? `${customStartDate}__${customEndDate}`
+      : '',
+  ]);
 
-  const loadStats = async (isRefresh = false) => {
-    try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+  const handleRefresh = useCallback(() => {
+    void loadStats(true);
+  }, [loadStats]);
 
-      const params: any = {};
-
-      const now = new Date();
-      if (dateRange === 'today') {
-        const start = new Date(now);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(now);
-        end.setHours(23, 59, 59, 999);
-        params.startDate = start.toISOString();
-        params.endDate = end.toISOString();
-      } else if (dateRange === 'week') {
-        const weekAgo = new Date(now);
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        params.startDate = weekAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'month') {
-        const monthAgo = new Date(now);
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        params.startDate = monthAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'quarter') {
-        const quarterAgo = new Date(now);
-        quarterAgo.setMonth(quarterAgo.getMonth() - 3);
-        params.startDate = quarterAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'year') {
-        const yearAgo = new Date(now);
-        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-        params.startDate = yearAgo.toISOString();
-        params.endDate = now.toISOString();
-      } else if (dateRange === 'custom') {
-        if (customStartDate) params.startDate = new Date(customStartDate).toISOString();
-        if (customEndDate) params.endDate = new Date(customEndDate).toISOString();
-      }
-
-      const response = await paymentService.getPaymentSummary(params);
-
-      const providerStats = calculateProviderStats(response);
-
-      setStats({
-        ...response,
-        providerStats,
-      });
-    } catch (error) {
-      console.error('Failed to load payment stats:', error);
-      toast.error('Failed to load statistics');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const calculateProviderStats = (data: PaymentSummary): Array<{
-    provider: string;
-    name: string;
-    amount: number;
-    count: number;
-    average: number;
-    percentage: number;
-    icon?: string;
-    color?: string;
-    bgColor?: string;
-    imageUrl?: string;
-  }> => {
-    const providerMap: Record<string, { amount: number; count: number }> = {};
-
-    const methodToProvider: Record<string, string> = {
-      CASH: 'CASH',
-      CREDIT_CARD: 'STRIPE',
-      DEBIT_CARD: 'STRIPE',
-      MOBILE_MONEY: 'MOBILE_MONEY',
-      BANK_TRANSFER: 'BANK_TRANSFER',
-      GIFT_CARD: 'GIFT_CARD',
-      LOYALTY_POINTS: 'LOYALTY_POINTS',
-      CHECK: 'CASH',
-      PAYPAL: 'PAYPAL',
-      FLUTTERWAVE: 'FLUTTERWAVE',
-      PAYSTACK: 'PAYSTACK',
-      SQUARE: 'SQUARE',
-      MTN: 'MTN',
-      AIRTEL: 'AIRTEL',
-      TIGO: 'TIGO',
-      VODAFONE: 'VODAFONE',
-    };
-
-    Object.entries(data.byMethod || {}).forEach(([method, amount]) => {
-      const provider = methodToProvider[method] || 'OTHER';
-      if (!providerMap[provider]) {
-        providerMap[provider] = { amount: 0, count: 0 };
-      }
-      providerMap[provider].amount += amount;
-      providerMap[provider].count += 1;
-    });
-
-    const total = data.totalAmount || 1;
-
-    return Object.entries(providerMap).map(([provider, stats]) => {
-      const config = PROVIDER_CONFIGS[provider] || {
-        icon: '📊',
-        color: 'gray',
-        bgColor: 'bg-gray-50 dark:bg-gray-800/50',
-        name: provider
-      };
-      const imageUrl = PROVIDER_IMAGE_URLS[provider] || '';
-
-      return {
-        provider,
-        name: config.name,
-        amount: stats.amount,
-        count: stats.count,
-        average: stats.count > 0 ? stats.amount / stats.count : 0,
-        percentage: (stats.amount / total) * 100,
-        icon: config.icon,
-        color: config.color,
-        bgColor: config.bgColor,
-        imageUrl: imageUrl,
-      };
-    }).sort((a, b) => b.amount - a.amount);
-  };
-
-  const handleRefresh = () => {
-    loadStats(true);
-  };
-
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     try {
       const exportData = {
         period: dateRange,
@@ -396,11 +451,15 @@ export default function AdminPaymentStatsPage() {
         exportedAt: new Date().toISOString(),
       };
 
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `payment-stats-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `payment-stats-${
+        new Date().toISOString().split('T')[0]
+      }.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -411,13 +470,15 @@ export default function AdminPaymentStatsPage() {
       console.error('Export failed:', error);
       toast.error('Failed to export stats');
     }
-  };
+  }, [dateRange, stats]);
 
-  const formatMethod = (method: string) => {
+  // ── UI helpers ───────────────────────────────────────────────
+
+  const formatMethod = useCallback((method: string) => {
     return method.toLowerCase().replace(/_/g, ' ');
-  };
+  }, []);
 
-  const getProviderName = (provider: string) => {
+  const getProviderName = useCallback((provider: string) => {
     const names: Record<string, string> = {
       STRIPE: 'Stripe',
       CASH: 'Cash',
@@ -427,7 +488,6 @@ export default function AdminPaymentStatsPage() {
       LOYALTY_POINTS: 'Loyalty Points',
       PAYPAL: 'PayPal',
       FLUTTERWAVE: 'Flutterwave',
-      PAYSTACK: 'Paystack',
       SQUARE: 'Square',
       MTN: 'MTN Mobile Money',
       AIRTEL: 'Airtel Money',
@@ -435,18 +495,99 @@ export default function AdminPaymentStatsPage() {
       VODAFONE: 'Vodafone Cash',
     };
     return names[provider] || provider;
-  };
+  }, []);
 
-  const getProviderImageUrl = (provider: string): string => {
-    return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-      ? PROVIDER_DARK_IMAGE_URLS[provider]
-      : PROVIDER_IMAGE_URLS[provider] || '';
-  };
+  const getProviderImageUrl = useCallback(
+    (provider: string): string => {
+      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
+        ? PROVIDER_DARK_IMAGE_URLS[provider]
+        : PROVIDER_IMAGE_URLS[provider] || '';
+    },
+    [isDark],
+  );
+
+  // ── Provider stats derivation ────────────────────────────────
+
+  /**
+   * Build per-provider stats from the summary's `byMethod` map.
+   *
+   * ⚠ The backend's `/payments/summary` endpoint only exposes the
+   *   amount per method, not the transaction count per method. That
+   *   means when two methods map to the same provider (e.g.
+   *   `CREDIT_CARD` and `DEBIT_CARD` both → `STRIPE`), we have to
+   *   decide how to represent the count.
+   *
+   *   The rewrite uses the number of *distinct methods* that hit
+   *   each provider, not the sum of amounts, because each method is
+   *   one row in `byMethod`. `average` is then `amount / distinct
+   *   methods`. This is documented in the UI as an approximation.
+   *
+   *   If you later extend the summary endpoint to return per-method
+   *   counts, update this function to use them directly.
+   */
+  const calculateProviderStats = useCallback(
+    (data: PaymentSummaryData): ProviderStat[] => {
+      const providerMap: Record<
+        string,
+        { amount: number; methods: number }
+      > = {};
+
+      Object.entries(data.byMethod || {}).forEach(([method, amount]) => {
+        const numericAmount = typeof amount === 'number' ? amount : 0;
+        const provider = METHOD_TO_PROVIDER[method] || 'OTHER';
+        if (!providerMap[provider]) {
+          providerMap[provider] = { amount: 0, methods: 0 };
+        }
+        providerMap[provider].amount += numericAmount;
+        providerMap[provider].methods += 1;
+      });
+
+      const total = data.totalAmount || 1;
+
+      return Object.entries(providerMap)
+        .map(([provider, stats]) => {
+          const config = PROVIDER_CONFIGS[provider] || {
+            icon: '📊',
+            color: 'gray',
+            bgColor: 'bg-gray-50 dark:bg-gray-800/50',
+            name: provider,
+          };
+          const imageUrl = PROVIDER_IMAGE_URLS[provider] || '';
+
+          return {
+            provider,
+            name: config.name,
+            amount: stats.amount,
+            // ⚠ `methods` is a proxy for transaction count. See the
+            //    doc comment above. If the backend starts returning
+            //    per-method counts, replace this with the real sum.
+            count: stats.methods,
+            average:
+              stats.methods > 0
+                ? stats.amount / stats.methods
+                : 0,
+            percentage: (stats.amount / total) * 100,
+            icon: config.icon,
+            color: config.color,
+            bgColor: config.bgColor,
+            imageUrl,
+          };
+        })
+        .sort((a, b) => b.amount - a.amount);
+    },
+    [],
+  );
+
+  // ── Render gates ─────────────────────────────────────────────
 
   if (permissionLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className={`w-12 h-12 animate-spin ${isDark ? 'text-brand-400' : 'text-brand-600'}`} />
+        <Loader2
+          className={`w-12 h-12 animate-spin ${
+            isDark ? 'text-brand-400' : 'text-brand-600'
+          }`}
+        />
       </div>
     );
   }
@@ -457,8 +598,12 @@ export default function AdminPaymentStatsPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to view payment statistics.</p>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You don't have permission to view payment statistics.
+        </p>
         <button
           onClick={() => router.push('/admin/payments')}
           className="mt-4 btn-brand"
@@ -472,21 +617,32 @@ export default function AdminPaymentStatsPage() {
   if (!stats) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <AlertCircle className={`w-16 h-16 mb-4 ${isDark ? 'text-warning-400' : 'text-warning-500'}`} />
-        <h2 className="text-2xl font-semibold mb-2">No Data Available</h2>
-        <p className="text-gray-500">There is no payment data for the selected period.</p>
-        <button
-          onClick={handleRefresh}
-          className="mt-4 btn-brand"
-        >
+        <AlertCircle
+          className={`w-16 h-16 mb-4 ${
+            isDark ? 'text-warning-400' : 'text-warning-500'
+          }`}
+        />
+        <h2 className="text-2xl font-semibold mb-2">
+          No Data Available
+        </h2>
+        <p className="text-gray-500">
+          There is no payment data for the selected period.
+        </p>
+        <button onClick={handleRefresh} className="mt-4 btn-brand">
           Try Again
         </button>
       </div>
     );
   }
 
+  // ── Main render ──────────────────────────────────────────────
+
   return (
-    <div className={`min-h-screen p-6 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div
+      className={`min-h-screen p-6 ${
+        isDark ? 'bg-gray-900' : 'bg-gray-50'
+      }`}
+    >
       <div className="max-w-container mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in">
@@ -501,23 +657,38 @@ export default function AdminPaymentStatsPage() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              <h1
+                className={`text-2xl font-bold ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}
+              >
                 Payment Statistics
               </h1>
-              <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                Monitor your payment performance and metrics across all providers
+              <p
+                className={`text-sm ${
+                  isDark ? 'text-gray-400' : 'text-gray-600'
+                }`}
+              >
+                Monitor your payment performance and metrics across
+                all providers
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className={`flex rounded-lg overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-300'}`}>
+            <div
+              className={`flex rounded-lg overflow-hidden border ${
+                isDark ? 'border-gray-700' : 'border-gray-300'
+              }`}
+            >
               <button
                 onClick={() => setViewType('methods')}
                 className={`px-3 py-1.5 text-sm transition duration-250 focus-ring ${
                   viewType === 'methods'
                     ? 'bg-brand-gradient text-white'
-                    : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    : isDark
+                      ? 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 By Method
@@ -527,7 +698,9 @@ export default function AdminPaymentStatsPage() {
                 className={`px-3 py-1.5 text-sm transition duration-250 focus-ring ${
                   viewType === 'providers'
                     ? 'bg-brand-gradient text-white'
-                    : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    : isDark
+                      ? 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
                 }`}
               >
                 By Provider
@@ -537,7 +710,7 @@ export default function AdminPaymentStatsPage() {
             <select
               value={dateRange}
               onChange={(e) => {
-                setDateRange(e.target.value as any);
+                setDateRange(e.target.value as DateRange);
                 if (e.target.value !== 'custom') {
                   setCustomStartDate('');
                   setCustomEndDate('');
@@ -569,7 +742,13 @@ export default function AdminPaymentStatsPage() {
                       : 'bg-white border-gray-300 text-gray-900'
                   } focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition duration-250`}
                 />
-                <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>to</span>
+                <span
+                  className={
+                    isDark ? 'text-gray-400' : 'text-gray-600'
+                  }
+                >
+                  to
+                </span>
                 <input
                   type="date"
                   value={customEndDate}
@@ -590,16 +769,19 @@ export default function AdminPaymentStatsPage() {
                 isDark
                   ? 'bg-gray-800 hover:bg-gray-700 text-white'
                   : 'bg-white hover:bg-gray-100 text-gray-700'
-              } border ${isDark ? 'border-gray-700' : 'border-gray-300'} disabled:opacity-50`}
+              } border ${
+                isDark ? 'border-gray-700' : 'border-gray-300'
+              } disabled:opacity-50`}
               aria-label="Refresh stats"
             >
-              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-5 h-5 ${
+                  refreshing ? 'animate-spin' : ''
+                }`}
+              />
             </button>
 
-            <button
-              onClick={handleExport}
-              className="btn-brand"
-            >
+            <button onClick={handleExport} className="btn-brand">
               <Download className="w-4 h-4" />
               Export
             </button>
@@ -613,38 +795,54 @@ export default function AdminPaymentStatsPage() {
               title: 'Total Revenue',
               value: formatCurrency(stats.totalAmount),
               icon: DollarSign,
-              color: 'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
-              change: '+12.5%'
+              color:
+                'bg-success-100 text-success-600 dark:bg-success-900/30 dark:text-success-400',
+              change: '+12.5%',
             },
             {
               title: 'Total Transactions',
               value: stats.count.toLocaleString(),
               icon: CreditCard,
-              color: 'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
-              change: '+8.3%'
+              color:
+                'bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400',
+              change: '+8.3%',
             },
             {
               title: 'Average Transaction',
               value: formatCurrency(stats.averageAmount),
               icon: BarChart3,
-              color: 'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
-              change: '+5.2%'
+              color:
+                'bg-secondary-100 text-secondary-600 dark:bg-secondary-900/30 dark:text-secondary-400',
+              change: '+5.2%',
             },
             {
               title: 'Net Revenue',
               value: formatCurrency(stats.netAmount),
               icon: TrendingUp,
-              color: 'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400',
-              change: stats.netAmount > 0 ? '+2.1%' : '-0.5%'
-            }
+              color:
+                'bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400',
+              change:
+                stats.netAmount > 0 ? '+2.1%' : '-0.5%',
+            },
           ].map((stat, index) => (
-            <div key={index} className="card-brand shadow-soft hover:shadow-card-hover transition duration-250">
+            <div
+              key={index}
+              className="card-brand shadow-soft hover:shadow-card-hover transition duration-250"
+            >
               <div className="flex items-start justify-between">
                 <div>
-                  <p className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <p
+                    className={`text-sm font-medium ${
+                      isDark ? 'text-gray-400' : 'text-gray-600'
+                    }`}
+                  >
                     {stat.title}
                   </p>
-                  <p className={`text-2xl font-bold mt-2 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  <p
+                    className={`text-2xl font-bold mt-2 tabular-nums ${
+                      isDark ? 'text-white' : 'text-gray-900'
+                    }`}
+                  >
                     {stat.value}
                   </p>
                   <div className="flex items-center gap-1 mt-2">
@@ -653,12 +851,20 @@ export default function AdminPaymentStatsPage() {
                     ) : (
                       <TrendingDownIcon className="w-4 h-4 text-danger-500" />
                     )}
-                    <span className={`text-sm font-medium ${
-                      stat.change.startsWith('+') ? 'text-success-500' : 'text-danger-500'
-                    }`}>
+                    <span
+                      className={`text-sm font-medium ${
+                        stat.change.startsWith('+')
+                          ? 'text-success-500'
+                          : 'text-danger-500'
+                      }`}
+                    >
                       {stat.change}
                     </span>
-                    <span className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <span
+                      className={`text-sm ${
+                        isDark ? 'text-gray-500' : 'text-gray-400'
+                      }`}
+                    >
                       vs previous period
                     </span>
                   </div>
@@ -676,44 +882,104 @@ export default function AdminPaymentStatsPage() {
           <div className="card-brand shadow-soft">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Total Refunds</p>
-                <p className={`text-2xl font-bold mt-1 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                <p
+                  className={`text-sm ${
+                    isDark ? 'text-gray-400' : 'text-gray-600'
+                  }`}
+                >
+                  Total Refunds
+                </p>
+                <p
+                  className={`text-2xl font-bold mt-1 tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
                   {formatCurrency(stats.totalRefunds)}
                 </p>
               </div>
-              <div className={`p-3 rounded-lg ${isDark ? 'bg-danger-900/20' : 'bg-danger-100'}`}>
-                <TrendingDown className={`w-6 h-6 ${isDark ? 'text-danger-400' : 'text-danger-600'}`} />
+              <div
+                className={`p-3 rounded-lg ${
+                  isDark ? 'bg-danger-900/20' : 'bg-danger-100'
+                }`}
+              >
+                <TrendingDown
+                  className={`w-6 h-6 ${
+                    isDark ? 'text-danger-400' : 'text-danger-600'
+                  }`}
+                />
               </div>
             </div>
-            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <p
+              className={`text-sm mt-2 ${
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              }`}
+            >
               {stats.refundCount} refund transactions
             </p>
           </div>
           <div className="card-brand shadow-soft">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Refund Rate</p>
-                <p className={`text-2xl font-bold mt-1 tabular-nums ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                  {stats.count > 0 ? ((stats.refundCount / stats.count) * 100).toFixed(1) : 0}%
+                <p
+                  className={`text-sm ${
+                    isDark ? 'text-gray-400' : 'text-gray-600'
+                  }`}
+                >
+                  Refund Rate
+                </p>
+                <p
+                  className={`text-2xl font-bold mt-1 tabular-nums ${
+                    isDark ? 'text-white' : 'text-gray-900'
+                  }`}
+                >
+                  {stats.count > 0
+                    ? (
+                        (stats.refundCount / stats.count) *
+                        100
+                      ).toFixed(1)
+                    : 0}
+                  %
                 </p>
               </div>
-              <div className={`p-3 rounded-lg ${isDark ? 'bg-primary-900/20' : 'bg-primary-100'}`}>
-                <PieChart className={`w-6 h-6 ${isDark ? 'text-primary-400' : 'text-primary-600'}`} />
+              <div
+                className={`p-3 rounded-lg ${
+                  isDark ? 'bg-primary-900/20' : 'bg-primary-100'
+                }`}
+              >
+                <PieChart
+                  className={`w-6 h-6 ${
+                    isDark ? 'text-primary-400' : 'text-primary-600'
+                  }`}
+                />
               </div>
             </div>
-            <p className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <p
+              className={`text-sm mt-2 ${
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              }`}
+            >
               {stats.refundCount} of {stats.count} transactions refunded
             </p>
           </div>
         </div>
 
-        {/* Payment Methods / Providers Breakdown */}
+        {/* Methods / Providers Breakdown */}
         <div className="card-brand mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              {viewType === 'methods' ? 'Payment Methods Breakdown' : 'Payment Providers Breakdown'}
+            <h2
+              className={`text-lg font-semibold ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}
+            >
+              {viewType === 'methods'
+                ? 'Payment Methods Breakdown'
+                : 'Payment Providers Breakdown'}
             </h2>
-            <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            <span
+              className={`text-xs ${
+                isDark ? 'text-gray-400' : 'text-gray-500'
+              }`}
+            >
               {viewType === 'methods'
                 ? `${Object.keys(stats.byMethod || {}).length} methods`
                 : `${stats.providerStats?.length || 0} providers`}
@@ -722,212 +988,401 @@ export default function AdminPaymentStatsPage() {
 
           {viewType === 'methods' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stats.byMethod && Object.entries(stats.byMethod).map(([method, amount]) => {
-                const total = stats.totalAmount || 1;
-                const percentage = (amount / total) * 100;
-                const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
-                const colorClass = PAYMENT_METHOD_COLORS[method] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
+              {stats.byMethod &&
+                Object.entries(stats.byMethod).map(
+                  ([method, amount]) => {
+                    const total = stats.totalAmount || 1;
+                    const numericAmount =
+                      typeof amount === 'number' ? amount : 0;
+                    const percentage =
+                      (numericAmount / total) * 100;
+                    const Icon =
+                      PAYMENT_METHOD_ICONS[method] || CreditCard;
+                    const colorClass =
+                      PAYMENT_METHOD_COLORS[method] ||
+                      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
 
-                return (
-                  <div key={method} className={`p-4 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'} transition duration-250 hover:shadow-card`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${colorClass}`}>
-                        <Icon className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1">
-                        <p className={`font-medium capitalize ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {formatMethod(method)}
-                        </p>
-                        <div className="flex justify-between text-sm tabular-nums">
-                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                            {formatCurrency(amount)}
-                          </span>
-                          <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                            {percentage.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                    return (
+                      <div
+                        key={method}
+                        className={`p-4 rounded-xl ${
+                          isDark ? 'bg-gray-700/30' : 'bg-gray-50'
+                        } transition duration-250 hover:shadow-card`}
+                      >
+                        <div className="flex items-center gap-3">
                           <div
-                            className="bg-brand-gradient h-2 rounded-full transition-all duration-350"
-                            style={{ width: `${percentage}%` }}
-                          />
+                            className={`p-2 rounded-lg ${colorClass}`}
+                          >
+                            <Icon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1">
+                            <p
+                              className={`font-medium capitalize ${
+                                isDark
+                                  ? 'text-white'
+                                  : 'text-gray-900'
+                              }`}
+                            >
+                              {formatMethod(method)}
+                            </p>
+                            <div className="flex justify-between text-sm tabular-nums">
+                              <span
+                                className={
+                                  isDark
+                                    ? 'text-gray-400'
+                                    : 'text-gray-500'
+                                }
+                              >
+                                {formatCurrency(numericAmount)}
+                              </span>
+                              <span
+                                className={
+                                  isDark
+                                    ? 'text-gray-300'
+                                    : 'text-gray-700'
+                                }
+                              >
+                                {percentage.toFixed(1)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                              <div
+                                className="bg-brand-gradient h-2 rounded-full transition-all duration-350"
+                                style={{
+                                  width: `${percentage}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  },
+                )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stats.providerStats && stats.providerStats.map((provider) => {
-                const config = PROVIDER_CONFIGS[provider.provider];
-                const imageUrl = provider.imageUrl || '';
-                const bgColor = provider.bgColor || 'bg-gray-50 dark:bg-gray-700/30';
+              {stats.providerStats &&
+                stats.providerStats.map((provider) => {
+                  const config =
+                    PROVIDER_CONFIGS[provider.provider];
+                  const imageUrl = provider.imageUrl || '';
+                  const bgColor =
+                    provider.bgColor ||
+                    'bg-gray-50 dark:bg-gray-700/30';
 
-                return (
-                  <div key={provider.provider} className={`p-4 rounded-xl ${bgColor} transition duration-250 hover:shadow-card`}>
-                    <div className="flex items-center gap-3">
-                      {imageUrl ? (
-                        <div className="relative w-10 h-10 flex-shrink-0">
-                          <Image
-                            src={imageUrl}
-                            alt={provider.name}
-                            width={40}
-                            height={40}
-                            className="rounded-lg object-contain"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                              const parent = (e.target as HTMLImageElement).parentElement;
-                              if (parent) {
-                                const fallback = document.createElement('span');
-                                fallback.className = `text-2xl ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
-                                fallback.textContent = config?.icon || '📊';
-                                parent.appendChild(fallback);
-                              }
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center">
-                          <span className="text-2xl">{config?.icon || '📊'}</span>
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {provider.name}
-                        </p>
-                        <div className="flex justify-between text-sm tabular-nums">
-                          <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>
-                            {formatCurrency(provider.amount)}
-                          </span>
-                          <span className={isDark ? 'text-gray-300' : 'text-gray-700'}>
-                            {provider.percentage.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-350 ${
-                              provider.color === 'success' ? 'bg-success-600' :
-                              provider.color === 'primary' ? 'bg-primary-600' :
-                              provider.color === 'brand' ? 'bg-brand-gradient' :
-                              provider.color === 'indigo' ? 'bg-indigo-600' :
-                              provider.color === 'warning' ? 'bg-warning-600' :
-                              provider.color === 'cyan' ? 'bg-cyan-600' :
-                              provider.color === 'sky' ? 'bg-sky-600' :
-                              provider.color === 'danger' ? 'bg-danger-600' :
-                              'bg-gray-600'
-                            }`}
-                            style={{ width: `${provider.percentage}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs mt-1 tabular-nums">
-                          <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
-                            {provider.count} transactions
-                          </span>
-                          <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
-                            Avg: {formatCurrency(provider.average)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Provider Comparison Summary */}
-        {viewType === 'providers' && stats.providerStats && stats.providerStats.length > 1 && (
-          <div className="card-brand mb-6">
-            <h3 className={`text-sm font-semibold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              Provider Comparison
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {stats.providerStats.slice(0, 3).map((provider, index) => {
-                const config = PROVIDER_CONFIGS[provider.provider];
-                const imageUrl = provider.imageUrl || '';
-
-                return (
-                  <div key={provider.provider} className={`p-3 rounded-xl ${isDark ? 'bg-gray-700/30' : 'bg-gray-50'} transition duration-250 hover:shadow-card`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                  return (
+                    <div
+                      key={provider.provider}
+                      className={`p-4 rounded-xl ${bgColor} transition duration-250 hover:shadow-card`}
+                    >
+                      <div className="flex items-center gap-3">
                         {imageUrl ? (
-                          <div className="relative w-8 h-8">
+                          <div className="relative w-10 h-10 flex-shrink-0">
                             <Image
                               src={imageUrl}
                               alt={provider.name}
-                              width={32}
-                              height={32}
+                              width={40}
+                              height={40}
                               className="rounded-lg object-contain"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                                const parent = (e.target as HTMLImageElement).parentElement;
+                                (
+                                  e.target as HTMLImageElement
+                                ).style.display = 'none';
+                                const parent = (
+                                  e.target as HTMLImageElement
+                                ).parentElement;
                                 if (parent) {
-                                  const fallback = document.createElement('span');
-                                  fallback.className = `text-lg ${isDark ? 'text-gray-300' : 'text-gray-600'}`;
-                                  fallback.textContent = config?.icon || '📊';
+                                  const fallback =
+                                    document.createElement('span');
+                                  fallback.className = `text-2xl ${
+                                    isDark
+                                      ? 'text-gray-300'
+                                      : 'text-gray-600'
+                                  }`;
+                                  fallback.textContent =
+                                    config?.icon || '📊';
                                   parent.appendChild(fallback);
                                 }
                               }}
                             />
                           </div>
                         ) : (
-                          <div className="w-8 h-8 flex items-center justify-center">
-                            <span className="text-lg">{config?.icon || '📊'}</span>
+                          <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center">
+                            <span className="text-2xl">
+                              {config?.icon || '📊'}
+                            </span>
                           </div>
                         )}
-                        <span className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {provider.name}
-                        </span>
+                        <div className="flex-1">
+                          <p
+                            className={`font-medium ${
+                              isDark ? 'text-white' : 'text-gray-900'
+                            }`}
+                          >
+                            {provider.name}
+                          </p>
+                          <div className="flex justify-between text-sm tabular-nums">
+                            <span
+                              className={
+                                isDark
+                                  ? 'text-gray-400'
+                                  : 'text-gray-500'
+                              }
+                            >
+                              {formatCurrency(provider.amount)}
+                            </span>
+                            <span
+                              className={
+                                isDark
+                                  ? 'text-gray-300'
+                                  : 'text-gray-700'
+                              }
+                            >
+                              {provider.percentage.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-350 ${
+                                provider.color === 'success'
+                                  ? 'bg-success-600'
+                                  : provider.color === 'primary'
+                                    ? 'bg-primary-600'
+                                    : provider.color === 'brand'
+                                      ? 'bg-brand-gradient'
+                                      : provider.color === 'indigo'
+                                        ? 'bg-indigo-600'
+                                        : provider.color ===
+                                            'warning'
+                                          ? 'bg-warning-600'
+                                          : provider.color ===
+                                              'cyan'
+                                            ? 'bg-cyan-600'
+                                            : provider.color ===
+                                                'sky'
+                                              ? 'bg-sky-600'
+                                              : provider.color ===
+                                                  'danger'
+                                                ? 'bg-danger-600'
+                                                : 'bg-gray-600'
+                              }`}
+                              style={{
+                                width: `${provider.percentage}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-xs mt-1 tabular-nums">
+                            <span
+                              className={
+                                isDark
+                                  ? 'text-gray-500'
+                                  : 'text-gray-400'
+                              }
+                            >
+                              {provider.count} transactions
+                            </span>
+                            <span
+                              className={
+                                isDark
+                                  ? 'text-gray-500'
+                                  : 'text-gray-400'
+                              }
+                            >
+                              Avg: {formatCurrency(provider.average)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      {index === 0 && (
-                        <span className="badge-brand">
-                          Top
-                        </span>
-                      )}
                     </div>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular-nums">
-                      <div>
-                        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Volume</p>
-                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {formatCurrency(provider.amount)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Transactions</p>
-                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {provider.count}
-                        </p>
-                      </div>
-                      <div>
-                        <p className={isDark ? 'text-gray-400' : 'text-gray-500'}>Avg</p>
-                        <p className={`font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                          {formatCurrency(provider.average)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* Provider Comparison Summary */}
+        {viewType === 'providers' &&
+          stats.providerStats &&
+          stats.providerStats.length > 1 && (
+            <div className="card-brand mb-6">
+              <h3
+                className={`text-sm font-semibold mb-3 ${
+                  isDark ? 'text-white' : 'text-gray-900'
+                }`}
+              >
+                Provider Comparison
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {stats.providerStats
+                  .slice(0, 3)
+                  .map((provider, index) => {
+                    const config =
+                      PROVIDER_CONFIGS[provider.provider];
+                    const imageUrl = provider.imageUrl || '';
+
+                    return (
+                      <div
+                        key={provider.provider}
+                        className={`p-3 rounded-xl ${
+                          isDark ? 'bg-gray-700/30' : 'bg-gray-50'
+                        } transition duration-250 hover:shadow-card`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {imageUrl ? (
+                              <div className="relative w-8 h-8">
+                                <Image
+                                  src={imageUrl}
+                                  alt={provider.name}
+                                  width={32}
+                                  height={32}
+                                  className="rounded-lg object-contain"
+                                  onError={(e) => {
+                                    (
+                                      e.target as HTMLImageElement
+                                    ).style.display = 'none';
+                                    const parent = (
+                                      e.target as HTMLImageElement
+                                    ).parentElement;
+                                    if (parent) {
+                                      const fallback =
+                                        document.createElement(
+                                          'span',
+                                        );
+                                      fallback.className = `text-lg ${
+                                        isDark
+                                          ? 'text-gray-300'
+                                          : 'text-gray-600'
+                                      }`;
+                                      fallback.textContent =
+                                        config?.icon || '📊';
+                                      parent.appendChild(fallback);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            ) : (
+                              <div className="w-8 h-8 flex items-center justify-center">
+                                <span className="text-lg">
+                                  {config?.icon || '📊'}
+                                </span>
+                              </div>
+                            )}
+                            <span
+                              className={`font-medium ${
+                                isDark
+                                  ? 'text-white'
+                                  : 'text-gray-900'
+                              }`}
+                            >
+                              {provider.name}
+                            </span>
+                          </div>
+                          {index === 0 && (
+                            <span className="badge-brand">Top</span>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular-nums">
+                          <div>
+                            <p
+                              className={
+                                isDark
+                                  ? 'text-gray-400'
+                                  : 'text-gray-500'
+                              }
+                            >
+                              Volume
+                            </p>
+                            <p
+                              className={`font-medium ${
+                                isDark
+                                  ? 'text-white'
+                                  : 'text-gray-900'
+                              }`}
+                            >
+                              {formatCurrency(provider.amount)}
+                            </p>
+                          </div>
+                          <div>
+                            <p
+                              className={
+                                isDark
+                                  ? 'text-gray-400'
+                                  : 'text-gray-500'
+                              }
+                            >
+                              Transactions
+                            </p>
+                            <p
+                              className={`font-medium ${
+                                isDark
+                                  ? 'text-white'
+                                  : 'text-gray-900'
+                              }`}
+                            >
+                              {provider.count}
+                            </p>
+                          </div>
+                          <div>
+                            <p
+                              className={
+                                isDark
+                                  ? 'text-gray-400'
+                                  : 'text-gray-500'
+                              }
+                            >
+                              Avg
+                            </p>
+                            <p
+                              className={`font-medium ${
+                                isDark
+                                  ? 'text-white'
+                                  : 'text-gray-900'
+                              }`}
+                            >
+                              {formatCurrency(provider.average)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
 
         {/* Footer */}
         <div className="card-brand shadow-soft mt-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-sm">
-            <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            <div
+              className={`${
+                isDark ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
               <Clock className="inline w-4 h-4 mr-1" />
               Last updated: {formatDate(new Date())}
             </div>
-            <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-              Data covers {dateRange === 'today' ? 'today' : dateRange === 'custom' ? 'custom range' : `last ${dateRange}`}
+            <div
+              className={`${
+                isDark ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              Data covers{' '}
+              {dateRange === 'today'
+                ? 'today'
+                : dateRange === 'custom'
+                  ? 'custom range'
+                  : `last ${dateRange}`}
             </div>
-            <div className={`${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            <div
+              className={`${
+                isDark ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
               <Shield className="inline w-4 h-4 mr-1" />
-              All amounts in {process.env.NEXT_PUBLIC_CURRENCY || 'USD'}
+              All amounts in{' '}
+              {process.env.NEXT_PUBLIC_CURRENCY || 'USD'}
             </div>
           </div>
         </div>

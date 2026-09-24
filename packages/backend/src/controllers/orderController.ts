@@ -1,4 +1,4 @@
-// src/controllers/orderController.ts
+// D:\Projects\Kalwanga\packages\backend\src\controllers\orderController.ts
 
 import { Request, Response, NextFunction } from 'express';
 import { OrderService } from '../services/orderService.js';
@@ -6,29 +6,35 @@ import { AppError } from '../middleware/errorHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { realtimeService } from '../services/realtimeService.js';
 import { notificationService } from '../services/notificationService.js';
+import { getBusinessUnitId } from '../utils/getBusinessUnitId.js';
 import { z } from 'zod';
 
-// Create singleton instance
 const orderService = new OrderService();
 
 // ============================================
 // VALIDATION SCHEMAS
 // ============================================
+//
+// ⚠ `unitPrice` and `discount` are intentionally NOT accepted on
+// order items. The service derives the authoritative price from
+// `Product.unitPrice` / `ProductVariant.price` at creation time.
+// Accepting them from the client was a fraud vector.
+
+const orderItemSchema = z.object({
+  productId: z.string().min(1, 'Product ID is required'),
+  variantId: z.string().optional(),
+  quantity: z.number().int().positive('Quantity must be positive'),
+  notes: z.string().optional(),
+});
 
 const createOrderSchema = z.object({
-  items: z.array(z.object({
-    productId: z.string().min(1, 'Product ID is required'),
-    variantId: z.string().optional(),
-    quantity: z.number().int().positive('Quantity must be positive'),
-    unitPrice: z.number().positive('Unit price must be positive'),
-    discount: z.number().min(0).optional(),
-    notes: z.string().optional(),
-  })).min(1, 'At least one item is required'),
+  items: z
+    .array(orderItemSchema)
+    .min(1, 'At least one item is required'),
   customerId: z.string().optional(),
   discount: z.number().min(0).optional(),
   tax: z.number().min(0).optional(),
   notes: z.string().optional(),
-  // ✅ Made optional — resolved via getBusinessUnitId() when missing
   businessUnitId: z.string().optional(),
   expectedDeliveryDate: z.string().datetime().optional(),
   shippingAddress: z.string().optional(),
@@ -38,7 +44,16 @@ const createOrderSchema = z.object({
 });
 
 const updateOrderSchema = z.object({
-  status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'REFUNDED', 'ON_HOLD']).optional(),
+  status: z
+    .enum([
+      'PENDING',
+      'PROCESSING',
+      'COMPLETED',
+      'CANCELLED',
+      'REFUNDED',
+      'ON_HOLD',
+    ])
+    .optional(),
   notes: z.string().optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).optional(),
   shippingAddress: z.string().optional(),
@@ -46,7 +61,14 @@ const updateOrderSchema = z.object({
 });
 
 const updateOrderStatusSchema = z.object({
-  status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'REFUNDED', 'ON_HOLD']),
+  status: z.enum([
+    'PENDING',
+    'PROCESSING',
+    'COMPLETED',
+    'CANCELLED',
+    'REFUNDED',
+    'ON_HOLD',
+  ]),
   notes: z.string().optional(),
 });
 
@@ -58,22 +80,30 @@ const addItemSchema = z.object({
   productId: z.string().min(1, 'Product ID is required'),
   variantId: z.string().optional(),
   quantity: z.number().int().positive('Quantity must be positive'),
-  unitPrice: z.number().positive('Unit price must be positive'),
-  discount: z.number().min(0).optional(),
   notes: z.string().optional(),
 });
 
 const updateItemSchema = z.object({
   quantity: z.number().int().positive('Quantity must be positive'),
-  unitPrice: z.number().positive('Unit price must be positive'),
   discount: z.number().min(0).optional(),
   notes: z.string().optional(),
 });
 
 const bulkUpdateStatusSchema = z.object({
   orderIds: z.array(z.string()).min(1, 'At least one order ID is required'),
-  status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'REFUNDED', 'ON_HOLD']),
+  status: z.enum([
+    'PENDING',
+    'PROCESSING',
+    'COMPLETED',
+    'CANCELLED',
+    'REFUNDED',
+    'ON_HOLD',
+  ]),
   notes: z.string().optional(),
+});
+
+const bulkDeleteOrdersSchema = z.object({
+  orderIds: z.array(z.string()).min(1, 'At least one order ID is required'),
 });
 
 const dateRangeSchema = z.object({
@@ -83,113 +113,27 @@ const dateRangeSchema = z.object({
 });
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================
 
 /**
- * Resolve the business unit ID for the current request.
- *
- * ⚠️ MUST match cartController.getBusinessUnitId exactly. The cart and
- * order endpoints have to resolve the same BU for a given request,
- * otherwise inventory created against one will be invisible to the
- * other and the POS flow will throw "No inventory found for <product>".
- *
- * Priority:
- *   1. Explicit override (x-business-unit-id header > body > query)
- *   2. User's own businessUnitId / businessUnits[0]
- *   3. Most recent active business unit
- *   4. Bootstrap a default company + business unit
+ * Convert a ZodError to the standard 400 response shape.
  */
-async function getBusinessUnitId(req: Request): Promise<string> {
-  const user = (req as any).user;
-
-  // 1. Explicit override (header > body > query)
-  const explicit =
-    (req.headers['x-business-unit-id'] as string | undefined) ||
-    (req.body?.businessUnitId as string | undefined) ||
-    (req.query?.businessUnitId as string | undefined);
-
-  if (
-    explicit &&
-    explicit !== 'default' &&
-    explicit !== 'default-business-unit'
-  ) {
-    const exists = await prisma.businessUnit.findUnique({
-      where: { id: explicit },
-      select: { id: true, isActive: true },
-    });
-    if (exists && exists.isActive) {
-      return exists.id;
-    }
-    console.warn(
-      `⚠️ Explicit businessUnitId "${explicit}" not found or inactive, falling back`
-    );
-  }
-
-  // 2. User's own unit
-  const userBu =
-    user?.businessUnitId ||
-    user?.businessUnits?.[0]?.businessUnitId ||
-    user?.businessUnits?.[0]?.id;
-
-  if (userBu && userBu !== 'default') {
-    const exists = await prisma.businessUnit.findUnique({
-      where: { id: userBu },
-      select: { id: true, isActive: true },
-    });
-    if (exists && exists.isActive) {
-      return exists.id;
-    }
-  }
-
-  // 3. Fallback: most recent active unit
-  try {
-    const businessUnit = await prisma.businessUnit.findFirst({
-      where: { isActive: true },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (businessUnit) {
-      console.log(
-        `✅ getBusinessUnitId (orders): falling back to "${businessUnit.name}" (${businessUnit.id})`
-      );
-      return businessUnit.id;
-    }
-
-    // 4. Bootstrap a default company + unit
-    let company = await prisma.company.findFirst();
-    if (!company) {
-      company = await prisma.company.create({
-        data: {
-          name: 'Default Company',
-          email: 'default@company.com',
-          phone: '+0000000000',
-          isActive: true,
-        },
-      });
-    }
-
-    const newBusinessUnit = await prisma.businessUnit.create({
-      data: {
-        name: 'Default Business Unit',
-        code: `BU-${Date.now().toString().slice(-6)}`,
-        isActive: true,
-        companyId: company.id,
-      },
-    });
-
-    return newBusinessUnit.id;
-  } catch (error) {
-    console.error('❌ Failed to resolve business unit:', error);
-    throw new AppError('Failed to resolve business unit ID', 500);
-  }
+function zodErrorResponse(error: z.ZodError) {
+  return {
+    success: false as const,
+    message: 'Validation error',
+    errors: error.errors.map((e: z.ZodIssue) => ({
+      field: e.path.join('.'),
+      message: e.message,
+    })),
+  };
 }
 
-// ============================================
-// REAL-TIME EVENT HELPERS
-// ============================================
-
-async function safeEmitEvent(eventName: string, data: unknown): Promise<void> {
+async function safeEmitEvent(
+  eventName: string,
+  data: unknown,
+): Promise<void> {
   try {
     const svc = realtimeService as any;
     if (svc && typeof svc.emit === 'function') {
@@ -205,45 +149,62 @@ async function safeEmitEvent(eventName: string, data: unknown): Promise<void> {
 }
 
 // ============================================
-// ORDER CONTROLLER
+// CONTROLLER
 // ============================================
 
 export class OrderController {
+  // ── LIST / READ ─────────────────────────────────────────────
+
   async getAllOrders(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
 
       const params = {
-        page: req.query.page ? parseInt(req.query.page as string) : undefined,
-        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+        page: req.query.page
+          ? parseInt(req.query.page as string)
+          : undefined,
+        limit: req.query.limit
+          ? parseInt(req.query.limit as string)
+          : undefined,
         search: req.query.search as string | undefined,
         businessUnitId,
         customerId: req.query.customerId as string | undefined,
         userId: req.query.userId as string | undefined,
         status: req.query.status as string | undefined,
-        startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        startDate: req.query.startDate
+          ? new Date(req.query.startDate as string)
+          : undefined,
+        endDate: req.query.endDate
+          ? new Date(req.query.endDate as string)
+          : undefined,
         sortBy: req.query.sortBy as string | undefined,
         sortOrder: req.query.sortOrder as 'asc' | 'desc' | undefined,
         priority: req.query.priority as string | undefined,
         paymentStatus: req.query.paymentStatus as string | undefined,
-        minTotal: req.query.minTotal ? parseFloat(req.query.minTotal as string) : undefined,
-        maxTotal: req.query.maxTotal ? parseFloat(req.query.maxTotal as string) : undefined,
+        minTotal: req.query.minTotal
+          ? parseFloat(req.query.minTotal as string)
+          : undefined,
+        maxTotal: req.query.maxTotal
+          ? parseFloat(req.query.maxTotal as string)
+          : undefined,
         includeDeleted: req.query.includeDeleted === 'true',
       };
 
       const result = await orderService.getAllOrders(params);
+
+      const page = result?.page || 1;
+      const totalPages = result?.totalPages || 1;
 
       res.json({
         success: true,
         data: result?.orders || [],
         pagination: {
           total: result?.total || 0,
-          page: result?.page || 1,
+          page,
           limit: result?.limit || 10,
-          totalPages: result?.totalPages || 1,
-          hasNextPage: (result?.page || 1) < (result?.totalPages || 1),
-          hasPreviousPage: (result?.page || 1) > 1,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
         },
         stats: result?.stats,
       });
@@ -257,9 +218,7 @@ export class OrderController {
       const { id } = req.params;
       const order = await orderService.getOrderById(id);
 
-      if (!order) {
-        throw new AppError('Order not found', 404);
-      }
+      if (!order) throw new AppError('Order not found', 404);
 
       res.json({ success: true, data: order });
     } catch (error) {
@@ -272,9 +231,7 @@ export class OrderController {
       const { orderNumber } = req.params;
       const order = await orderService.getOrderByNumber(orderNumber);
 
-      if (!order) {
-        throw new AppError('Order not found', 404);
-      }
+      if (!order) throw new AppError('Order not found', 404);
 
       res.json({ success: true, data: order });
     } catch (error) {
@@ -299,14 +256,19 @@ export class OrderController {
         limit: limit ? parseInt(limit as string) : 10,
       });
 
+      const currentPage = result?.page || 1;
+      const totalPages = result?.totalPages || 1;
+
       res.json({
         success: true,
         data: result?.orders || [],
         pagination: {
           total: result?.total || 0,
-          page: result?.page || 1,
+          page: currentPage,
           limit: result?.limit || 10,
-          totalPages: result?.totalPages || 1,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
         },
       });
     } catch (error) {
@@ -327,14 +289,19 @@ export class OrderController {
         limit: limit ? parseInt(limit as string) : 10,
       });
 
+      const currentPage = result?.page || 1;
+      const totalPages = result?.totalPages || 1;
+
       res.json({
         success: true,
         data: result?.orders || [],
         pagination: {
           total: result?.total || 0,
-          page: result?.page || 1,
+          page: currentPage,
           limit: result?.limit || 10,
-          totalPages: result?.totalPages || 1,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
         },
       });
     } catch (error) {
@@ -342,300 +309,31 @@ export class OrderController {
     }
   }
 
-  async createOrder(req: Request, res: Response, next: NextFunction) {
+  async getOrdersByDateRange(req: Request, res: Response, next: NextFunction) {
     try {
-      const userId = (req as any).user?.id;
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const validatedData = createOrderSchema.parse(req.body);
-
-      // ✅ Resolve businessUnitId — same logic as cartController
       const businessUnitId = await getBusinessUnitId(req);
+      const validatedData = dateRangeSchema.parse(req.query);
+      const { startDate, endDate } = validatedData;
 
-      const orderData = {
-        items: validatedData.items,
-        customerId: validatedData.customerId,
-        discount: validatedData.discount || 0,
-        tax: validatedData.tax || 0,
-        notes: validatedData.notes,
+      if (!startDate || !endDate) {
+        throw new AppError('Start date and end date are required', 400);
+      }
+
+      const orders = await orderService.getOrdersByDateRange({
         businessUnitId,
-        expectedDeliveryDate: validatedData.expectedDeliveryDate
-          ? new Date(validatedData.expectedDeliveryDate)
-          : undefined,
-        shippingAddress: validatedData.shippingAddress,
-        paymentMethod: validatedData.paymentMethod,
-        paymentTerms: validatedData.paymentTerms,
-        priority: validatedData.priority || 'MEDIUM',
-      };
-
-      const order = await orderService.createOrder(orderData, userId);
-
-      await safeEmitEvent('order:created', {
-        orderId: order!.id,
-        orderNumber: order!.orderNumber,
-        businessUnitId: order!.businessUnitId,
-      });
-
-      res.status(201).json({
-        success: true,
-        data: order,
-        message: 'Order created successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateOrder(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const validatedData = updateOrderSchema.parse(req.body);
-
-      const updateData = {
-        status: validatedData.status,
-        notes: validatedData.notes,
-        priority: validatedData.priority,
-        shippingAddress: validatedData.shippingAddress,
-        expectedDeliveryDate: validatedData.expectedDeliveryDate
-          ? new Date(validatedData.expectedDeliveryDate)
-          : undefined,
-      };
-
-      const order = await orderService.updateOrder(id, updateData, userId);
-
-      res.json({
-        success: true,
-        data: order,
-        message: 'Order updated successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateOrderStatus(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const validatedData = updateOrderStatusSchema.parse(req.body);
-
-      const order = await orderService.updateOrderStatus(
-        id,
-        validatedData.status,
-        userId,
-        validatedData.notes
-      );
-
-      await safeEmitEvent('order:status-updated', {
-        orderId: order!.id,
-        orderNumber: order!.orderNumber,
-        status: order!.status,
-        businessUnitId: order!.businessUnitId,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
       });
 
       res.json({
         success: true,
-        data: order,
-        message: `Order status updated to ${validatedData.status}`,
+        data: orders,
+        count: orders.length,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return res.status(400).json(zodErrorResponse(error));
       }
-      next(error);
-    }
-  }
-
-  async cancelOrder(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const validatedData = cancelOrderSchema.parse(req.body);
-
-      const order = await orderService.cancelOrder(id, userId, validatedData.reason);
-
-      await safeEmitEvent('order:cancelled', {
-        orderId: order!.id,
-        orderNumber: order!.orderNumber,
-        businessUnitId: order!.businessUnitId,
-        reason: validatedData.reason,
-      });
-
-      res.json({
-        success: true,
-        data: order,
-        message: 'Order cancelled successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  }
-
-  async addItemToOrder(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { id } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const validatedData = addItemSchema.parse(req.body);
-
-      const order = await orderService.addItemToOrder(id, validatedData, userId);
-
-      res.json({
-        success: true,
-        data: order,
-        message: 'Item added to order successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  }
-
-  async updateOrderItem(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { orderId, itemId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const validatedData = updateItemSchema.parse(req.body);
-
-      const order = await orderService.updateOrderItem(orderId, itemId, validatedData, userId);
-
-      res.json({
-        success: true,
-        data: order,
-        message: 'Order item updated successfully',
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
-      }
-      next(error);
-    }
-  }
-
-  async removeOrderItem(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { orderId, itemId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const order = await orderService.removeOrderItem(orderId, itemId, userId);
-
-      res.json({
-        success: true,
-        data: order,
-        message: 'Order item removed successfully',
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async convertOrderToSale(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { orderId } = req.params;
-      const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const sale = await orderService.convertOrderToSale(orderId, userId);
-
-      await safeEmitEvent('order:converted-to-sale', {
-        orderId,
-        saleId: sale!.id,
-        businessUnitId: sale!.businessUnitId,
-      });
-
-      res.status(201).json({
-        success: true,
-        data: sale,
-        message: 'Order converted to sale successfully',
-      });
-    } catch (error) {
       next(error);
     }
   }
@@ -670,50 +368,46 @@ export class OrderController {
     }
   }
 
+  // ── STATS / DASHBOARD ───────────────────────────────────────
+
   async getOrderStats(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      const where: any = {};
 
-      if (businessUnitId) {
-        where.businessUnitId = businessUnitId;
-      }
-
-      const [statusBreakdown, totalOrders, totalValue, recentOrders] = await Promise.all([
-        prisma.order.groupBy({
-          by: ['status'],
-          where,
-          _count: { _all: true },
-        }),
-        prisma.order.count({ where }),
-        prisma.order.aggregate({
-          where,
-          _sum: { total: true },
-        }),
-        prisma.order.findMany({
-          where,
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            customer: true,
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
+      const [statusBreakdown, totalOrders, totalValue, recentOrders] =
+        await Promise.all([
+          prisma.order.groupBy({
+            by: ['status'],
+            where: { businessUnitId },
+            _count: { _all: true },
+          }),
+          prisma.order.count({ where: { businessUnitId } }),
+          prisma.order.aggregate({
+            where: { businessUnitId },
+            _sum: { total: true },
+          }),
+          prisma.order.findMany({
+            where: { businessUnitId },
+            take: 5,
+            orderBy: { createdAt: 'desc' },
+            include: {
+              customer: true,
+              user: {
+                select: { id: true, firstName: true, lastName: true },
               },
             },
-          },
-        }),
-      ]);
+          }),
+        ]);
+
+      const totalRevenue = totalValue._sum.total || 0;
 
       res.json({
         success: true,
         data: {
           totalOrders,
-          totalValue: totalValue._sum.total || 0,
+          totalValue: totalRevenue,
           averageOrderValue:
-            totalOrders > 0 ? (totalValue._sum.total || 0) / totalOrders : 0,
+            totalOrders > 0 ? totalRevenue / totalOrders : 0,
           statusBreakdown: statusBreakdown.map((s: any) => ({
             status: s.status,
             count: s._count._all,
@@ -726,37 +420,252 @@ export class OrderController {
     }
   }
 
-  async getOrdersByDateRange(req: Request, res: Response, next: NextFunction) {
+  async getDashboardOrderData(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
-      const validatedData = dateRangeSchema.parse(req.query);
-      const { startDate, endDate } = validatedData;
 
-      if (!startDate || !endDate) {
-        throw new AppError('Start date and end date are required', 400);
-      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-      const orders = await orderService.getOrdersByDateRange({
+      const [
+        todayOrders,
+        pendingOrders,
+        processingOrders,
+        completedOrders,
+        totalOrders,
+        recentOrders,
+      ] = await Promise.all([
+        prisma.order.count({
+          where: { businessUnitId, createdAt: { gte: today } },
+        }),
+        prisma.order.count({
+          where: { businessUnitId, status: 'PENDING' },
+        }),
+        prisma.order.count({
+          where: { businessUnitId, status: 'PROCESSING' },
+        }),
+        prisma.order.count({
+          where: { businessUnitId, status: 'COMPLETED' },
+        }),
+        prisma.order.count({ where: { businessUnitId } }),
+        prisma.order.findMany({
+          where: { businessUnitId },
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            customer: true,
+            user: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+          },
+        }),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          todayOrders,
+          pendingOrders,
+          processingOrders,
+          completedOrders,
+          totalOrders,
+          recentOrders,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getOrderAnalytics(req: Request, res: Response, next: NextFunction) {
+    try {
+      const businessUnitId = await getBusinessUnitId(req);
+      const { startDate, endDate, groupBy = 'day' } = req.query;
+
+      const analytics = await orderService.getOrderAnalytics({
         businessUnitId,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: startDate
+          ? new Date(startDate as string)
+          : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        groupBy: groupBy as any,
+      });
+
+      res.json({ success: true, data: analytics });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getOrderFulfillmentStatus(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const businessUnitId = await getBusinessUnitId(req);
+
+      const status =
+        await orderService.getOrderFulfillmentStatus(businessUnitId);
+
+      res.json({ success: true, data: status });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── CREATE ──────────────────────────────────────────────────
+
+  async createOrder(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const validatedData = createOrderSchema.parse(req.body);
+      const businessUnitId = await getBusinessUnitId(req);
+
+      const orderData = {
+        items: validatedData.items,
+        customerId: validatedData.customerId,
+        discount: validatedData.discount ?? 0,
+        tax: validatedData.tax ?? 0,
+        notes: validatedData.notes,
+        businessUnitId,
+        expectedDeliveryDate: validatedData.expectedDeliveryDate
+          ? new Date(validatedData.expectedDeliveryDate)
+          : undefined,
+        shippingAddress: validatedData.shippingAddress,
+        paymentMethod: validatedData.paymentMethod,
+        paymentTerms: validatedData.paymentTerms,
+        priority: validatedData.priority ?? 'MEDIUM',
+      };
+
+      const order = await orderService.createOrder(orderData, userId);
+
+      await safeEmitEvent('order:created', {
+        orderId: order!.id,
+        orderNumber: order!.orderNumber,
+        businessUnitId: order!.businessUnitId,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: order,
+        message: 'Order created successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  }
+
+  // ── UPDATE ──────────────────────────────────────────────────
+
+  async updateOrder(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const validatedData = updateOrderSchema.parse(req.body);
+
+      const order = await orderService.updateOrder(
+        id,
+        {
+          status: validatedData.status,
+          notes: validatedData.notes,
+          priority: validatedData.priority,
+          shippingAddress: validatedData.shippingAddress,
+          expectedDeliveryDate: validatedData.expectedDeliveryDate
+            ? new Date(validatedData.expectedDeliveryDate)
+            : undefined,
+        },
+        userId,
+      );
+
+      res.json({
+        success: true,
+        data: order,
+        message: 'Order updated successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  }
+
+  async updateOrderStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const validatedData = updateOrderStatusSchema.parse(req.body);
+
+      const order = await orderService.updateOrderStatus(
+        id,
+        validatedData.status,
+        userId,
+        validatedData.notes,
+      );
+
+      await safeEmitEvent('order:status-updated', {
+        orderId: order!.id,
+        orderNumber: order!.orderNumber,
+        status: order!.status,
+        businessUnitId: order!.businessUnitId,
       });
 
       res.json({
         success: true,
-        data: orders,
-        count: orders.length,
+        data: order,
+        message: `Order status updated to ${validatedData.status}`,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  }
+
+  async cancelOrder(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const validatedData = cancelOrderSchema.parse(req.body);
+
+      const order = await orderService.cancelOrder(
+        id,
+        userId,
+        validatedData.reason,
+      );
+
+      await safeEmitEvent('order:cancelled', {
+        orderId: order!.id,
+        orderNumber: order!.orderNumber,
+        businessUnitId: order!.businessUnitId,
+        reason: validatedData.reason,
+      });
+
+      res.json({
+        success: true,
+        data: order,
+        message: 'Order cancelled successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
       }
       next(error);
     }
@@ -765,10 +674,7 @@ export class OrderController {
   async bulkUpdateStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
+      if (!userId) throw new AppError('User ID is required', 401);
 
       const validatedData = bulkUpdateStatusSchema.parse(req.body);
 
@@ -776,7 +682,7 @@ export class OrderController {
         validatedData.orderIds,
         validatedData.status,
         userId,
-        validatedData.notes
+        validatedData.notes,
       );
 
       await safeEmitEvent('orders:bulk-status-updated', {
@@ -792,52 +698,124 @@ export class OrderController {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation error',
-          errors: error.errors.map((e: z.ZodIssue) => ({
-            field: e.path.join('.'),
-            message: e.message,
-          })),
-        });
+        return res.status(400).json(zodErrorResponse(error));
       }
       next(error);
     }
   }
 
-  async bulkDeleteOrders(req: Request, res: Response, next: NextFunction) {
+  // ── ITEMS ───────────────────────────────────────────────────
+
+  async addItemToOrder(req: Request, res: Response, next: NextFunction) {
     try {
-      const { orderIds } = req.body;
+      const { id } = req.params;
       const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
 
-      if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-        throw new AppError('Order IDs are required', 400);
-      }
+      const validatedData = addItemSchema.parse(req.body);
 
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
-
-      const result = await orderService.bulkDeleteOrders(orderIds, userId);
+      const order = await orderService.addItemToOrder(
+        id,
+        validatedData,
+        userId,
+      );
 
       res.json({
         success: true,
-        data: result,
-        message: `${result!.deleted} orders deleted successfully`,
+        data: order,
+        message: 'Item added to order successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  }
+
+  async updateOrderItem(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { orderId, itemId } = req.params;
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const validatedData = updateItemSchema.parse(req.body);
+
+      const order = await orderService.updateOrderItem(
+        orderId,
+        itemId,
+        validatedData,
+        userId,
+      );
+
+      res.json({
+        success: true,
+        data: order,
+        message: 'Order item updated successfully',
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  }
+
+  async removeOrderItem(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { orderId, itemId } = req.params;
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const order = await orderService.removeOrderItem(
+        orderId,
+        itemId,
+        userId,
+      );
+
+      res.json({
+        success: true,
+        data: order,
+        message: 'Order item removed successfully',
       });
     } catch (error) {
       next(error);
     }
   }
 
+  // ── CONVERT ─────────────────────────────────────────────────
+
+  async convertOrderToSale(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { orderId } = req.params;
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const sale = await orderService.convertOrderToSale(orderId, userId);
+
+      await safeEmitEvent('order:converted-to-sale', {
+        orderId,
+        saleId: sale!.id,
+        businessUnitId: sale!.businessUnitId,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: sale,
+        message: 'Order converted to sale successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── DELETE ──────────────────────────────────────────────────
+
   async deleteOrder(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const userId = (req as any).user?.id;
-
-      if (!userId) {
-        throw new AppError('User ID is required', 401);
-      }
+      if (!userId) throw new AppError('User ID is required', 401);
 
       const result = await orderService.deleteOrder(id, userId);
 
@@ -850,6 +828,30 @@ export class OrderController {
       next(error);
     }
   }
+
+  async bulkDeleteOrders(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) throw new AppError('User ID is required', 401);
+
+      const { orderIds } = bulkDeleteOrdersSchema.parse(req.body);
+
+      const result = await orderService.bulkDeleteOrders(orderIds, userId);
+
+      res.json({
+        success: true,
+        data: result,
+        message: `${result!.deleted} orders deleted successfully`,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
+      next(error);
+    }
+  }
+
+  // ── EXPORTS ─────────────────────────────────────────────────
 
   async exportOrders(req: Request, res: Response, next: NextFunction) {
     try {
@@ -881,7 +883,10 @@ export class OrderController {
         priority: order.priority || 'MEDIUM',
         items: order.items?.length || 0,
         totalQuantity:
-          order.items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0,
+          order.items?.reduce(
+            (sum: number, item: any) => sum + item.quantity,
+            0,
+          ) || 0,
       }));
 
       res.json({
@@ -922,6 +927,21 @@ export class OrderController {
         'Priority',
         'Items',
       ];
+
+      const escapeCsv = (v: unknown): string => {
+        if (v === null || v === undefined) return '';
+        const str = String(v);
+        if (
+          str.includes(',') ||
+          str.includes('"') ||
+          str.includes('\n') ||
+          str.includes('\r')
+        ) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
       const rows = orders.map((order: any) => [
         order.orderNumber,
         order.createdAt.toISOString().split('T')[0],
@@ -938,12 +958,17 @@ export class OrderController {
         order.items?.length || 0,
       ]);
 
-      const csvContent = [headers.join(','), ...rows.map((row: any[]) => row.join(','))].join('\n');
+      const csvContent = [
+        headers.map(escapeCsv).join(','),
+        ...rows.map((row: unknown[]) => row.map(escapeCsv).join(',')),
+      ].join('\n');
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename=orders-${new Date().toISOString().split('T')[0]}.csv`
+        `attachment; filename=orders-${new Date()
+          .toISOString()
+          .split('T')[0]}.csv`,
       );
       res.send(csvContent);
     } catch (error) {
@@ -951,6 +976,12 @@ export class OrderController {
     }
   }
 
+  /**
+   * ⚠ Placeholder. The backend currently returns JSON with a
+   * "would be generated here" message. Kept as a route so the
+   * frontend can discover the endpoint; the real xlsx generator
+   * is a follow-up.
+   */
   async exportOrdersExcel(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -964,10 +995,10 @@ export class OrderController {
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
-      res.json({
-        success: true,
-        data: orders,
-        message: 'Excel export would be generated here',
+      res.status(501).json({
+        success: false,
+        message:
+          'Excel export is not yet implemented. Use /orders/export/csv or /orders/export?format=json.',
         count: orders.length,
       });
     } catch (error) {
@@ -975,6 +1006,9 @@ export class OrderController {
     }
   }
 
+  /**
+   * ⚠ Placeholder. Same as `exportOrdersExcel`.
+   */
   async exportOrdersPdf(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -988,10 +1022,10 @@ export class OrderController {
         endDate: endDate ? new Date(endDate as string) : new Date(),
       });
 
-      res.json({
-        success: true,
-        data: orders,
-        message: 'PDF export would be generated here',
+      res.status(501).json({
+        success: false,
+        message:
+          'PDF export is not yet implemented. Use /orders/export/csv or /orders/export?format=json.',
         count: orders.length,
       });
     } catch (error) {
@@ -999,129 +1033,31 @@ export class OrderController {
     }
   }
 
-  async getDashboardOrderData(req: Request, res: Response, next: NextFunction) {
-    try {
-      const businessUnitId = await getBusinessUnitId(req);
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const [
-        todayOrders,
-        pendingOrders,
-        processingOrders,
-        completedOrders,
-        totalOrders,
-        recentOrders,
-      ] = await Promise.all([
-        prisma.order.count({
-          where: { businessUnitId, createdAt: { gte: today } },
-        }),
-        prisma.order.count({
-          where: { businessUnitId, status: 'PENDING' },
-        }),
-        prisma.order.count({
-          where: { businessUnitId, status: 'PROCESSING' },
-        }),
-        prisma.order.count({
-          where: { businessUnitId, status: 'COMPLETED' },
-        }),
-        prisma.order.count({
-          where: { businessUnitId },
-        }),
-        prisma.order.findMany({
-          where: { businessUnitId },
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            customer: true,
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        }),
-      ]);
-
-      res.json({
-        success: true,
-        data: {
-          todayOrders,
-          pendingOrders,
-          processingOrders,
-          completedOrders,
-          totalOrders,
-          recentOrders,
-        },
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
+  // ── TEST ────────────────────────────────────────────────────
 
   async testNotification(req: Request, res: Response, next: NextFunction) {
     try {
       const { businessUnitId, orderNumber } = req.body;
 
       if (!businessUnitId || !orderNumber) {
-        throw new AppError('businessUnitId and orderNumber are required', 400);
+        throw new AppError(
+          'businessUnitId and orderNumber are required',
+          400,
+        );
       }
 
       await notificationService.sendPurchaseOrderNotification(
         businessUnitId,
         orderNumber,
         'Test Customer',
-        100
+        100,
       );
 
-      res.json({
-        success: true,
-        message: 'Test notification sent',
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getOrderAnalytics(req: Request, res: Response, next: NextFunction) {
-    try {
-      const businessUnitId = await getBusinessUnitId(req);
-      const { startDate, endDate, groupBy = 'day' } = req.query;
-
-      const analytics = await orderService.getOrderAnalytics({
-        businessUnitId,
-        startDate: startDate ? new Date(startDate as string) : undefined,
-        endDate: endDate ? new Date(endDate as string) : undefined,
-        groupBy: groupBy as any,
-      });
-
-      res.json({
-        success: true,
-        data: analytics,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getOrderFulfillmentStatus(req: Request, res: Response, next: NextFunction) {
-    try {
-      const businessUnitId = await getBusinessUnitId(req);
-
-      const status = await orderService.getOrderFulfillmentStatus(businessUnitId);
-
-      res.json({
-        success: true,
-        data: status,
-      });
+      res.json({ success: true, message: 'Test notification sent' });
     } catch (error) {
       next(error);
     }
   }
 }
 
-// Export singleton instance
 export const orderController = new OrderController();

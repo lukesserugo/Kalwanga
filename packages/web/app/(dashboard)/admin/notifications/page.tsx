@@ -65,16 +65,33 @@ import { useNotificationStream } from '../../../../hooks/useNotificationStream';
 
 const PAGE_SIZE = 20;
 
+/**
+ * Coerce any value to a safe non-negative integer.
+ * Used for stats counters and unread counts so a malformed API
+ * response can never render "[object Object]" in the UI.
+ */
+function toSafeInt(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  return fallback;
+}
+
 function normalizeStats(
   stats: Partial<NotificationStats> | null | undefined,
 ): NotificationStats {
+  const byTypeRaw = stats?.byType ?? {};
+  const byType: Record<string, number> = {};
+  for (const [key, val] of Object.entries(byTypeRaw)) {
+    byType[key] = toSafeInt(val);
+  }
+
   return {
-    total: stats?.total ?? 0,
-    unread: stats?.unread ?? 0,
-    read: stats?.read ?? 0,
-    byType: stats?.byType ?? {},
+    total: toSafeInt(stats?.total),
+    unread: toSafeInt(stats?.unread),
+    read: toSafeInt(stats?.read),
+    byType,
     byDate: stats?.byDate ?? {},
-    ...(stats as Partial<NotificationStats>),
   } as NotificationStats;
 }
 
@@ -268,25 +285,36 @@ export default function NotificationsPage() {
   // Stream
   const handleStream = useCallback(
     (notification: Notification) => {
+      if (!isMountedRef.current) return;
+
       setNotifications((prev) => {
-        // Skip if already in list
+        // Skip if already in list.
         if (prev.some((n) => n.id === notification.id)) return prev;
-        // Only inject if on page 1 with no filters (default view)
-        if (page === 1 && !unreadOnly && typeFilter === 'ALL' && !debouncedSearch) {
+        // Only inject if on page 1 with no filters (default view).
+        if (
+          page === 1 &&
+          !unreadOnly &&
+          typeFilter === 'ALL' &&
+          !debouncedSearch
+        ) {
           return [notification, ...prev].slice(0, PAGE_SIZE);
         }
         return prev;
       });
-      setStats((prev) =>
-        prev
-          ? {
-              ...prev,
-              total: prev.total + 1,
-              unread: prev.unread + 1,
-            }
-          : prev,
-      );
-      setTotalCount((prev) => prev + 1);
+
+      // Only bump counters for genuinely unread notifications.
+      if (!notification.isRead) {
+        setStats((prev) =>
+          prev
+            ? {
+                ...prev,
+                total: toSafeInt(prev.total) + 1,
+                unread: toSafeInt(prev.unread) + 1,
+              }
+            : prev,
+        );
+        setTotalCount((prev) => toSafeInt(prev) + 1);
+      }
     },
     [page, unreadOnly, typeFilter, debouncedSearch],
   );
@@ -328,8 +356,8 @@ export default function NotificationsPage() {
         if (!isMountedRef.current) return;
 
         setNotifications(listResult.data);
-        setTotalCount(listResult.total);
-        setTotalPages(listResult.totalPages || 1);
+        setTotalCount(toSafeInt(listResult.total));
+        setTotalPages(toSafeInt(listResult.totalPages, 1) || 1);
         if (statsResult) setStats(normalizeStats(statsResult));
 
         setSelectedIds(new Set());
@@ -365,7 +393,9 @@ export default function NotificationsPage() {
     [notifications],
   );
 
-  const totalUnread = stats?.unread ?? unreadInView;
+  const totalUnread = toSafeInt(stats?.unread ?? unreadInView);
+  const totalRead = toSafeInt(stats?.read ?? readInView);
+  const totalAll = toSafeInt(stats?.total ?? totalCount);
 
   const allSelected = useMemo(
     () =>
@@ -394,8 +424,8 @@ export default function NotificationsPage() {
         prev
           ? {
               ...prev,
-              unread: Math.max(0, prev.unread - 1),
-              read: prev.read + 1,
+              unread: Math.max(0, toSafeInt(prev.unread) - 1),
+              read: toSafeInt(prev.read) + 1,
             }
           : prev,
       );
@@ -422,8 +452,8 @@ export default function NotificationsPage() {
         prev
           ? {
               ...prev,
-              unread: prev.unread + 1,
-              read: Math.max(0, prev.read - 1),
+              unread: toSafeInt(prev.unread) + 1,
+              read: Math.max(0, toSafeInt(prev.read) - 1),
             }
           : prev,
       );
@@ -442,7 +472,7 @@ export default function NotificationsPage() {
       await notificationService.deleteNotification(id);
       if (!isMountedRef.current) return;
       setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setTotalCount((prev) => Math.max(0, prev - 1));
+      setTotalCount((prev) => Math.max(0, toSafeInt(prev) - 1));
       setSelectedIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -480,7 +510,13 @@ export default function NotificationsPage() {
         })),
       );
       setStats((prev) =>
-        prev ? { ...prev, unread: 0, read: prev.total } : prev,
+        prev
+          ? {
+              ...prev,
+              unread: 0,
+              read: toSafeInt(prev.total),
+            }
+          : prev,
       );
       toast.success('All notifications marked as read');
     } catch (error: any) {
@@ -515,8 +551,8 @@ export default function NotificationsPage() {
         prev
           ? {
               ...prev,
-              unread: Math.max(0, prev.unread - ids.length),
-              read: prev.read + ids.length,
+              unread: Math.max(0, toSafeInt(prev.unread) - ids.length),
+              read: toSafeInt(prev.read) + ids.length,
             }
           : prev,
       );
@@ -552,8 +588,8 @@ export default function NotificationsPage() {
         prev
           ? {
               ...prev,
-              unread: prev.unread + ids.length,
-              read: Math.max(0, prev.read - ids.length),
+              unread: toSafeInt(prev.unread) + ids.length,
+              read: Math.max(0, toSafeInt(prev.read) - ids.length),
             }
           : prev,
       );
@@ -594,7 +630,9 @@ export default function NotificationsPage() {
       setNotifications((prev) =>
         prev.filter((n) => !selectedIds.has(n.id)),
       );
-      setTotalCount((prev) => Math.max(0, prev - succeeded));
+      setTotalCount((prev) =>
+        Math.max(0, toSafeInt(prev) - succeeded),
+      );
       setSelectedIds(new Set());
 
       if (failed === 0) {
@@ -736,9 +774,9 @@ export default function NotificationsPage() {
                     </span>
                     {totalUnread} unread
                   </span>
-                  {totalCount > 0 && (
+                  {totalAll > 0 && (
                     <span className="text-gray-400 dark:text-gray-500">
-                      · {totalCount} total
+                      · {totalAll} total
                     </span>
                   )}
                 </>
@@ -788,7 +826,7 @@ export default function NotificationsPage() {
             </button>
           )}
 
-          {totalCount > 0 && (
+          {totalAll > 0 && (
             <button
               type="button"
               onClick={handleDeleteAll}
@@ -884,7 +922,7 @@ export default function NotificationsPage() {
               setPage(1);
             }}
             label="All"
-            count={stats?.total ?? totalCount}
+            count={totalAll}
           />
           {NOTIFICATION_TYPES.map((type) => {
             const count = stats?.byType?.[type];
@@ -897,7 +935,7 @@ export default function NotificationsPage() {
                   setPage(1);
                 }}
                 label={getTypeLabel(type)}
-                count={count}
+                count={typeof count === 'number' ? count : undefined}
               />
             );
           })}
@@ -915,7 +953,7 @@ export default function NotificationsPage() {
               <StatRow
                 icon={Inbox}
                 label="Total"
-                value={stats?.total ?? totalCount}
+                value={totalAll}
                 accent="text-gray-600 dark:text-gray-300"
               />
               <StatRow
@@ -928,7 +966,7 @@ export default function NotificationsPage() {
               <StatRow
                 icon={CheckCheck}
                 label="Read"
-                value={stats?.read ?? readInView}
+                value={totalRead}
                 accent="text-emerald-600 dark:text-emerald-400"
               />
             </div>
@@ -941,7 +979,8 @@ export default function NotificationsPage() {
               </h2>
               <div className="space-y-2">
                 {Object.entries(stats.byType)
-                  .sort(([, a], [, b]) => b - a)
+                  .filter(([, v]) => typeof v === 'number' && v > 0)
+                  .sort(([, a], [, b]) => (b as number) - (a as number))
                   .slice(0, 8)
                   .map(([type, count]) => {
                     const meta =
@@ -971,7 +1010,7 @@ export default function NotificationsPage() {
                           {meta.label}
                         </span>
                         <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 shrink-0">
-                          {count}
+                          {toSafeInt(count)}
                         </span>
                       </button>
                     );
@@ -1264,7 +1303,6 @@ function NotificationRow({
           : 'border-gray-200 dark:border-gray-800'
       } ${selected ? 'ring-2 ring-orange-400/50' : ''}`}
       onClick={(e) => {
-        // Don't open drawer when clicking interactive children.
         const target = e.target as HTMLElement;
         if (target.closest('button, input, a, label')) return;
         onOpen();
@@ -1521,7 +1559,7 @@ function StatRow({
         {label}
       </span>
       <span className={`text-sm font-semibold tabular-nums ${accent}`}>
-        {value}
+        {toSafeInt(value)}
       </span>
     </div>
   );
@@ -1538,6 +1576,8 @@ function TypeTab({
   label: string;
   count?: number;
 }) {
+  const safeCount = typeof count === 'number' ? toSafeInt(count) : undefined;
+
   return (
     <button
       type="button"
@@ -1549,7 +1589,7 @@ function TypeTab({
       }`}
     >
       <span>{label}</span>
-      {typeof count === 'number' && count > 0 && (
+      {typeof safeCount === 'number' && safeCount > 0 && (
         <span
           className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center tabular-nums ${
             active
@@ -1557,7 +1597,7 @@ function TypeTab({
               : 'bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400'
           }`}
         >
-          {count > 99 ? '99+' : count}
+          {safeCount > 99 ? '99+' : safeCount}
         </span>
       )}
     </button>
