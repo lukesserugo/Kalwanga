@@ -1,5 +1,4 @@
 // packages/mobile/app/_layout.tsx
-import "../polyfills";
 import { Appearance } from "react-native";
 import { Stack } from "expo-router";
 import { ClerkProvider, ClerkLoaded } from "@clerk/clerk-expo";
