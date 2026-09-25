@@ -1,7 +1,5 @@
-// packages/mobile/services/api.ts
+﻿// packages/mobile/services/api.ts
 import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
-import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
 import type { ApiResponse } from "@pos/shared/common";
 
 /**
@@ -19,22 +17,29 @@ type ApiResult<T> = ApiResponse<T> | ErrorResponse<T>;
 /**
  * Mobile API client.
  *
- * NOTE on typing:
- *   `ApiResponse<T>` from @pos/shared is `{ success, data, message?, timestamp? }`.
- *   Errors are surfaced as `{ success: false, error: { code, message } }`
- *   (see @pos/shared/common/response Ã¢â‚¬â€ ApiErrorSchema).
+ * Token handling:
+ *   Clerk owns the session token. The API service does NOT read
+ *   from expo-secure-store or localStorage — that approach breaks
+ *   on web (SecureStore is a native-only stub) and on native
+ *   (nothing ever writes `clerk_session_token`).
  *
- *   We do NOT put an HTTP `status` field on responses; it lives on the
- *   thrown/rejected value and is exposed via `ApiError.status`.
+ *   Instead, a component inside <ClerkProvider> calls
+ *   `apiService.setTokenProvider(() => getToken())` at mount time.
+ *   Every request then asks Clerk for a fresh token.
+ *
+ *   When no provider is registered yet (login screen, before Clerk
+ *   finishes hydrating), requests go out without an Authorization
+ *   header. The backend returns 401 and callers handle it.
  */
 
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api";
 
-const TOKEN_KEY = "clerk_session_token";
+export type TokenProvider = () => Promise<string | null>;
 
 class ApiService {
   private api: AxiosInstance;
+  private tokenProvider: TokenProvider | null = null;
 
   constructor() {
     this.api = axios.create({
@@ -66,46 +71,33 @@ class ApiService {
         return Promise.reject({
           success: false as const,
           error: { code: String(status), message },
-          status, // kept on the rejected value only, not on ApiResponse
+          status,
         });
       },
     );
   }
 
+  // ----------------------------------------------------------
+  // Token plumbing — Clerk owns the session; we just ask for it.
+  // ----------------------------------------------------------
+
+  setTokenProvider(provider: TokenProvider | null) {
+    this.tokenProvider = provider;
+  }
+
   private async getToken(): Promise<string | null> {
+    if (!this.tokenProvider) return null;
     try {
-      let token = await SecureStore.getItemAsync(TOKEN_KEY);
-      if (!token && Platform.OS === "web") {
-        token = localStorage.getItem(TOKEN_KEY);
-      }
-      return token;
+      return await this.tokenProvider();
     } catch (err) {
       console.error("Error getting token:", err);
       return null;
     }
   }
 
-  private async setToken(token: string): Promise<void> {
-    try {
-      await SecureStore.setItemAsync(TOKEN_KEY, token);
-      if (Platform.OS === "web") {
-        localStorage.setItem(TOKEN_KEY, token);
-      }
-    } catch (err) {
-      console.error("Error setting token:", err);
-    }
-  }
-
-  private async removeToken(): Promise<void> {
-    try {
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-      if (Platform.OS === "web") {
-        localStorage.removeItem(TOKEN_KEY);
-      }
-    } catch (err) {
-      console.error("Error removing token:", err);
-    }
-  }
+  // ----------------------------------------------------------
+  // Error shaping
+  // ----------------------------------------------------------
 
   private toErrorResponse<T>(err: any): ErrorResponse<T> {
     return {
@@ -115,12 +107,15 @@ class ApiService {
     };
   }
 
+  // ----------------------------------------------------------
+  // HTTP verbs
+  // ----------------------------------------------------------
+
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<ApiResult<T>> {
     try {
       const response = await this.api.get<ApiResponse<T>>(url, config);
       return response.data;
     } catch (err: any) {
-      if (err?.success === false) return this.toErrorResponse<T>(err);
       return this.toErrorResponse<T>(err);
     }
   }
@@ -161,12 +156,22 @@ class ApiService {
     }
   }
 
-  async setAuthToken(token: string): Promise<void> {
-    await this.setToken(token);
+  // ----------------------------------------------------------
+  // Backwards-compatible shims
+  // ----------------------------------------------------------
+  //
+  // The old API had `setAuthToken` / `clearAuthToken` /
+  // `isAuthenticated` methods for the SecureStore-based flow.
+  // If any existing code still calls them, these no-op shims
+  // keep it compiling. Delete them once you've confirmed nothing
+  // references them.
+
+  async setAuthToken(_token: string): Promise<void> {
+    // No-op. Clerk manages the session token now.
   }
 
   async clearAuthToken(): Promise<void> {
-    await this.removeToken();
+    // No-op. Clerk manages sign-out via its own APIs.
   }
 
   async isAuthenticated(): Promise<boolean> {

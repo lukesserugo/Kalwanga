@@ -29,7 +29,16 @@ export const radii = {
   full: 9999,
 } as const;
 
-export const spacing = {
+// ⚠️ Do NOT rename this back to `spacing`. It collides with the
+// `spacing` export in ./spacing.ts, which causes Metro to throw
+// "Cannot redefine property: spacing" at runtime. The two exports
+// are conceptually different anyway:
+//
+//   ./spacing.ts        → layout scale (px integer values)
+//   ./typography.ts     → typography-relative scale
+//
+// If you need the layout spacing, import from './spacing' instead.
+export const typographySpacing = {
   xs: 4,
   sm: 8,
   md: 16,
@@ -39,5 +48,5 @@ export const spacing = {
 } as const;
 
 export type FontSizeKey = keyof typeof fontSizes;
-export type SpacingKey = keyof typeof spacing;
+export type TypographySpacingKey = keyof typeof typographySpacing;
 export type RadiusKey = keyof typeof radii;

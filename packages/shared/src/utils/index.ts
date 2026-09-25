@@ -1,14 +1,38 @@
-﻿// ============================================
+﻿// packages/shared/src/utils/index.ts
+
+// ============================================
+// ENV ACCESS (runtime-agnostic)
+// ============================================
+//
+// `process.env` exists in Node and in Metro/Expo (which inlines
+// `EXPO_PUBLIC_*` and `NEXT_PUBLIC_*` at bundle time), but it does
+// NOT exist in a plain browser bundle. We read it defensively so
+// this shared package can be consumed from web, mobile, and server
+// without pulling in `@types/node`.
+
+function readEnv(key: string): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const proc = (globalThis as any)?.process;
+  if (proc && typeof proc.env === "object" && proc.env !== null) {
+    const value = proc.env[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+// ============================================
 // CURRENCY & FORMATTING
 // ============================================
 
 export function formatCurrency(
   amount: number,
-  currency: string = 'USD',
-  locale: string = 'en-US'
+  currency: string = "USD",
+  locale: string = "en-US"
 ): string {
   return new Intl.NumberFormat(locale, {
-    style: 'currency',
+    style: "currency",
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -17,7 +41,7 @@ export function formatCurrency(
 
 export function formatNumber(
   number: number,
-  locale: string = 'en-US',
+  locale: string = "en-US",
   options?: Intl.NumberFormatOptions
 ): string {
   return new Intl.NumberFormat(locale, {
@@ -29,10 +53,10 @@ export function formatNumber(
 
 export function formatPercentage(
   value: number,
-  locale: string = 'en-US'
+  locale: string = "en-US"
 ): string {
   return new Intl.NumberFormat(locale, {
-    style: 'percent',
+    style: "percent",
     minimumFractionDigits: 1,
     maximumFractionDigits: 2,
   }).format(value / 100);
@@ -44,28 +68,28 @@ export function formatPercentage(
 
 export function formatDate(
   date: Date | string,
-  format: string = 'MMM dd, yyyy',
-  locale: string = 'en-US'
+  format: string = "MMM dd, yyyy",
+  locale: string = "en-US"
 ): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  
+  const d = typeof date === "string" ? new Date(date) : date;
+
   const formatter = new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 
-  if (format === 'MMM dd, yyyy') {
+  if (format === "MMM dd, yyyy") {
     return formatter.format(d);
   }
 
-  if (format === 'MMM dd, yyyy HH:mm') {
+  if (format === "MMM dd, yyyy HH:mm") {
     return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(d);
   }
 
@@ -74,24 +98,24 @@ export function formatDate(
 
 export function formatTime(
   date: Date | string,
-  locale: string = 'en-US'
+  locale: string = "en-US"
 ): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === "string" ? new Date(date) : date;
   return new Intl.DateTimeFormat(locale, {
-    hour: '2-digit',
-    minute: '2-digit',
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(d);
 }
 
 export function formatRelativeTime(
   date: Date | string,
-  locale: string = 'en-US'
+  locale: string = "en-US"
 ): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+  const d = typeof date === "string" ? new Date(date) : date;
   const now = new Date();
   const diff = now.getTime() - d.getTime();
 
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
 
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -101,47 +125,47 @@ export function formatRelativeTime(
   const months = Math.floor(days / 30);
   const years = Math.floor(days / 365);
 
-  if (years > 0) return rtf.format(-years, 'year');
-  if (months > 0) return rtf.format(-months, 'month');
-  if (weeks > 0) return rtf.format(-weeks, 'week');
-  if (days > 0) return rtf.format(-days, 'day');
-  if (hours > 0) return rtf.format(-hours, 'hour');
-  if (minutes > 0) return rtf.format(-minutes, 'minute');
-  return rtf.format(-seconds, 'second');
+  if (years > 0) return rtf.format(-years, "year");
+  if (months > 0) return rtf.format(-months, "month");
+  if (weeks > 0) return rtf.format(-weeks, "week");
+  if (days > 0) return rtf.format(-days, "day");
+  if (hours > 0) return rtf.format(-hours, "hour");
+  if (minutes > 0) return rtf.format(-minutes, "minute");
+  return rtf.format(-seconds, "second");
 }
 
-export function isValidDate(date: any): boolean {
-  const d = new Date(date);
+export function isValidDate(date: unknown): boolean {
+  const d = new Date(date as string | number | Date);
   return d instanceof Date && !isNaN(d.getTime());
 }
 
 export function getDateRange(
-  period: 'today' | 'yesterday' | 'week' | 'month' | 'year'
+  period: "today" | "yesterday" | "week" | "month" | "year"
 ): { start: Date; end: Date } {
   const now = new Date();
   const start = new Date(now);
   const end = new Date(now);
 
   switch (period) {
-    case 'today':
+    case "today":
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
       break;
-    case 'yesterday':
+    case "yesterday":
       start.setDate(start.getDate() - 1);
       start.setHours(0, 0, 0, 0);
       end.setDate(end.getDate() - 1);
       end.setHours(23, 59, 59, 999);
       break;
-    case 'week':
+    case "week":
       start.setDate(start.getDate() - 7);
       start.setHours(0, 0, 0, 0);
       break;
-    case 'month':
+    case "month":
       start.setMonth(start.getMonth() - 1);
       start.setHours(0, 0, 0, 0);
       break;
-    case 'year':
+    case "year":
       start.setFullYear(start.getFullYear() - 1);
       start.setHours(0, 0, 0, 0);
       break;
@@ -157,33 +181,39 @@ export function getDateRange(
 export function generateReceiptNumber(): string {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const random = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0");
   return `POS-${year}${month}${day}-${random}`;
 }
 
 export function generateOrderNumber(): string {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const random = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0");
   return `ORD-${year}${month}${day}-${random}`;
 }
 
 export function generateInvoiceNumber(): string {
   const date = new Date();
   const year = date.getFullYear().toString().slice(-2);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const random = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0");
   return `INV-${year}${month}${day}-${random}`;
 }
 
 export function generateSKU(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
   for (let i = 0; i < 8; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -191,16 +221,18 @@ export function generateSKU(): string {
 }
 
 export function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
 
 export function generateRandomId(): string {
-  return Math.random().toString(36).substring(2, 15) + 
-         Math.random().toString(36).substring(2, 15);
+  return (
+    Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 15)
+  );
 }
 
 // ============================================
@@ -215,8 +247,8 @@ export function validatePhone(phone: string): boolean {
   return /^\+?[\d\s-]{10,}$/.test(phone);
 }
 
-export function validateRequired(value: any): boolean {
-  return value !== null && value !== undefined && value !== '';
+export function validateRequired(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== "";
 }
 
 export function validateMinLength(value: string, min: number): boolean {
@@ -227,19 +259,19 @@ export function validateMaxLength(value: string, max: number): boolean {
   return value.length <= max;
 }
 
-export function validateNumber(value: any): boolean {
+export function validateNumber(value: unknown): boolean {
   return !isNaN(Number(value));
 }
 
-export function validatePositiveNumber(value: any): boolean {
+export function validatePositiveNumber(value: unknown): boolean {
   return validateNumber(value) && Number(value) > 0;
 }
 
-export function validateInteger(value: any): boolean {
+export function validateInteger(value: unknown): boolean {
   return validateNumber(value) && Number.isInteger(Number(value));
 }
 
-export function validatePositiveInteger(value: any): boolean {
+export function validatePositiveInteger(value: unknown): boolean {
   return validateInteger(value) && Number(value) > 0;
 }
 
@@ -260,7 +292,11 @@ export function validateURL(value: string): boolean {
 // STRING HELPERS
 // ============================================
 
-export function truncateText(text: string, maxLength: number, suffix: string = '...'): string {
+export function truncateText(
+  text: string,
+  maxLength: number,
+  suffix: string = "..."
+): string {
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength) + suffix;
 }
@@ -278,20 +314,31 @@ export function toTitleCase(str: string): string {
 export function slugify(str: string): string {
   return str
     .toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, '-');
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, "-");
 }
 
+// NOTE: the original `escapeHtml` / `unescapeHtml` used `document`,
+// which does not exist in React Native or Node. We replaced them
+// with a pure-string implementation so the shared package stays
+// runtime-agnostic.
+
 export function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export function unescapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.innerHTML = str;
-  return div.textContent || '';
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 // ============================================
@@ -312,13 +359,13 @@ export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
 export function sortBy<T>(
   array: T[],
   key: keyof T,
-  order: 'asc' | 'desc' = 'asc'
+  order: "asc" | "desc" = "asc"
 ): T[] {
   return [...array].sort((a, b) => {
     const aVal = a[key];
     const bVal = b[key];
-    if (aVal < bVal) return order === 'asc' ? -1 : 1;
-    if (aVal > bVal) return order === 'asc' ? 1 : -1;
+    if (aVal < bVal) return order === "asc" ? -1 : 1;
+    if (aVal > bVal) return order === "asc" ? 1 : -1;
     return 0;
   });
 }
@@ -338,7 +385,7 @@ export function paginate<T>(
 }
 
 export function uniqueBy<T>(array: T[], key: keyof T): T[] {
-  const seen = new Set();
+  const seen = new Set<unknown>();
   return array.filter((item) => {
     const value = item[key];
     if (seen.has(value)) return false;
@@ -392,7 +439,9 @@ export function isEmptyObject(obj: object): boolean {
 // CALCULATION HELPERS
 // ============================================
 
-export function calculateTotal(items: { quantity: number; unitPrice: number }[]): number {
+export function calculateTotal(
+  items: { quantity: number; unitPrice: number }[]
+): number {
   return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
 }
 
@@ -401,7 +450,7 @@ export function calculateTax(amount: number, taxRate: number): number {
 }
 
 export function calculateDiscount(price: number, discount: number): number {
-  return price - (price * discount / 100);
+  return price - (price * discount) / 100;
 }
 
 export function calculatePercentage(part: number, total: number): number {
@@ -420,12 +469,17 @@ export function clamp(value: number, min: number, max: number): number {
 // ============================================
 // DEBOUNCE & THROTTLE
 // ============================================
+//
+// The original signature used `NodeJS.Timeout`, which requires
+// `@types/node`. `ReturnType<typeof setTimeout>` resolves to the
+// correct type in every runtime (Node, browser, RN) without the
+// shared package needing Node types.
 
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   return function executedFunction(...args: Parameters<T>) {
     const later = () => {
       timeout = null;
@@ -457,37 +511,37 @@ export function throttle<T extends (...args: any[]) => any>(
 // ============================================
 
 export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 Bytes';
+  if (bytes === 0) return "0 Bytes";
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
 export function getFileExtension(filename: string): string {
-  return filename.split('.').pop() || '';
+  return filename.split(".").pop() || "";
 }
 
 export function getMimeType(filename: string): string {
   const ext = getFileExtension(filename).toLowerCase();
   const mimeTypes: Record<string, string> = {
-    pdf: 'application/pdf',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xls: 'application/vnd.ms-excel',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    gif: 'image/gif',
-    svg: 'image/svg+xml',
-    webp: 'image/webp',
-    txt: 'text/plain',
-    csv: 'text/csv',
+    pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+    webp: "image/webp",
+    txt: "text/plain",
+    csv: "text/csv",
   };
-  return mimeTypes[ext] || 'application/octet-stream';
+  return mimeTypes[ext] || "application/octet-stream";
 }
 
 // ============================================
@@ -506,10 +560,15 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
 }
 
 export function rgbToHex(r: number, g: number, b: number): string {
-  return '#' + [r, g, b].map((c) => {
-    const hex = c.toString(16);
-    return hex.length === 1 ? '0' + hex : hex;
-  }).join('');
+  return (
+    "#" +
+    [r, g, b]
+      .map((c) => {
+        const hex = c.toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      })
+      .join("")
+  );
 }
 
 export function lightenColor(hex: string, percent: number): string {
@@ -534,12 +593,14 @@ export function sleep(ms: number): Promise<void> {
 
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return 'An unknown error occurred';
+  if (typeof error === "string") return error;
+  return "An unknown error occurred";
 }
 
 export function isBrowser(): boolean {
-  return typeof window !== 'undefined' && typeof document !== 'undefined';
+  return (
+    typeof window !== "undefined" && typeof document !== "undefined"
+  );
 }
 
 export function isServer(): boolean {
@@ -548,16 +609,27 @@ export function isServer(): boolean {
 
 export function getBaseURL(): string {
   if (isServer()) {
-    return process.env.BASE_URL || 'http://localhost:3000';
+    return readEnv("BASE_URL") || "http://localhost:3000";
   }
   return window.location.origin;
 }
 
 export function getApiUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  // Try the Expo/Next public-prefixed vars first, then the plain
+  // server var, then fall back to localhost.
+  return (
+    readEnv("NEXT_PUBLIC_API_URL") ||
+    readEnv("EXPO_PUBLIC_API_URL") ||
+    readEnv("API_URL") ||
+    "http://localhost:3001"
+  );
 }
 
 export function getWebSocketUrl(): string {
-  return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+  return (
+    readEnv("NEXT_PUBLIC_WS_URL") ||
+    readEnv("EXPO_PUBLIC_WS_URL") ||
+    readEnv("WS_URL") ||
+    "ws://localhost:3001"
+  );
 }
-

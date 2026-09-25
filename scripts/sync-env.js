@@ -45,7 +45,7 @@ NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
 NEXT_PUBLIC_API_URL=${envVars.EXPO_PUBLIC_API_URL}
 `;
   } else if (isMobile) {
-    content = `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=${envVars.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY}
+    content = `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=${envVars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
 EXPO_PUBLIC_API_URL=${envVars.EXPO_PUBLIC_API_URL}
 EXPO_PUBLIC_APP_NAME=${envVars.EXPO_PUBLIC_APP_NAME}
 `;
@@ -58,7 +58,7 @@ NODE_ENV=${envVars.NODE_ENV}
   }
   
   fs.writeFileSync(pkgPath, content);
-  console.log(`✅ Generated ${pkg}/.env`);
+  console.log(`âœ… Generated ${pkg}/.env`);
 });
 
-console.log('✅ All .env files synced successfully!');
+console.log('âœ… All .env files synced successfully!');
