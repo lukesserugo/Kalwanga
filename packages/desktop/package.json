@@ -5,7 +5,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "start": "cross-env ELECTRON_CRASHPAD_DISABLED=1 electron .",
-    "dev": "cross-env ELECTRON_CRASHPAD_DISABLED=1 npm run build && cross-env ELECTRON_CRASHPAD_DISABLED=1 electron .",
+    "dev": "cross-env ELECTRON_CRASHPAD_DISABLED=1 pnpm run build && cross-env ELECTRON_CRASHPAD_DISABLED=1 electron .",
     "watch": "tsup main/index.ts preload/index.ts --format cjs --watch --out-dir dist --external electron",
     "build": "tsup main/index.ts preload/index.ts --format cjs --out-dir dist --external electron",
     "dist": "npm run build && electron-builder",
