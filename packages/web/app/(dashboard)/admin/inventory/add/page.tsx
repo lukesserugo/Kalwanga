@@ -16,6 +16,7 @@ import { inventoryService } from '../../../../../services/inventoryService';
 import { barcodeService } from '../../../../../services/barcodeService';
 import { companyService } from '../../../../../services/companyService';
 import { locationService } from '../../../../../services/locationService';
+import { productService } from '../../../../../services/productService';
 import { toast } from '../../../../../utils/toast-manager';
 import {
   ArrowLeft,
@@ -48,7 +49,6 @@ import {
   ChevronUp,
   Building2,
   ExternalLink,
-  FolderTree,
 } from 'lucide-react';
 import { api } from '../../../../../services/api';
 
@@ -114,6 +114,7 @@ interface BarcodeInfo {
 interface CategoryOption {
   id: string;
   name: string;
+  productCount?: number;
 }
 
 interface SupplierOption {
@@ -200,7 +201,8 @@ const LOCATION_CREATE_ROUTE = '/admin/locations/create';
 const CATEGORY_CREATE_ROUTE = '/admin/categories/create';
 
 // Query-param names used to preselect the newly created entity when
-// the user returns from its create page.
+// the user returns from its create page. The create page is expected
+// to append the id to the returnTo URL it navigates back to.
 const PRESELECT_CATEGORY_PARAM = 'preselectCategoryId';
 const PRESELECT_SUPPLIER_PARAM = 'preselectSupplierId';
 const PRESELECT_LOCATION_PARAM = 'preselectLocationId';
@@ -250,72 +252,92 @@ function unwrapPayload<T = any>(response: any): T | null {
 }
 
 /**
- * Validate a barcode string. Returns the reason it's invalid, or null
- * if it's usable.
+ * Unwrap the many list shapes services return. Returns an array of
+ * whatever the payload's items are.
  */
-function validateBarcodeString(value: unknown): string | null {
-  if (value === undefined || value === null) {
-    return 'Barcode was not returned by the server';
+function unwrapArray<T = any>(response: any): T[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response as T[];
+
+  if (typeof response === 'object') {
+    if (Array.isArray((response as any).data)) return (response as any).data;
+    if (Array.isArray((response as any).items)) return (response as any).items;
+    if (
+      (response as any).data &&
+      Array.isArray((response as any).data.data)
+    ) {
+      return (response as any).data.data;
+    }
+    if (
+      (response as any).data &&
+      Array.isArray((response as any).data.items)
+    ) {
+      return (response as any).data.items;
+    }
   }
-  if (typeof value !== 'string') {
-    return 'Barcode is not a string';
-  }
-  const trimmed = value.trim();
-  if (!trimmed) return 'Barcode is empty';
-  if (/^(nan|undefined|null)$/i.test(trimmed)) {
-    return `Barcode is invalid: "${trimmed}"`;
-  }
-  return null;
+
+  return [];
 }
 
 /**
- * Build the QR payload the same way the backend does.
+ * Normalize a category row into `{ id, name, productCount? }`,
+ * regardless of which service produced it.
+ *
+ *   productService.getCategories  → { id, name, _count: { products } }
+ *   inventoryService.getCategories → { id, name } or { category, categoryId }
+ *   inventoryService.getCategorySummary → { category, count }
  */
-function buildQrData(args: {
-  formData: InventoryFormData;
-  barcode: string;
-  inventoryId?: string;
-  productId?: string;
-}): Record<string, any> {
-  const { formData, barcode, inventoryId, productId } = args;
-  return {
-    type: 'INVENTORY_ITEM',
-    id: inventoryId || '',
-    productId: productId || '',
-    name: formData.name || 'Unknown',
-    sku: formData.sku || 'N/A',
-    barcode,
-    location: formData.location || 'Warehouse',
-    quantity: Number(formData.quantity) || 0,
-    minStock: Number(formData.minStock) || 5,
-    description: formData.description || '',
-    weight: Number(formData.weight) || 0,
-    taxRate: Number(formData.taxRate) || 0,
-    tags: formData.tags
-      ? formData.tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
-      : [],
-    timestamp: new Date().toISOString(),
-  };
+function normalizeCategoryRow(raw: any): CategoryOption | null {
+  if (!raw) return null;
+
+  const id =
+    raw.id ??
+    raw.categoryId ??
+    raw.category_id ??
+    (typeof raw.category === 'string' ? raw.category : null);
+
+  const name =
+    raw.name ??
+    raw.category ??
+    raw.label ??
+    (typeof raw.id === 'string' ? raw.id : null);
+
+  if (typeof id !== 'string' || !id.trim()) return null;
+  if (typeof name !== 'string' || !name.trim()) return null;
+
+  const productCount =
+    typeof raw._count?.products === 'number'
+      ? raw._count.products
+      : typeof raw.productCount === 'number'
+        ? raw.productCount
+        : typeof raw.count === 'number'
+          ? raw.count
+          : undefined;
+
+  return { id: id.trim(), name: name.trim(), productCount };
 }
 
-function buildQrCodeUrl(qrData: Record<string, any>): string {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-    JSON.stringify(qrData),
-  )}`;
-}
-
-function buildBarcodeUrl(barcode: string): string {
-  return `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
-    barcode,
-  )}&code=EAN-13&dpi=96`;
+/**
+ * Deduplicate a list of categories by id.
+ */
+function dedupeCategories(rows: CategoryOption[]): CategoryOption[] {
+  const seen = new Map<string, CategoryOption>();
+  for (const row of rows) {
+    if (!seen.has(row.id)) seen.set(row.id, row);
+  }
+  return Array.from(seen.values()).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 }
 
 /**
  * Build a URL to a "create" page carrying a `returnTo` query param so
  * the target page can navigate the user back here after creation.
+ *
+ * `returnTo` may also carry preselect params we want the create page
+ * to forward on its way back. We encode the full intended return path
+ * (including any params we want appended) so the create page doesn't
+ * have to know which entity it just created.
  */
 function buildCreateUrl(basePath: string): string {
   if (typeof window === 'undefined') return basePath;
@@ -468,20 +490,24 @@ export default function AddInventoryItemPage() {
   }, [booting, isAuthenticated]);
 
   // ────────────────────────────────────────────────────────────
-  // Preselect supplier / location / category on return from
-  // their respective create pages.
+  // Preselect supplier / location / category on return from their
+  // create pages.
   //
-  // Each param is consumed at most once per mount, so the user can
-  // clear their selection without the effect fighting them. The
-  // preselect only lands once the options are loaded, because the
-  // match needs the option list.
+  // The preselect fires when the relevant option list loads, because
+  // we need the list to resolve the id → name. Each param is consumed
+  // at most once per mount so the user can clear without the effect
+  // fighting them.
+  //
+  // The dependencies explicitly include the option lists' lengths so
+  // that arriving back with a brand-new category (which appears in
+  // the list only after loadOptions completes) triggers a re-run.
   // ────────────────────────────────────────────────────────────
   useEffect(() => {
     const preselectCategory = searchParams?.get(PRESELECT_CATEGORY_PARAM);
     const preselectSupplier = searchParams?.get(PRESELECT_SUPPLIER_PARAM);
     const preselectLocation = searchParams?.get(PRESELECT_LOCATION_PARAM);
 
-    // Category — needs the categories list to resolve the name.
+    // Category — needs categories list.
     if (
       preselectCategory &&
       !consumedPreselectRef.current.has(`cat:${preselectCategory}`) &&
@@ -498,7 +524,7 @@ export default function AddInventoryItemPage() {
       }
     }
 
-    // Supplier — same pattern.
+    // Supplier — needs suppliers list.
     if (
       preselectSupplier &&
       !consumedPreselectRef.current.has(`sup:${preselectSupplier}`) &&
@@ -515,7 +541,7 @@ export default function AddInventoryItemPage() {
       }
     }
 
-    // Location — match by id, but store name too.
+    // Location — needs locations list.
     if (
       preselectLocation &&
       !consumedPreselectRef.current.has(`loc:${preselectLocation}`) &&
@@ -709,115 +735,161 @@ export default function AddInventoryItemPage() {
   // LOAD CATEGORIES / SUPPLIERS / LOCATIONS
   // ============================================
 
-  const loadOptions = useCallback(async (buId: string) => {
-    if (!isValidBusinessUnitId(buId)) {
-      setLoadingOptions(false);
-      return;
+  /**
+   * Category fetch.
+   *
+   * The canonical `Category` table is written by the admin category
+   * create page via `productService.createCategory`. The inventory
+   * service's `getCategories` and `getCategorySummary` return
+   * aggregated views over inventory rows, which is a different set.
+   *
+   * So we try `productService.getCategories` first — that's the
+   * source of truth that the create page writes to — and only fall
+   * back to the inventory service's aggregate views if the product
+   * endpoint yields nothing.
+   */
+  const loadCategories = useCallback(async (buId: string) => {
+    const collected: CategoryOption[] = [];
+
+    // 1. Canonical product categories.
+    try {
+      const rows = await productService.getCategories({
+        businessUnitId: buId,
+        isActive: true,
+      });
+      const list = unwrapArray<any>(rows);
+      for (const raw of list) {
+        const normalized = normalizeCategoryRow(raw);
+        if (normalized) collected.push(normalized);
+      }
+    } catch (e) {
+      console.warn(
+        '[inventory/add] productService.getCategories failed:',
+        e,
+      );
     }
 
-    setLoadingOptions(true);
-
-    try {
-      let categoriesLoaded = false;
-
+    // 2. Fallback — inventory service aggregate views.
+    if (collected.length === 0) {
       try {
-        const categoriesData = await inventoryService.getCategories(buId);
-        if (Array.isArray(categoriesData) && categoriesData.length > 0) {
-          setCategories(
-            categoriesData.map((cat: any) => ({
-              id: cat.id || cat.categoryId || cat.category,
-              name: cat.name || cat.category || 'Uncategorized',
-            })),
-          );
-          categoriesLoaded = true;
+        const rows = await inventoryService.getCategories(buId);
+        const list = unwrapArray<any>(rows);
+        for (const raw of list) {
+          const normalized = normalizeCategoryRow(raw);
+          if (normalized) collected.push(normalized);
         }
       } catch (e) {
-        console.warn('[inventory/add] getCategories failed:', e);
+        console.warn('[inventory/add] inventoryService.getCategories failed:', e);
       }
+    }
 
-      if (!categoriesLoaded) {
-        try {
-          const summaryData = await inventoryService.getCategorySummary(buId);
-          if (Array.isArray(summaryData) && summaryData.length > 0) {
-            setCategories(
-              summaryData.map((cat: any) => ({
-                id: cat.id || cat.categoryId || cat.category,
-                name: cat.name || cat.category || 'Uncategorized',
-              })),
-            );
-            categoriesLoaded = true;
-          }
-        } catch (e) {
-          console.warn('[inventory/add] getCategorySummary failed:', e);
-        }
-      }
-
-      if (!categoriesLoaded) setCategories([]);
-
-      let suppliersLoaded = false;
-
+    if (collected.length === 0) {
       try {
-        const suppliersData = await inventoryService.getSuppliers(buId);
-        if (Array.isArray(suppliersData) && suppliersData.length > 0) {
-          setSuppliers(
-            suppliersData.map((sup: any) => ({
-              id: sup.id,
-              name: sup.name,
-            })),
-          );
-          suppliersLoaded = true;
+        const rows = await inventoryService.getCategorySummary(buId);
+        const list = unwrapArray<any>(rows);
+        for (const raw of list) {
+          const normalized = normalizeCategoryRow(raw);
+          if (normalized) collected.push(normalized);
         }
       } catch (e) {
-        console.warn('[inventory/add] getSuppliers failed:', e);
-      }
-
-      if (!suppliersLoaded) setSuppliers([]);
-
-      let locationsLoaded = false;
-
-      try {
-        const locationsData = await locationService.list(buId);
-        if (Array.isArray(locationsData) && locationsData.length > 0) {
-          setLocations(
-            locationsData.map((loc: any) => ({
-              id: loc.id,
-              name: loc.name,
-              isDefault: loc.isDefault,
-              isActive: loc.isActive !== false,
-            })),
-          );
-          locationsLoaded = true;
-
-          setFormData((prev) => {
-            if (
-              isValidLocationValue(prev.location) &&
-              prev.location !== 'Warehouse'
-            ) {
-              return prev;
-            }
-            const def =
-              locationsData.find((l: any) => l.isDefault) ||
-              locationsData.find((l: any) => l.isActive !== false) ||
-              locationsData[0];
-            if (!def) return prev;
-            return { ...prev, location: def.name, locationId: def.id };
-          });
-        }
-      } catch (e) {
-        console.warn('[inventory/add] locationService.list failed:', e);
-      }
-
-      if (!locationsLoaded) {
-        setLocations(
-          FALLBACK_LOCATIONS.map((l) => ({ id: l.value, name: l.value })),
+        console.warn(
+          '[inventory/add] inventoryService.getCategorySummary failed:',
+          e,
         );
       }
-    } catch (err) {
-      console.error('[inventory/add] loadOptions error:', err);
-    } finally {
-      setLoadingOptions(false);
     }
+
+    return dedupeCategories(collected);
   }, []);
+
+  const loadOptions = useCallback(
+    async (buId: string) => {
+      if (!isValidBusinessUnitId(buId)) {
+        setLoadingOptions(false);
+        return;
+      }
+
+      setLoadingOptions(true);
+
+      try {
+        // Categories
+        const categoryList = await loadCategories(buId);
+        setCategories(categoryList);
+
+        // Suppliers
+        let suppliersLoaded = false;
+
+        try {
+          const suppliersData = await inventoryService.getSuppliers(buId);
+          const list = unwrapArray<any>(suppliersData);
+          if (list.length > 0) {
+            setSuppliers(
+              list
+                .filter((sup: any) => sup && typeof sup.id === 'string')
+                .map((sup: any) => ({
+                  id: sup.id,
+                  name: sup.name || 'Unnamed Supplier',
+                })),
+            );
+            suppliersLoaded = true;
+          }
+        } catch (e) {
+          console.warn('[inventory/add] getSuppliers failed:', e);
+        }
+
+        if (!suppliersLoaded) setSuppliers([]);
+
+        // Locations
+        let locationsLoaded = false;
+
+        try {
+          const locationsData = await locationService.list(buId);
+          const list = unwrapArray<any>(locationsData);
+          if (list.length > 0) {
+            setLocations(
+              list
+                .filter((loc: any) => loc && typeof loc.id === 'string')
+                .map((loc: any) => ({
+                  id: loc.id,
+                  name: loc.name || 'Unnamed Location',
+                  isDefault: loc.isDefault,
+                  isActive: loc.isActive !== false,
+                })),
+            );
+            locationsLoaded = true;
+
+            setFormData((prev) => {
+              if (
+                isValidLocationValue(prev.location) &&
+                prev.location !== 'Warehouse'
+              ) {
+                return prev;
+              }
+              const def =
+                list.find((l: any) => l.isDefault) ||
+                list.find((l: any) => l.isActive !== false) ||
+                list[0];
+              if (!def) return prev;
+              return { ...prev, location: def.name, locationId: def.id };
+            });
+          }
+        } catch (e) {
+          console.warn('[inventory/add] locationService.list failed:', e);
+        }
+
+        if (!locationsLoaded) {
+          setLocations(
+            FALLBACK_LOCATIONS.map((l) => ({ id: l.value, name: l.value })),
+          );
+        }
+      } catch (err) {
+        console.error('[inventory/add] loadOptions error:', err);
+      } finally {
+        setLoadingOptions(false);
+      }
+    },
+    [loadCategories],
+  );
 
   useEffect(() => {
     if (isValidBusinessUnitId(selectedBusinessUnitId)) {
@@ -849,9 +921,7 @@ export default function AddInventoryItemPage() {
 
       setCheckingBarcode(true);
       try {
-        const result = await import(
-          '../../../../../services/productService'
-        ).then((m) => m.productService.validateBarcode(barcode));
+        const result = await productService.validateBarcode(barcode);
 
         if (result && !result.valid) {
           setIsBarcodeValid(false);
@@ -1377,10 +1447,10 @@ export default function AddInventoryItemPage() {
   // "ADD NEW" NAVIGATION
   // ============================================
   //
-  // These navigate to the canonical create pages. `returnTo` lets the
-  // target page send the user back here; the preselect query param
-  // lets us auto-select the newly created entity once the user is
-  // back and the option list is loaded.
+  // The canonical create pages accept `returnTo`. On success they
+  // navigate back there. For category creation, the create page is
+  // expected to append `preselectCategoryId=<newId>` to that return
+  // URL — see the note at the bottom of this file.
 
   const handleAddNewSupplier = () => {
     const url = buildCreateUrl(SUPPLIER_CREATE_ROUTE);
@@ -1394,14 +1464,6 @@ export default function AddInventoryItemPage() {
     router.push(url);
   };
 
-  /**
-   * Navigate to the canonical category create page. The modern form
-   * there covers everything the inline "custom category" flow could
-   * not: slug, image, icon, color, sortOrder, parent, meta fields.
-   * The category-create page is expected to redirect back here with
-   * `preselectCategoryId=<newId>` appended to the query string, which
-   * the preselect effect above reads.
-   */
   const handleAddNewCategory = () => {
     const url = buildCreateUrl(CATEGORY_CREATE_ROUTE);
     console.log('[inventory/add] Navigating to add category:', url);
@@ -1658,6 +1720,8 @@ export default function AddInventoryItemPage() {
             )
             .join(', ');
         }
+      } else if (err?.response?.data?.error?.message) {
+        errorMessage = err.response.data.error.message;
       } else if (err?.response?.data?.message) {
         errorMessage = err.response.data.message;
       } else if (err?.response?.data?.error) {
@@ -2233,12 +2297,19 @@ export default function AddInventoryItemPage() {
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
+                      {typeof cat.productCount === 'number'
+                        ? ` (${cat.productCount})`
+                        : ''}
                     </option>
                   ))}
                   <option value="__add_new__">+ Add New Category…</option>
                 </select>
                 <p className="mt-1 text-xs text-gray-400">
-                  Need a new category?{' '}
+                  {loadingOptions
+                    ? 'Loading categories…'
+                    : categories.length === 0
+                      ? 'No categories yet. '
+                      : `${categories.length} categor${categories.length === 1 ? 'y' : 'ies'} available. `}
                   <button
                     type="button"
                     onClick={handleAddNewCategory}
