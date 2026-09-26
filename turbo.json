@@ -1,5 +1,5 @@
 ﻿{
-  "pipeline": {
+  "tasks": {
     "dev": { "cache": false, "persistent": true },
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", "build/**", ".next/**"] },
     "start": { "dependsOn": ["build"], "cache": false },
@@ -12,4 +12,3 @@
   },
   "globalDependencies": ["pnpm-lock.yaml", "tsconfig.json"]
 }
-
