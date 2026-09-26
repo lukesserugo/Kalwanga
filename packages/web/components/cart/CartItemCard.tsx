@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import {
@@ -12,6 +12,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
+import { toast } from '../../utils/toast-manager';
 
 interface CartItemCardProps {
   id: string;
@@ -34,6 +35,39 @@ interface CartItemCardProps {
   disabled?: boolean;
 }
 
+const PLACEHOLDER_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * Extract a human-readable error message from the shapes the cart
+ * API emits. Matches the helper in ProductCard and AddToCartButton
+ * so error handling is consistent across surfaces.
+ *
+ *   1. `{ error: { message } }`          ← cart validation
+ *   2. `{ error: string }`
+ *   3. `{ message }`
+ *   4. `{ errors: [{ field, message }] }`
+ *   5. `error.message`
+ */
+function extractErrorMessage(error: any, fallback: string): string {
+  if (!error) return fallback;
+
+  const data = error?.response?.data;
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (error?.message) return String(error.message);
+  return fallback;
+}
+
 export function CartItemCard({
   id,
   productId,
@@ -51,24 +85,69 @@ export function CartItemCard({
   isUpdating = false,
   disabled = false,
 }: CartItemCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+
   const atMinimum = quantity <= 1;
-  // An out-of-stock line can never be increased, even if the stock
-  // value is stale or zero.
-  const atMaximum = !isInStock || (availableStock > 0 && quantity >= availableStock);
 
-  const handleQuantityChange = (newQuantity: number) => {
-    if (isUpdating || disabled) return;
-    if (newQuantity < 1) return;
-    if (availableStock > 0 && newQuantity > availableStock) return;
-    onUpdateQuantity(id, newQuantity);
-  };
+  /**
+   * An out-of-stock line can never be increased, even if the stock
+   * value is stale or zero. Also cap at the reported availableStock
+   * when that value is positive.
+   */
+  const atMaximum =
+    !isInStock ||
+    (availableStock > 0 && quantity >= availableStock);
 
-  const handleRemove = () => {
-    if (!disabled && !isUpdating) onRemove(id);
-  };
+  /**
+   * Wrap the parent callbacks so an unhandled rejection surfaces as
+   * a toast instead of a silent snap-back. Parent is still free to
+   * catch and re-toast if it wants; this is only a fallback.
+   */
+  const handleQuantityChange = useCallback(
+    async (newQuantity: number) => {
+      if (isUpdating || disabled) return;
+      if (newQuantity < 1) return;
 
-  const imageSrc = images[0];
-  const hasImage = Boolean(imageSrc);
+      // Guard against exceeding the server-reported available stock.
+      // This runs in addition to the disabled prop on the button —
+      // belt and braces, in case the prop is stale for one render.
+      if (!isInStock) return;
+      if (availableStock > 0 && newQuantity > availableStock) return;
+
+      try {
+        await onUpdateQuantity(id, newQuantity);
+      } catch (err: any) {
+        console.error('Failed to update quantity:', err);
+        toast.error(
+          extractErrorMessage(err, 'Failed to update quantity'),
+        );
+      }
+    },
+    [
+      id,
+      isUpdating,
+      disabled,
+      isInStock,
+      availableStock,
+      onUpdateQuantity,
+    ],
+  );
+
+  const handleRemove = useCallback(async () => {
+    if (disabled || isUpdating) return;
+
+    try {
+      await onRemove(id);
+    } catch (err: any) {
+      console.error('Failed to remove item:', err);
+      toast.error(extractErrorMessage(err, 'Failed to remove item'));
+    }
+  }, [id, disabled, isUpdating, onRemove]);
+
+  const rawImageSrc = images[0];
+  const hasImage = Boolean(rawImageSrc);
+  const imageSrc =
+    hasImage && !imageFailed ? rawImageSrc! : PLACEHOLDER_IMAGE;
 
   return (
     <motion.div
@@ -87,12 +166,13 @@ export function CartItemCard({
         href={`/shop/${productId}`}
         className="flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden hover:opacity-90 transition-opacity focus-ring"
       >
-        {hasImage ? (
+        {hasImage && !imageFailed ? (
           <img
             src={imageSrc}
             alt={productName}
             className="w-full h-full object-cover"
             loading="lazy"
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">

@@ -132,21 +132,36 @@ function readInventoryTotals(inventory: InventoryLike): {
 }
 
 /**
- * Sum variant available stock, preferring each variant's linked
- * Inventory row (`quantity - reserved`) over the denormalized `stock`.
+ * Compute the effective available stock for a single variant,
+ * preferring its linked Inventory row over the denormalized `stock`.
  */
-function readVariantStock(variants: ProductVariantShape[] | undefined): number {
+function readSingleVariantStock(
+  variant: ProductVariantShape
+): number {
+  if (variant.inventory) {
+    return Math.max(
+      0,
+      (variant.inventory.quantity ?? 0) -
+        (variant.inventory.reserved ?? 0)
+    );
+  }
+  return Math.max(0, variant.stock ?? 0);
+}
+
+/**
+ * Sum variant available stock for display purposes only.
+ *
+ * NOTE: this is used for the "+N variant stock" badge. It is NOT
+ * used to enable/disable the Add-to-Cart button, because the backend
+ * does not sum parent + variants when validating a cart add.
+ */
+function readTotalVariantStock(
+  variants: ProductVariantShape[] | undefined
+): number {
   if (!variants || variants.length === 0) return 0;
   let total = 0;
   for (const v of variants) {
-    if (v.inventory) {
-      total += Math.max(
-        0,
-        (v.inventory.quantity ?? 0) - (v.inventory.reserved ?? 0)
-      );
-    } else {
-      total += v.stock ?? 0;
-    }
+    total += readSingleVariantStock(v);
   }
   return total;
 }
@@ -156,19 +171,58 @@ function stopEvent(e: React.MouseEvent): void {
   e.stopPropagation();
 }
 
+/**
+ * Extract a human-readable error message from the various shapes the
+ * backend emits. The order matters — we check the most specific
+ * shapes first.
+ *
+ *   1. `{ error: { message } }`          ← cart validation
+ *   2. `{ error: string }`
+ *   3. `{ message }`
+ *   4. `{ errors: [{ field, message }] }` ← Zod field errors
+ *   5. `error.message`                    ← axios / JS
+ *
+ * The backend's "Insufficient stock. Available: 0" arrives as
+ * `response.data.error.message`.
+ */
 function extractErrorMessage(error: any, fallback: string): string {
   if (!error) return fallback;
-  if (error?.response?.data?.message) return error.response.data.message;
-  if (error?.response?.data?.errors) {
-    const errors = error.response.data.errors;
-    if (Array.isArray(errors) && errors.length > 0) {
-      return errors
+
+  const data = error?.response?.data;
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
         .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
         .join(', ');
     }
   }
-  if (error?.message) return error.message;
+
+  if (error?.message) return String(error.message);
   return fallback;
+}
+
+/**
+ * True when the backend rejected the request because stock ran out
+ * between page load and the click.
+ */
+function isInsufficientStockError(error: any): boolean {
+  const message = extractErrorMessage(error, '');
+  return /insufficient stock/i.test(message);
+}
+
+/**
+ * Extract the "Available: N" number from a stock error message, when
+ * present. Returns null if the message doesn't include a number.
+ */
+function parseAvailableFromStockError(error: any): number | null {
+  const message = extractErrorMessage(error, '');
+  const match = message.match(/available:\s*(\d+)/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // ============================================
@@ -201,6 +255,15 @@ export function ProductCard({
     null
   );
 
+  /**
+   * Set to true when the backend rejected a cart add with
+   * "Insufficient stock". The card then reflects the server's truth
+   * without needing the parent to refetch. Resets when the component
+   * remounts with a new product.
+   */
+  const [serverReportedOutOfStock, setServerReportedOutOfStock] =
+    useState(false);
+
   const canEditProduct =
     canEdit(PermissionResource.PRODUCT) ||
     canManage(PermissionResource.PRODUCT);
@@ -222,12 +285,8 @@ export function ProductCard({
   const mainStock = Math.max(0, quantity - reserved);
 
   const variants = product?.variants ?? [];
-  const variantStock = readVariantStock(variants);
-  const available = mainStock + variantStock;
+  const totalVariantStock = readTotalVariantStock(variants);
 
-  const isOutOfStock = available <= 0;
-  const isLowStock =
-    available > 0 && available <= (product?.minStock || 5);
   const hasVariants = variants.length > 0;
   const totalVariantCount = variants.length;
   const hasVariantImages = variants.some(
@@ -238,12 +297,38 @@ export function ProductCard({
   const selectedVariant = selectedVariantId
     ? variants.find((v) => v.id === selectedVariantId) ?? null
     : null;
+
+  /**
+   * The stock value that actually gates the Add-to-Cart button.
+   *
+   * The backend validates cart adds against:
+   *   - the selected variant's inventory row, when a variant is
+   *     selected, OR
+   *   - the product's own inventory row, when no variant is selected.
+   *
+   * It does NOT sum parent + variants. Mirror that rule here so the
+   * button's enabled state matches what the server will accept.
+   *
+   * Summing would produce a UI that lets the user click on products
+   * the server will reject with 400 "Insufficient stock".
+   */
+  const effectiveStock = selectedVariant
+    ? readSingleVariantStock(selectedVariant)
+    : mainStock;
+
+  const isOutOfStock = effectiveStock <= 0 || serverReportedOutOfStock;
+
+  const isLowStock =
+    effectiveStock > 0 &&
+    !isOutOfStock &&
+    effectiveStock <= (product?.minStock || 5);
+
   const displayPrice = selectedVariant?.price ?? product?.unitPrice ?? 0;
 
   const stockStatus = (() => {
     if (isOutOfStock) return { label: 'Out of Stock', color: 'bg-danger-500' };
     if (isLowStock)
-      return { label: `Only ${available} left`, color: 'bg-warning-500' };
+      return { label: `Only ${effectiveStock} left`, color: 'bg-warning-500' };
     return { label: 'In Stock', color: 'bg-success-500' };
   })();
 
@@ -268,8 +353,7 @@ export function ProductCard({
     product?.images && product.images.length > 0
       ? product.images[0]
       : null;
-  const primaryImageValid =
-    primaryImage && !imageErrors[primaryImage];
+  const primaryImageValid = primaryImage && !imageErrors[primaryImage];
 
   // ============================================
   // HANDLERS
@@ -317,6 +401,29 @@ export function ProductCard({
         }
       } catch (err: any) {
         console.error('❌ Failed to add to cart:', err);
+
+        if (isInsufficientStockError(err)) {
+          // The server is authoritative. Flip the card to
+          // "Out of Stock" immediately and give the user a
+          // message they can act on.
+          setServerReportedOutOfStock(true);
+
+          const reported = parseAvailableFromStockError(err);
+          const message =
+            reported !== null
+              ? `This item is out of stock (${reported} available).`
+              : 'This item is out of stock.';
+
+          toast.error(message);
+
+          window.dispatchEvent(
+            new CustomEvent('cart:update-failed', {
+              detail: { productId: cleanProductId, reason: 'OUT_OF_STOCK' },
+            })
+          );
+          return;
+        }
+
         toast.error(extractErrorMessage(err, 'Failed to add to cart'));
       } finally {
         setAddingToCart(false);
@@ -614,9 +721,9 @@ export function ProductCard({
                 >
                   {stockStatus.label}
                 </span>
-                {variantStock > 0 && (
+                {totalVariantStock > 0 && (
                   <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
-                    +{variantStock} variant stock
+                    +{totalVariantStock} variant stock
                   </span>
                 )}
                 {product.isDigital && (
@@ -1057,9 +1164,9 @@ export function ProductCard({
           >
             {stockStatus.label}
           </span>
-          {variantStock > 0 && (
+          {totalVariantStock > 0 && (
             <span className="text-2xs tabular-nums text-gray-400 dark:text-gray-500">
-              +{variantStock} variant stock
+              +{totalVariantStock} variant stock
             </span>
           )}
         </div>

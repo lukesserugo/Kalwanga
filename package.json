@@ -11,7 +11,8 @@
         "clean": "rm -rf .expo dist node_modules",
         "env:sync": "node scripts/sync-env.js",
         "postinstall": "pnpm env:sync",
-        "set-admin": "ts-node scripts/set-admin-role.ts"
+        "set-admin": "ts-node scripts/set-admin-role.ts",
+        "tunnel": "cloudflared tunnel --url http://localhost:3001"
     },
     "dependencies": {
         "@clerk/clerk-expo": "^2.20.0",
