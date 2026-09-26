@@ -37,3 +37,9 @@ yarn.lock
 migrations_backup_*/
 packages/backend/prisma/migrations_old/
 redundant_migrations/
+
+# local backups
+*.bak
+*.bak.*
+pnpm-lock.yaml.bak*
+
