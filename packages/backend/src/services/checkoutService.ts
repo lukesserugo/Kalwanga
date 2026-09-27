@@ -68,6 +68,20 @@ const MOBILE_PAYMENT_METHODS = new Set<string>([
 ]);
 
 /**
+ * Mobile-money provider selector.
+ *
+ * `MOBILE_MONEY` covers three distinct providers in the backend:
+ *   MPESA   → mpesaService (Safaricom STK push)
+ *   MTN     → mobileMoneyService.initiatePayment('MTN', ...)
+ *   AIRTEL  → mobileMoneyService.initiatePayment('AIRTEL', ...)
+ *
+ * The frontend uses this field to tell the backend which provider the
+ * user picked. When omitted, the backend defaults to `MPESA` (the
+ * historical behaviour before the selector existed).
+ */
+type MobileMoneyProvider = 'MPESA' | 'MTN' | 'AIRTEL';
+
+/**
  * Map a user-supplied payment method to the value the Prisma
  * `PaymentMethod` enum accepts.
  */
@@ -219,6 +233,17 @@ interface OnlineCheckoutData extends CheckoutData {
    */
   giftCardCode?: string;
   gatewayId?: string;
+  /**
+   * Mobile-money provider selector.
+   *
+   * Only meaningful when the resolved payment method is
+   * `MOBILE_MONEY`. Tells `invokeGateway` whether to route to
+   * M-Pesa (Safaricom STK push), MTN MoMo, or Airtel Money.
+   *
+   * When omitted, `invokeGateway` defaults to M-Pesa — the
+   * historical behaviour before the selector existed.
+   */
+  mobileMoneyProvider?: MobileMoneyProvider;
 }
 
 interface CheckoutResponse {
@@ -400,6 +425,47 @@ const SALE_FULL_INCLUDE = {
     },
   },
 } as const;
+
+// ============================================
+// GATEWAY ERROR NORMALIZATION
+// ============================================
+//
+// Gateway failures arrive in three shapes:
+//
+//   1. `AppError` thrown by this service (e.g. "M-Pesa is not
+//      configured", "Unsupported payment method"). Carries a
+//      well-formed `status` and a user-safe `message`.
+//
+//   2. `AxiosError` from a provider SDK (MTN MoMo, Flutterwave,
+//      Paystack, …). Carries `response.status` and a nested
+//      `response.data.message`.
+//
+//   3. Anything else — a raw `Error`, a thrown string, an SDK
+//      that forgot to attach a status. These collapse to 502.
+//
+// `resolveGatewayError` normalizes all three into a single
+// `AppError` with a status the controller can forward verbatim.
+// Without this, every mobile-money failure surfaced as an opaque
+// 502 even when the real cause was "credentials missing" (503)
+// or "invalid phone" (400).
+
+function resolveGatewayError(error: any): AppError {
+  if (error instanceof AppError) return error;
+
+  const status: number =
+    error?.response?.status ??
+    error?.status ??
+    error?.statusCode ??
+    502;
+
+  const message: string =
+    error?.response?.data?.message ??
+    error?.response?.data?.error ??
+    error?.message ??
+    'Payment gateway error';
+
+  return new AppError(message, status);
+}
 
 // ============================================
 // CHECKOUT SERVICE CLASS
@@ -1288,6 +1354,9 @@ export class CheckoutService extends BaseService {
                 // forwarded to the gateway via `invokeGateway`.
                 giftCardCode:
                   data.giftCardCode ?? data.gatewayId ?? null,
+                // Mobile-money provider hint persisted for audit.
+                mobileMoneyProvider:
+                  data.mobileMoneyProvider ?? null,
               },
             },
           });
@@ -1321,6 +1390,8 @@ export class CheckoutService extends BaseService {
                 action: 'ONLINE_CHECKOUT_INITIATED',
                 total: finalTotal,
                 paymentMethod: enumValue,
+                mobileMoneyProvider:
+                  data.mobileMoneyProvider ?? null,
                 status: 'PENDING',
               },
               severity: 'INFO',
@@ -1379,6 +1450,7 @@ export class CheckoutService extends BaseService {
           cardNonce: data.cardNonce,
           paymentMethodId: data.paymentMethodId,
           giftCardCode: data.giftCardCode ?? data.gatewayId,
+          mobileMoneyProvider: data.mobileMoneyProvider,
         });
       } catch (gatewayError: any) {
         // Gateway failed — mark Payment FAILED and Sale FAILED, then
@@ -1424,11 +1496,16 @@ export class CheckoutService extends BaseService {
           }
         });
 
-        if (gatewayError instanceof AppError) throw gatewayError;
-        throw new AppError(
-          `Payment gateway error: ${gatewayError?.message || 'unknown'}`,
-          502,
-        );
+        // Preserve the provider's own status code and message.
+        //
+        //   AppError (e.g. "MTN is not configured") → passthrough
+        //   AxiosError with response.status          → 4xx/5xx
+        //   Raw Error                                → 502
+        //
+        // Before this, every failure was re-wrapped as a generic
+        // 502, which hid the real cause (missing credentials, bad
+        // phone number, upstream timeout) from the caller.
+        throw resolveGatewayError(gatewayError);
       }
 
       // ----------------------------------------------------
@@ -1554,6 +1631,18 @@ export class CheckoutService extends BaseService {
      * without the caller having to know the handler's field name.
      */
     giftCardCode?: string;
+    /**
+     * Mobile-money provider selector. Only consulted when the
+     * `paymentMethod` resolves to `MOBILE_MONEY` or `MPESA`.
+     * Determines which provider handler is invoked:
+     *
+     *   MPESA  → mpesaService (Safaricom STK push)
+     *   MTN    → mobileMoneyService.initiatePayment('MTN', ...)
+     *   AIRTEL → mobileMoneyService.initiatePayment('AIRTEL', ...)
+     *
+     * When omitted, defaults to `MPESA` (the historical behaviour).
+     */
+    mobileMoneyProvider?: MobileMoneyProvider;
   }): Promise<GatewayResult> {
     const {
       paymentMethod,
@@ -1571,6 +1660,7 @@ export class CheckoutService extends BaseService {
       cardNonce,
       paymentMethodId,
       giftCardCode,
+      mobileMoneyProvider,
     } = input;
 
     const frontendUrl =
@@ -1638,22 +1728,21 @@ export class CheckoutService extends BaseService {
       };
     }
 
-    // ── Mobile money (M-Pesa STK push) ──────────────────────
+    // ── Mobile money ────────────────────────────────────────
     //
-    // ⚠ Do NOT pass `callbackUrl` here. The mpesaService reads it
-    //   from `process.env.MPESA_CALLBACK_URL`, validates that it's
-    //   HTTPS and non-localhost in its constructor, and fails fast
-    //   if it can't reach Safaricom. Passing a hardcoded value here
-    //   bypasses that check entirely.
+    // `MOBILE_MONEY` is a *category* covering three distinct
+    // providers. `MPESA` is an explicit alias for the Safaricom
+    // flow. The caller disambiguates via `mobileMoneyProvider`.
     //
-    //   The previous version passed:
+    // Resolution order:
+    //   1. `upper === 'MPESA'` always wins → M-Pesa.
+    //   2. `mobileMoneyProvider` if the caller supplied one.
+    //   3. Fall back to M-Pesa for backwards compatibility.
     //
-    //     `${process.env.API_URL || ''}/api/payments/mpesa-callback`
-    //
-    //   which is wrong on two counts:
-    //     1. There is no `/api` prefix in this project.
-    //     2. `process.env.API_URL` is often unset, producing a
-    //        relative path that Safaricom rejects outright.
+    // ⚠ Do NOT pass `callbackUrl` to `mpesaService`. It reads
+    //   `process.env.MPESA_CALLBACK_URL` and validates that it's
+    //   HTTPS and non-localhost in its constructor, failing fast
+    //   if it can't reach Safaricom.
     if (MOBILE_PAYMENT_METHODS.has(upper)) {
       if (!customerPhone) {
         throw new AppError(
@@ -1661,38 +1750,113 @@ export class CheckoutService extends BaseService {
           400,
         );
       }
-      const { mpesaService } = await import('./mpesaService.js');
-      if (!mpesaService.isConfigured()) {
-        throw new AppError(
-          'M-Pesa is not configured. Please contact support.',
-          503,
-        );
-      }
-      const stk = await mpesaService.initiateSTKPush({
-        phoneNumber: customerPhone,
-        amount,
-        accountReference: sale.receiptNumber,
-        transactionDesc: `Payment for ${sale.receiptNumber}`,
-        // callbackUrl intentionally omitted — the service uses
-        // `MPESA_CALLBACK_URL` and validates it before calling
-        // Safaricom.
-      });
 
-      return {
-        gateway: 'MPESA',
-        status: 'PENDING',
-        transactionId: stk.CheckoutRequestID,
-        mpesa: {
-          checkoutRequestId: stk.CheckoutRequestID,
-          customerMessage: stk.CustomerMessage,
-        },
-        nextAction: {
-          type: 'AWAIT_STK_PUSH',
-          message: stk.CustomerMessage,
-          checkoutRequestId: stk.CheckoutRequestID,
-        },
-        raw: stk,
-      };
+      const provider: MobileMoneyProvider =
+        upper === 'MPESA' ? 'MPESA' : (mobileMoneyProvider ?? 'MPESA');
+
+      // ── M-Pesa (Safaricom STK push) ────────────────────────
+      if (provider === 'MPESA') {
+        const { mpesaService } = await import('./mpesaService.js');
+        if (!mpesaService.isConfigured()) {
+          throw new AppError(
+            'M-Pesa is not configured. Please contact support.',
+            503,
+          );
+        }
+        const stk = await mpesaService.initiateSTKPush({
+          phoneNumber: customerPhone,
+          amount,
+          accountReference: sale.receiptNumber,
+          transactionDesc: `Payment for ${sale.receiptNumber}`,
+          // callbackUrl intentionally omitted — the service uses
+          // `MPESA_CALLBACK_URL` and validates it before calling
+          // Safaricom.
+        });
+
+        return {
+          gateway: 'MPESA',
+          status: 'PENDING',
+          transactionId: stk.CheckoutRequestID,
+          mpesa: {
+            checkoutRequestId: stk.CheckoutRequestID,
+            customerMessage: stk.CustomerMessage,
+          },
+          nextAction: {
+            type: 'AWAIT_STK_PUSH',
+            message: stk.CustomerMessage,
+            checkoutRequestId: stk.CheckoutRequestID,
+          },
+          raw: stk,
+        };
+      }
+
+      // ── MTN MoMo / Airtel Money ────────────────────────────
+      //
+      // Both are handled by the shared `mobileMoneyService`,
+      // which dispatches internally on the provider code. The
+      // service reads credentials from env vars at construction
+      // time and exposes `isConfigured(provider)` /
+      // `initiatePayment(provider, params)`.
+      //
+      // ⚠ The `isConfigured` guard mirrors the MPESA branch above.
+      //   Without it, a missing MTN_API_KEY / MTN_USER_ID /
+      //   MTN_API_SECRET / MTN_SUBSCRIPTION_KEY throws inside the
+      //   SDK and surfaces to the client as an opaque 502 instead
+      //   of a self-explanatory 503.
+      if (provider === 'MTN' || provider === 'AIRTEL') {
+        const { mobileMoneyService } = await import(
+          './mobileMoneyService.js'
+        );
+
+        if (
+          typeof (mobileMoneyService as any).isConfigured === 'function' &&
+          !(mobileMoneyService as any).isConfigured(provider)
+        ) {
+          throw new AppError(
+            `${provider} is not configured. Please contact support.`,
+            503,
+          );
+        }
+
+        const result = await mobileMoneyService.initiatePayment(
+          provider,
+          {
+            phoneNumber: customerPhone,
+            amount,
+            currency,
+            reference: sale.receiptNumber,
+            description: `Payment for ${sale.receiptNumber}`,
+            // `callbackUrl` is omitted so the service falls back to
+            // its env-configured URL (`MTN_CALLBACK_URL` or
+            // `AIRTEL_CALLBACK_URL`).
+            metadata: {
+              saleId: sale.id,
+              paymentId: payment.id,
+              userId: sale.userId,
+            },
+          },
+        );
+
+        return {
+          gateway: provider,
+          status: result.status || 'PENDING',
+          transactionId: result.transactionId || result.reference,
+          nextAction: {
+            type: 'AWAIT_STK_PUSH',
+            message:
+              result.message ||
+              `Approve the payment request on your ${provider} phone.`,
+            checkoutRequestId:
+              result.transactionId || result.reference || sale.receiptNumber,
+          },
+          raw: result,
+        };
+      }
+
+      throw new AppError(
+        `Unsupported mobile money provider: ${provider}`,
+        400,
+      );
     }
 
     // ── PayPal ──────────────────────────────────────────────

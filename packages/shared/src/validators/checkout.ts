@@ -1,8 +1,11 @@
+// packages/shared/src/validators/checkout.ts
+
 import {
   addCheckoutItemSchema,
   applyDiscountSchema,
   cancelCheckoutSchema,
   createCheckoutSchema,
+  onlineCheckoutSchema,          // ← new
   emailReceiptSchema,
   exportCheckoutsSchema,
   getCheckoutHistorySchema,
@@ -17,6 +20,7 @@ import {
   type ApplyDiscountInput,
   type CancelCheckoutInput,
   type CreateCheckoutInput,
+  type OnlineCheckoutInput,      // ← new
   type EmailReceiptInput,
   type ExportCheckoutsInput,
   type GetCheckoutHistoryInput,
@@ -27,11 +31,29 @@ import {
   type UpdateCheckoutItemInput,
   type UpdateCheckoutSettingsInput,
   type VoidCheckoutInput,
-} from "../schemas/checkout";
+  // ── Convenience re-exports ────────────────────────────
+  MOBILE_MONEY_PROVIDERS,        // ← new
+  DISCOUNT_TYPE_VALUES,          // ← new
+  mobileMoneyProviderSchema,     // ← new
+  type MobileMoneyProvider,      // ← new
+  type DiscountType,             // ← new
+} from "../../../shared/src/schemas/checkout";
 
 export class CheckoutValidation {
   static validateCreateCheckout(data: unknown): CreateCheckoutInput {
     return createCheckoutSchema.parse(data);
+  }
+
+  // ── NEW: online checkout validator ─────────────────────
+  //
+  // The backend `/checkout/online` route must validate against
+  // `onlineCheckoutSchema` (createCheckoutSchema minus
+  // `paidAmount`). Without this method, the controller is forced
+  // to re-declare its own schema locally — which is exactly the
+  // drift that let `mobileMoneyProvider` get stripped before it
+  // reached the service.
+  static validateOnlineCheckout(data: unknown): OnlineCheckoutInput {
+    return onlineCheckoutSchema.parse(data);
   }
 
   static validateGetCheckouts(data: unknown): GetCheckoutsInput {
@@ -92,3 +114,15 @@ export class CheckoutValidation {
     return updateCheckoutSettingsSchema.parse(data);
   }
 }
+
+// ── Re-exports ───────────────────────────────────────────
+// Consumers that want to avoid importing from the schemas file
+// directly can pull the provider/discount unions from the
+// validator barrel instead. Keeps the public surface of the
+// `validators/checkout` module a superset of what it was before.
+export {
+  MOBILE_MONEY_PROVIDERS,
+  DISCOUNT_TYPE_VALUES,
+  mobileMoneyProviderSchema,
+};
+export type { MobileMoneyProvider, DiscountType };

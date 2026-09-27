@@ -7,6 +7,39 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../lib/logger.js';
 import { z } from 'zod';
 
+// ============================================
+// SHARED SCHEMAS
+// ============================================
+//
+// The canonical checkout schemas live in the shared package so
+// every consumer (this controller, the mobile app, the web app)
+// validates against the exact same shape. This file no longer
+// re-declares them. The "MUST stay in lock-step" comments that
+// used to live here are gone — there is one source of truth.
+//
+// Imported schemas:
+//   createCheckoutSchema     offline create  (requires paidAmount)
+//   onlineCheckoutSchema     online create   (no paidAmount)
+//   voidCheckoutSchema       void reason
+//   getCheckoutsSchema       list query params
+//   addCheckoutItemSchema    add item body
+//   updateCheckoutItemSchema update quantity body
+//   applyDiscountSchema      discount code body
+//   mobileMoneyProviderSchema  MPESA | MTN | AIRTEL | undefined
+//   DISCOUNT_TYPE_VALUES     9-value discount enum
+
+import {
+  createCheckoutSchema,
+  onlineCheckoutSchema,
+  voidCheckoutSchema,
+  getCheckoutsSchema,
+  addCheckoutItemSchema,
+  updateCheckoutItemSchema,
+  applyDiscountSchema,
+  mobileMoneyProviderSchema,
+  DISCOUNT_TYPE_VALUES,
+} from '../../../shared/src/schemas/checkout.js';
+
 const checkoutService = new CheckoutService();
 const cartService = new CartService();
 
@@ -14,9 +47,12 @@ const cartService = new CartService();
 // CANONICAL PAYMENT METHODS
 // ============================================
 //
-// Mirrors `CANONICAL_PAYMENT_METHODS` in
-// `../services/checkoutService.ts` and `../routes/checkout.ts`. The
-// three must stay in sync.
+// The alias map is controller-local on purpose — the routes in
+// `../routes/checkout.ts` were written against this exact list,
+// and the shared package's `paymentMethodSchema` uses a stricter
+// canonical set. Keeping this local preserves the existing
+// alias-tolerance (CARD → CREDIT_CARD, MOBILE → MOBILE_MONEY, …)
+// without widening the shared schema.
 
 const CANONICAL_PAYMENT_METHODS = [
   'CASH',
@@ -58,145 +94,17 @@ const paymentMethodSchema = z
   });
 
 // ============================================
-// DISCOUNT TYPE
+// LOCAL ALIASES FOR UPDATED ITEM BODY
 // ============================================
 //
-// ⚠ This array MUST stay in lock-step with the `DiscountType` union
-// in `../services/checkoutService.ts`. Both now carry all 9 values.
-// If either side is ever narrowed, TS2322 will reappear at the two
-// `discountType: validatedData.discountType` callsites below.
-
-const DISCOUNT_TYPE_VALUES = [
-  'PERCENTAGE',
-  'FIXED',
-  'LOYALTY',
-  'MANUAL',
-  'BUY_X_GET_Y',
-  'FREE_SHIPPING',
-  'BOGO',
-  'BUNDLE',
-  'TIERED',
-] as const;
-
-// ============================================
-// VALIDATION SCHEMAS
-// ============================================
-//
-// ⚠ Each of these schemas MUST stay in lock-step with its counterpart
-// in `../routes/checkout.ts` and `../services/checkoutService.ts`.
-// Any drift between the three produces "Required (undefined)" 400s on
-// payloads that are actually valid.
-
-const checkoutSchema = z.object({
-  cartId: z.string().min(1, 'Cart ID is required'),
-  customerId: z.string().optional(),
-  paymentMethod: paymentMethodSchema,
-  paidAmount: z
-    .number()
-    .nonnegative('Paid amount must be zero or greater'),
-  discount: z.number().min(0, 'Discount cannot be negative').optional(),
-  notes: z.string().optional(),
-  cashRegisterId: z.string().optional(),
-  cashRegisterSessionId: z.string().optional(),
-  applyLoyaltyPoints: z.boolean().default(false),
-  businessUnitId: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().optional(),
-  customerName: z.string().optional(),
-  customerAddress: z.string().optional(),
-  idempotencyKey: z.string().uuid().optional(),
-
-  // Gateway-specific (harmless on the offline path; the service
-  // ignores what it doesn't need).
-  returnUrl: z.string().url().optional(),
-  cancelUrl: z.string().url().optional(),
-  cardNonce: z.string().optional(),
-  paymentMethodId: z.string().optional(),
-
-  // Gift-card specific. The frontend sends the code under both
-  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
-  // name); the service reads either.
-  giftCardCode: z.string().optional(),
-  gatewayId: z.string().optional(),
-
-  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
-  promotionCode: z.string().nullable().optional(),
-  promotionDiscount: z.number().min(0).optional(),
-});
-
-/**
- * Online checkout schema.
- *
- * Everything `checkoutSchema` accepts, PLUS the gateway fields:
- *   - returnUrl / cancelUrl   for redirect-based providers
- *   - cardNonce               for Square (from the Web SDK)
- *   - paymentMethodId         for server-side Stripe confirmation
- *   - giftCardCode / gatewayId for Gift Card redemption
- *
- * `paidAmount` is NOT accepted here — the amount is entirely
- * server-computed from the cart. A client that tries to send it will
- * have it silently dropped by the schema's `.strip()` behaviour.
- */
-const onlineCheckoutSchema = z.object({
-  cartId: z.string().min(1, 'Cart ID is required'),
-  customerId: z.string().optional(),
-  paymentMethod: paymentMethodSchema,
-  discount: z.number().min(0, 'Discount cannot be negative').optional(),
-  notes: z.string().optional(),
-  applyLoyaltyPoints: z.boolean().default(false),
-  businessUnitId: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().optional(),
-  customerName: z.string().optional(),
-  customerAddress: z.string().optional(),
-  idempotencyKey: z.string().uuid().optional(),
-
-  // Gateway-specific
-  returnUrl: z.string().url().optional(),
-  cancelUrl: z.string().url().optional(),
-  cardNonce: z.string().optional(),
-  paymentMethodId: z.string().optional(),
-
-  // Gift-card specific. The frontend sends the code under both
-  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
-  // name); the service reads either.
-  giftCardCode: z.string().optional(),
-  gatewayId: z.string().optional(),
-
-  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
-  promotionCode: z.string().nullable().optional(),
-  promotionDiscount: z.number().min(0).optional(),
-});
-
-const voidCheckoutSchema = z.object({
-  reason: z.string().optional(),
-});
-
-const getCheckoutsSchema = z.object({
-  page: z.string().optional().default('1'),
-  limit: z.string().optional().default('20'),
-  status: z.string().optional(),
-  paymentStatus: z.string().optional(),
-  customerId: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-  search: z.string().optional(),
-  sortBy: z.string().optional().default('saleDate'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-});
-
-const addItemSchema = z.object({
-  productId: z.string().min(1, 'Product ID is required'),
-  variantId: z.string().optional(),
-  quantity: z.number().int().positive('Quantity must be positive'),
-});
+// `updateCheckoutItemSchema` from the shared package only
+// validates `quantity`. The controller additionally accepts a
+// bare integer body for backwards compatibility with older
+// clients that posted `{ "quantity": 3 }` without the wrapper.
+// We reuse the shared schema's quantity validator.
 
 const updateItemSchema = z.object({
   quantity: z.number().int().positive(),
-});
-
-const discountSchema = z.object({
-  code: z.string().min(1, 'Discount code is required'),
 });
 
 // ============================================
@@ -303,6 +211,18 @@ function normalizeCheckoutBody(body: any) {
     giftCardCode: b.giftCardCode ?? b.gift_card_code ?? undefined,
     gatewayId: b.gatewayId ?? b.gateway_id ?? undefined,
 
+    // Mobile-money provider selector. Normalize the value to
+    // uppercase so a lowercase `'mtn'` still validates.
+    mobileMoneyProvider: (() => {
+      const raw =
+        b.mobileMoneyProvider ??
+        b.mobile_money_provider ??
+        undefined;
+      if (raw === undefined || raw === null) return undefined;
+      if (typeof raw !== 'string') return raw;
+      return raw.trim().toUpperCase();
+    })(),
+
     // Promotion / loyalty passthrough
     discountType: b.discountType ?? b.discount_type ?? undefined,
     promotionCode: b.promotionCode ?? b.promotion_code ?? undefined,
@@ -385,7 +305,7 @@ export const checkoutController = {
         });
       }
 
-      const validatedData = checkoutSchema.parse(normalized);
+      const validatedData = createCheckoutSchema.parse(normalized);
 
       const cart = await cartService.getCartById(validatedData.cartId);
       if (!cart) throw new AppError('Cart not found', 404);
@@ -451,8 +371,10 @@ export const checkoutController = {
   //   server-computed from the cart + product prices + loyalty.
   //
   // ⚠ On gateway failure the sale is marked CANCELLED, inventory is
-  //   restored, and the response is a 502 with the gateway's error
-  //   message.
+  //   restored, and the service re-throws with the provider's own
+  //   status code and message. This controller forwards that status
+  //   verbatim — see the catch block. A missing MTN credential now
+  //   surfaces as a clean 503 rather than an opaque 502.
   //
   // ── Idempotency semantics ──────────────────────────────────
   //
@@ -468,10 +390,6 @@ export const checkoutController = {
   // a new key and retry". The frontend must NOT show the
   // awaiting-confirmation screen for a CANCELLED sale — the user
   // would be stuck waiting for a callback that will never come.
-  //
-  // Before this fix the branch returned 201 with `nextAction:
-  // OFFLINE` for CANCELLED sales too, which produced exactly that
-  // stuck UX. See the `CANCELLED` handling below.
 
   async createOnlineCheckout(
     req: Request,
@@ -542,6 +460,12 @@ export const checkoutController = {
           giftCardCode: validatedData.giftCardCode,
           gatewayId: validatedData.gatewayId,
 
+          // Mobile-money provider selector. Forwarded so the
+          // service routes to the right provider handler
+          // (MPESA / MTN / AIRTEL). When absent, the service
+          // defaults to M-Pesa.
+          mobileMoneyProvider: validatedData.mobileMoneyProvider,
+
           // Promotion / loyalty passthrough
           discountType: validatedData.discountType ?? null,
           promotionCode: validatedData.promotionCode ?? null,
@@ -564,12 +488,6 @@ export const checkoutController = {
       //      callback that will never arrive. Return 409 instead
       //      and let the frontend prompt a retry with a fresh
       //      key.
-      //
-      // We can't easily tell "did the service short-circuit?"
-      // from the response shape alone, so we rely on the Sale's
-      // status: if the incoming request supplied an idempotency
-      // key AND the resulting sale is CANCELLED, this was a
-      // replay of a failed attempt.
       if (
         validatedData.idempotencyKey &&
         result.sale?.status === 'CANCELLED'
@@ -608,16 +526,16 @@ export const checkoutController = {
         });
       }
 
-      // Gateway failures surface as 5xx so the frontend can retry
-      // without treating it as a client error.
+      // ── Status-code passthrough ──────────────────────────
       //
-      // ⚠ `AppError` in this codebase exposes its status code as
-      //   `status` (see `../middleware/errorHandler.ts`), NOT
-      //   `statusCode`. Axios / Stripe SDK errors may use
-      //   `statusCode` or `response.status`. `getErrorStatusCode`
-      //   handles all three shapes.
+      // `AppError` exposes its status as `status`; axios / Stripe
+      // SDK errors use `statusCode` or `response.status`.
+      // `getErrorStatusCode` handles all three. Preserving the
+      // status is what lets a clean 503 ("MTN is not configured")
+      // reach the frontend as a 503 instead of being flattened to
+      // a generic 502 by the fallback below.
       const statusCode = getErrorStatusCode(error);
-      if (typeof statusCode === 'number' && statusCode >= 500) {
+      if (typeof statusCode === 'number') {
         return res.status(statusCode).json({
           success: false,
           message:
@@ -627,12 +545,18 @@ export const checkoutController = {
         });
       }
 
-      // Map specific gateway error hints to 502
+      // ── Narrow 502 fallback ──────────────────────────────
+      //
+      // Only errors that explicitly announce themselves as
+      // gateway failures AND carry no status code land here.
+      // The previous `message.includes('gateway')` check was too
+      // broad — it matched the word "gateway" anywhere, including
+      // in legible 4xx messages. Restricted to the two exact
+      // prefixes the service throws.
       const message: string = error?.message ?? '';
       if (
         message.startsWith('Payment gateway error') ||
-        message.includes('did not return') ||
-        message.includes('gateway')
+        message.includes('did not return')
       ) {
         return res.status(502).json({
           success: false,
@@ -1065,7 +989,7 @@ export const checkoutController = {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      const data = addItemSchema.parse(req.body);
+      const data = addCheckoutItemSchema.parse(req.body);
 
       if (!id) throw new AppError('Checkout ID is required', 400);
       if (!userId) throw new AppError('User ID is required', 400);
@@ -1097,7 +1021,15 @@ export const checkoutController = {
     try {
       const { id, itemId } = req.params;
       const userId = getUserId(req);
-      const data = updateItemSchema.parse(req.body);
+
+      // Prefer the local `updateItemSchema` (which accepts a bare
+      // integer body) but fall back to the shared
+      // `updateCheckoutItemSchema` if the caller posted the wrapper
+      // shape. Both produce the same `{ quantity }` output.
+      const data =
+        req.body && typeof req.body.quantity === 'number'
+          ? updateItemSchema.parse(req.body)
+          : updateCheckoutItemSchema.parse(req.body);
 
       if (!id || !itemId) {
         throw new AppError('Checkout ID and Item ID are required', 400);
@@ -1162,7 +1094,7 @@ export const checkoutController = {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      const data = discountSchema.parse(req.body);
+      const data = applyDiscountSchema.parse(req.body);
 
       if (!id) throw new AppError('Checkout ID is required', 400);
       if (!userId) throw new AppError('User ID is required', 400);
