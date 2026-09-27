@@ -43,3 +43,6 @@ redundant_migrations/
 *.bak.*
 pnpm-lock.yaml.bak*
 
+
+# Prisma generated client
+packages/backend/src/generated/prisma/
