@@ -238,7 +238,6 @@ async function updateSalePaymentStatus(saleId: string) {
       paidAmount: totalPaid,
       paymentStatus: totalPaid >= sale.total ? 'PAID' : 'PARTIAL',
       status: status as any,
-      updatedAt: new Date(),
     },
   });
 }
@@ -257,7 +256,6 @@ async function updateOrderPaymentStatus(orderId: string) {
   await prisma.order.update({
     where: { id: orderId },
     data: {
-      paymentStatus: totalPaid >= order.total ? 'PAID' : 'PARTIAL',
       status: status as any,
       updatedAt: new Date(),
     },
@@ -274,7 +272,7 @@ async function updateInventoryAfterSale(saleId: string) {
       await prisma.inventory.updateMany({
         where: {
           product: { id: item.productId },
-          variantId: item.variantId || null,
+          variant: { is: { id: item.variantId || '' } },
         },
         data: {
           quantity: { decrement: item.quantity },

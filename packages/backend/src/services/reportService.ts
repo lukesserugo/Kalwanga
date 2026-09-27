@@ -602,7 +602,6 @@ export class ReportService extends BaseService {
           orderBy: { generatedAt: 'desc' },
           include: {
             user: { select: { id: true, firstName: true, lastName: true } },
-            businessUnit: { select: { id: true, name: true } },
           },
         }),
         this.prisma.report.count({ where }),
@@ -633,7 +632,6 @@ export class ReportService extends BaseService {
         where: { id },
         include: {
           user: { select: { id: true, firstName: true, lastName: true } },
-          businessUnit: { select: { id: true, name: true } },
         },
       });
 

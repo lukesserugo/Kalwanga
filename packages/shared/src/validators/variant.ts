@@ -9,7 +9,7 @@ import {
   type UpdateVariantInput,
   type UpdateVariantStockInput,
   type VariantQueryInput,
-} from "../schemas/product";
+} from "../../../shared/src/schemas/product";
 
 export class VariantValidation {
   static validateCreateVariant(data: unknown): CreateVariantInput {

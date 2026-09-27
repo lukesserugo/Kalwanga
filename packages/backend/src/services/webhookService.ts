@@ -20,7 +20,6 @@ export class WebhookService {
       data: {
         status: 'PAID',
         processedAt: new Date(),
-        customerId: paymentIntent.customer || undefined,
         gatewayId: paymentIntent.payment_method || undefined,
       },
     });

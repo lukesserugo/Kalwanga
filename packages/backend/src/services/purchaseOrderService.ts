@@ -452,13 +452,9 @@ export class PurchaseOrderService extends BaseService {
             supplierId: data.supplierId,
             status: 'PENDING',
             priority: data.priority || 'MEDIUM',
-            subtotal,
-            tax,
             total,
             notes: data.notes,
             expectedDelivery: data.expectedDelivery,
-            paymentTerms: data.paymentTerms,
-            shippingAddress: data.shippingAddress,
             businessUnitId: data.businessUnitId,
             userId: data.userId,
           },
@@ -669,8 +665,6 @@ export class PurchaseOrderService extends BaseService {
           data: {
             status: 'CANCELLED',
             cancelledAt: new Date(),
-            cancelledBy: userId,
-            cancelReason: reason || 'No reason provided',
             notes: po.notes
               ? `${po.notes}\nCancelled: ${reason || 'No reason provided'}`
               : `Cancelled: ${reason || 'No reason provided'}`,
@@ -763,11 +757,7 @@ export class PurchaseOrderService extends BaseService {
           }
 
           let inventory = await tx.inventory.findFirst({
-            where: {
-              productId: poItem.productId,
-              variantId: poItem.variantId || null,
-              businessUnitId,
-            },
+            where: { product: { is: { id: poItem.productId } }, businessUnitId },
           });
 
           let inventoryId: string;
@@ -777,7 +767,6 @@ export class PurchaseOrderService extends BaseService {
               where: { id: inventory.id },
               data: {
                 quantity: { increment: received.quantity },
-                lastUpdated: new Date(),
               },
             });
             inventoryId = updatedInventory.id;
@@ -788,8 +777,6 @@ export class PurchaseOrderService extends BaseService {
 
             const newInventory = await tx.inventory.create({
               data: {
-                productId: poItem.productId,
-                variantId: poItem.variantId || null,
                 businessUnitId,
                 quantity: received.quantity,
                 reserved: 0,
@@ -804,16 +791,15 @@ export class PurchaseOrderService extends BaseService {
           await tx.inventoryTransaction.create({
             data: {
               transactionType: 'PURCHASE' as any,
+              productId: poItem.productId,
               quantity: received.quantity,
               notes: `Received from PO ${po.orderNumber}${received.notes ? ` - ${received.notes}` : ''}`,
               reference: po.orderNumber,
-              productId: poItem.productId,
-              variantId: poItem.variantId || null,
               inventoryId,
               businessUnitId,
               userId,
               purchaseOrderId: po.id,
-              transactionDate: new Date(),
+              createdAt: new Date(),
             },
           });
 

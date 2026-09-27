@@ -998,6 +998,7 @@ model Order {
   id             String       @id @default(cuid())
   orderNumber    String       @unique
   status         OrderStatus  @default(PENDING)
+  vpaymentStatus  PaymentStatus @default(PENDING) 
   subtotal       Float
   tax            Float        @default(0)
   discount       Float        @default(0)
@@ -1049,6 +1050,8 @@ model Sale {
   promotionDiscount     Float                  @default(0)
   loyaltyPointsUsed     Int                    @default(0)
   loyaltyDiscount       Float                  @default(0)
+  paymentStatus PaymentStatus @default(UNPAID)
+  cancelledAt   DateTime?
 
   total                 Float
   paidAmount            Float
@@ -1487,6 +1490,8 @@ model PurchaseOrder {
   orderNumber           String                 @unique
   supplierId            String
   status                PurchaseOrderStatus    @default(DRAFT)
+  priority    String    @default("MEDIUM")   
+  cancelledAt DateTime?   
   total                 Float
   notes                 String?
   expectedDelivery      DateTime?
@@ -2079,6 +2084,7 @@ enum ReceiptType {
 }
 
 enum PaymentStatus {
+  UNPAID
   PENDING
   PAID
   FAILED
@@ -2300,6 +2306,9 @@ enum NotificationType {
   PURCHASE_ORDER
   SHIFT
   RECEIPT
+  EMAIL
+  SMS
+  PUSH
 }
 
 enum NotificationPriority {

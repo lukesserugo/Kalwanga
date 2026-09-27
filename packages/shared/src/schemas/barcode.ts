@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema, productIdSchema } from "../helpers";
+import { businessUnitIdSchema, productIdSchema } from "../helpers.js";
 
 export const generateBarcodeSchema = z.object({
   prefix: z.string().optional().default('PRD'),

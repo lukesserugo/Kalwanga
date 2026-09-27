@@ -8,44 +8,46 @@ import {
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
 import { prisma } from '../lib/prisma.js';
+import { z } from 'zod';
+
 import {
   createProductSchema,
   updateProductSchema,
-  searchParamsSchema,
-  createCategorySchema,
-  updateCategorySchema,
-  createSupplierSchema,
-  updateSupplierSchema,
+  createVariantSchema,
+  updateVariantSchema,
+  bulkCreateVariantsSchema,
   createProductReviewSchema,
   bulkCreateProductsSchema,
   bulkDeleteProductsSchema,
   bulkActivateProductsSchema,
   bulkDeactivateProductsSchema,
   bulkUpdatePricesSchema,
+} from '../../../shared/src/schemas/product.js';
+
+import { searchParamsSchema } from '../../../shared/src/schemas/report.js';
+
+import {
+  createCategorySchema,
+  updateCategorySchema,
+} from '../../../shared/src/schemas/category.js';
+
+import {
+  createSupplierSchema,
+  updateSupplierSchema,
+} from '../../../shared/src/schemas/supplier.js';
+
+import {
   generateBarcodeSchema,
   associateBarcodeSchema,
   validateBarcodeSchema,
-  createVariantSchema,
-  updateVariantSchema,
-  bulkCreateVariantsSchema,
-} from '../utils/validators.js';
-import { z } from 'zod';
+} from '../../../shared/src/schemas/barcode.js';
 
-// ✅ Inventory invariant helpers
 import {
   ensureProductInventory,
   ensureVariantInventory,
 } from '../lib/ensureInventory.js';
 
 const productService = new ProductService();
-
-// ============================================
-// ID VALIDATION
-// ============================================
-//
-// Same rules every other controller in this codebase uses. Static
-// route segments (e.g. "featured", "search", "variants") are rejected
-// so they never reach the service as an :id.
 
 const RESERVED_IDS = new Set([
   'users',
@@ -115,10 +117,6 @@ function assertValidId(id: string, label = 'ID'): void {
   }
 }
 
-// ============================================
-// SEARCH SCHEMA
-// ============================================
-
 const productSearchSchema = searchParamsSchema.extend({
   categoryId: z.string().optional(),
   businessUnitId: z.string().optional(),
@@ -133,25 +131,6 @@ const productSearchSchema = searchParamsSchema.extend({
   sortBy: z.string().optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
 });
-
-type ProductSearchParams = z.infer<typeof productSearchSchema>;
-
-// ============================================
-// BUSINESS UNIT RESOLUTION
-// ============================================
-//
-// ✅ Hardened: every candidate source is validated against the
-// database before being accepted. The first valid candidate wins. If
-// NONE is valid, we log loudly and fall back to the most recent active
-// business unit so a fresh install still works — but the fallback is
-// always visible in the logs, never silent.
-//
-// Priority (highest to lowest):
-//   1. `x-business-unit-id` header   — set by the frontend on writes
-//   2. `req.body.businessUnitId`     — carried on POST/PUT bodies
-//   3. `req.query.businessUnitId`    — carried on GET requests
-//   4. The authenticated user's BU   — from the verified JWT
-//   5. The most recent active BU     — last-resort fallback
 
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
@@ -212,8 +191,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
     );
   }
 
-  // Last resort — pick the most recent active BU. Keeps fresh
-  // installs working, but logs loudly so the fallback is visible.
   const fallback = await prisma.businessUnit.findFirst({
     where: { isActive: true },
     orderBy: { createdAt: 'desc' },
@@ -228,8 +205,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
     return fallback.id;
   }
 
-  // Nothing exists — bootstrap a company + BU so the request can
-  // proceed in a genuinely fresh install.
   let company = await prisma.company.findFirst();
   if (!company) {
     company = await prisma.company.create({
@@ -257,10 +232,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
   return newBusinessUnit.id;
 }
 
-/**
- * Try the header/body hint first. If it's a valid BU, use it. If not,
- * fall through to the full `getBusinessUnitId` chain.
- */
 async function resolveBusinessUnitHint(
   req: Request
 ): Promise<string | null> {
@@ -286,10 +257,6 @@ async function resolveBusinessUnitHint(
   );
   return null;
 }
-
-// ============================================
-// USER / COMPANY RESOLUTION
-// ============================================
 
 function getUserId(req: Request): string {
   const user = (req as any).user;
@@ -322,13 +289,6 @@ function getCompanyId(req: Request): string {
   return companyId;
 }
 
-// ============================================
-// SMALL HELPERS
-// ============================================
-
-/**
- * Narrow an `unknown` catch variable into a typed Error safely.
- */
 function toError(err: unknown): Error {
   if (err instanceof Error) return err;
   if (typeof err === 'string') return new Error(err);
@@ -379,13 +339,6 @@ function convertToCSV(data: any[]): string {
   return [headers.join(','), ...rows].join('\n');
 }
 
-/**
- * Normalize a category input that may arrive as:
- *   - a string (id or name)
- *   - an object `{ id }`
- *   - a legacy `category_id` alias
- * Returns `undefined` for empty/sentinel values.
- */
 function resolveCategoryIdInput(raw: any): string | undefined {
   if (raw === undefined || raw === null) return undefined;
 
@@ -408,18 +361,14 @@ function resolveCategoryIdInput(raw: any): string | undefined {
   return undefined;
 }
 
-/**
- * Sanitize the raw request body into a shape the product service
- * expects.
- */
 function sanitizeProductData(data: any, businessUnitId: string): any {
-  const name = data.name?.trim() || data.productName?.trim();
+  const name = String(data.name ?? data.productName ?? '').trim();
   if (!name) {
     throw new AppError('Product name is required', 400);
   }
 
-  let sku = data.sku?.trim()?.toUpperCase();
-  if (!sku || sku === 'SKU' || sku.trim() === '') {
+  let sku = String(data.sku ?? '').trim().toUpperCase();
+  if (!sku || sku === 'SKU') {
     sku = productService.generateProductSKU(name);
     console.log(`✅ Auto-generated SKU: ${sku}`);
   }
@@ -431,9 +380,8 @@ function sanitizeProductData(data: any, businessUnitId: string): any {
   const unitPrice = data.unitPrice ?? data.price ?? 0;
   const costPrice = data.costPrice ?? data.productCostPrice ?? unitPrice;
   const stock = data.stock ?? data.initialStock ?? 0;
-  const location = (data.location || 'Warehouse').trim() || 'Warehouse';
+  const location = String(data.location ?? 'Warehouse').trim() || 'Warehouse';
 
-  // ── Images ─────────────────────────────────────────
   let images: string[] = Array.isArray(data.images) ? data.images : [];
   const MAX_IMAGES = 10;
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -461,7 +409,6 @@ function sanitizeProductData(data: any, businessUnitId: string): any {
     });
   }
 
-  // ── Tags ───────────────────────────────────────────
   let tags: string[] = [];
   if (Array.isArray(data.tags)) {
     tags = data.tags.filter(
@@ -474,7 +421,6 @@ function sanitizeProductData(data: any, businessUnitId: string): any {
       .filter(Boolean);
   }
 
-  // ── Variants ───────────────────────────────────────
   let variants: any[] = Array.isArray(data.variants) ? data.variants : [];
   variants = variants.map((variant: any, index: number) => {
     let variantImages: string[] = Array.isArray(variant.images)
@@ -498,7 +444,7 @@ function sanitizeProductData(data: any, businessUnitId: string): any {
       ...variant,
       sku:
         variant.sku && variant.sku !== 'SKU'
-          ? variant.sku.toUpperCase()
+          ? String(variant.sku).toUpperCase()
           : productService.generateVariantSKU(
               name,
               variant.name || `VAR${index + 1}`
@@ -553,13 +499,6 @@ function handleZodError(error: z.ZodError, res: Response) {
   });
 }
 
-// ============================================
-// PRISMA ERROR HANDLER
-// ============================================
-
-/**
- * Extract a printable form of Prisma's `meta.target`.
- */
 function formatPrismaTarget(target: unknown): string {
   if (!target) return 'field';
   if (typeof target === 'string') return target;
@@ -704,15 +643,7 @@ function handlePrismaError(error: unknown, res: Response) {
   return null;
 }
 
-// ============================================
-// PRODUCT CONTROLLER
-// ============================================
-
 export const productController = {
-  // ============================================
-  // PRODUCT CRUD
-  // ============================================
-
   async getAllProducts(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -1059,19 +990,6 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // CREATE PRODUCT
-  // ============================================
-  //
-  // The BU is resolved from:
-  //   1. the `x-business-unit-id` header (frontend sets it explicitly)
-  //   2. `body.businessUnitId`
-  //   3. the full getBusinessUnitId(req) fallback chain
-  //
-  // After resolving, we validate the BU exists and is active BEFORE
-  // building the create payload — this is what turns a stale ID into
-  // an early, clear 400 instead of a Prisma FK error.
-
   async createProduct(req: Request, res: Response, _next: NextFunction) {
     try {
       console.log('📝 [createProduct] ========== START ==========');
@@ -1086,7 +1004,7 @@ export const productController = {
         });
       }
 
-      const name = body.name?.trim() || body.productName?.trim();
+      const name = String(body.name ?? body.productName ?? '').trim();
 
       if (!name) {
         return res.status(400).json({
@@ -1096,7 +1014,6 @@ export const productController = {
         });
       }
 
-      // ── 1. Resolve the business unit ────────────────────────────
       let businessUnitId: string;
       try {
         const hint = await resolveBusinessUnitHint(req);
@@ -1108,7 +1025,6 @@ export const productController = {
         });
       }
 
-      // ── 2. Confirm the BU exists and is active ──────────────────
       const bu = await prisma.businessUnit.findUnique({
         where: { id: businessUnitId },
         select: { id: true, isActive: true },
@@ -1120,7 +1036,6 @@ export const productController = {
         });
       }
 
-      // ── 3. Resolve the acting user ──────────────────────────────
       let userId: string;
       try {
         userId = getUserId(req);
@@ -1137,20 +1052,17 @@ export const productController = {
           userId = existingUser.id;
         }
       } catch {
-        /* fall through — service will resolve */
+        /* fall through */
       }
 
-      // ── 4. Resolve category + SKU ───────────────────────────────
       const categoryId = resolveCategoryIdInput(
         body.categoryId ?? body.category ?? body.category_id
       );
 
       console.log(`🔍 Category ID resolved: "${categoryId ?? 'none'}"`);
 
-      let sku =
-        body.sku?.trim()?.toUpperCase() ||
-        body.productSku?.trim()?.toUpperCase();
-      if (!sku || sku === 'SKU' || sku.trim() === '') {
+      let sku = String(body.sku ?? body.productSku ?? '').trim().toUpperCase();
+      if (!sku || sku === 'SKU') {
         sku = productService.generateProductSKU(name);
         console.log(`✅ Auto-generated SKU: ${sku}`);
       }
@@ -1168,24 +1080,19 @@ export const productController = {
       const maxStock = body.maxStock ? Number(body.maxStock) : undefined;
       const tags = Array.isArray(body.tags) ? body.tags : [];
       const images = Array.isArray(body.images) ? body.images : [];
-      const notes = body.notes?.trim();
+      const notes = body.notes ? String(body.notes).trim() : undefined;
       const seo = body.seo || {};
       const variants = Array.isArray(body.variants) ? body.variants : [];
       const inventoryId = body.inventoryId;
 
       const stock = body.stock ?? body.initialStock ?? 0;
-      const location = (body.location || 'Warehouse').trim() || 'Warehouse';
+      const location = String(body.location ?? 'Warehouse').trim() || 'Warehouse';
 
       console.log(`📸 Images received: ${images.length} images`);
       console.log(
         `📦 Stock/initialStock resolved: ${stock}, location: ${location}`
       );
 
-      // ── 5. From inventory: idempotent create-or-update ──────────
-      //
-      //    The service returns `Product & { action }`. We use the
-      //    action to pick the HTTP status — no more 400 on the
-      //    second save of the same inventory row.
       if (inventoryId) {
         assertValidId(inventoryId, 'inventory ID');
 
@@ -1206,8 +1113,6 @@ export const productController = {
           });
         }
 
-        // Reconcile inventory for the product (and any variants).
-        // Failure here is non-fatal — the product exists either way.
         try {
           await prisma.$transaction(async (tx) =>
             ensureProductInventory(tx, product.id, businessUnitId)
@@ -1219,7 +1124,6 @@ export const productController = {
           );
         }
 
-        // `action` is part of the service's return type now — no cast.
         const isUpdate = product.action === 'updated';
 
         console.log(
@@ -1237,7 +1141,6 @@ export const productController = {
         });
       }
 
-      // ── 6. Fresh product (no inventoryId) ───────────────────────
       const productData: ProductCreateData = {
         name,
         sku,
@@ -1284,7 +1187,6 @@ export const productController = {
         });
       }
 
-      // Reconcile inventory for the product and every created variant.
       try {
         await prisma.$transaction(async (tx) => {
           await ensureProductInventory(tx, product.id, businessUnitId);
@@ -1345,57 +1247,92 @@ export const productController = {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      const data = updateProductSchema.parse(req.body);
+      const data = updateProductSchema.parse(req.body) as any;
 
       assertValidId(id, 'product ID');
 
       const updateData: Record<string, unknown> = {};
 
-      if (data.name !== undefined) updateData.name = data.name?.trim();
-      if (data.description !== undefined)
-        updateData.description = data.description?.trim() ?? null;
-      if (data.sku !== undefined)
-        updateData.sku = data.sku?.trim()?.toUpperCase();
-      if (data.barcode !== undefined)
-        updateData.barcode = data.barcode?.trim() ?? null;
-      if (data.unitPrice !== undefined)
+      if (data.name !== undefined) {
+        updateData.name = String(data.name).trim();
+      }
+      if (data.description !== undefined) {
+        const s = String(data.description).trim();
+        updateData.description = s.length > 0 ? s : null;
+      }
+      if (data.sku !== undefined) {
+        updateData.sku = String(data.sku).trim().toUpperCase();
+      }
+      if (data.barcode !== undefined) {
+        const s = String(data.barcode).trim();
+        updateData.barcode = s.length > 0 ? s : null;
+      }
+      if (data.notes !== undefined) {
+        const s = String(data.notes).trim();
+        updateData.notes = s.length > 0 ? s : null;
+      }
+      if (data.location !== undefined) {
+        updateData.location = String(data.location);
+      }
+
+      if (data.unitPrice !== undefined) {
         updateData.unitPrice = Number(data.unitPrice);
+      }
       if (data.price !== undefined && data.unitPrice === undefined) {
         updateData.unitPrice = Number(data.price);
       }
-      if (data.costPrice !== undefined)
+      if (data.costPrice !== undefined) {
         updateData.costPrice = Number(data.costPrice);
-      if (data.taxRate !== undefined) updateData.taxRate = Number(data.taxRate);
-      if (data.minStock !== undefined)
+      }
+      if (data.taxRate !== undefined) {
+        updateData.taxRate = Number(data.taxRate);
+      }
+      if (data.minStock !== undefined) {
         updateData.minStock = Number(data.minStock);
-      if (data.maxStock !== undefined)
-        updateData.maxStock = data.maxStock === null ? null : Number(data.maxStock);
-      if (data.isActive !== undefined) updateData.isActive = data.isActive;
-      if (data.isDigital !== undefined) updateData.isDigital = data.isDigital;
-      if (data.featured !== undefined) updateData.featured = data.featured;
-      if (data.weight !== undefined)
+      }
+      if (data.maxStock !== undefined) {
+        updateData.maxStock =
+          data.maxStock === null ? null : Number(data.maxStock);
+      }
+      if (data.weight !== undefined) {
         updateData.weight = data.weight ? Number(data.weight) : null;
-      if (data.dimensions !== undefined)
-        updateData.dimensions = data.dimensions;
+      }
+
+      if (data.isActive !== undefined) {
+        updateData.isActive = Boolean(data.isActive);
+      }
+      if (data.isDigital !== undefined) {
+        updateData.isDigital = Boolean(data.isDigital);
+      }
+      if (data.featured !== undefined) {
+        updateData.featured = Boolean(data.featured);
+      }
+
+      if (data.dimensions !== undefined) updateData.dimensions = data.dimensions;
       if (data.images !== undefined) updateData.images = data.images;
-      if (data.attributes !== undefined)
-        updateData.attributes = data.attributes;
-      if (data.notes !== undefined) updateData.notes = data.notes?.trim() ?? null;
+      if (data.attributes !== undefined) updateData.attributes = data.attributes;
       if (data.tags !== undefined) updateData.tags = data.tags;
       if (data.seo !== undefined) updateData.seo = data.seo;
 
-      if (data.categoryId !== undefined)
-        updateData.categoryId = data.categoryId;
-      if (data.category !== undefined && data.categoryId === undefined) {
-        updateData.categoryId = data.category;
+      if (data.categoryId !== undefined) {
+        updateData.categoryId =
+          data.categoryId === null ? null : String(data.categoryId);
+      } else if (data.category !== undefined) {
+        updateData.categoryId =
+          data.category === null ? null : String(data.category);
       }
-      if (data.supplierId !== undefined)
-        updateData.supplierId = data.supplierId;
-      if (data.supplier !== undefined && data.supplierId === undefined) {
-        updateData.supplierId = data.supplier;
+
+      if (data.supplierId !== undefined) {
+        updateData.supplierId =
+          data.supplierId === null ? null : String(data.supplierId);
+      } else if (data.supplier !== undefined) {
+        updateData.supplierId =
+          data.supplier === null ? null : String(data.supplier);
       }
-      if (data.location !== undefined) updateData.location = data.location;
-      if (data.variants !== undefined) updateData.variants = data.variants;
+
+      if (data.variants !== undefined) {
+        updateData.variants = data.variants;
+      }
 
       const product = await productService.updateProduct(id, updateData, userId);
 
@@ -1505,10 +1442,6 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // BULK OPERATIONS
-  // ============================================
-
   async bulkActivateProducts(req: Request, res: Response, next: NextFunction) {
     try {
       const { productIds } = req.body;
@@ -1567,16 +1500,21 @@ export const productController = {
 
   async bulkUpdatePrices(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = bulkUpdatePricesSchema.parse(req.body);
+      const data = bulkUpdatePricesSchema.parse(req.body) as any;
 
-      const invalidIds = data.updates
-        .map((u: any) => u.id)
-        .filter((id: unknown) => typeof id !== 'string' || !isValidID(id));
+      const updates = (data.updates ?? []).map((u: any) => ({
+        id: String(u.id),
+        price: Number(u.price),
+      }));
+
+      const invalidIds = updates
+        .map((u: { id: string }) => u.id)
+        .filter((id: string) => !isValidID(id));
       if (invalidIds.length > 0) {
         throw new AppError(`Invalid ID format: ${invalidIds.join(', ')}`, 400);
       }
 
-      const result = await productService.bulkUpdatePrices(data.updates);
+      const result = await productService.bulkUpdatePrices(updates);
       res.json({
         success: true,
         data: result,
@@ -1633,9 +1571,9 @@ export const productController = {
       const hint = await resolveBusinessUnitHint(req);
       const businessUnitId = hint ?? (await getBusinessUnitId(req));
       const userId = getUserId(req);
-      const data = bulkCreateProductsSchema.parse(req.body);
+      const data = bulkCreateProductsSchema.parse(req.body) as any;
 
-      const sanitizedProducts = data.products.map((product: any) =>
+      const sanitizedProducts = (data.products ?? []).map((product: any) =>
         sanitizeProductData(product, businessUnitId)
       );
 
@@ -1686,7 +1624,6 @@ export const productController = {
     }
   },
 
-
   async bulkDeleteProducts(
     req: Request,
     res: Response,
@@ -1714,7 +1651,6 @@ export const productController = {
 
       for (const id of productIds as string[]) {
         try {
-          // Hard delete via the service — the caller confirmed.
           const result = await productService.deleteProduct(id, true);
           results.push({ id, ...result });
         } catch (err: unknown) {
@@ -1745,17 +1681,13 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // BARCODE METHODS
-  // ============================================
-
   async generateBarcode(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
 
       assertValidId(id, 'product ID');
 
-      const options = generateBarcodeSchema.parse(req.body || {});
+      const options = generateBarcodeSchema.parse(req.body || {}) as any;
 
       const result = await productService.generateBarcode(id, options);
 
@@ -1775,7 +1707,7 @@ export const productController = {
 
   async generateUniqueBarcode(req: Request, res: Response, next: NextFunction) {
     try {
-      const options = generateBarcodeSchema.parse(req.body || {});
+      const options = generateBarcodeSchema.parse(req.body || {}) as any;
 
       const result = await productService.generateUniqueBarcode(options);
 
@@ -1893,7 +1825,8 @@ export const productController = {
 
       assertValidId(id, 'product ID');
 
-      const { barcode } = associateBarcodeSchema.parse(req.body);
+      const parsed = associateBarcodeSchema.parse(req.body) as any;
+      const barcode = String(parsed.barcode);
 
       const result = await productService.associateBarcode(id, barcode);
 
@@ -1913,9 +1846,12 @@ export const productController = {
 
   async validateBarcode(req: Request, res: Response, next: NextFunction) {
     try {
-      const { barcode, excludeProductId } = validateBarcodeSchema.parse(
-        req.body
-      );
+      const parsed = validateBarcodeSchema.parse(req.body) as any;
+      const barcode = String(parsed.barcode);
+      const excludeProductId =
+        parsed.excludeProductId !== undefined && parsed.excludeProductId !== null
+          ? String(parsed.excludeProductId)
+          : undefined;
 
       if (excludeProductId && !isValidID(excludeProductId)) {
         throw new AppError('Invalid excludeProductId format', 400);
@@ -1989,10 +1925,6 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // VARIANT METHODS
-  // ============================================
-
   async addVariant(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -2000,13 +1932,25 @@ export const productController = {
 
       assertValidId(id, 'product ID');
 
-      const data = createVariantSchema.parse(req.body);
+      const raw = createVariantSchema.parse(req.body) as any;
 
-      if (!data.images) {
-        data.images = [];
-      }
+      const data = {
+        name: String(raw.name ?? ''),
+        sku: raw.sku ? String(raw.sku) : undefined,
+        price: raw.price !== undefined ? Number(raw.price) : undefined,
+        costPrice:
+          raw.costPrice !== undefined ? Number(raw.costPrice) : undefined,
+        stock: raw.stock !== undefined ? Number(raw.stock) : undefined,
+        images: Array.isArray(raw.images) ? raw.images : [],
+        attributes: raw.attributes ?? {},
+        location: raw.location ? String(raw.location) : undefined,
+        isActive:
+          raw.isActive !== undefined ? Boolean(raw.isActive) : undefined,
+        barcode: raw.barcode ? String(raw.barcode) : undefined,
+        inventoryId: raw.inventoryId ? String(raw.inventoryId) : undefined,
+      };
 
-      const variant = await productService.addVariant(id, data);
+      const variant = await productService.addVariant(id, data as any);
 
       if (variant && (variant as any).id) {
         try {
@@ -2042,16 +1986,23 @@ export const productController = {
 
       assertValidId(id, 'product ID');
 
-      const data = bulkCreateVariantsSchema.parse(req.body);
+      const raw = bulkCreateVariantsSchema.parse(req.body) as any;
 
-      if (data.variants) {
-        data.variants = data.variants.map((v: any) => ({
-          ...v,
-          images: v.images || [],
-        }));
-      }
+      const variants = (raw.variants ?? []).map((v: any) => ({
+        name: String(v.name ?? ''),
+        sku: v.sku ? String(v.sku) : undefined,
+        price: v.price !== undefined ? Number(v.price) : undefined,
+        costPrice: v.costPrice !== undefined ? Number(v.costPrice) : undefined,
+        stock: v.stock !== undefined ? Number(v.stock) : undefined,
+        images: Array.isArray(v.images) ? v.images : [],
+        attributes: v.attributes ?? {},
+        location: v.location ? String(v.location) : undefined,
+        isActive: v.isActive !== undefined ? Boolean(v.isActive) : undefined,
+        barcode: v.barcode ? String(v.barcode) : undefined,
+        inventoryId: v.inventoryId ? String(v.inventoryId) : undefined,
+      }));
 
-      const result = await productService.bulkCreateVariants(id, data.variants);
+      const result = await productService.bulkCreateVariants(id, variants as any);
 
       try {
         const createdIds: string[] = (result?.results || [])
@@ -2145,8 +2096,22 @@ export const productController = {
 
       assertValidId(variantId, 'variant ID');
 
-      const data = updateVariantSchema.parse(req.body);
-      const variant = await productService.updateVariant(variantId, data);
+      const raw = updateVariantSchema.parse(req.body) as any;
+
+      const data: any = {};
+      if (raw.name !== undefined) data.name = String(raw.name);
+      if (raw.sku !== undefined) data.sku = String(raw.sku);
+      if (raw.price !== undefined) data.price = Number(raw.price);
+      if (raw.costPrice !== undefined) data.costPrice = Number(raw.costPrice);
+      if (raw.stock !== undefined) data.stock = Number(raw.stock);
+      if (raw.images !== undefined) {
+        data.images = Array.isArray(raw.images) ? raw.images : [];
+      }
+      if (raw.attributes !== undefined) data.attributes = raw.attributes;
+      if (raw.isActive !== undefined) data.isActive = Boolean(raw.isActive);
+      if (raw.barcode !== undefined) data.barcode = raw.barcode;
+
+      const variant = await productService.updateVariant(variantId, data as any);
 
       res.json({
         success: true,
@@ -2243,10 +2208,6 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // CATEGORY METHODS
-  // ============================================
-
   async getCategories(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -2311,16 +2272,22 @@ export const productController = {
     try {
       const businessUnitId = await getBusinessUnitId(req);
       const userId = getUserId(req);
-      const data = createCategorySchema.parse(req.body);
+      const raw = createCategorySchema.parse(req.body) as any;
 
       const categoryData = {
-        name: data.name,
-        description: nullToUndefined(data.description),
-        parentId: nullToUndefined(data.parentId),
+        name: String(raw.name ?? ''),
+        description:
+          raw.description !== undefined && raw.description !== null
+            ? String(raw.description)
+            : undefined,
+        parentId:
+          raw.parentId !== undefined && raw.parentId !== null
+            ? String(raw.parentId)
+            : undefined,
         businessUnitId,
         userId,
-        isActive: data.isActive ?? true,
-        featured: data.featured ?? false,
+        isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
+        featured: raw.featured !== undefined ? Boolean(raw.featured) : false,
       };
 
       const category = await productService.createCategory(categoryData);
@@ -2345,7 +2312,7 @@ export const productController = {
 
       assertValidId(id, 'category ID');
 
-      const data = updateCategorySchema.parse(req.body);
+      const raw = updateCategorySchema.parse(req.body) as any;
 
       const categoryData: {
         name?: string;
@@ -2355,13 +2322,19 @@ export const productController = {
         isActive?: boolean;
       } = {};
 
-      if (data.name !== undefined) categoryData.name = data.name;
-      if (data.description !== undefined)
-        categoryData.description = nullToUndefined(data.description);
-      if (data.parentId !== undefined)
-        categoryData.parentId = nullToUndefined(data.parentId);
-      if (data.isActive !== undefined) categoryData.isActive = data.isActive;
-      if (data.featured !== undefined) categoryData.featured = data.featured;
+      if (raw.name !== undefined) categoryData.name = String(raw.name);
+      if (raw.description !== undefined && raw.description !== null) {
+        categoryData.description = String(raw.description);
+      }
+      if (raw.parentId !== undefined && raw.parentId !== null) {
+        categoryData.parentId = String(raw.parentId);
+      }
+      if (raw.isActive !== undefined) {
+        categoryData.isActive = Boolean(raw.isActive);
+      }
+      if (raw.featured !== undefined) {
+        categoryData.featured = Boolean(raw.featured);
+      }
 
       const category = await productService.updateCategory(id, categoryData);
 
@@ -2395,10 +2368,6 @@ export const productController = {
       next(toError(err));
     }
   },
-
-  // ============================================
-  // SUPPLIER METHODS
-  // ============================================
 
   async getSuppliers(req: Request, res: Response, next: NextFunction) {
     try {
@@ -2454,17 +2423,17 @@ export const productController = {
     try {
       const companyId = getCompanyId(req);
       const userId = getUserId(req);
-      const data = createSupplierSchema.parse(req.body);
+      const raw = createSupplierSchema.parse(req.body) as any;
 
       const supplier = await productService.createSupplier({
-        name: data.name,
-        contactPerson: data.contactPerson || '',
-        email: data.email || '',
-        phone: data.phone || '',
-        address: nullToStringUndefined(data.address),
-        taxId: nullToStringUndefined(data.taxId),
-        notes: nullToStringUndefined(data.notes),
-        isActive: data.isActive !== undefined ? data.isActive : true,
+        name: String(raw.name ?? ''),
+        contactPerson: raw.contactPerson ? String(raw.contactPerson) : '',
+        email: raw.email ? String(raw.email) : '',
+        phone: raw.phone ? String(raw.phone) : '',
+        address: nullToStringUndefined(raw.address),
+        taxId: nullToStringUndefined(raw.taxId),
+        notes: nullToStringUndefined(raw.notes),
+        isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
         companyId,
         userId,
       });
@@ -2489,7 +2458,21 @@ export const productController = {
 
       assertValidId(id, 'supplier ID');
 
-      const data = updateSupplierSchema.parse(req.body);
+      const raw = updateSupplierSchema.parse(req.body) as any;
+
+      const data: any = {};
+      if (raw.name !== undefined) data.name = String(raw.name);
+      if (raw.contactPerson !== undefined)
+        data.contactPerson = String(raw.contactPerson);
+      if (raw.email !== undefined) data.email = String(raw.email);
+      if (raw.phone !== undefined) data.phone = String(raw.phone);
+      if (raw.address !== undefined)
+        data.address = raw.address === null ? null : String(raw.address);
+      if (raw.taxId !== undefined)
+        data.taxId = raw.taxId === null ? null : String(raw.taxId);
+      if (raw.notes !== undefined)
+        data.notes = raw.notes === null ? null : String(raw.notes);
+      if (raw.isActive !== undefined) data.isActive = Boolean(raw.isActive);
 
       const supplier = await productService.updateSupplier(id, data);
 
@@ -2523,10 +2506,6 @@ export const productController = {
       next(toError(err));
     }
   },
-
-  // ============================================
-  // REVIEW METHODS
-  // ============================================
 
   async getProductReviews(req: Request, res: Response, next: NextFunction) {
     try {
@@ -2633,14 +2612,17 @@ export const productController = {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      const data = createProductReviewSchema.parse(req.body);
+      const raw = createProductReviewSchema.parse(req.body) as any;
 
       assertValidId(id, 'product ID');
 
       const review = await productService.createProductReview({
-        ...data,
         productId: id,
         userId,
+        rating: Number(raw.rating),
+        title: raw.title ? String(raw.title) : undefined,
+        comment: raw.comment ? String(raw.comment) : undefined,
+        images: Array.isArray(raw.images) ? raw.images : [],
       });
 
       res.status(201).json({
@@ -2761,10 +2743,6 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // TAG & SEARCH
-  // ============================================
-
   async getTags(req: Request, res: Response, next: NextFunction) {
     try {
       const businessUnitId = await getBusinessUnitId(req);
@@ -2821,10 +2799,6 @@ export const productController = {
       next(toError(err));
     }
   },
-
-  // ============================================
-  // WISHLIST
-  // ============================================
 
   async toggleWishlist(req: Request, res: Response, next: NextFunction) {
     try {
@@ -2916,10 +2890,6 @@ export const productController = {
     }
   },
 
-  // ============================================
-  // COMPARE
-  // ============================================
-
   async compareProducts(req: Request, res: Response, next: NextFunction) {
     try {
       const { productIds } = req.body;
@@ -2940,10 +2910,6 @@ export const productController = {
       next(toError(err));
     }
   },
-
-  // ============================================
-  // EXPORT / IMPORT
-  // ============================================
 
   async exportProducts(req: Request, res: Response, next: NextFunction) {
     try {
@@ -3059,9 +3025,6 @@ export const productController = {
     }
   },
 
-    // ─────────────────────────────────────────────────────────
-  // PUBLIC: single product by id
-  // ─────────────────────────────────────────────────────────
   async getPublicProductById(
     req: Request,
     res: Response,
@@ -3073,7 +3036,6 @@ export const productController = {
 
       const product = await productService.getProductById(id);
 
-      // Anonymous callers only see active, non-deleted products.
       if (!product || !product.isActive || product.deletedAt) {
         return res.status(404).json({
           success: false,
@@ -3098,9 +3060,6 @@ export const productController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // PUBLIC: categories
-  // ─────────────────────────────────────────────────────────
   async getPublicCategories(
     req: Request,
     res: Response,
@@ -3121,7 +3080,6 @@ export const productController = {
 
       const categories = await productService.getCategories(businessUnitId);
 
-      // Anonymous callers only see active categories.
       const visible = (categories || []).filter(
         (c: any) => c?.isActive !== false,
       );
@@ -3138,9 +3096,6 @@ export const productController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // PUBLIC: featured
-  // ─────────────────────────────────────────────────────────
   async getPublicFeatured(
     req: Request,
     res: Response,
@@ -3174,9 +3129,6 @@ export const productController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // PUBLIC: new arrivals
-  // ─────────────────────────────────────────────────────────
   async getPublicNewArrivals(
     req: Request,
     res: Response,
@@ -3210,9 +3162,6 @@ export const productController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // PUBLIC: search
-  // ─────────────────────────────────────────────────────────
   async getPublicSearch(
     req: Request,
     res: Response,
@@ -3254,9 +3203,6 @@ export const productController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // PUBLIC: products in a category
-  // ─────────────────────────────────────────────────────────
   async getPublicCategoryProducts(
     req: Request,
     res: Response,

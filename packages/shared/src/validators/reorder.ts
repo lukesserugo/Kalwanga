@@ -1,7 +1,7 @@
 import {
   createReorderSchema,
   type CreateReorderInput,
-} from "../schemas/reorder";
+} from "../../../shared/src/schemas/reorder";
 
 export class ReorderValidation {
   static validateCreateReorder(data: unknown): CreateReorderInput {

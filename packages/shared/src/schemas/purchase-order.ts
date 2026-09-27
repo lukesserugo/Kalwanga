@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema, productIdSchema, supplierIdSchema } from "../helpers";
+import { businessUnitIdSchema, productIdSchema, supplierIdSchema } from "../helpers.js";
 
 export const createPurchaseOrderSchema = z.object({
   supplierId: supplierIdSchema,

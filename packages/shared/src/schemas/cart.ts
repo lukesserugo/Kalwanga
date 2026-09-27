@@ -4,7 +4,7 @@ import {
   customerIdSchema,
   paymentMethodSchema,
   userIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 export const addCartItemSchema = z.object({
   productId: z

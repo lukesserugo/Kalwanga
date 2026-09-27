@@ -6,7 +6,7 @@ import {
   resetPasswordSchema,
   verify2FASchema,
   verifyEmailSchema,
-} from "./schemas/auth";
+} from "../../shared/src/schemas/auth";
 import {
   bulkActionSchema,
   createUserSchema,
@@ -14,7 +14,7 @@ import {
   updateUserRoleSchema,
   updateUserSchema,
   userSearchSchema,
-} from "./schemas/user";
+} from "../../shared/src/schemas/user";
 import {
   configureProviderSchema,
   createPaymentMethodConfigSchema,
@@ -25,14 +25,14 @@ import {
   updatePaymentMethodConfigSchema,
   updatePaymentProviderSchema,
   updateProviderHealthSchema,
-} from "./schemas/payment-provider";
+} from "../../shared/src/schemas/payment-provider";
 import {
   flutterwaveVirtualAccountSchema,
   payPalCaptureSchema,
   paystackVerifySchema,
   squareCustomerSchema,
   squarePaymentSchema,
-} from "./schemas/provider-specific";
+} from "../../shared/src/schemas/provider-specific";
 import {
   bulkCreateItemsSchema,
   bulkUpdateStockSchema,
@@ -49,12 +49,12 @@ import {
   updateItemSchema,
   updateStockSchema,
   legacyBulkUpdateSchema,
-} from "./schemas/inventory";
+} from "../../shared/src/schemas/inventory";
 import {
   createLocationSchema,
   listLocationsQuerySchema,
   updateLocationSchema,
-} from "./schemas/location";
+} from "../../shared/src/schemas/location";
 import {
   bulkActivateProductsSchema,
   bulkCreateProductsSchema,
@@ -65,9 +65,9 @@ import {
   createProductSchema,
   updateProductReviewSchema,
   updateProductSchema,
-} from "./schemas/product";
-import { createSaleSchema } from "./schemas/sale";
-import { createPaymentSchema } from "./schemas/payment";
+} from "../../shared/src/schemas/product";
+import { createSaleSchema } from "../../shared/src/schemas/sale";
+import { createPaymentSchema } from "../../shared/src/schemas/payment";
 import {
   addCheckoutItemSchema,
   applyDiscountSchema,
@@ -83,18 +83,18 @@ import {
   updateCheckoutSchema,
   updateCheckoutSettingsSchema,
   voidCheckoutSchema,
-} from "./schemas/checkout";
+} from "../../shared/src/schemas/checkout";
 import {
   createCustomerSchema,
   updateCustomerSchema,
-} from "./schemas/customer";
+} from "../../shared/src/schemas/customer";
 import {
   bulkDeleteSchema,
   categoryQuerySchema,
   categoryWithProductsQuerySchema,
   createCategorySchema,
   updateCategorySchema,
-} from "./schemas/category";
+} from "../../shared/src/schemas/category";
 import {
   addOrderItemSchema,
   bulkUpdateOrderStatusSchema,
@@ -103,21 +103,21 @@ import {
   updateOrderItemSchema,
   updateOrderSchema,
   updateOrderStatusSchema,
-} from "./schemas/order";
+} from "../../shared/src/schemas/order";
 import {
   createBusinessUnitSchema,
   updateBusinessUnitSchema,
-} from "./schemas/business-unit";
+} from "../../shared/src/schemas/business-unit";
 import {
   createSupplierSchema,
   updateSupplierSchema,
-} from "./schemas/supplier";
+} from "../../shared/src/schemas/supplier";
 import {
   createPurchaseOrderSchema,
   receivePurchaseOrderSchema,
-} from "./schemas/purchase-order";
-import { endShiftSchema, startShiftSchema } from "./schemas/shift";
-import { taxSummarySchema } from "./schemas/tax";
+} from "../../shared/src/schemas/purchase-order";
+import { endShiftSchema, startShiftSchema } from "../../shared/src/schemas/shift";
+import { taxSummarySchema } from "../../shared/src/schemas/tax";
 import {
   bulkCreateVariantsSchema,
   checkSkuSchema,
@@ -125,7 +125,7 @@ import {
   updateVariantSchema,
   updateVariantStockSchema,
   variantQuerySchema,
-} from "./schemas/product";
+} from "../../shared/src/schemas/product";
 import {
   abandonedCartsQuerySchema,
   addCartItemSchema,
@@ -145,7 +145,7 @@ import {
   updateCartItemQuantitySchema,
   updateCartNotesSchema,
   updateCartSettingsSchema,
-} from "./schemas/cart";
+} from "../../shared/src/schemas/cart";
 import {
   associateBarcodeSchema,
   bulkGenerateBarcodesSchema,
@@ -154,7 +154,7 @@ import {
   generateQRCodeSchema,
   scanBarcodeSchema,
   validateBarcodeSchema,
-} from "./schemas/barcode";
+} from "../../shared/src/schemas/barcode";
 import {
   bulkCreateNotificationsSchema,
   createNotificationSchema,
@@ -166,24 +166,24 @@ import {
   notificationTypeSchema,
   updateNotificationSchema,
   updatePreferencesSchema,
-} from "./schemas/notification";
+} from "../../shared/src/schemas/notification";
 import {
   completeStockCountSchema,
   stockCountSchema,
   updateStockCountSchema,
-} from "./schemas/stock-count";
-import { valuationQuerySchema } from "./schemas/valuation";
-import { auditLogQuerySchema } from "./schemas/audit";
-import { createReorderSchema } from "./schemas/reorder";
+} from "../../shared/src/schemas/stock-count";
+import { valuationQuerySchema } from "../../shared/src/schemas/valuation";
+import { auditLogQuerySchema } from "../../shared/src/schemas/audit";
+import { createReorderSchema } from "../../shared/src/schemas/reorder";
 import {
   exportInventorySchema,
   exportSalesSchema,
   importOptionsSchema,
-} from "./schemas/export-import";
+} from "../../shared/src/schemas/export-import";
 import {
   reportParamsSchema,
   searchParamsSchema,
-} from "./schemas/report";
+} from "../../shared/src/schemas/report";
 
 export const validate = {
   // Auth

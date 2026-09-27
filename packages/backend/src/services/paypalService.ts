@@ -1,20 +1,4 @@
 // src/services/paypalService.ts
-//
-// PayPal integration — v2 Orders API.
-//
-// Environment variables:
-//   PAYPAL_CLIENT_ID
-//   PAYPAL_CLIENT_SECRET
-//   PAYPAL_ENVIRONMENT        "sandbox" | "production"
-//   PAYPAL_WEBHOOK_ID         webhook id from the PayPal dashboard
-//   PAYPAL_BRAND_NAME         shown on the PayPal approval page
-//   PAYPAL_AUTO_CAPTURE       "true" to auto-capture on ORDER_APPROVED
-//   FRONTEND_URL              used for default return/cancel URLs
-//
-// There is NO shared webhook secret. PayPal signs deliveries with
-// the five `paypal-transmission-*` headers and verification is done
-// by calling PayPal's /v1/notifications/verify-webhook-signature
-// endpoint.
 
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -876,7 +860,6 @@ export class PayPalService extends BaseService {
           data: {
             paidAmount: { increment: payment.amount },
             status: 'COMPLETED',
-            updatedAt: new Date(),
           },
         });
       }

@@ -150,7 +150,7 @@ function isValidID(id: string): boolean {
 // Mirror of `handleGeneralError` in inventoryController so failures
 // surface with the same envelope shape the frontend already parses.
 
-function handleError(error: unknown, res: Response) {
+function handleError(error: any, res: Response) {
   console.error('❌ LocationController error:', error);
 
   if (error instanceof AppError) {

@@ -844,7 +844,7 @@ export class InventoryService extends BaseService {
           products: {
             where: {
               isActive: true,
-              inventory: { some: { businessUnitId: resolvedBU.id } },
+              inventory: { is: { businessUnitId: resolvedBU.id } },
             },
             select: {
               id: true,
@@ -1117,7 +1117,7 @@ export class InventoryService extends BaseService {
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const inventory = await this.prisma.inventory.findFirst({
-        where: { businessUnitId: resolvedBU.id, productId },
+        where: { businessUnitId: resolvedBU.id, product: { is: { id: productId } } },
         include: {
           product: {
             include: {
@@ -2482,7 +2482,7 @@ export class InventoryService extends BaseService {
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const inventory = await this.prisma.inventory.findFirst({
-        where: { businessUnitId: resolvedBU.id, productId },
+        where: { businessUnitId: resolvedBU.id, product: { is: { id: productId } } },
       });
       if (!inventory) throw new AppError('Product not found in inventory', 404);
 
@@ -2529,7 +2529,7 @@ export class InventoryService extends BaseService {
       const resolvedBU = await this.ensureBusinessUnit(businessUnitId);
 
       const inventory = await this.prisma.inventory.findFirst({
-        where: { businessUnitId: resolvedBU.id, productId },
+        where: { businessUnitId: resolvedBU.id, product: { is: { id: productId } } },
       });
       if (!inventory) throw new AppError('Product not found in inventory', 404);
       if ((inventory.reserved || 0) < quantity)
@@ -2584,7 +2584,7 @@ export class InventoryService extends BaseService {
 
       return await this.prisma.$transaction(async (tx) => {
         const sourceInventory = await tx.inventory.findFirst({
-          where: { businessUnitId: resolvedBU.id, productId, location: fromLocation },
+          where: { businessUnitId: resolvedBU.id, product: { is: { id: productId } }, location: fromLocation },
         });
         if (!sourceInventory)
           throw new AppError(`Product not found in source location: ${fromLocation}`, 404);
@@ -2598,7 +2598,7 @@ export class InventoryService extends BaseService {
           );
 
         let destInventory = await tx.inventory.findFirst({
-          where: { businessUnitId: resolvedBU.id, productId, location: toLocation },
+          where: { businessUnitId: resolvedBU.id, product: { is: { id: productId } }, location: toLocation },
         });
 
         if (!destInventory) {
@@ -3316,7 +3316,7 @@ export class InventoryService extends BaseService {
     if (!product) return;
 
     await this.prisma.inventory.updateMany({
-      where: { businessUnitId, productId },
+      where: { businessUnitId, product: { is: { id: productId } } },
       data: {
         reorderPoint: product.minStock || 5,
         reorderQuantity: product.maxStock || 100,

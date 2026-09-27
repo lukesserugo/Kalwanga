@@ -219,8 +219,7 @@ export const purchaseOrderController = {
         // Find or create inventory
         const inventory = await prisma.inventory.findFirst({
           where: {
-            productId: poItem.productId,
-            variantId: poItem.variantId,
+            product: { is: { id: poItem.productId } },
             businessUnitId,
           },
         });
@@ -236,8 +235,7 @@ export const purchaseOrderController = {
         } else {
           const newInventory = await prisma.inventory.create({
             data: {
-              productId: poItem.productId,
-              variantId: poItem.variantId,
+              product: { connect: { id: poItem.productId } },
               businessUnitId,
               quantity: received.quantity,
               reorderPoint: 5,
@@ -255,7 +253,6 @@ export const purchaseOrderController = {
             notes: `Received from PO ${po.orderNumber}`,
             reference: po.orderNumber,
             productId: poItem.productId,
-            variantId: poItem.variantId,
             inventoryId,
             businessUnitId,
             userId,

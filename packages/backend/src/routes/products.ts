@@ -5,21 +5,31 @@ import { productController } from '../controllers/productController.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireInventoryPermission } from '../middleware/inventoryPermissions.js';
 import { validateRequest } from '../middleware/validateRequest.js';
+
 import {
   updateProductSchema,
-  createCategorySchema,
-  updateCategorySchema,
-  createSupplierSchema,
-  updateSupplierSchema,
   createProductReviewSchema,
-  generateBarcodeSchema,
-  associateBarcodeSchema,
-  validateBarcodeSchema,
   createVariantSchema,
   updateVariantSchema,
   bulkCreateVariantsSchema,
   updateVariantStockSchema,
-} from '../utils/validators.js';
+} from '../../../shared/src/schemas/product.js';
+
+import {
+  createCategorySchema,
+  updateCategorySchema,
+} from '../../../shared/src/schemas/category.js';
+
+import {
+  createSupplierSchema,
+  updateSupplierSchema,
+} from '../../../shared/src/schemas/supplier.js';
+
+import {
+  generateBarcodeSchema,
+  associateBarcodeSchema,
+  validateBarcodeSchema,
+} from '../../../shared/src/schemas/barcode.js';
 
 const router = Router();
 

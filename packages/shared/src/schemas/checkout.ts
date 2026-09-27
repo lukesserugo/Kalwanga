@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { paymentMethodSchema } from "../helpers";
+import { paymentMethodSchema } from "../helpers.js";
 
 export const createCheckoutSchema = z.object({
   cartId: z.string().min(1, 'Cart ID is required'),

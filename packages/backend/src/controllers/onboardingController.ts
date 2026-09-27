@@ -263,7 +263,7 @@ export const onboardingController = {
       logger.info(
         `[onboarding] paginate user=${ctx.userId} step=${stepId}`
       );
-      const status = await onboardingService.paginate(ctx.userId, stepId);
+      const status = await onboardingService.paginate(ctx.userId, stepId, ctx.businessUnitId ?? "");
       res.json({ success: true, data: status });
     } catch (error) {
       next(error);
@@ -288,6 +288,7 @@ export const onboardingController = {
       const result = await onboardingService.markStepCompleted(
         ctx.userId,
         stepId,
+        ctx.businessUnitId ?? '',
         'manual',
         notes
       );
@@ -317,6 +318,7 @@ export const onboardingController = {
       const result = await onboardingService.skipStep(
         ctx.userId,
         stepId,
+        ctx.businessUnitId ?? '',
         'manual',
         notes
       );
@@ -348,6 +350,7 @@ export const onboardingController = {
       );
       const result = await onboardingService.reset(
         targetUserId,
+        callerCtx.businessUnitId ?? '',
         callerCtx.userId
       );
       res.json({

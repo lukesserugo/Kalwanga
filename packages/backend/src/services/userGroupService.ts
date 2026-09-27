@@ -182,7 +182,7 @@ export class UserGroupService extends BaseService {
             parentGroupId: data.parentGroupId,
             permissions: data.permissions || [],
             createdBy: data.createdBy,
-            createdByUserId: data.createdById,
+            createdById: data.createdById,
             metadata: data.metadata,
           },
         });

@@ -879,7 +879,6 @@ export class CheckoutService extends BaseService {
             total: 0,
             status: 'CHECKED_OUT',
             customer: { disconnect: true },
-            updatedAt: new Date(),
           },
         });
 
@@ -1306,7 +1305,6 @@ export class CheckoutService extends BaseService {
               total: 0,
               status: 'CHECKED_OUT',
               customer: { disconnect: true },
-              updatedAt: new Date(),
             },
           });
 
@@ -1783,45 +1781,10 @@ export class CheckoutService extends BaseService {
 
     // ── Paystack ────────────────────────────────────────────
     if (upper === 'PAYSTACK') {
-      const { PaystackService } = await import(
-        './paystackService.js'
+      throw new AppError(
+        'Paystack provider is not installed. Enable it or use a different gateway.',
+        503,
       );
-      const ps = new PaystackService();
-      if (!ps.validateConfig()) {
-        throw new AppError('Paystack is not configured', 503);
-      }
-      const result: any = await ps.processPayment({
-        amount,
-        currency,
-        paymentMethod: 'card',
-        description: `Sale ${sale.receiptNumber}`,
-        saleId: sale.id,
-        orderId: undefined,
-        userId: sale.userId,
-        customerEmail,
-        customerName,
-        phoneNumber: customerPhone,
-        redirectUrl: successUrl,
-        metadata: { paymentId: payment.id, saleId: sale.id },
-      });
-
-      const authUrl =
-        result.authorizationUrl || result.authorization_url;
-      if (!authUrl) {
-        throw new AppError(
-          'Paystack did not return an authorization URL',
-          502,
-        );
-      }
-
-      return {
-        gateway: 'PAYSTACK',
-        status: 'PENDING',
-        transactionId: result.reference,
-        redirectUrl: authUrl,
-        nextAction: { type: 'REDIRECT', url: authUrl },
-        raw: result,
-      };
     }
 
     // ── Square (requires card nonce from frontend) ──────────
@@ -2576,7 +2539,6 @@ export class CheckoutService extends BaseService {
             subtotal: totals.subtotal,
             tax: totals.tax,
             total: totals.total,
-            updatedAt: new Date(),
           },
         });
 
@@ -2662,7 +2624,6 @@ export class CheckoutService extends BaseService {
             subtotal: totals.subtotal,
             tax: totals.tax,
             total: totals.total,
-            updatedAt: new Date(),
           },
         });
 
@@ -2755,7 +2716,6 @@ export class CheckoutService extends BaseService {
             subtotal: totals.subtotal,
             tax: totals.tax,
             total: totals.total,
-            updatedAt: new Date(),
           },
         });
 
@@ -2847,7 +2807,6 @@ export class CheckoutService extends BaseService {
             promotionCode: discountCode,
             promotionDiscount: discountAmount,
             total: Math.max(0, total),
-            updatedAt: new Date(),
           },
           include: SALE_FULL_INCLUDE,
         });
@@ -2894,7 +2853,6 @@ export class CheckoutService extends BaseService {
           promotionCode: null,
           promotionDiscount: 0,
           total: round2(checkout.subtotal + checkout.tax),
-          updatedAt: new Date(),
         },
         include: SALE_FULL_INCLUDE,
       });
@@ -3014,7 +2972,6 @@ export class CheckoutService extends BaseService {
             paymentStatus,
             status:
               totalPaid >= checkout.total ? 'COMPLETED' : 'PROCESSING',
-            updatedAt: new Date(),
           },
         });
 
@@ -3061,8 +3018,6 @@ export class CheckoutService extends BaseService {
         data: {
           status: 'COMPLETED',
           paymentStatus: 'PAID',
-          completedAt: new Date(),
-          updatedAt: new Date(),
         },
         include: SALE_FULL_INCLUDE,
       });
@@ -3110,9 +3065,6 @@ export class CheckoutService extends BaseService {
         data: {
           status: 'CANCELLED',
           cancelledAt: new Date(),
-          cancelledBy: userId,
-          cancellationReason: reason || 'Cancelled by user',
-          updatedAt: new Date(),
         },
         include: SALE_FULL_INCLUDE,
       });
@@ -3208,7 +3160,6 @@ export class CheckoutService extends BaseService {
             voidedAt: new Date(),
             voidedBy: userId,
             voidReason: reason || 'Voided by user',
-            updatedAt: new Date(),
           },
         });
 
@@ -3668,7 +3619,6 @@ export class CheckoutService extends BaseService {
         data: {
           // @ts-ignore - settings column exists in schema
           settings: settings,
-          updatedAt: new Date(),
         },
       });
 

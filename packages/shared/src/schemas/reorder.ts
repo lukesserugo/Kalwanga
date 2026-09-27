@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { productIdSchema, supplierIdSchema } from "../helpers";
+import { productIdSchema, supplierIdSchema } from "../helpers.js";
 
 export const createReorderSchema = z.object({
   productId: productIdSchema,

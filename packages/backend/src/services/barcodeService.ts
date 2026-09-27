@@ -932,7 +932,7 @@ export class BarcodeService {
             barcode: variantRow.barcode,
             attributes: variantRow.attributes,
           };
-          product = variantRow.product as typeof product;
+          product = variantRow.product as unknown as typeof product;
         }
       }
 
@@ -977,7 +977,7 @@ export class BarcodeService {
       if (!inventoryRow) {
         const fallback = await prisma.inventory.findFirst({
           where: {
-            productId: product.id,
+            product: { is: { id: product.id } },
             ...(businessUnitId ? { businessUnitId } : {}),
           },
           select: {
@@ -1212,7 +1212,7 @@ export class BarcodeService {
 
       if (!inventory) {
         const i = await tx.inventory.findFirst({
-          where: { productId: product.id, businessUnitId },
+          where: { product: { is: { id: product.id } }, businessUnitId },
           select: { id: true, quantity: true, reserved: true },
         });
         inventory = i ?? null;

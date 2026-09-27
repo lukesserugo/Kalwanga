@@ -3,7 +3,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
+      "@pos/shared": ["../shared/src/index.ts"],
       "@pos/shared/*": ["../shared/src/*"]
     },
     "types": ["node"],

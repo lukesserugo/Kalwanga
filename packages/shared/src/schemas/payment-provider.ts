@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema, providerIdSchema } from "../helpers";
+import { businessUnitIdSchema, providerIdSchema } from "../helpers.js";
 
 export const createPaymentProviderSchema = z.object({
   provider: z.enum([

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema, LOCATION_TYPES } from "../helpers";
+import { businessUnitIdSchema, LOCATION_TYPES } from "../helpers.js";
 
 const locationNameSchema = z
   .string()

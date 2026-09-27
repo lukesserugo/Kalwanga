@@ -5,7 +5,7 @@ import {
   productIdSchema,
   skuSchema,
   supplierIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 export const createProductSchema = z
   .object({

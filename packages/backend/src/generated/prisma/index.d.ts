@@ -544,6 +544,7 @@ export type ReceiptType = (typeof ReceiptType)[keyof typeof ReceiptType]
 
 
 export const PaymentStatus: {
+  UNPAID: 'UNPAID',
   PENDING: 'PENDING',
   PAID: 'PAID',
   FAILED: 'FAILED',
@@ -824,7 +825,10 @@ export const NotificationType: {
   LOW_STOCK: 'LOW_STOCK',
   PURCHASE_ORDER: 'PURCHASE_ORDER',
   SHIFT: 'SHIFT',
-  RECEIPT: 'RECEIPT'
+  RECEIPT: 'RECEIPT',
+  EMAIL: 'EMAIL',
+  SMS: 'SMS',
+  PUSH: 'PUSH'
 };
 
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType]
@@ -2263,8 +2267,8 @@ export namespace Prisma {
   export import Exact = $Public.Exact
 
   /**
-   * Prisma Client JS version: 7.9.1
-   * Query Engine version: e922089b7d7502aff4249d5da3420f6fa55fc6ad
+   * Prisma Client JS version: 7.10.0
+   * Query Engine version: 0edf323efd1d98336f3f0a68684b56f689b900d3
    */
   export type PrismaVersion = {
     client: string
@@ -59604,6 +59608,7 @@ export namespace Prisma {
     id: string | null
     orderNumber: string | null
     status: $Enums.OrderStatus | null
+    vpaymentStatus: $Enums.PaymentStatus | null
     subtotal: number | null
     tax: number | null
     discount: number | null
@@ -59620,6 +59625,7 @@ export namespace Prisma {
     id: string | null
     orderNumber: string | null
     status: $Enums.OrderStatus | null
+    vpaymentStatus: $Enums.PaymentStatus | null
     subtotal: number | null
     tax: number | null
     discount: number | null
@@ -59636,6 +59642,7 @@ export namespace Prisma {
     id: number
     orderNumber: number
     status: number
+    vpaymentStatus: number
     subtotal: number
     tax: number
     discount: number
@@ -59668,6 +59675,7 @@ export namespace Prisma {
     id?: true
     orderNumber?: true
     status?: true
+    vpaymentStatus?: true
     subtotal?: true
     tax?: true
     discount?: true
@@ -59684,6 +59692,7 @@ export namespace Prisma {
     id?: true
     orderNumber?: true
     status?: true
+    vpaymentStatus?: true
     subtotal?: true
     tax?: true
     discount?: true
@@ -59700,6 +59709,7 @@ export namespace Prisma {
     id?: true
     orderNumber?: true
     status?: true
+    vpaymentStatus?: true
     subtotal?: true
     tax?: true
     discount?: true
@@ -59803,6 +59813,7 @@ export namespace Prisma {
     id: string
     orderNumber: string
     status: $Enums.OrderStatus
+    vpaymentStatus: $Enums.PaymentStatus
     subtotal: number
     tax: number
     discount: number
@@ -59838,6 +59849,7 @@ export namespace Prisma {
     id?: boolean
     orderNumber?: boolean
     status?: boolean
+    vpaymentStatus?: boolean
     subtotal?: boolean
     tax?: boolean
     discount?: boolean
@@ -59862,6 +59874,7 @@ export namespace Prisma {
     id?: boolean
     orderNumber?: boolean
     status?: boolean
+    vpaymentStatus?: boolean
     subtotal?: boolean
     tax?: boolean
     discount?: boolean
@@ -59881,6 +59894,7 @@ export namespace Prisma {
     id?: boolean
     orderNumber?: boolean
     status?: boolean
+    vpaymentStatus?: boolean
     subtotal?: boolean
     tax?: boolean
     discount?: boolean
@@ -59900,6 +59914,7 @@ export namespace Prisma {
     id?: boolean
     orderNumber?: boolean
     status?: boolean
+    vpaymentStatus?: boolean
     subtotal?: boolean
     tax?: boolean
     discount?: boolean
@@ -59912,7 +59927,7 @@ export namespace Prisma {
     userId?: boolean
   }
 
-  export type OrderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "orderNumber" | "status" | "subtotal" | "tax" | "discount" | "total" | "notes" | "customerId" | "createdAt" | "updatedAt" | "businessUnitId" | "userId", ExtArgs["result"]["order"]>
+  export type OrderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "orderNumber" | "status" | "vpaymentStatus" | "subtotal" | "tax" | "discount" | "total" | "notes" | "customerId" | "createdAt" | "updatedAt" | "businessUnitId" | "userId", ExtArgs["result"]["order"]>
   export type OrderInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     items?: boolean | Order$itemsArgs<ExtArgs>
     businessUnit?: boolean | BusinessUnitDefaultArgs<ExtArgs>
@@ -59949,6 +59964,7 @@ export namespace Prisma {
       id: string
       orderNumber: string
       status: $Enums.OrderStatus
+      vpaymentStatus: $Enums.PaymentStatus
       subtotal: number
       tax: number
       discount: number
@@ -60392,6 +60408,7 @@ export namespace Prisma {
     readonly id: FieldRef<"Order", 'String'>
     readonly orderNumber: FieldRef<"Order", 'String'>
     readonly status: FieldRef<"Order", 'OrderStatus'>
+    readonly vpaymentStatus: FieldRef<"Order", 'PaymentStatus'>
     readonly subtotal: FieldRef<"Order", 'Float'>
     readonly tax: FieldRef<"Order", 'Float'>
     readonly discount: FieldRef<"Order", 'Float'>
@@ -62164,6 +62181,8 @@ export namespace Prisma {
     promotionDiscount: number | null
     loyaltyPointsUsed: number | null
     loyaltyDiscount: number | null
+    paymentStatus: $Enums.PaymentStatus | null
+    cancelledAt: Date | null
     total: number | null
     paidAmount: number | null
     changeAmount: number | null
@@ -62191,6 +62210,8 @@ export namespace Prisma {
     promotionDiscount: number | null
     loyaltyPointsUsed: number | null
     loyaltyDiscount: number | null
+    paymentStatus: $Enums.PaymentStatus | null
+    cancelledAt: Date | null
     total: number | null
     paidAmount: number | null
     changeAmount: number | null
@@ -62218,6 +62239,8 @@ export namespace Prisma {
     promotionDiscount: number
     loyaltyPointsUsed: number
     loyaltyDiscount: number
+    paymentStatus: number
+    cancelledAt: number
     total: number
     paidAmount: number
     changeAmount: number
@@ -62271,6 +62294,8 @@ export namespace Prisma {
     promotionDiscount?: true
     loyaltyPointsUsed?: true
     loyaltyDiscount?: true
+    paymentStatus?: true
+    cancelledAt?: true
     total?: true
     paidAmount?: true
     changeAmount?: true
@@ -62298,6 +62323,8 @@ export namespace Prisma {
     promotionDiscount?: true
     loyaltyPointsUsed?: true
     loyaltyDiscount?: true
+    paymentStatus?: true
+    cancelledAt?: true
     total?: true
     paidAmount?: true
     changeAmount?: true
@@ -62325,6 +62352,8 @@ export namespace Prisma {
     promotionDiscount?: true
     loyaltyPointsUsed?: true
     loyaltyDiscount?: true
+    paymentStatus?: true
+    cancelledAt?: true
     total?: true
     paidAmount?: true
     changeAmount?: true
@@ -62439,6 +62468,8 @@ export namespace Prisma {
     promotionDiscount: number
     loyaltyPointsUsed: number
     loyaltyDiscount: number
+    paymentStatus: $Enums.PaymentStatus
+    cancelledAt: Date | null
     total: number
     paidAmount: number
     changeAmount: number
@@ -62485,6 +62516,8 @@ export namespace Prisma {
     promotionDiscount?: boolean
     loyaltyPointsUsed?: boolean
     loyaltyDiscount?: boolean
+    paymentStatus?: boolean
+    cancelledAt?: boolean
     total?: boolean
     paidAmount?: boolean
     changeAmount?: boolean
@@ -62530,6 +62563,8 @@ export namespace Prisma {
     promotionDiscount?: boolean
     loyaltyPointsUsed?: boolean
     loyaltyDiscount?: boolean
+    paymentStatus?: boolean
+    cancelledAt?: boolean
     total?: boolean
     paidAmount?: boolean
     changeAmount?: boolean
@@ -62564,6 +62599,8 @@ export namespace Prisma {
     promotionDiscount?: boolean
     loyaltyPointsUsed?: boolean
     loyaltyDiscount?: boolean
+    paymentStatus?: boolean
+    cancelledAt?: boolean
     total?: boolean
     paidAmount?: boolean
     changeAmount?: boolean
@@ -62598,6 +62635,8 @@ export namespace Prisma {
     promotionDiscount?: boolean
     loyaltyPointsUsed?: boolean
     loyaltyDiscount?: boolean
+    paymentStatus?: boolean
+    cancelledAt?: boolean
     total?: boolean
     paidAmount?: boolean
     changeAmount?: boolean
@@ -62614,7 +62653,7 @@ export namespace Prisma {
     cashRegisterSessionId?: boolean
   }
 
-  export type SaleOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "receiptNumber" | "subtotal" | "tax" | "discount" | "discountType" | "promotionCode" | "promotionDiscount" | "loyaltyPointsUsed" | "loyaltyDiscount" | "total" | "paidAmount" | "changeAmount" | "notes" | "status" | "saleDate" | "idempotencyKey" | "invoiceId" | "businessUnitId" | "userId" | "customerId" | "orderId" | "cashRegisterId" | "cashRegisterSessionId", ExtArgs["result"]["sale"]>
+  export type SaleOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "receiptNumber" | "subtotal" | "tax" | "discount" | "discountType" | "promotionCode" | "promotionDiscount" | "loyaltyPointsUsed" | "loyaltyDiscount" | "paymentStatus" | "cancelledAt" | "total" | "paidAmount" | "changeAmount" | "notes" | "status" | "saleDate" | "idempotencyKey" | "invoiceId" | "businessUnitId" | "userId" | "customerId" | "orderId" | "cashRegisterId" | "cashRegisterSessionId", ExtArgs["result"]["sale"]>
   export type SaleInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     giftCardTransactions?: boolean | Sale$giftCardTransactionsArgs<ExtArgs>
     inventoryTransactions?: boolean | Sale$inventoryTransactionsArgs<ExtArgs>
@@ -62686,6 +62725,8 @@ export namespace Prisma {
       promotionDiscount: number
       loyaltyPointsUsed: number
       loyaltyDiscount: number
+      paymentStatus: $Enums.PaymentStatus
+      cancelledAt: Date | null
       total: number
       paidAmount: number
       changeAmount: number
@@ -63150,6 +63191,8 @@ export namespace Prisma {
     readonly promotionDiscount: FieldRef<"Sale", 'Float'>
     readonly loyaltyPointsUsed: FieldRef<"Sale", 'Int'>
     readonly loyaltyDiscount: FieldRef<"Sale", 'Float'>
+    readonly paymentStatus: FieldRef<"Sale", 'PaymentStatus'>
+    readonly cancelledAt: FieldRef<"Sale", 'DateTime'>
     readonly total: FieldRef<"Sale", 'Float'>
     readonly paidAmount: FieldRef<"Sale", 'Float'>
     readonly changeAmount: FieldRef<"Sale", 'Float'>
@@ -87459,6 +87502,8 @@ export namespace Prisma {
     orderNumber: string | null
     supplierId: string | null
     status: $Enums.PurchaseOrderStatus | null
+    priority: string | null
+    cancelledAt: Date | null
     total: number | null
     notes: string | null
     expectedDelivery: Date | null
@@ -87475,6 +87520,8 @@ export namespace Prisma {
     orderNumber: string | null
     supplierId: string | null
     status: $Enums.PurchaseOrderStatus | null
+    priority: string | null
+    cancelledAt: Date | null
     total: number | null
     notes: string | null
     expectedDelivery: Date | null
@@ -87491,6 +87538,8 @@ export namespace Prisma {
     orderNumber: number
     supplierId: number
     status: number
+    priority: number
+    cancelledAt: number
     total: number
     notes: number
     expectedDelivery: number
@@ -87517,6 +87566,8 @@ export namespace Prisma {
     orderNumber?: true
     supplierId?: true
     status?: true
+    priority?: true
+    cancelledAt?: true
     total?: true
     notes?: true
     expectedDelivery?: true
@@ -87533,6 +87584,8 @@ export namespace Prisma {
     orderNumber?: true
     supplierId?: true
     status?: true
+    priority?: true
+    cancelledAt?: true
     total?: true
     notes?: true
     expectedDelivery?: true
@@ -87549,6 +87602,8 @@ export namespace Prisma {
     orderNumber?: true
     supplierId?: true
     status?: true
+    priority?: true
+    cancelledAt?: true
     total?: true
     notes?: true
     expectedDelivery?: true
@@ -87652,6 +87707,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status: $Enums.PurchaseOrderStatus
+    priority: string
+    cancelledAt: Date | null
     total: number
     notes: string | null
     expectedDelivery: Date | null
@@ -87687,6 +87744,8 @@ export namespace Prisma {
     orderNumber?: boolean
     supplierId?: boolean
     status?: boolean
+    priority?: boolean
+    cancelledAt?: boolean
     total?: boolean
     notes?: boolean
     expectedDelivery?: boolean
@@ -87710,6 +87769,8 @@ export namespace Prisma {
     orderNumber?: boolean
     supplierId?: boolean
     status?: boolean
+    priority?: boolean
+    cancelledAt?: boolean
     total?: boolean
     notes?: boolean
     expectedDelivery?: boolean
@@ -87730,6 +87791,8 @@ export namespace Prisma {
     orderNumber?: boolean
     supplierId?: boolean
     status?: boolean
+    priority?: boolean
+    cancelledAt?: boolean
     total?: boolean
     notes?: boolean
     expectedDelivery?: boolean
@@ -87750,6 +87813,8 @@ export namespace Prisma {
     orderNumber?: boolean
     supplierId?: boolean
     status?: boolean
+    priority?: boolean
+    cancelledAt?: boolean
     total?: boolean
     notes?: boolean
     expectedDelivery?: boolean
@@ -87761,7 +87826,7 @@ export namespace Prisma {
     userId?: boolean
   }
 
-  export type PurchaseOrderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "orderNumber" | "supplierId" | "status" | "total" | "notes" | "expectedDelivery" | "receivedAt" | "receivedBy" | "createdAt" | "updatedAt" | "businessUnitId" | "userId", ExtArgs["result"]["purchaseOrder"]>
+  export type PurchaseOrderOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "orderNumber" | "supplierId" | "status" | "priority" | "cancelledAt" | "total" | "notes" | "expectedDelivery" | "receivedAt" | "receivedBy" | "createdAt" | "updatedAt" | "businessUnitId" | "userId", ExtArgs["result"]["purchaseOrder"]>
   export type PurchaseOrderInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     inventoryTransactions?: boolean | PurchaseOrder$inventoryTransactionsArgs<ExtArgs>
     items?: boolean | PurchaseOrder$itemsArgs<ExtArgs>
@@ -87799,6 +87864,8 @@ export namespace Prisma {
       orderNumber: string
       supplierId: string
       status: $Enums.PurchaseOrderStatus
+      priority: string
+      cancelledAt: Date | null
       total: number
       notes: string | null
       expectedDelivery: Date | null
@@ -88241,6 +88308,8 @@ export namespace Prisma {
     readonly orderNumber: FieldRef<"PurchaseOrder", 'String'>
     readonly supplierId: FieldRef<"PurchaseOrder", 'String'>
     readonly status: FieldRef<"PurchaseOrder", 'PurchaseOrderStatus'>
+    readonly priority: FieldRef<"PurchaseOrder", 'String'>
+    readonly cancelledAt: FieldRef<"PurchaseOrder", 'DateTime'>
     readonly total: FieldRef<"PurchaseOrder", 'Float'>
     readonly notes: FieldRef<"PurchaseOrder", 'String'>
     readonly expectedDelivery: FieldRef<"PurchaseOrder", 'DateTime'>
@@ -115787,6 +115856,7 @@ export namespace Prisma {
     id: 'id',
     orderNumber: 'orderNumber',
     status: 'status',
+    vpaymentStatus: 'vpaymentStatus',
     subtotal: 'subtotal',
     tax: 'tax',
     discount: 'discount',
@@ -115828,6 +115898,8 @@ export namespace Prisma {
     promotionDiscount: 'promotionDiscount',
     loyaltyPointsUsed: 'loyaltyPointsUsed',
     loyaltyDiscount: 'loyaltyDiscount',
+    paymentStatus: 'paymentStatus',
+    cancelledAt: 'cancelledAt',
     total: 'total',
     paidAmount: 'paidAmount',
     changeAmount: 'changeAmount',
@@ -116184,6 +116256,8 @@ export namespace Prisma {
     orderNumber: 'orderNumber',
     supplierId: 'supplierId',
     status: 'status',
+    priority: 'priority',
+    cancelledAt: 'cancelledAt',
     total: 'total',
     notes: 'notes',
     expectedDelivery: 'expectedDelivery',
@@ -116998,6 +117072,20 @@ export namespace Prisma {
 
 
   /**
+   * Reference to a field of type 'PaymentStatus'
+   */
+  export type EnumPaymentStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PaymentStatus'>
+    
+
+
+  /**
+   * Reference to a field of type 'PaymentStatus[]'
+   */
+  export type ListEnumPaymentStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PaymentStatus[]'>
+    
+
+
+  /**
    * Reference to a field of type 'DiscountType'
    */
   export type EnumDiscountTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'DiscountType'>
@@ -117036,20 +117124,6 @@ export namespace Prisma {
    * Reference to a field of type 'PaymentMethod[]'
    */
   export type ListEnumPaymentMethodFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PaymentMethod[]'>
-    
-
-
-  /**
-   * Reference to a field of type 'PaymentStatus'
-   */
-  export type EnumPaymentStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PaymentStatus'>
-    
-
-
-  /**
-   * Reference to a field of type 'PaymentStatus[]'
-   */
-  export type ListEnumPaymentStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PaymentStatus[]'>
     
 
 
@@ -121681,6 +121755,7 @@ export namespace Prisma {
     id?: StringFilter<"Order"> | string
     orderNumber?: StringFilter<"Order"> | string
     status?: EnumOrderStatusFilter<"Order"> | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFilter<"Order"> | $Enums.PaymentStatus
     subtotal?: FloatFilter<"Order"> | number
     tax?: FloatFilter<"Order"> | number
     discount?: FloatFilter<"Order"> | number
@@ -121704,6 +121779,7 @@ export namespace Prisma {
     id?: SortOrder
     orderNumber?: SortOrder
     status?: SortOrder
+    vpaymentStatus?: SortOrder
     subtotal?: SortOrder
     tax?: SortOrder
     discount?: SortOrder
@@ -121730,6 +121806,7 @@ export namespace Prisma {
     OR?: OrderWhereInput[]
     NOT?: OrderWhereInput | OrderWhereInput[]
     status?: EnumOrderStatusFilter<"Order"> | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFilter<"Order"> | $Enums.PaymentStatus
     subtotal?: FloatFilter<"Order"> | number
     tax?: FloatFilter<"Order"> | number
     discount?: FloatFilter<"Order"> | number
@@ -121753,6 +121830,7 @@ export namespace Prisma {
     id?: SortOrder
     orderNumber?: SortOrder
     status?: SortOrder
+    vpaymentStatus?: SortOrder
     subtotal?: SortOrder
     tax?: SortOrder
     discount?: SortOrder
@@ -121777,6 +121855,7 @@ export namespace Prisma {
     id?: StringWithAggregatesFilter<"Order"> | string
     orderNumber?: StringWithAggregatesFilter<"Order"> | string
     status?: EnumOrderStatusWithAggregatesFilter<"Order"> | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusWithAggregatesFilter<"Order"> | $Enums.PaymentStatus
     subtotal?: FloatWithAggregatesFilter<"Order"> | number
     tax?: FloatWithAggregatesFilter<"Order"> | number
     discount?: FloatWithAggregatesFilter<"Order"> | number
@@ -121886,6 +121965,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFilter<"Sale"> | number
     loyaltyPointsUsed?: IntFilter<"Sale"> | number
     loyaltyDiscount?: FloatFilter<"Sale"> | number
+    paymentStatus?: EnumPaymentStatusFilter<"Sale"> | $Enums.PaymentStatus
+    cancelledAt?: DateTimeNullableFilter<"Sale"> | Date | string | null
     total?: FloatFilter<"Sale"> | number
     paidAmount?: FloatFilter<"Sale"> | number
     changeAmount?: FloatFilter<"Sale"> | number
@@ -121930,6 +122011,8 @@ export namespace Prisma {
     promotionDiscount?: SortOrder
     loyaltyPointsUsed?: SortOrder
     loyaltyDiscount?: SortOrder
+    paymentStatus?: SortOrder
+    cancelledAt?: SortOrderInput | SortOrder
     total?: SortOrder
     paidAmount?: SortOrder
     changeAmount?: SortOrder
@@ -121980,6 +122063,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFilter<"Sale"> | number
     loyaltyPointsUsed?: IntFilter<"Sale"> | number
     loyaltyDiscount?: FloatFilter<"Sale"> | number
+    paymentStatus?: EnumPaymentStatusFilter<"Sale"> | $Enums.PaymentStatus
+    cancelledAt?: DateTimeNullableFilter<"Sale"> | Date | string | null
     total?: FloatFilter<"Sale"> | number
     paidAmount?: FloatFilter<"Sale"> | number
     changeAmount?: FloatFilter<"Sale"> | number
@@ -122021,6 +122106,8 @@ export namespace Prisma {
     promotionDiscount?: SortOrder
     loyaltyPointsUsed?: SortOrder
     loyaltyDiscount?: SortOrder
+    paymentStatus?: SortOrder
+    cancelledAt?: SortOrderInput | SortOrder
     total?: SortOrder
     paidAmount?: SortOrder
     changeAmount?: SortOrder
@@ -122056,6 +122143,8 @@ export namespace Prisma {
     promotionDiscount?: FloatWithAggregatesFilter<"Sale"> | number
     loyaltyPointsUsed?: IntWithAggregatesFilter<"Sale"> | number
     loyaltyDiscount?: FloatWithAggregatesFilter<"Sale"> | number
+    paymentStatus?: EnumPaymentStatusWithAggregatesFilter<"Sale"> | $Enums.PaymentStatus
+    cancelledAt?: DateTimeNullableWithAggregatesFilter<"Sale"> | Date | string | null
     total?: FloatWithAggregatesFilter<"Sale"> | number
     paidAmount?: FloatWithAggregatesFilter<"Sale"> | number
     changeAmount?: FloatWithAggregatesFilter<"Sale"> | number
@@ -123913,6 +124002,8 @@ export namespace Prisma {
     orderNumber?: StringFilter<"PurchaseOrder"> | string
     supplierId?: StringFilter<"PurchaseOrder"> | string
     status?: EnumPurchaseOrderStatusFilter<"PurchaseOrder"> | $Enums.PurchaseOrderStatus
+    priority?: StringFilter<"PurchaseOrder"> | string
+    cancelledAt?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     total?: FloatFilter<"PurchaseOrder"> | number
     notes?: StringNullableFilter<"PurchaseOrder"> | string | null
     expectedDelivery?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
@@ -123935,6 +124026,8 @@ export namespace Prisma {
     orderNumber?: SortOrder
     supplierId?: SortOrder
     status?: SortOrder
+    priority?: SortOrder
+    cancelledAt?: SortOrderInput | SortOrder
     total?: SortOrder
     notes?: SortOrderInput | SortOrder
     expectedDelivery?: SortOrderInput | SortOrder
@@ -123960,6 +124053,8 @@ export namespace Prisma {
     NOT?: PurchaseOrderWhereInput | PurchaseOrderWhereInput[]
     supplierId?: StringFilter<"PurchaseOrder"> | string
     status?: EnumPurchaseOrderStatusFilter<"PurchaseOrder"> | $Enums.PurchaseOrderStatus
+    priority?: StringFilter<"PurchaseOrder"> | string
+    cancelledAt?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     total?: FloatFilter<"PurchaseOrder"> | number
     notes?: StringNullableFilter<"PurchaseOrder"> | string | null
     expectedDelivery?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
@@ -123982,6 +124077,8 @@ export namespace Prisma {
     orderNumber?: SortOrder
     supplierId?: SortOrder
     status?: SortOrder
+    priority?: SortOrder
+    cancelledAt?: SortOrderInput | SortOrder
     total?: SortOrder
     notes?: SortOrderInput | SortOrder
     expectedDelivery?: SortOrderInput | SortOrder
@@ -124006,6 +124103,8 @@ export namespace Prisma {
     orderNumber?: StringWithAggregatesFilter<"PurchaseOrder"> | string
     supplierId?: StringWithAggregatesFilter<"PurchaseOrder"> | string
     status?: EnumPurchaseOrderStatusWithAggregatesFilter<"PurchaseOrder"> | $Enums.PurchaseOrderStatus
+    priority?: StringWithAggregatesFilter<"PurchaseOrder"> | string
+    cancelledAt?: DateTimeNullableWithAggregatesFilter<"PurchaseOrder"> | Date | string | null
     total?: FloatWithAggregatesFilter<"PurchaseOrder"> | number
     notes?: StringNullableWithAggregatesFilter<"PurchaseOrder"> | string | null
     expectedDelivery?: DateTimeNullableWithAggregatesFilter<"PurchaseOrder"> | Date | string | null
@@ -131039,6 +131138,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -131059,6 +131159,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -131079,6 +131180,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -131099,6 +131201,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -131119,6 +131222,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -131135,6 +131239,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -131148,6 +131253,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -131252,6 +131358,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -131289,6 +131397,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -131326,6 +131436,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -131363,6 +131475,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -131400,6 +131514,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -131427,6 +131543,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -131447,6 +131565,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -133452,6 +133572,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -133471,6 +133593,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -133488,6 +133612,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -133507,6 +133633,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -133525,6 +133653,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -133540,6 +133670,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -133553,6 +133685,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -139706,10 +139840,18 @@ export namespace Prisma {
     not?: NestedEnumOrderStatusFilter<$PrismaModel> | $Enums.OrderStatus
   }
 
+  export type EnumPaymentStatusFilter<$PrismaModel = never> = {
+    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
+    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    not?: NestedEnumPaymentStatusFilter<$PrismaModel> | $Enums.PaymentStatus
+  }
+
   export type OrderCountOrderByAggregateInput = {
     id?: SortOrder
     orderNumber?: SortOrder
     status?: SortOrder
+    vpaymentStatus?: SortOrder
     subtotal?: SortOrder
     tax?: SortOrder
     discount?: SortOrder
@@ -139733,6 +139875,7 @@ export namespace Prisma {
     id?: SortOrder
     orderNumber?: SortOrder
     status?: SortOrder
+    vpaymentStatus?: SortOrder
     subtotal?: SortOrder
     tax?: SortOrder
     discount?: SortOrder
@@ -139749,6 +139892,7 @@ export namespace Prisma {
     id?: SortOrder
     orderNumber?: SortOrder
     status?: SortOrder
+    vpaymentStatus?: SortOrder
     subtotal?: SortOrder
     tax?: SortOrder
     discount?: SortOrder
@@ -139776,6 +139920,16 @@ export namespace Prisma {
     _count?: NestedIntFilter<$PrismaModel>
     _min?: NestedEnumOrderStatusFilter<$PrismaModel>
     _max?: NestedEnumOrderStatusFilter<$PrismaModel>
+  }
+
+  export type EnumPaymentStatusWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
+    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    not?: NestedEnumPaymentStatusWithAggregatesFilter<$PrismaModel> | $Enums.PaymentStatus
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedEnumPaymentStatusFilter<$PrismaModel>
+    _max?: NestedEnumPaymentStatusFilter<$PrismaModel>
   }
 
   export type OrderScalarRelationFilter = {
@@ -139878,6 +140032,8 @@ export namespace Prisma {
     promotionDiscount?: SortOrder
     loyaltyPointsUsed?: SortOrder
     loyaltyDiscount?: SortOrder
+    paymentStatus?: SortOrder
+    cancelledAt?: SortOrder
     total?: SortOrder
     paidAmount?: SortOrder
     changeAmount?: SortOrder
@@ -139917,6 +140073,8 @@ export namespace Prisma {
     promotionDiscount?: SortOrder
     loyaltyPointsUsed?: SortOrder
     loyaltyDiscount?: SortOrder
+    paymentStatus?: SortOrder
+    cancelledAt?: SortOrder
     total?: SortOrder
     paidAmount?: SortOrder
     changeAmount?: SortOrder
@@ -139944,6 +140102,8 @@ export namespace Prisma {
     promotionDiscount?: SortOrder
     loyaltyPointsUsed?: SortOrder
     loyaltyDiscount?: SortOrder
+    paymentStatus?: SortOrder
+    cancelledAt?: SortOrder
     total?: SortOrder
     paidAmount?: SortOrder
     changeAmount?: SortOrder
@@ -140049,13 +140209,6 @@ export namespace Prisma {
     not?: NestedEnumPaymentMethodFilter<$PrismaModel> | $Enums.PaymentMethod
   }
 
-  export type EnumPaymentStatusFilter<$PrismaModel = never> = {
-    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
-    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    not?: NestedEnumPaymentStatusFilter<$PrismaModel> | $Enums.PaymentStatus
-  }
-
   export type PaymentGatewayNullableScalarRelationFilter = {
     is?: PaymentGatewayWhereInput | null
     isNot?: PaymentGatewayWhereInput | null
@@ -140152,16 +140305,6 @@ export namespace Prisma {
     _count?: NestedIntFilter<$PrismaModel>
     _min?: NestedEnumPaymentMethodFilter<$PrismaModel>
     _max?: NestedEnumPaymentMethodFilter<$PrismaModel>
-  }
-
-  export type EnumPaymentStatusWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
-    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    not?: NestedEnumPaymentStatusWithAggregatesFilter<$PrismaModel> | $Enums.PaymentStatus
-    _count?: NestedIntFilter<$PrismaModel>
-    _min?: NestedEnumPaymentStatusFilter<$PrismaModel>
-    _max?: NestedEnumPaymentStatusFilter<$PrismaModel>
   }
 
   export type PaymentGatewayCountOrderByAggregateInput = {
@@ -141273,6 +141416,8 @@ export namespace Prisma {
     orderNumber?: SortOrder
     supplierId?: SortOrder
     status?: SortOrder
+    priority?: SortOrder
+    cancelledAt?: SortOrder
     total?: SortOrder
     notes?: SortOrder
     expectedDelivery?: SortOrder
@@ -141293,6 +141438,8 @@ export namespace Prisma {
     orderNumber?: SortOrder
     supplierId?: SortOrder
     status?: SortOrder
+    priority?: SortOrder
+    cancelledAt?: SortOrder
     total?: SortOrder
     notes?: SortOrder
     expectedDelivery?: SortOrder
@@ -141309,6 +141456,8 @@ export namespace Prisma {
     orderNumber?: SortOrder
     supplierId?: SortOrder
     status?: SortOrder
+    priority?: SortOrder
+    cancelledAt?: SortOrder
     total?: SortOrder
     notes?: SortOrder
     expectedDelivery?: SortOrder
@@ -150411,6 +150560,10 @@ export namespace Prisma {
     set?: $Enums.OrderStatus
   }
 
+  export type EnumPaymentStatusFieldUpdateOperationsInput = {
+    set?: $Enums.PaymentStatus
+  }
+
   export type OrderItemUpdateManyWithoutOrderNestedInput = {
     create?: XOR<OrderItemCreateWithoutOrderInput, OrderItemUncheckedCreateWithoutOrderInput> | OrderItemCreateWithoutOrderInput[] | OrderItemUncheckedCreateWithoutOrderInput[]
     connectOrCreate?: OrderItemCreateOrConnectWithoutOrderInput | OrderItemCreateOrConnectWithoutOrderInput[]
@@ -151197,10 +151350,6 @@ export namespace Prisma {
 
   export type EnumPaymentMethodFieldUpdateOperationsInput = {
     set?: $Enums.PaymentMethod
-  }
-
-  export type EnumPaymentStatusFieldUpdateOperationsInput = {
-    set?: $Enums.PaymentStatus
   }
 
   export type BusinessUnitUpdateOneWithoutPaymentsNestedInput = {
@@ -154622,6 +154771,13 @@ export namespace Prisma {
     not?: NestedEnumOrderStatusFilter<$PrismaModel> | $Enums.OrderStatus
   }
 
+  export type NestedEnumPaymentStatusFilter<$PrismaModel = never> = {
+    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
+    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    not?: NestedEnumPaymentStatusFilter<$PrismaModel> | $Enums.PaymentStatus
+  }
+
   export type NestedEnumOrderStatusWithAggregatesFilter<$PrismaModel = never> = {
     equals?: $Enums.OrderStatus | EnumOrderStatusFieldRefInput<$PrismaModel>
     in?: $Enums.OrderStatus[] | ListEnumOrderStatusFieldRefInput<$PrismaModel>
@@ -154630,6 +154786,16 @@ export namespace Prisma {
     _count?: NestedIntFilter<$PrismaModel>
     _min?: NestedEnumOrderStatusFilter<$PrismaModel>
     _max?: NestedEnumOrderStatusFilter<$PrismaModel>
+  }
+
+  export type NestedEnumPaymentStatusWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
+    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
+    not?: NestedEnumPaymentStatusWithAggregatesFilter<$PrismaModel> | $Enums.PaymentStatus
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedEnumPaymentStatusFilter<$PrismaModel>
+    _max?: NestedEnumPaymentStatusFilter<$PrismaModel>
   }
 
   export type NestedEnumDiscountTypeNullableFilter<$PrismaModel = never> = {
@@ -154673,13 +154839,6 @@ export namespace Prisma {
     not?: NestedEnumPaymentMethodFilter<$PrismaModel> | $Enums.PaymentMethod
   }
 
-  export type NestedEnumPaymentStatusFilter<$PrismaModel = never> = {
-    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
-    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    not?: NestedEnumPaymentStatusFilter<$PrismaModel> | $Enums.PaymentStatus
-  }
-
   export type NestedEnumPaymentMethodWithAggregatesFilter<$PrismaModel = never> = {
     equals?: $Enums.PaymentMethod | EnumPaymentMethodFieldRefInput<$PrismaModel>
     in?: $Enums.PaymentMethod[] | ListEnumPaymentMethodFieldRefInput<$PrismaModel>
@@ -154688,16 +154847,6 @@ export namespace Prisma {
     _count?: NestedIntFilter<$PrismaModel>
     _min?: NestedEnumPaymentMethodFilter<$PrismaModel>
     _max?: NestedEnumPaymentMethodFilter<$PrismaModel>
-  }
-
-  export type NestedEnumPaymentStatusWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: $Enums.PaymentStatus | EnumPaymentStatusFieldRefInput<$PrismaModel>
-    in?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    notIn?: $Enums.PaymentStatus[] | ListEnumPaymentStatusFieldRefInput<$PrismaModel>
-    not?: NestedEnumPaymentStatusWithAggregatesFilter<$PrismaModel> | $Enums.PaymentStatus
-    _count?: NestedIntFilter<$PrismaModel>
-    _min?: NestedEnumPaymentStatusFilter<$PrismaModel>
-    _max?: NestedEnumPaymentStatusFilter<$PrismaModel>
   }
 
   export type NestedEnumPaymentProviderEnumFilter<$PrismaModel = never> = {
@@ -156092,6 +156241,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -156111,6 +156261,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -156468,6 +156619,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -156486,6 +156639,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -156512,6 +156667,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -156530,6 +156687,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -156975,6 +157134,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -157011,6 +157172,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -158053,6 +158216,7 @@ export namespace Prisma {
     id?: StringFilter<"Order"> | string
     orderNumber?: StringFilter<"Order"> | string
     status?: EnumOrderStatusFilter<"Order"> | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFilter<"Order"> | $Enums.PaymentStatus
     subtotal?: FloatFilter<"Order"> | number
     tax?: FloatFilter<"Order"> | number
     discount?: FloatFilter<"Order"> | number
@@ -158239,6 +158403,8 @@ export namespace Prisma {
     orderNumber?: StringFilter<"PurchaseOrder"> | string
     supplierId?: StringFilter<"PurchaseOrder"> | string
     status?: EnumPurchaseOrderStatusFilter<"PurchaseOrder"> | $Enums.PurchaseOrderStatus
+    priority?: StringFilter<"PurchaseOrder"> | string
+    cancelledAt?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
     total?: FloatFilter<"PurchaseOrder"> | number
     notes?: StringNullableFilter<"PurchaseOrder"> | string | null
     expectedDelivery?: DateTimeNullableFilter<"PurchaseOrder"> | Date | string | null
@@ -158556,6 +158722,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFilter<"Sale"> | number
     loyaltyPointsUsed?: IntFilter<"Sale"> | number
     loyaltyDiscount?: FloatFilter<"Sale"> | number
+    paymentStatus?: EnumPaymentStatusFilter<"Sale"> | $Enums.PaymentStatus
+    cancelledAt?: DateTimeNullableFilter<"Sale"> | Date | string | null
     total?: FloatFilter<"Sale"> | number
     paidAmount?: FloatFilter<"Sale"> | number
     changeAmount?: FloatFilter<"Sale"> | number
@@ -164435,6 +164603,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -164454,6 +164623,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -164831,6 +165001,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -164849,6 +165021,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -165130,6 +165304,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -165166,6 +165342,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -167858,6 +168036,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -167894,6 +168074,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -168597,6 +168779,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -168633,6 +168817,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -169796,6 +169982,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -169832,6 +170020,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -170579,6 +170769,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -170615,6 +170807,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -177040,6 +177234,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -177076,6 +177272,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -177627,6 +177825,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -177663,6 +177863,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -181400,6 +181602,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -181418,6 +181622,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -181446,6 +181652,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -181482,6 +181690,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -182034,6 +182244,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -182052,6 +182264,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -182086,6 +182300,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -182122,6 +182338,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -183823,6 +184041,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -183859,6 +184079,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -184382,6 +184604,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -184418,6 +184642,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -184447,6 +184673,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -184466,6 +184693,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -184671,6 +184899,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -184690,6 +184919,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -185639,6 +185869,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -185658,6 +185889,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -186396,6 +186628,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -186415,6 +186648,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -186699,6 +186933,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -186735,6 +186971,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -186963,6 +187201,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -186999,6 +187239,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -187335,6 +187577,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -187354,6 +187597,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -187385,6 +187629,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -187421,6 +187667,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -187929,6 +188177,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -187948,6 +188197,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -187985,6 +188235,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -188021,6 +188273,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -189753,6 +190007,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -189772,6 +190027,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -189936,6 +190192,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -189972,6 +190230,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -190852,6 +191112,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -190888,6 +191150,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -191108,6 +191372,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -191144,6 +191410,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -191874,6 +192142,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -191910,6 +192180,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -192338,6 +192610,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -192374,6 +192648,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -193594,6 +193870,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -193630,6 +193908,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -194135,6 +194415,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -194171,6 +194453,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -196065,6 +196349,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -196083,6 +196369,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -196291,6 +196579,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -196309,6 +196599,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -196550,6 +196842,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -196567,6 +196861,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -197183,6 +197479,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -197219,6 +197517,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -197689,6 +197989,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -197725,6 +198027,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -198131,6 +198435,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -198150,6 +198455,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -198181,6 +198487,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -198217,6 +198525,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -198625,6 +198935,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -198644,6 +198955,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -198681,6 +198993,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -198717,6 +199031,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -204092,6 +204408,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -204128,6 +204446,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -204321,6 +204641,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -204357,6 +204679,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -206692,6 +207016,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -206818,6 +207143,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -206833,6 +207160,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -207013,6 +207342,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -208041,6 +208372,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -208060,6 +208392,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -208079,6 +208412,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -208492,6 +208826,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -208510,6 +208846,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -208527,6 +208865,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -208541,6 +208881,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -208559,6 +208901,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -208576,6 +208920,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -209088,6 +209434,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -209124,6 +209472,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -209160,6 +209510,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -211085,6 +211437,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -211224,6 +211577,8 @@ export namespace Prisma {
     orderNumber: string
     supplierId: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -211340,6 +211695,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -212516,6 +212873,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -212535,6 +212893,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -212554,6 +212913,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -212980,6 +213340,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -212998,6 +213360,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -213015,6 +213379,8 @@ export namespace Prisma {
     orderNumber?: StringFieldUpdateOperationsInput | string
     supplierId?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -213329,6 +213695,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -213365,6 +213733,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -213401,6 +213771,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -216714,6 +217086,7 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.OrderStatus
+    vpaymentStatus?: $Enums.PaymentStatus
     subtotal: number
     tax?: number
     discount?: number
@@ -216787,6 +217160,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -217024,6 +217399,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -217043,6 +217419,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -217062,6 +217439,7 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumOrderStatusFieldUpdateOperationsInput | $Enums.OrderStatus
+    vpaymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
     subtotal?: FloatFieldUpdateOperationsInput | number
     tax?: FloatFieldUpdateOperationsInput | number
     discount?: FloatFieldUpdateOperationsInput | number
@@ -217243,6 +217621,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -217279,6 +217659,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -217315,6 +217697,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -217552,6 +217936,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -217735,6 +218121,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -217771,6 +218159,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -217807,6 +218197,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -217868,6 +218260,8 @@ export namespace Prisma {
     promotionDiscount?: number
     loyaltyPointsUsed?: number
     loyaltyDiscount?: number
+    paymentStatus?: $Enums.PaymentStatus
+    cancelledAt?: Date | string | null
     total: number
     paidAmount: number
     changeAmount?: number
@@ -218001,6 +218395,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -218037,6 +218433,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -218073,6 +218471,8 @@ export namespace Prisma {
     promotionDiscount?: FloatFieldUpdateOperationsInput | number
     loyaltyPointsUsed?: IntFieldUpdateOperationsInput | number
     loyaltyDiscount?: FloatFieldUpdateOperationsInput | number
+    paymentStatus?: EnumPaymentStatusFieldUpdateOperationsInput | $Enums.PaymentStatus
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     paidAmount?: FloatFieldUpdateOperationsInput | number
     changeAmount?: FloatFieldUpdateOperationsInput | number
@@ -218249,6 +218649,8 @@ export namespace Prisma {
     id?: string
     orderNumber: string
     status?: $Enums.PurchaseOrderStatus
+    priority?: string
+    cancelledAt?: Date | string | null
     total: number
     notes?: string | null
     expectedDelivery?: Date | string | null
@@ -218455,6 +218857,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -218472,6 +218876,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -218489,6 +218895,8 @@ export namespace Prisma {
     id?: StringFieldUpdateOperationsInput | string
     orderNumber?: StringFieldUpdateOperationsInput | string
     status?: EnumPurchaseOrderStatusFieldUpdateOperationsInput | $Enums.PurchaseOrderStatus
+    priority?: StringFieldUpdateOperationsInput | string
+    cancelledAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     total?: FloatFieldUpdateOperationsInput | number
     notes?: NullableStringFieldUpdateOperationsInput | string | null
     expectedDelivery?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
