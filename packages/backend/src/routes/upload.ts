@@ -1,8 +1,8 @@
-﻿// src/routes/upload.ts
+// src/routes/upload.ts
 import { Router } from 'express';
 import { uploadController } from '../controllers/uploadController.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { UserRole } from '../generated/prisma/enums.js';
+import { UserRole } from '../generated/prisma/index.js';
 import { upload } from '../middleware/upload.js';
 
 const router = Router();

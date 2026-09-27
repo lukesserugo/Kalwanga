@@ -13,5 +13,4 @@
 //     packages/shared/src/schemas/<name>.ts
 // NEVER here.
 
-export * from "@pos/shared";
-export { default } from "@pos/shared";
+export * from "@pos/shared";          

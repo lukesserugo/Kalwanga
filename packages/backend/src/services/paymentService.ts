@@ -1611,7 +1611,6 @@ export class PaymentService extends BaseService {
         data: {
           paidAmount: totalPaid,
           status: status as any,
-          updatedAt: new Date(),
         },
       });
     } catch (error) {
@@ -1639,7 +1638,6 @@ export class PaymentService extends BaseService {
         where: { id: orderId },
         data: {
           status: status as any,
-          updatedAt: new Date(),
         },
       });
     } catch (error) {
@@ -5518,7 +5516,7 @@ export class PaymentService extends BaseService {
           if (!inventoryId && product) {
             const fallback = await this.prisma.inventory.findFirst({
               where: {
-                productId: item.productId,
+                product: { is: { id: item.productId } },
                 businessUnitId: sale.businessUnitId,
               },
               select: { id: true },
@@ -5556,7 +5554,6 @@ export class PaymentService extends BaseService {
             data: {
               quantity: newQuantity,
               available: newAvailable,
-              updatedAt: new Date(),
             },
           });
         });
@@ -5611,7 +5608,7 @@ export class PaymentService extends BaseService {
           if (!inventoryId && product) {
             const fallback = await this.prisma.inventory.findFirst({
               where: {
-                productId: item.productId,
+                product: { is: { id: item.productId } },
                 businessUnitId: sale.businessUnitId,
               },
               select: { id: true },
@@ -5643,7 +5640,6 @@ export class PaymentService extends BaseService {
             data: {
               quantity: newQuantity,
               available: newAvailable,
-              updatedAt: new Date(),
             },
           });
         });
@@ -5689,7 +5685,6 @@ export class PaymentService extends BaseService {
           discount: 0,
           total: 0,
           status: 'CHECKED_OUT',
-          updatedAt: new Date(),
         },
       });
     } catch (error) {

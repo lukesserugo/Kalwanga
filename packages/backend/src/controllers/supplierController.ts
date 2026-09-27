@@ -7,7 +7,7 @@ import { z } from 'zod';
 import {
   createSupplierSchema,
   updateSupplierSchema,
-} from '../utils/validators.js';
+} from '../../../shared/src/schemas/supplier.js';
 import { Prisma } from '../generated/prisma/index.js';
 
 // ============================================

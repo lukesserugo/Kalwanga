@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema, orderIdSchema, productIdSchema } from "../helpers";
+import { businessUnitIdSchema, orderIdSchema, productIdSchema } from "../helpers.js";
 
 const orderStatusEnum = z.enum([
   'PENDING',

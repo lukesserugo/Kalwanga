@@ -1,7 +1,7 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import { taxController } from '../controllers/taxController.ts';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { UserRole } from '../generated/prisma/enums.js';
+import { UserRole } from '../generated/prisma/index.js';
 
 const router = Router();
 router.use(requireAuth);

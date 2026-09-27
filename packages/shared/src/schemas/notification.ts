@@ -6,7 +6,7 @@ import {
   companyIdSchema,
   notificationIdSchema,
   userIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 export const notificationTypeSchema = z
   .string()

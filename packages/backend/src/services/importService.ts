@@ -207,6 +207,7 @@ export class ImportService {
             category = await prisma.category.create({
               data: {
                 name: String(record.category),
+                slug: String(record.category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'category',
                 businessUnitId: options.businessUnitId || '',
               },
             });
@@ -234,7 +235,6 @@ export class ImportService {
         const initialStock = parseInt(record.stock) || 0;
         await prisma.inventory.create({
           data: {
-            productId: product.id,
             businessUnitId: options.businessUnitId || '',
             quantity: initialStock,
             reserved: 0,
@@ -424,7 +424,7 @@ export class ImportService {
 
         const quantity = parseInt(record.quantity) || 0;
         const inventory = await prisma.inventory.findFirst({
-          where: { productId: product.id, businessUnitId: options.businessUnitId },
+          where: { product: { is: { id: product.id } }, businessUnitId: options.businessUnitId },
         });
 
         if (inventory) {
@@ -435,13 +435,11 @@ export class ImportService {
               reorderPoint: parseInt(record.reorderPoint) || inventory.reorderPoint,
               reorderQuantity: parseInt(record.reorderQuantity) || inventory.reorderQuantity,
               location: record.location ? String(record.location) : inventory.location,
-              lastUpdated: new Date(),
             },
           });
         } else {
           await prisma.inventory.create({
             data: {
-              productId: product.id,
               businessUnitId: options.businessUnitId || '',
               quantity,
               reserved: 0,

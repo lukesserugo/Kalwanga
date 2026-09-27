@@ -516,19 +516,28 @@ class ApiService {
 
       if (error.response?.status === 400) {
         const responseData = error.response?.data;
-        console.error('📋 400 Bad Request - Validation Error Details:');
+        console.error('📋 400 Bad Request:');
 
-        if (responseData?.errors && Array.isArray(responseData.errors)) {
+        if (
+          Array.isArray(responseData?.errors) &&
+          responseData.errors.length > 0
+        ) {
+          // Zod validation error shape
           console.error('   Validation Errors:');
           responseData.errors.forEach((err: any) => {
             console.error(
-              `     - ${err.field}: ${err.message} (${err.code})`,
+              `     - ${err.field}: ${err.message}${
+                err.code ? ` (${err.code})` : ''
+              }`,
             );
           });
+        } else if (responseData?.error?.message) {
+          // AppError with a nested message — the common case
+          console.error(`   Error: ${responseData.error.message}`);
+        } else if (typeof responseData?.error === 'string') {
+          console.error(`   Error: ${responseData.error}`);
         } else if (responseData?.message) {
           console.error(`   Message: ${responseData.message}`);
-        } else if (responseData?.error) {
-          console.error(`   Error: ${responseData.error}`);
         } else {
           console.error(
             '   Response data:',
@@ -804,7 +813,7 @@ class ApiService {
 
           if (
             error.response.status === 400 &&
-            error.response.data?.errors
+            Array.isArray(error.response.data?.errors)
           ) {
             console.error('📋 Validation Errors:');
             error.response.data.errors.forEach((err: any) => {

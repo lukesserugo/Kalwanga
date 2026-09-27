@@ -2,7 +2,7 @@ import {
   createSupplierSchema,
   updateSupplierSchema,
   type CreateSupplierInput,
-} from "../schemas/supplier";
+} from "../../../shared/src/schemas/supplier";
 
 export class SupplierValidation {
   static validateCreateSupplier(data: unknown): CreateSupplierInput {

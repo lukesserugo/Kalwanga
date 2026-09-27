@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema } from "../helpers";
+import { businessUnitIdSchema } from "../helpers.js";
 
 export const taxSummarySchema = z.object({
   businessUnitId: businessUnitIdSchema.optional(),

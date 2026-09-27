@@ -27,7 +27,7 @@ import {
   type TransferCartInput,
   type UpdateCartItemQuantityInput,
   type UpdateCartNotesInput,
-} from "../schemas/cart";
+} from "../schemas/cart.js";
 
 export class CartValidation {
   static validateAddItem(data: unknown): AddCartItemInput {

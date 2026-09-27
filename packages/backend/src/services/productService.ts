@@ -5,6 +5,7 @@ import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
 import { persistImages, persistVariantImages } from '../lib/imageStorage.js';
+import { generateSlug } from '../../../shared/src/helpers.js';
 
 // ============================================
 // ENUMS (mirror of Prisma + canonical enums)
@@ -4925,9 +4926,28 @@ export class ProductService extends BaseService {
         }
       }
 
+      const baseSlug = generateSlug(data.name) || 'category';
+      let slug = baseSlug;
+      let suffix = 1;
+      while (
+        await this.prisma.category.findFirst({
+          where: { slug, businessUnitId: data.businessUnitId },
+          select: { id: true },
+        })
+      ) {
+        slug = `${baseSlug}-${suffix++}`;
+        if (suffix > 100) {
+          throw new AppError(
+            'Unable to generate a unique slug for this category',
+            400
+          );
+        }
+      }
+
       return await this.prisma.category.create({
         data: {
           name: data.name,
+          slug,
           description: data.description,
           parentId: data.parentId || null,
           businessUnitId: data.businessUnitId,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { categoryIdSchema } from "../helpers";
+import { categoryIdSchema } from "../helpers.js";
 
 export const valuationQuerySchema = z.object({
   startDate: z.string().optional(),

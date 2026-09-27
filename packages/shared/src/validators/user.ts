@@ -8,7 +8,7 @@ import {
   type CreateUserInput,
   type UpdatePermissionsInput,
   type UpdateUserInput,
-} from "../schemas/user";
+} from "../../../shared/src/schemas/user";
 
 export class UserValidation {
   static validateCreateUser(data: unknown): CreateUserInput {

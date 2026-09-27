@@ -11,7 +11,7 @@ import { logger } from '../lib/logger.js';
 // TYPE DEFINITIONS
 // ============================================
 
-interface OrderItemInput {
+export interface OrderItemInput {
   productId: string;
   variantId?: string;
   quantity: number;

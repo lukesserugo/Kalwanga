@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema, categoryIdSchema, generateSlug } from "../helpers";
+import { businessUnitIdSchema, categoryIdSchema, generateSlug } from "../helpers.js";
 
 const HEX_COLOR_REGEX = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

@@ -593,7 +593,7 @@ export class ExportService {
             select: { firstName: true, lastName: true, email: true },
           },
           refunds: {
-            select: { amount: true, reason: true },
+            select: { total: true, reason: true },
           },
         },
         orderBy: { processedAt: 'desc' },

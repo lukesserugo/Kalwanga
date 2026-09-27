@@ -10,7 +10,9 @@
                     "db:push":  "prisma db push",
                     "db:seed":  "tsx prisma/seed.ts",
                     "clean":  "rm -rf dist node_modules",
-                    "typecheck":  "tsc --noEmit"
+                    "typecheck":  "tsc --noEmit",
+                    "lint": "eslint . --ext .ts",
+                    "test": "vitest run"
                 },
     "prisma":  {
                    "schema":  "prisma/schema.prisma"
@@ -21,6 +23,7 @@
                          "@prisma/client":  "^7.9.1",
                          "@prisma/config":  "^7.9.1",
                          "@pos/shared":  "workspace:*",
+                         "axios": "^1.6.5",
                          "bcrypt":  "^6.0.0",
                          "bcryptjs":  "^2.4.3",
                          "body-parser":  "^2.3.0",

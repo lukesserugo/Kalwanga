@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { companyIdSchema } from "../helpers";
+import { companyIdSchema } from "../helpers.js";
 
 export const createCustomerSchema = z.object({
   email: z.string().email(),

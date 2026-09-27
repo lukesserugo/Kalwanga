@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { businessUnitIdSchema } from "../helpers";
+import { businessUnitIdSchema } from "../helpers.js";
 
 export const registerSchema = z.object({
   email: z.string().email('Invalid email format'),

@@ -1,7 +1,7 @@
 // D:\Projects\Kalwanga\packages\backend\src\controllers\orderController.ts
 
 import { Request, Response, NextFunction } from 'express';
-import { OrderService } from '../services/orderService.js';
+import { OrderService, type OrderItemInput } from '../services/orderService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { prisma } from '../lib/prisma.js';
 import { realtimeService } from '../services/realtimeService.js';
@@ -528,8 +528,42 @@ export class OrderController {
       const validatedData = createOrderSchema.parse(req.body);
       const businessUnitId = await getBusinessUnitId(req);
 
+      const productIds = validatedData.items.map(i => i.productId);
+      const variantIds = validatedData.items
+        .map(i => i.variantId)
+        .filter((v): v is string => Boolean(v));
+
+      const [products, variants] = await Promise.all([
+        prisma.product.findMany({
+          where: { id: { in: productIds }, businessUnitId },
+          select: { id: true, unitPrice: true },
+        }),
+        variantIds.length
+          ? prisma.productVariant.findMany({
+              where: { id: { in: variantIds } },
+              select: { id: true, price: true },
+            })
+          : Promise.resolve([] as { id: string; price: number }[]),
+      ]);
+
+      const priceByProduct = new Map(products.map(p => [p.id, p.unitPrice]));
+      const priceByVariant = new Map(variants.map(v => [v.id, v.price]));
+
+      const items: OrderItemInput[] = validatedData.items.map(i => {
+        const unitPrice = i.variantId
+          ? priceByVariant.get(i.variantId) ?? priceByProduct.get(i.productId)
+          : priceByProduct.get(i.productId);
+        if (unitPrice === undefined) {
+          throw new AppError(
+            `Price not found for ${i.variantId ? `variant ${i.variantId}` : `product ${i.productId}`}`,
+            400,
+          );
+        }
+        return { ...i, unitPrice };
+      });
+
       const orderData = {
-        items: validatedData.items,
+        items,
         customerId: validatedData.customerId,
         discount: validatedData.discount ?? 0,
         tax: validatedData.tax ?? 0,
@@ -714,11 +748,30 @@ export class OrderController {
 
       const validatedData = addItemSchema.parse(req.body);
 
-      const order = await orderService.addItemToOrder(
-        id,
-        validatedData,
-        userId,
-      );
+      const [product, variant] = await Promise.all([
+        prisma.product.findUnique({
+          where: { id: validatedData.productId },
+          select: { unitPrice: true },
+        }),
+        validatedData.variantId
+          ? prisma.productVariant.findUnique({
+              where: { id: validatedData.variantId },
+              select: { price: true },
+            })
+          : Promise.resolve(null),
+      ]);
+
+      const unitPrice = variant?.price ?? product?.unitPrice;
+      if (unitPrice === undefined) {
+        throw new AppError(
+          `Price not found for product ${validatedData.productId}`,
+          400,
+        );
+      }
+
+      const item: OrderItemInput = { ...validatedData, unitPrice };
+
+      const order = await orderService.addItemToOrder(id, item, userId);
 
       res.json({
         success: true,

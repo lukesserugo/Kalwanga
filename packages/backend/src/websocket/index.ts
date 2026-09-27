@@ -360,7 +360,7 @@ export class NotificationService extends EventEmitter {
         data: {
           title,
           message,
-          type,
+          type: type as any,
           userId,
           businessUnitId,
           isRead: false,
@@ -408,7 +408,7 @@ export class NotificationService extends EventEmitter {
             data: {
               title,
               message,
-              type,
+              type: type as any,
               userId: user.userId,
               businessUnitId,
               isRead: false,

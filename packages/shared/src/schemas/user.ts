@@ -4,7 +4,7 @@ import {
   companyIdSchema,
   nullableUuidSchema,
   userIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 const roleEnum = z.enum([
   'SUPER_ADMIN',

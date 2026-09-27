@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { paymentMethodSchema } from "../helpers";
+import { paymentMethodSchema } from "../helpers.js";
 
 export const createPaymentSchema = z.object({
   amount: z.number().positive(),

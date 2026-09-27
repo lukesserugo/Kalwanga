@@ -5,7 +5,7 @@ import {
   productIdSchema,
   skuSchema,
   supplierIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 export const createItemSchema = z.object({
   name: z.string().min(1).max(100),

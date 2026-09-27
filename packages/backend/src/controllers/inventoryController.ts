@@ -6,6 +6,9 @@ import { AppError } from '../middleware/errorHandler.js';
 import {
   createProductSchema,
   updateProductSchema,
+} from '../../../shared/src/schemas/product.js';
+
+import {
   updateStockSchema,
   searchProductsSchema,
   createItemSchema,
@@ -15,7 +18,7 @@ import {
   restockItemSchema,
   bulkCreateItemsSchema,
   bulkUpdateStockSchema,
-} from '../utils/validators.js';
+} from '../../../shared/src/schemas/inventory.js';
 import { z } from 'zod';
 import { Prisma } from '../generated/prisma/index.js';
 import { prisma } from '../lib/prisma.js';
@@ -126,7 +129,9 @@ function isValidID(id: string): boolean {
 // NORMALIZATION HELPERS
 // ============================================
 
-function normalizeInventoryItem(item: any): any {
+function normalizeInventoryItem(
+  item: Record<string, any> | null | undefined,
+): any {
   if (!item) return item;
 
   if (item.product && item.product.id) {
@@ -188,11 +193,11 @@ function normalizeInventoryItem(item: any): any {
     return { ...item, id: item.productId };
   }
 
-  if (item && item.images) {
+  if (item.images) {
     item.images = toImageUrls(item.images);
   }
 
-  if (item && !item.inventory) {
+  if (!item.inventory) {
     return {
       ...item,
       inventory: [
@@ -204,15 +209,15 @@ function normalizeInventoryItem(item: any): any {
     };
   }
 
-  if (item && item.quantity !== undefined && item.stock === undefined) {
+  if (item.quantity !== undefined && item.stock === undefined) {
     return { ...item, stock: item.quantity };
   }
 
-  if (item && !item.images) {
+  if (!item.images) {
     item.images = [];
   }
 
-  if (item && !item.tags) {
+  if (!item.tags) {
     item.tags = [];
   }
 
@@ -221,7 +226,7 @@ function normalizeInventoryItem(item: any): any {
 
 function normalizeInventoryItems(items: any[]): any[] {
   if (!items || !Array.isArray(items)) return [];
-  return items.map(normalizeInventoryItem);
+  return items.map((item) => normalizeInventoryItem(item));
 }
 
 // ============================================
@@ -2327,7 +2332,7 @@ export const inventoryController = {
           }
 
           const result = await inventoryService.updateStock({
-            productId: update.id,
+            product: { is: { id: update.id } },
             quantity: update.quantity,
             transactionType: update.transactionType || 'ADJUSTMENT',
             userId,

@@ -3,7 +3,7 @@
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { Prisma } from '../generated/prisma/index.js';
-import { generateSlug } from '../utils/validators.js';
+import { generateSlug } from '../../../shared/src/helpers.js';
 
 // ============================================
 // TYPES

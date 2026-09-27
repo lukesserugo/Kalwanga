@@ -481,7 +481,6 @@ export class AnalyticsService {
           status: { not: 'CANCELLED' },
         },
         select: {
-          paymentMethod: true,
           total: true,
         },
       });
@@ -489,7 +488,7 @@ export class AnalyticsService {
       const paymentMap = new Map<string, { revenue: number; count: number }>();
       
       sales.forEach(sale => {
-        const method = sale.paymentMethod || 'Unknown';
+        const method = (sale as any).payments?.[0]?.paymentMethod || 'Unknown';
         const current = paymentMap.get(method) || { revenue: 0, count: 0 };
         current.revenue += sale.total || 0;
         current.count += 1;

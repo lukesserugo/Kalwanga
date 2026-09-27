@@ -3,7 +3,7 @@ import {
   businessUnitIdSchema,
   paymentMethodSchema,
   productIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 export const createSaleSchema = z.object({
   items: z.array(

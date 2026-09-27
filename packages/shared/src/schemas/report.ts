@@ -3,7 +3,7 @@ import {
   businessUnitIdSchema,
   companyIdSchema,
   userIdSchema,
-} from "../helpers";
+} from "../helpers.js";
 
 export const searchParamsSchema = z.object({
   page: z.string().transform(Number).optional(),

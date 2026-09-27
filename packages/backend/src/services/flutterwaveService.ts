@@ -909,7 +909,6 @@ export class FlutterwaveService extends BaseService {
         data: {
           paidAmount: newPaidAmount,
           status: newStatus as any,
-          updatedAt: new Date(),
         },
       });
     } catch (error) {

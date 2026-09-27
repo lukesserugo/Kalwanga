@@ -9,7 +9,7 @@ import {
   bulkDeleteSchema,
   categoryQuerySchema,
   categoryWithProductsQuerySchema,
-} from '../utils/validators.js';
+} from '../../../shared/src/schemas/category.js';
 import { z } from 'zod';
 
 const categoryService = new CategoryService();
@@ -79,10 +79,6 @@ export const categoryController = {
   // PUBLIC
   // ------------------------------------------
 
-  /**
-   * GET /categories/public
-   * No auth. Resolves business unit transparently.
-   */
   async getPublicCategories(req: Request, res: Response, next: NextFunction) {
     try {
       const { businessUnitId, limit, search, featured } = req.query;
@@ -100,9 +96,6 @@ export const categoryController = {
     }
   },
 
-  /**
-   * GET /categories/public/tree/:businessUnitId
-   */
   async getPublicCategoryTree(req: Request, res: Response, next: NextFunction) {
     try {
       const { businessUnitId } = req.params;
@@ -113,10 +106,6 @@ export const categoryController = {
     }
   },
 
-  /**
-   * GET /categories/public/:id/with-products
-   * No auth. Returns 404 if the category isn't public.
-   */
   async getPublicCategoryWithProducts(
     req: Request,
     res: Response,
@@ -126,7 +115,7 @@ export const categoryController = {
       const { id } = req.params;
       if (!id) throw new AppError('Category ID is required', 400);
 
-      const params = categoryWithProductsQuerySchema.parse(req.query);
+      const params = categoryWithProductsQuerySchema.parse(req.query) as any;
 
       const data = await categoryService.getPublicCategoryWithProducts(
         id,
@@ -152,7 +141,7 @@ export const categoryController = {
 
   async getAllCategories(req: Request, res: Response, next: NextFunction) {
     try {
-      const parsed = categoryQuerySchema.parse(req.query);
+      const parsed = categoryQuerySchema.parse(req.query) as any;
       const result = await categoryService.getAllCategories({
         ...parsed,
         parentId:
@@ -276,14 +265,6 @@ export const categoryController = {
     }
   },
 
-  /**
-   * GET /categories/:id/with-products
-   *
-   * Full category + product list + inventory rollups.
-   * Query params:
-   *   productLimit    (default 50, max 200)
-   *   includeInactive (default false)
-   */
   async getCategoryWithProducts(
     req: Request,
     res: Response,
@@ -293,7 +274,7 @@ export const categoryController = {
       const { id } = req.params;
       if (!id) throw new AppError('Category ID is required', 400);
 
-      const params = categoryWithProductsQuerySchema.parse(req.query);
+      const params = categoryWithProductsQuerySchema.parse(req.query) as any;
 
       const data = await categoryService.getCategoryWithProducts(id, params);
 
@@ -321,8 +302,55 @@ export const categoryController = {
 
   async createCategory(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = createCategorySchema.parse(req.body);
+      const raw = createCategorySchema.parse(req.body) as any;
+
+      if (!raw.businessUnitId) {
+        throw new AppError('businessUnitId is required', 400);
+      }
+      const businessUnitId = String(raw.businessUnitId);
+
+      const data = {
+        name: String(raw.name ?? ''),
+        slug: raw.slug !== undefined && raw.slug !== null
+          ? String(raw.slug)
+          : undefined,
+        description:
+          raw.description !== undefined && raw.description !== null
+            ? String(raw.description)
+            : null,
+        image:
+          raw.image !== undefined && raw.image !== null
+            ? String(raw.image)
+            : null,
+        icon:
+          raw.icon !== undefined && raw.icon !== null
+            ? String(raw.icon)
+            : null,
+        color:
+          raw.color !== undefined && raw.color !== null
+            ? String(raw.color)
+            : null,
+        parentId:
+          raw.parentId !== undefined && raw.parentId !== null
+            ? String(raw.parentId)
+            : null,
+        businessUnitId,
+        isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
+        featured: raw.featured !== undefined ? Boolean(raw.featured) : false,
+        sortOrder:
+          raw.sortOrder !== undefined ? Number(raw.sortOrder) : 0,
+        metaTitle:
+          raw.metaTitle !== undefined && raw.metaTitle !== null
+            ? String(raw.metaTitle)
+            : null,
+        metaDescription:
+          raw.metaDescription !== undefined && raw.metaDescription !== null
+            ? String(raw.metaDescription)
+            : null,
+      };
+
       const category = await categoryService.createCategory(data);
+
       return res.status(201).json({
         success: true,
         data: category,
@@ -338,8 +366,50 @@ export const categoryController = {
     try {
       const { id } = req.params;
       if (!id) throw new AppError('Category ID is required', 400);
-      const data = updateCategorySchema.parse(req.body);
+
+      const raw = updateCategorySchema.parse(req.body) as any;
+
+      const data: {
+        name?: string;
+        slug?: string;
+        description?: string | null;
+        image?: string | null;
+        icon?: string | null;
+        color?: string | null;
+        parentId?: string | null;
+        isActive?: boolean;
+        featured?: boolean;
+        sortOrder?: number;
+        metaTitle?: string | null;
+        metaDescription?: string | null;
+      } = {};
+
+      if (raw.name !== undefined) data.name = String(raw.name);
+      if (raw.slug !== undefined && raw.slug !== null)
+        data.slug = String(raw.slug);
+      if (raw.description !== undefined)
+        data.description =
+          raw.description === null ? null : String(raw.description);
+      if (raw.image !== undefined)
+        data.image = raw.image === null ? null : String(raw.image);
+      if (raw.icon !== undefined)
+        data.icon = raw.icon === null ? null : String(raw.icon);
+      if (raw.color !== undefined)
+        data.color = raw.color === null ? null : String(raw.color);
+      if (raw.parentId !== undefined)
+        data.parentId = raw.parentId === null ? null : String(raw.parentId);
+      if (raw.isActive !== undefined) data.isActive = Boolean(raw.isActive);
+      if (raw.featured !== undefined) data.featured = Boolean(raw.featured);
+      if (raw.sortOrder !== undefined) data.sortOrder = Number(raw.sortOrder);
+      if (raw.metaTitle !== undefined)
+        data.metaTitle =
+          raw.metaTitle === null ? null : String(raw.metaTitle);
+      if (raw.metaDescription !== undefined)
+        data.metaDescription =
+          raw.metaDescription === null ? null : String(raw.metaDescription);
+
       const category = await categoryService.updateCategory(id, data);
+
       return res.status(200).json({
         success: true,
         data: category,
@@ -387,7 +457,8 @@ export const categoryController = {
 
   async bulkDeleteCategories(req: Request, res: Response, next: NextFunction) {
     try {
-      const { ids } = bulkDeleteSchema.parse(req.body);
+      const parsed = bulkDeleteSchema.parse(req.body) as any;
+      const ids = (parsed.ids ?? []).map((x: any) => String(x));
       const result = await categoryService.bulkDeleteCategories(ids);
       return res.status(200).json({
         success: true,

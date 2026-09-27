@@ -335,7 +335,7 @@ export class CustomerService extends BaseService {
         async (tx: Prisma.TransactionClient) => {
           const updated = await tx.customer.update({
             where: { id },
-            data: { isActive: false, deletedAt: new Date() },
+            data: { isActive: false },
           });
 
           if (customer.giftCards.length > 0) {

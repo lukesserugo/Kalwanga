@@ -113,7 +113,7 @@ export async function ensureProductInventory(
   // The schema now has `Inventory.productId` directly, so the filter
   // is a plain scalar equality.
   const existing = await tx.inventory.findFirst({
-    where: { productId, businessUnitId },
+    where: { product: { is: { id: productId } }, businessUnitId },
     select: { id: true },
   });
 
@@ -132,7 +132,6 @@ export async function ensureProductInventory(
   const inventory = await tx.inventory.create({
     data: {
       businessUnitId,
-      productId,
       locationId,
 
       quantity: qty,
@@ -191,7 +190,7 @@ export async function ensureVariantInventory(
   }
 
   const existing = await tx.inventory.findFirst({
-    where: { variantId, businessUnitId },
+    where: { variant: { is: { id: variantId } }, businessUnitId },
     select: { id: true },
   });
 
@@ -209,8 +208,6 @@ export async function ensureVariantInventory(
   const inventory = await tx.inventory.create({
     data: {
       businessUnitId,
-      variantId,
-      productId: variant.productId, // useful for reads that filter by productId
       locationId,
 
       quantity: qty,

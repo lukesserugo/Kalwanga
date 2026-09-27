@@ -5,7 +5,7 @@ import {
   updateProductSchema,
   type CreateProductInput,
   type UpdateProductInput,
-} from "../schemas/product";
+} from "../schemas/product.js";
 
 export class ProductValidation {
   static validateCreateProduct(data: unknown): CreateProductInput {

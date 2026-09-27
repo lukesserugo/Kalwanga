@@ -265,7 +265,7 @@ export class ReceiptService {
               company: true,
             },
           },
-          user: {
+          lastPrinter: {
             select: {
               id: true,
               firstName: true,
