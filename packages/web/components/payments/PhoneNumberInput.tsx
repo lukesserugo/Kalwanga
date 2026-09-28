@@ -1,3 +1,5 @@
+// packages/web/components/payments/PhoneNumberInput.tsx
+
 'use client';
 
 // ============================================
@@ -8,6 +10,12 @@
 // `autoFocus` is set, exposes a ref for the parent to focus
 // programmatically, and shows an inline validity hint when the
 // selected mobile provider expects a specific format.
+//
+// ⚠ Emptiness is NOT validated here. When `required` is set, the
+//   native browser `required` attribute on the `<input>` produces
+//   the standard "Please fill out this field" message. Callers that
+//   want a custom empty-message should render one alongside this
+//   component (or gate submission on their own check).
 
 import { forwardRef, useMemo } from 'react';
 import { Smartphone, AlertCircle, Check } from 'lucide-react';
@@ -26,7 +34,14 @@ interface PhoneNumberInputProps {
   /** Shows a red asterisk next to the label. */
   required?: boolean;
   disabled?: boolean;
-  /** Autofocus when mounted. */
+  /**
+   * Autofocus when mounted.
+   *
+   * ⚠ Native browser autofocus. In a modal or list of inputs this
+   *   can steal focus from where the user expects it. Prefer the
+   *   forwarded `ref` and a `.focus()` call on demand if you need
+   *   finer control.
+   */
   autoFocus?: boolean;
   label?: string;
   className?: string;
@@ -55,15 +70,29 @@ export const PhoneNumberInput = forwardRef<
     [provider],
   );
 
+  /**
+   * Validation error for a non-empty value. Returns `null` when
+   * the value is empty (emptiness is handled by the browser's
+   * `required` attribute, not by this component) or when no
+   * provider is selected.
+   */
   const validationError = useMemo(() => {
     if (!provider) return null;
-    if (!value.trim()) return null; // empty is a separate concern
-    return validatePhoneForProvider(value, provider);
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    return validatePhoneForProvider(trimmed, provider);
   }, [value, provider]);
 
+  /**
+   * `true` when a non-empty value passes the provider's format
+   * check. Empty values are not "valid" — they render no green
+   * checkmark.
+   */
   const isValid = useMemo(() => {
-    if (!provider || !value.trim()) return false;
-    return validatePhoneForProvider(value, provider) === null;
+    if (!provider) return false;
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return validatePhoneForProvider(trimmed, provider) === null;
   }, [value, provider]);
 
   const placeholder =

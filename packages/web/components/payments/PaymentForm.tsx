@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\components\payments\PaymentForm.tsx
+// packages/web/components/payments/PaymentForm.tsx
 
 'use client';
 
@@ -151,7 +151,20 @@ function validatePhoneForProvider(
 
 export interface PaymentFormProps {
   amount: number;
+
+  /**
+   * Optional currency.
+   *
+   * ⚠ When omitted, the field is NOT sent to the backend and the
+   *   backend resolves it from the business unit (then
+   *   `DEFAULT_CURRENCY`, then the registry default — `UGX`).
+   *   Do NOT default this to `'USD'` on the client — that is the
+   *   bug the backend's `resolveCurrency` was written to fix, and
+   *   every gateway except Stripe/USD-only deployments rejects the
+   *   mismatch.
+   */
   currency?: string;
+
   paymentMethod: string;
   provider?: string;
   customerId?: string;
@@ -187,6 +200,11 @@ export interface PaymentFormProps {
 // ============================================
 // PROVIDER METADATA
 // ============================================
+//
+// The image map and the config map are keyed by the payment
+// method / provider code the backend accepts. Every value in the
+// backend's `PAYMENT_METHODS` needs an entry here, or the picker
+// falls through to the Stripe config by default.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
@@ -197,8 +215,15 @@ const PROVIDER_IMAGE_URLS: Record<string, string> = {
   MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
   MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
   AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
 };
 
+/**
+ * @deprecated The dark-mode image map is identical to the light
+ *   one. Kept so a future dark-mode-specific asset can be added
+ *   without changing the lookup function.
+ */
 const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   STRIPE: 'https://stripe.com/img/v3/home/social.png',
   PAYPAL:
@@ -208,6 +233,8 @@ const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
   MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
   MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
   AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
 };
 
 const PROVIDER_CONFIGS: Record<
@@ -255,6 +282,18 @@ const PROVIDER_CONFIGS: Record<
     name: 'Airtel Money',
     color: 'red',
     description: 'Airtel Money prompt',
+  },
+  TIGO: {
+    icon: '📱',
+    name: 'Tigo Pesa',
+    color: 'blue',
+    description: 'Tigo Pesa prompt',
+  },
+  VODAFONE: {
+    icon: '📱',
+    name: 'Vodafone Cash',
+    color: 'red',
+    description: 'Vodafone Cash prompt',
   },
 };
 
@@ -493,7 +532,7 @@ function MobileProviderPicker({
 export function PaymentForm(props: PaymentFormProps): JSX.Element {
   const {
     amount,
-    currency = 'USD',
+    currency,
     paymentMethod,
     provider,
     customerId,
@@ -521,16 +560,13 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     'form' | 'processing' | 'awaiting' | 'complete' | 'error'
   >('form');
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showCvv, setShowCvv] = useState(false);
   const [processing, setProcessing] = useState(false);
 
+  // ── Provider selection ──────────────────────────────────────
+  // The mobile-money network is chosen separately by the mobile
+  // picker. This is the *gateway* selector for card methods.
   const [selectedProvider, setSelectedProvider] = useState<string>(
-    provider ||
-      (paymentMethod === 'MOBILE_MONEY'
-        ? 'STRIPE'
-        : paymentMethod === 'PAYPAL'
-          ? 'PAYPAL'
-          : 'STRIPE'),
+    provider ?? 'STRIPE',
   );
   const [showProviderDropdown, setShowProviderDropdown] = useState(false);
 
@@ -554,14 +590,23 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
   const [awaitingSaleId, setAwaitingSaleId] = useState<string | null>(null);
   const [awaitingMessage, setAwaitingMessage] = useState<string>('');
 
+  // ── Idempotency key ─────────────────────────────────────────
+  // A stable per-attempt key. Reset on success and explicit cancel
+  // so a legitimate second payment in the same session does not
+  // hit the backend's idempotency short-circuit and return the
+  // first Payment row.
   const idempotencyKeyRef = useRef<string | null>(null);
-  useEffect(() => {
+  const ensureIdempotencyKey = useCallback((): string => {
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current =
         typeof crypto !== 'undefined' && 'randomUUID' in crypto
           ? crypto.randomUUID()
           : `pf_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     }
+    return idempotencyKeyRef.current;
+  }, []);
+  const resetIdempotencyKey = useCallback((): void => {
+    idempotencyKeyRef.current = null;
   }, []);
 
   // Sync parent-supplied clientSecret into local state. This
@@ -609,6 +654,15 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       BANK_TRANSFER: ['FLUTTERWAVE'],
       GIFT_CARD: ['STRIPE'],
       LOYALTY_POINTS: ['STRIPE'],
+      // Direct sub-provider requests. The form does not currently
+      // route through this branch — the mobile picker handles the
+      // network selection for MOBILE_MONEY. Included so a caller
+      // that passes `paymentMethod: 'MTN'` directly gets a working
+      // provider list.
+      MTN: ['MTN'],
+      AIRTEL: ['AIRTEL'],
+      TIGO: ['TIGO'],
+      VODAFONE: ['VODAFONE'],
     };
     return methodProviders[paymentMethod] || ['STRIPE'];
   };
@@ -658,6 +712,15 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       if (loyaltyPoints > maxPoints) {
         newErrors.loyaltyPoints = `Only ${maxPoints} points available`;
       }
+    }
+
+    // Square requires a card nonce from the Square Web SDK. This
+    // form has no nonce-capture flow yet, so a `SQUARE` submission
+    // without a nonce would reach the backend and 400 with
+    // "Card nonce is required". Catch it up front.
+    if (paymentMethod === 'SQUARE') {
+      newErrors.square =
+        'Square requires the Square Web SDK card form. Please use Stripe for card payments.';
     }
 
     setErrors(newErrors);
@@ -745,8 +808,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     setStep('processing');
 
     try {
-      const idempotencyKey =
-        idempotencyKeyRef.current ?? `pf_${Date.now()}`;
+      const idempotencyKey = ensureIdempotencyKey();
 
       if (cartId) {
         const result = await checkoutService.processOnlineCheckout({
@@ -782,12 +844,15 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
               idempotencyKey,
               accountReference: `SALE-${saleId}`,
               transactionDesc: `Payment for sale ${saleId}`,
+              // `currency` is intentionally omitted when the caller
+              // did not supply one — M-Pesa enforces KES via the
+              // backend's `assertProviderAccepts('MPESA', 'KES')`.
+              currency,
             });
 
             setAwaitingSaleId(saleId);
             setAwaitingMessage(
               response?.data?.CustomerMessage ||
-                response?.CustomerMessage ||
                 'Check your phone to approve the M-Pesa request.',
             );
             setStep('awaiting');
@@ -800,6 +865,8 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
             provider: mobileProvider,
             phoneNumber,
             amount: finalAmount || amount,
+            // `currency` omitted when the caller did not supply one
+            // — MTN/Airtel derive it from their country config.
             currency,
             saleId,
             customerId,
@@ -829,6 +896,9 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
         if (isCardMethod && selectedProvider === 'STRIPE') {
           const intent = await paymentService.createPaymentIntent({
             amount: finalAmount || amount,
+            // `currency` omitted when the caller did not supply one
+            // — the backend defaults to the platform default
+            // (env DEFAULT_CURRENCY → 'UGX').
             currency,
             description: `Payment for sale ${saleId}`,
             metadata: {
@@ -837,6 +907,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
               paymentMethod,
               idempotencyKey,
             },
+            idempotencyKey,
           });
 
           setLocalStripeClientSecret(intent.clientSecret);
@@ -852,7 +923,11 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
           customerId,
           cashRegisterId,
           cashRegisterSessionId,
+          // `currency` omitted when the caller did not supply one
+          // — the backend resolves from `businessUnitId`.
           currency,
+          businessUnitId,
+          idempotencyKey,
           description: `Payment for sale ${saleId}`,
           metadata: {
             provider: selectedProvider,
@@ -873,30 +948,44 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
         setStep('complete');
         setProcessing(false);
+        resetIdempotencyKey();
         onSuccess?.(payment);
         toast.success('Payment processed successfully');
         return;
       }
 
+      // ── No saleId, no cartId: direct payment endpoint ──────
+      //
+      // The backend's `processPaymentSchema` rejects unknown keys
+      // and does not read a top-level `provider` — the concrete
+      // provider is derived from `paymentMethod`. `provider` is
+      // moved into `metadata.provider`, which the mobile-money and
+      // Square handlers do read.
       const paymentData: Record<string, unknown> = {
         amount: finalAmount || amount,
         paymentMethod,
         customerId,
-        currency,
-        provider: selectedProvider,
-        metadata: {} as Record<string, unknown>,
         businessUnitId,
+        idempotencyKey,
+        metadata: {
+          provider: selectedProvider,
+        } as Record<string, unknown>,
       };
+
+      // Forward `currency` only when the caller supplied one.
+      if (currency) {
+        paymentData.currency = currency;
+      }
 
       if (
         paymentMethod === 'CREDIT_CARD' ||
         paymentMethod === 'DEBIT_CARD'
       ) {
         paymentData.source = 'card';
-        paymentData.metadata = {
-          cardLast4: cardNumber.replace(/\s/g, '').slice(-4),
-          cardBrand: 'unknown',
-        };
+        (paymentData.metadata as Record<string, unknown>).cardLast4 =
+          cardNumber.replace(/\s/g, '').slice(-4);
+        (paymentData.metadata as Record<string, unknown>).cardBrand =
+          'unknown';
       }
 
       if (paymentMethod === 'GIFT_CARD') {
@@ -919,6 +1008,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
 
       setStep('complete');
       setProcessing(false);
+      resetIdempotencyKey();
       onSuccess?.(payment);
       toast.success('Payment processed successfully');
     } catch (error: any) {
@@ -957,6 +1047,8 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     onError,
     onAwaitingConfirmation,
     handleNextAction,
+    ensureIdempotencyKey,
+    resetIdempotencyKey,
   ]);
 
   // ── Stripe callbacks ─────────────────────────────────────────
@@ -966,6 +1058,7 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
     setAwaitingMessage('Card approved. Confirming with your bank…');
     setStep('awaiting');
     setProcessing(false);
+    resetIdempotencyKey();
 
     const confirmId = saleId ?? awaitingSaleId ?? null;
     if (confirmId) {
@@ -975,17 +1068,26 @@ export function PaymentForm(props: PaymentFormProps): JSX.Element {
       onSuccess?.({ status: 'PAID', provider: 'STRIPE' });
     }
     toast.success('Card approved');
-  }, [saleId, awaitingSaleId, onAwaitingConfirmation, onSuccess]);
+  }, [
+    saleId,
+    awaitingSaleId,
+    onAwaitingConfirmation,
+    onSuccess,
+    resetIdempotencyKey,
+  ]);
 
   const handleStripeError = useCallback((message: string): void => {
+    // ⚠ Do NOT reset the idempotency key here. A user-recoverable
+    //   error (decline, 3DS fail) should let the retry reuse the
+    //   same key so the backend's idempotency short-circuit can
+    //   return the original Payment if one exists.
     toast.error(message);
-    idempotencyKeyRef.current = null;
   }, []);
 
   const handleStripeCancel = useCallback((): void => {
     setLocalStripeClientSecret(null);
-    idempotencyKeyRef.current = null;
-  }, []);
+    resetIdempotencyKey();
+  }, [resetIdempotencyKey]);
 
   // ── Render helpers ───────────────────────────────────────────
 

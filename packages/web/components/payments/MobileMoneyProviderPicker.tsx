@@ -1,3 +1,5 @@
+// packages/web/components/payments/MobileMoneyProviderPicker.tsx
+
 'use client';
 
 // ============================================
@@ -8,19 +10,35 @@
 // `PaymentSection` renders this when the selected method is
 // `MOBILE_MONEY`. Each provider knows its required phone format
 // and its backend routing hint.
+//
+// ⚠ The icon paths below are served from `packages/web/public/`.
+//   If the files don't exist yet, the `<Image>` onError handler
+//   hides the broken image and the picker falls back to a
+//   label-only layout. Add the SVGs to
+//   `packages/web/public/icons/payments/` to restore the icons.
 
 import { useCallback } from 'react';
 import Image from 'next/image';
 import { Smartphone, CheckCircle, AlertCircle } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 
+/**
+ * The three mobile-money sub-providers the backend routes via
+ * `paymentMethod: 'MOBILE_MONEY'` + `metadata.provider`. Matches
+ * `MobileMoneyProvider` in `services/checkoutService.ts` and the
+ * backend's `MOBILE_MONEY_NETWORKS` constant.
+ */
 export type MobileProvider = 'MTN' | 'AIRTEL' | 'MPESA';
 
 export interface MobileProviderSpec {
   id: MobileProvider;
   name: string;
   description: string;
-  /** Flaticon asset path — full URL is composed at render. */
+  /**
+   * Local asset path under `public/`. Served by Next.js; no
+   * external CDN dependency and no third-party request from the
+   * user's browser.
+   */
   iconUrl: string;
   /** Placeholder phone number for this provider's country. */
   phonePlaceholder: string;
@@ -30,12 +48,17 @@ export interface MobileProviderSpec {
   countryCode: string;
 }
 
-export const MOBILE_PROVIDERS: MobileProviderSpec[] = [
+/**
+ * Read-only so a consumer can't mutate the shared array. The
+ * picker iterates this; a caller that needs a filtered list should
+ * build a new array rather than mutating this one.
+ */
+export const MOBILE_PROVIDERS: readonly MobileProviderSpec[] = [
   {
     id: 'MPESA',
     name: 'M-Pesa',
     description: 'Safaricom STK push',
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+    iconUrl: '/icons/payments/mpesa.svg',
     phonePlaceholder: '+254 712 345 678',
     nationalDigits: 9,
     countryCode: '254',
@@ -44,7 +67,7 @@ export const MOBILE_PROVIDERS: MobileProviderSpec[] = [
     id: 'MTN',
     name: 'MTN Mobile Money',
     description: 'MTN MoMo prompt',
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+    iconUrl: '/icons/payments/mtn.svg',
     phonePlaceholder: '+256 770 000 000',
     nationalDigits: 9,
     countryCode: '256',
@@ -53,12 +76,12 @@ export const MOBILE_PROVIDERS: MobileProviderSpec[] = [
     id: 'AIRTEL',
     name: 'Airtel Money',
     description: 'Airtel Money prompt',
-    iconUrl: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
+    iconUrl: '/icons/payments/airtel.svg',
     phonePlaceholder: '+256 700 000 000',
     nationalDigits: 9,
     countryCode: '256',
   },
-];
+] as const;
 
 interface MobileMoneyProviderPickerProps {
   selected: MobileProvider;
@@ -124,6 +147,8 @@ export function MobileMoneyProviderPicker({
                     alt={provider.name}
                     width={24}
                     height={24}
+                    priority={false}
+                    loading="lazy"
                     className="rounded object-contain"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
@@ -170,6 +195,23 @@ export function MobileMoneyProviderPicker({
 // The rule is deliberately permissive: strip non-digits, require at
 // least the provider's national digit count, and cap at 15 total
 // digits (E.164 max).
+//
+// ── Country-code handling ─────────────────────────────────
+//
+// The country code is only stripped when the number actually looks
+// international:
+//
+//   • A leading `+` (so the user explicitly typed the country
+//     code), OR
+//   • A digit count strictly greater than
+//     `countryCode.length + nationalDigits` (so the country code
+//     is present without a `+`).
+//
+// Stripping the country code based on `startsWith` alone produced
+// false negatives for national numbers that happened to begin with
+// the same digits as the country code (e.g. a Ugandan national
+// number starting `256…` under an MTN spec whose countryCode is
+// `'256'`). The stricter gate closes that gap.
 
 export function validatePhoneForProvider(
   phone: string,
@@ -178,25 +220,31 @@ export function validatePhoneForProvider(
   const spec = MOBILE_PROVIDERS.find((p) => p.id === provider);
   if (!spec) return 'Unknown mobile money provider';
 
-  const digits = phone.replace(/\D/g, '');
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, '');
 
   if (digits.length === 0) {
     return `Phone number is required for ${spec.name}`;
   }
 
-  // Allow either a full international number or a national number.
-  const national = digits.startsWith(spec.countryCode)
-    ? digits.slice(spec.countryCode.length)
-    : digits.startsWith('0')
-      ? digits.slice(1)
-      : digits;
+  if (digits.length > 15) {
+    return 'Phone number is too long';
+  }
+
+  const hasExplicitPlus = trimmed.startsWith('+');
+  const looksInternationalWithoutPlus =
+    digits.length > spec.countryCode.length + spec.nationalDigits;
+
+  const national =
+    (hasExplicitPlus || looksInternationalWithoutPlus) &&
+    digits.startsWith(spec.countryCode)
+      ? digits.slice(spec.countryCode.length)
+      : digits.startsWith('0')
+        ? digits.slice(1)
+        : digits;
 
   if (national.length < spec.nationalDigits) {
     return `Enter a valid ${spec.name} number (at least ${spec.nationalDigits} digits)`;
-  }
-
-  if (digits.length > 15) {
-    return 'Phone number is too long';
   }
 
   return null;

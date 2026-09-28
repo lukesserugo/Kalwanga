@@ -1,8 +1,14 @@
-// D:\Projects\Kalwanga\packages\web\components\payments\PaymentHistory.tsx
+// packages/web/components/payments/PaymentHistory.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import Image from 'next/image';
 import {
   CreditCard,
@@ -25,6 +31,7 @@ import {
   Smartphone,
   Landmark,
   Globe,
+  type LucideIcon,
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { paymentService } from '../../services/paymentService';
@@ -87,6 +94,11 @@ interface Payment {
 // ============================================
 // PROVIDER CONSTANTS
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. Historical rows
+//   that carry `metadata.provider: 'PAYSTACK'` will fail the
+//   `KNOWN_PROVIDER_CODES` lookup and fall through to the generic
+//   method label. Everything else about the row renders normally.
 
 const KNOWN_PROVIDER_CODES = new Set<string>([
   'STRIPE',
@@ -125,47 +137,40 @@ const PROVIDER_FILTER_OPTIONS: string[] = [
   'VODAFONE',
 ];
 
+/**
+ * Local icon paths under `packages/web/public/`. Add one SVG per
+ * code to restore the images. Until then, the `onError` fallback
+ * hides the broken image and the method icon renders instead.
+ *
+ * ⚠ No external CDN dependencies — every request stays on the
+ *   deployment's own origin.
+ */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
-const PAYMENT_METHOD_ICONS: Record<string, any> = {
+const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   CASH: Banknote,
   CREDIT_CARD: CreditCard,
   DEBIT_CARD: Wallet,
@@ -201,6 +206,11 @@ const PROVIDER_NAMES: Record<string, string> = {
   VODAFONE: 'Vodafone Cash',
 };
 
+/**
+ * Full literal Tailwind class strings for each status. The
+ * compiler can only see literal strings, so a helper that
+ * interpolates `bg-${color}` never emits a rule.
+ */
 const STATUS_BADGE_CLASSES: Record<string, string> = {
   PAID: 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
   PENDING:
@@ -223,12 +233,24 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
     'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
 };
 
+// Backwards-compatible alias — some callers import the old name.
 export const PAYMENT_STATUS_COLORS = STATUS_BADGE_CLASSES;
 
 // ============================================
 // HELPERS
 // ============================================
 
+/**
+ * Resolve the provider name from an API Payment.
+ *
+ * Priority:
+ *   1. Top-level `provider` field — if it's a known code.
+ *   2. `metadata.provider` — the canonical location the backend
+ *      writes on every online checkout.
+ *   3. `gatewayId` — ONLY if it happens to be a known provider
+ *      code. In practice this is a PaymentGateway row FK, so
+ *      consulting it unconditionally would render a UUID.
+ */
 function resolveProvider(payment: ApiPayment): string | undefined {
   const meta = (payment.metadata ?? {}) as PaymentMetadata;
   const metaProvider =
@@ -245,6 +267,12 @@ function resolveProvider(payment: ApiPayment): string | undefined {
   return metaProvider || legacy || undefined;
 }
 
+/**
+ * For MOBILE_MONEY payments, resolve the actual provider
+ * (MPESA / MTN / AIRTEL / TIGO / VODAFONE). Falls back to the
+ * generic `MOBILE_MONEY` label when the metadata doesn't carry a
+ * specific provider.
+ */
 function resolveMobileProvider(payment: ApiPayment): string | undefined {
   const meta = (payment.metadata ?? {}) as PaymentMetadata;
   const candidate =
@@ -264,6 +292,11 @@ function resolveMobileProvider(payment: ApiPayment): string | undefined {
   return undefined;
 }
 
+/**
+ * Extract a customer view-model from the joined relation or from
+ * metadata (online checkouts write `customerName` / `customerEmail`
+ * into metadata before a Customer row exists).
+ */
 function resolveCustomer(payment: ApiPayment): Payment['customer'] {
   const joined = (payment as any).customer;
   if (joined) {
@@ -297,14 +330,24 @@ function resolveCustomer(payment: ApiPayment): Payment['customer'] {
   return undefined;
 }
 
+/**
+ * Map an API `Payment` into the component's local view-model.
+ */
 function toViewPayment(payment: ApiPayment): Payment {
   const method = String(payment.paymentMethod);
   const resolvedProvider = resolveProvider(payment);
 
+  // For MOBILE_MONEY, prefer the specific provider (MPESA / MTN /
+  // AIRTEL / TIGO / VODAFONE) over the generic method code, so the
+  // row can say "M-Pesa" instead of "Mobile Money".
   const provider =
     method === 'MOBILE_MONEY'
       ? resolveMobileProvider(payment) || resolvedProvider
       : resolvedProvider;
+
+  const refundedRaw = (payment as any).refundedAmount;
+  const refundedAmount =
+    typeof refundedRaw === 'number' ? refundedRaw : undefined;
 
   return {
     id: payment.id,
@@ -317,7 +360,7 @@ function toViewPayment(payment: ApiPayment): Payment {
     processedAt: payment.processedAt,
     provider,
     gatewayId: payment.gatewayId,
-    refundedAmount: (payment as any).refundedAmount,
+    refundedAmount,
     notes: payment.notes,
     metadata: payment.metadata,
     sale: payment.sale
@@ -379,9 +422,20 @@ export function PaymentHistory({
   );
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
+  /**
+   * Guards against overlapping loads. When two `loadPayments` calls
+   * are in flight (e.g. a user clicking Search twice quickly, or a
+   * Search while the mount effect is still resolving), only the
+   * most recent request's response is committed. The ref holds the
+   * id of the latest request; older responses are dropped.
+   */
+  const latestRequestIdRef = useRef(0);
+
   // ── Data loading ─────────────────────────────────────────────
 
   const loadPayments = useCallback(async () => {
+    const requestId = ++latestRequestIdRef.current;
+
     try {
       setLoading(true);
       const params: Record<string, unknown> = {
@@ -400,6 +454,10 @@ export function PaymentHistory({
 
       const response = await paymentService.getPayments(params);
 
+      // Drop a stale response — a newer request has already been
+      // issued and will commit its own result.
+      if (requestId !== latestRequestIdRef.current) return;
+
       const items: ApiPayment[] = Array.isArray(response.data)
         ? response.data
         : [];
@@ -415,17 +473,39 @@ export function PaymentHistory({
           limit: response.limit,
         } as const);
 
-      setPagination({
-        page: paginationData.page || 1,
-        total: paginationData.total || 0,
-        totalPages: paginationData.totalPages || 1,
-        limit: paginationData.limit || limit,
+      setPagination((prev) => {
+        const nextPage = paginationData.page || 1;
+        const nextTotal = paginationData.total || 0;
+        const nextTotalPages = paginationData.totalPages || 1;
+        const nextLimit = paginationData.limit || limit;
+
+        // Avoid a redundant state update that would retrigger
+        // the mount effect. If nothing changed, return the
+        // previous object so React bails out of the re-render.
+        if (
+          prev.page === nextPage &&
+          prev.total === nextTotal &&
+          prev.totalPages === nextTotalPages &&
+          prev.limit === nextLimit
+        ) {
+          return prev;
+        }
+
+        return {
+          page: nextPage,
+          total: nextTotal,
+          totalPages: nextTotalPages,
+          limit: nextLimit,
+        };
       });
     } catch (error) {
+      if (requestId !== latestRequestIdRef.current) return;
       console.error('Failed to load payment history:', error);
       toast.error('Failed to load payment history');
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [
     userId,
@@ -464,10 +544,25 @@ export function PaymentHistory({
     toast.success('Payments refreshed');
   }, [loadPayments]);
 
+  /**
+   * Search.
+   *
+   * If the page is not already 1, reset it and let the effect
+   * issue the fetch — `setPagination` changes `pagination.page`,
+   * which the effect depends on, so exactly one fetch fires with
+   * the new page. If the page IS 1, call `loadPayments` directly;
+   * the effect wouldn't fire otherwise.
+   *
+   * The previous version called `setPagination` AND `loadPayments`
+   * unconditionally, which double-fetched when the page changed.
+   */
   const handleSearch = useCallback(() => {
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    void loadPayments();
-  }, [loadPayments]);
+    if (pagination.page !== 1) {
+      setPagination((prev) => ({ ...prev, page: 1 }));
+    } else {
+      void loadPayments();
+    }
+  }, [pagination.page, loadPayments]);
 
   const handleCopyReference = useCallback((reference: string) => {
     navigator.clipboard.writeText(reference);
@@ -484,10 +579,20 @@ export function PaymentHistory({
   );
 
   /**
-   * Clear every filter and refetch immediately. Previously this
-   * only reset state; the effect loop wouldn't fire because
-   * `filters` identity is excluded from the effect deps, so the
-   * user saw stale results until they manually hit Refresh.
+   * Clear every filter.
+   *
+   * The previous version called `loadPayments()` immediately after
+   * the setters. That fetch read the *old* filter values (state
+   * hasn't settled yet), then the effect fired with the new values
+   * and fetched again — two requests, one wasted.
+   *
+   * This version only resets state. The effect observes the
+   * `filters.*` and `pagination.page` changes and issues exactly
+   * one fetch with the new values.
+   *
+   * Edge case: if the user clicks Clear while already on page 1
+   * with no filters applied, the effect won't fire. That's a no-op
+   * in practice — there is nothing to clear.
    */
   const handleClearFilters = useCallback(() => {
     setFilters({
@@ -499,17 +604,16 @@ export function PaymentHistory({
     });
     setSearch('');
     setPagination((prev) => ({ ...prev, page: 1 }));
-    void loadPayments();
-  }, [loadPayments]);
+  }, []);
 
   // ── Lookups ──────────────────────────────────────────────────
 
   const getProviderImageUrl = useCallback(
     (provider?: string): string => {
       if (!provider) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-        ? PROVIDER_DARK_IMAGE_URLS[provider]
-        : PROVIDER_IMAGE_URLS[provider] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[provider];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[provider] || '';
     },
     [isDark],
   );
@@ -526,10 +630,13 @@ export function PaymentHistory({
     );
   }, []);
 
-  const getPaymentIcon = useCallback((method: string) => {
-    const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
-    return <Icon className="w-4 h-4" />;
-  }, []);
+  const getPaymentIcon = useCallback(
+    (method: string): JSX.Element => {
+      const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
+      return <Icon className="w-4 h-4" />;
+    },
+    [],
+  );
 
   /**
    * Human-readable label for the payment method. For MOBILE_MONEY
@@ -546,23 +653,26 @@ export function PaymentHistory({
     return payment.paymentMethod.toLowerCase().replace(/_/g, ' ');
   }, []);
 
-  const getStatusIcon = useCallback((status: string) => {
-    switch (status) {
-      case 'PAID':
-        return <CheckCircle className="w-4 h-4" />;
-      case 'PENDING':
-        return <Clock className="w-4 h-4" />;
-      case 'FAILED':
-      case 'DECLINED':
-        return <XCircle className="w-4 h-4" />;
-      case 'REFUNDED':
-        return <ArrowDownRight className="w-4 h-4" />;
-      case 'DISPUTED':
-        return <AlertCircle className="w-4 h-4" />;
-      default:
-        return <AlertCircle className="w-4 h-4" />;
-    }
-  }, []);
+  const getStatusIcon = useCallback(
+    (status: string): JSX.Element => {
+      switch (status) {
+        case 'PAID':
+          return <CheckCircle className="w-4 h-4" />;
+        case 'PENDING':
+          return <Clock className="w-4 h-4" />;
+        case 'FAILED':
+        case 'DECLINED':
+          return <XCircle className="w-4 h-4" />;
+        case 'REFUNDED':
+          return <ArrowDownRight className="w-4 h-4" />;
+        case 'DISPUTED':
+          return <AlertCircle className="w-4 h-4" />;
+        default:
+          return <AlertCircle className="w-4 h-4" />;
+      }
+    },
+    [],
+  );
 
   // ── Derived ──────────────────────────────────────────────────
   //
@@ -575,7 +685,7 @@ export function PaymentHistory({
       .filter((v): v is string => !!v);
     return Array.from(
       new Set([...PROVIDER_FILTER_OPTIONS, ...fromPage]),
-    ).sort();
+    ).sort((a, b) => a.localeCompare(b));
   }, [payments]);
 
   return (
@@ -1013,10 +1123,11 @@ export function PaymentHistory({
                 onClick={() =>
                   setPagination((prev) => ({
                     ...prev,
-                    page: prev.page - 1,
+                    page: Math.max(1, prev.page - 1),
                   }))
                 }
                 disabled={pagination.page === 1}
+                aria-disabled={pagination.page === 1}
                 className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                   isDark
                     ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
@@ -1029,10 +1140,13 @@ export function PaymentHistory({
                 onClick={() =>
                   setPagination((prev) => ({
                     ...prev,
-                    page: prev.page + 1,
+                    page: Math.min(prev.totalPages, prev.page + 1),
                   }))
                 }
                 disabled={pagination.page === pagination.totalPages}
+                aria-disabled={
+                  pagination.page === pagination.totalPages
+                }
                 className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                   isDark
                     ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
@@ -1050,7 +1164,15 @@ export function PaymentHistory({
       {showReceiptModal && selectedPayment && (
         <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto custom-scrollbar animate-fade-in">
           <div className="max-w-2xl w-full">
+            {/*
+              Keyed on the payment id so React remounts the receipt
+              when the user switches payments without closing the
+              modal. Resets any internal state (scroll position,
+              transient copy indicator) that would otherwise leak
+              between views.
+            */}
             <PaymentReceipt
+              key={selectedPayment.id}
               payment={{
                 id: selectedPayment.id,
                 reference:

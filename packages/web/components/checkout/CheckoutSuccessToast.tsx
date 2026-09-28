@@ -1,3 +1,5 @@
+// packages/web/components/payment/CheckoutSuccessToast.tsx
+
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,6 +13,16 @@ interface CheckoutSuccessToastProps {
   receiptNumber: string;
   orderId: string;
   total: number;
+  /**
+   * Optional display currency.
+   *
+   * ⚠ When omitted, `formatCurrency` is called without a currency
+   *   and falls back to its own default. Do NOT default this to
+   *   `'USD'` here — the backend resolves the currency from the
+   *   business unit, and the toast should reflect whatever the
+   *   order was actually placed in.
+   */
+  currency?: string;
 }
 
 export function CheckoutSuccessToast({
@@ -19,7 +31,12 @@ export function CheckoutSuccessToast({
   receiptNumber,
   orderId,
   total,
+  currency,
 }: CheckoutSuccessToastProps) {
+  const formattedTotal = currency
+    ? formatCurrency(total, currency)
+    : formatCurrency(total);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -43,7 +60,7 @@ export function CheckoutSuccessToast({
                   Order Placed!
                 </h4>
                 <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums truncate">
-                  Order #{receiptNumber} - {formatCurrency(total)}
+                  Order #{receiptNumber} - {formattedTotal}
                 </p>
                 <div className="mt-3 flex gap-2">
                   <Link
