@@ -47,12 +47,10 @@ function toImageUrls(input: unknown): string[] {
 }
 
 // ============================================
-// ✅ FIX: formatPrismaTarget was referenced in handlePrismaError
-//    but never defined. On a P2002 (unique constraint) error the
-//    handler would throw `ReferenceError: formatPrismaTarget is
-//    not defined`, escaping the error handler and hanging the
-//    request. Define it here so P2002 responses are produced
-//    correctly.
+// formatPrismaTarget was referenced in handlePrismaError but never
+// defined. On a P2002 (unique constraint) error the handler would
+// throw `ReferenceError: formatPrismaTarget is not defined`,
+// escaping the error handler and hanging the request.
 // ============================================
 function formatPrismaTarget(target: unknown): string {
   if (!target) return 'unknown';
@@ -129,10 +127,10 @@ function isValidID(id: string): boolean {
 // NORMALIZATION HELPERS
 // ============================================
 
-function normalizeInventoryItem(
-  item: Record<string, any> | null | undefined,
-): any {
-  if (!item) return item;
+function normalizeInventoryItem(input: any): any {
+  if (!input) return input;
+
+  const item: Record<string, any> = input as Record<string, any>;
 
   if (item.product && item.product.id) {
     if (!item.id || item.id !== item.product.id) {
@@ -247,21 +245,6 @@ function sanitizeBusinessUnitId(businessUnitId?: string): string | undefined {
   return businessUnitId;
 }
 
-/**
- * ✅ Resolve the business unit for this request.
- *
- *    Resolution order:
- *      1. `x-business-unit-id` header / `businessUnitId` body / query
- *      2. The user's own business unit (from `req.user`)
- *      3. The oldest active BU in the DB (matches
- *         `InventoryService.ensureBusinessUnit`)
- *
- *    If the caller explicitly passed a business unit ID and it does
- *    NOT exist (or is inactive), this throws 400/404 instead of
- *    silently substituting a different BU. The old silent fallback
- *    masked the "record exists under BU A, API queried BU B" class
- *    of bug.
- */
 async function getBusinessUnitId(req: Request): Promise<string> {
   const user = (req as any).user;
 
@@ -281,7 +264,6 @@ async function getBusinessUnitId(req: Request): Promise<string> {
       return exists.id;
     }
 
-    // Missing or inactive — log and fall through. Do NOT throw.
     console.warn(
       `[inventory] Explicit businessUnitId "${sanitizedExplicit}" ` +
         `is ${exists ? 'inactive' : 'not found'}; ` +
@@ -650,7 +632,6 @@ export const inventoryController = {
     try {
       console.log('📤 GET /inventory/categories - Query params:', req.query);
 
-      // ✅ Uses the same BU resolver as every other endpoint.
       const businessUnitId = await getBusinessUnitId(req);
 
       console.log(
@@ -1235,7 +1216,6 @@ export const inventoryController = {
         req.query
       );
 
-      // ✅ Uses the same BU resolver as every other endpoint.
       const businessUnitId = await getBusinessUnitId(req);
 
       console.log(
@@ -2332,7 +2312,7 @@ export const inventoryController = {
           }
 
           const result = await inventoryService.updateStock({
-            product: { is: { id: update.id } },
+            productId: update.id,
             quantity: update.quantity,
             transactionType: update.transactionType || 'ADJUSTMENT',
             userId,

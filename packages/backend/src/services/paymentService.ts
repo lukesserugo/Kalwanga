@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\backend\src\services\paymentService.ts
+// packages/backend/src/services/paymentService.ts
 
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -11,6 +11,7 @@ import { PayPalService } from './paypalService.js';
 import { FlutterwaveService } from './flutterwaveService.js';
 import { SquareService } from './squareService.js';
 import { stripeService } from './stripeService.js';
+import { currencyService } from './currencyService.js';
 import {
   PaymentStatus,
   PaymentProviderEnum,
@@ -24,6 +25,33 @@ import {
 //
 // All Stripe calls go through `stripeService`. See stripeService.ts
 // for why the module-scoped Stripe instance was removed.
+
+// ============================================
+// DEFAULT CURRENCY
+// ============================================
+//
+// The cart has no currency. The business unit does, and
+// `checkoutService.resolveBusinessUnitCurrency` reads it for the
+// online path. This service is called both from `checkoutService`
+// (which passes an explicit currency) and directly via
+// `POST /payments` (which may not). For the direct path we need a
+// platform default that isn't hardcoded to USD — a Ugandan
+// deployment charging a Ugandan customer must default to UGX, or
+// MTN/Airtel reject the request outright.
+//
+// Precedence, highest first:
+//   1. Caller-supplied `currency` on the request body.
+//   2. The business unit's own `currency` column (when a
+//      `businessUnitId` is supplied and the row exists).
+//   3. `process.env.DEFAULT_CURRENCY`.
+//   4. The registry default from `lib/currencies.ts`.
+//
+// Rather than reimplement that walk here (which is how the old
+// `resolveDefaultCurrency` drifted out of sync with checkout), we
+// delegate to `currencyService.resolveForBusiness`. That method
+// already logs-and-skips unknown codes instead of throwing, which
+// matches what we want on the payment path: a mis-seeded business
+// unit must not 500 the checkout.
 
 // ============================================
 // INTERFACES
@@ -139,7 +167,7 @@ class CashProviderHandler implements ProviderHandler {
       id: `cash_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
       status: 'succeeded',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency: data.currency,
       reference: `CASH-${Date.now()}`,
       provider: 'CASH',
     };
@@ -189,7 +217,11 @@ class MobileMoneyProviderHandler implements ProviderHandler {
         .toString('hex')}`,
       status: 'succeeded',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      // Currency is whatever the caller/service resolved. The real
+      // MTN/Airtel handlers below override this with their country
+      // config anyway, so this default only matters for the
+      // TIGO/VODAFONE stub paths.
+      currency: data.currency,
       provider: provider,
       phoneNumber: data.metadata.phoneNumber,
       reference: `${providerInfo.prefix}-${Date.now()}`,
@@ -235,7 +267,7 @@ class BankTransferProviderHandler implements ProviderHandler {
       id: `bank_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
       status: 'pending',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency: data.currency,
       reference: reference,
       bankDetails: bankDetails,
       provider: 'BANK_TRANSFER',
@@ -273,7 +305,7 @@ class GiftCardProviderHandler implements ProviderHandler {
       id: `giftcard_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
       status: 'succeeded',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency: data.currency,
       giftCardId: data.gatewayId,
       reference: `GC-${Date.now()}`,
       provider: 'GIFT_CARD',
@@ -317,7 +349,7 @@ class LoyaltyPointsProviderHandler implements ProviderHandler {
       id: `loyalty_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
       status: 'succeeded',
       amount: data.amount,
-      currency: data.currency || 'USD',
+      currency: data.currency,
       pointsUsed: pointsNeeded,
       customerId: data.customerId,
       reference: `LP-${Date.now()}`,
@@ -356,10 +388,15 @@ class MTNMobileMoneyProviderHandler implements ProviderHandler {
       );
     }
 
+    // Note: `currency` is forwarded unchanged. `mobileMoneyService`
+    // is authoritative for the actual currency it sends to MTN —
+    // it reads `MTN_COUNTRY` and derives the correct one (UG → UGX,
+    // GH → GHS, …). Passing a mismatched value here produces a
+    // warning in the service log and is ignored, not a bad request.
     const result = await mobileMoneyService.initiatePayment('MTN', {
       phoneNumber: data.metadata.phoneNumber,
       amount: data.amount,
-      currency: data.currency || 'UGX',
+      currency: data.currency,
       reference: data.metadata.accountReference || '',
       description: data.description || 'Payment via MTN Mobile Money',
       callbackUrl: data.metadata.callbackUrl,
@@ -369,7 +406,7 @@ class MTNMobileMoneyProviderHandler implements ProviderHandler {
       id: result.transactionId,
       status: result.status === 'SUCCESS' ? 'succeeded' : 'pending',
       amount: data.amount,
-      currency: data.currency || 'UGX',
+      currency: data.currency,
       reference: result.reference,
       provider: 'MTN',
       transactionId: result.transactionId,
@@ -437,10 +474,13 @@ class AirtelMobileMoneyProviderHandler implements ProviderHandler {
       );
     }
 
+    // Same reasoning as MTN: `mobileMoneyService` overrides the
+    // currency with the country config, so a wrong caller value is
+    // logged and discarded, never sent.
     const result = await mobileMoneyService.initiatePayment('AIRTEL', {
       phoneNumber: data.metadata.phoneNumber,
       amount: data.amount,
-      currency: data.currency || 'UGX',
+      currency: data.currency,
       reference: data.metadata.accountReference || '',
       description: data.description || 'Payment via Airtel Mobile Money',
       callbackUrl: data.metadata.callbackUrl,
@@ -450,7 +490,7 @@ class AirtelMobileMoneyProviderHandler implements ProviderHandler {
       id: result.transactionId,
       status: result.status === 'SUCCESS' ? 'succeeded' : 'pending',
       amount: data.amount,
-      currency: data.currency || 'UGX',
+      currency: data.currency,
       reference: result.reference,
       provider: 'AIRTEL',
       transactionId: result.transactionId,
@@ -827,6 +867,58 @@ export class PaymentService extends BaseService {
         503,
       );
     }
+  }
+
+  // ============================================
+  // CURRENCY RESOLUTION
+  // ============================================
+  //
+  // All currency fallbacks funnel through here. Delegating to
+  // `currencyService.resolveForBusiness` keeps this service in
+  // lockstep with `checkoutService.resolveBusinessUnitCurrency`
+  // and with `mobileMoneyService`'s country-config overrides.
+  //
+  // Precedence, highest first:
+  //   1. The caller-supplied value, if it's a known currency.
+  //   2. The business unit's own `currency` column, when
+  //      `businessUnitId` is supplied and the row exists.
+  //   3. `process.env.DEFAULT_CURRENCY`.
+  //   4. The registry default from `lib/currencies.ts`.
+  //
+  // Unknown business-unit codes are logged and skipped by
+  // `resolveForBusiness` rather than throwing — a mis-seeded row
+  // must not 500 the checkout.
+  private async resolveCurrency(
+    callerCurrency?: string | null,
+    businessUnitId?: string | null,
+  ): Promise<string> {
+    if (callerCurrency && currencyService.tryGetCurrency(callerCurrency)) {
+      return callerCurrency.toUpperCase();
+    }
+
+    if (callerCurrency) {
+      logger.warn(
+        `[payments] Caller supplied unknown currency "${callerCurrency}" — falling back to platform default.`,
+      );
+    }
+
+    let businessUnitCurrency: string | null | undefined;
+    if (businessUnitId) {
+      try {
+        const bu = await this.prisma.businessUnit.findUnique({
+          where: { id: businessUnitId },
+          select: { currency: true },
+        });
+        businessUnitCurrency = bu?.currency ?? null;
+      } catch (err) {
+        logger.warn(
+          `[payments] Could not read currency for business unit ${businessUnitId}:`,
+          err,
+        );
+      }
+    }
+
+    return currencyService.resolveForBusiness(businessUnitCurrency);
   }
 
   // ============================================
@@ -1223,7 +1315,14 @@ export class PaymentService extends BaseService {
         cashRegisterId,
         cashRegisterSessionId,
         gatewayId,
-        currency = 'USD',
+        // ── CHANGED ────────────────────────────────────────────
+        // No longer a literal 'USD'. Resolution is deferred to
+        // `resolveCurrency()` below so the business unit's own
+        // currency column (and, failing that, the platform default
+        // from `currencyService`) applies. A Ugandan deployment
+        // charging a Ugandan customer can no longer accidentally
+        // default to USD and have MTN/Airtel reject the request.
+        currency: callerCurrency,
         source,
         customerId,
         metadata = {},
@@ -1267,7 +1366,18 @@ export class PaymentService extends BaseService {
         }
       }
 
-      // ── Idempotency ───────────────────────────────────────────
+      // ── Currency resolution ────────────────────────────────
+      // Delegates to `currencyService.resolveForBusiness`, which
+      // walks: caller → businessUnit.currency → env → registry
+      // default. Unknown codes are logged and skipped, never
+      // thrown — a mis-seeded business unit must not 500 the
+      // checkout.
+      const currency = await this.resolveCurrency(
+        callerCurrency,
+        businessUnitId,
+      );
+
+      // ── Idempotency ────────────────────────────────────────
       // The `Payment.idempotencyKey` column is `@unique`. If a
       // caller retries with the same key, we return the existing
       // row instead of creating a duplicate. If the key was
@@ -1422,6 +1532,11 @@ export class PaymentService extends BaseService {
               tipAmount,
               savePaymentMethod,
               idempotencyKey,
+              // Record the resolved currency so the audit trail
+              // shows what we actually charged in — especially
+              // useful when the caller omitted `currency` and the
+              // platform default applied.
+              currency,
               ...metadata,
             },
           },
@@ -1857,12 +1972,23 @@ export class PaymentService extends BaseService {
                 ...(metadata || {}),
               };
 
+              // Currency comes from the payment's own metadata if
+              // it was recorded there, otherwise delegate to the
+              // shared resolver. `mobileMoneyService` overrides it
+              // with the country config anyway.
+              const refundCurrency =
+                ((payment.metadata as any)?.currency as string) ||
+                (await this.resolveCurrency(
+                  null,
+                  payment.businessUnitId,
+                ));
+
               refundResult = await handler.refundPayment(
                 payment.transactionId || payment.id,
                 {
                   amount: refundAmountFinal,
                   reason: refundReason,
-                  currency: payment.currency || 'USD',
+                  currency: refundCurrency,
                   reference: `REF-${payment.id}-${Date.now()}`,
                   metadata: handlerMetadata,
                 },
@@ -3780,12 +3906,6 @@ export class PaymentService extends BaseService {
 
     const staleBefore = new Date(Date.now() - minAgeMs);
 
-    // ── 1. Fetch a stale batch ────────────────────────────────
-    //
-    // We page by `id` ascending (stable) and only pick providers
-    // whose `updatedAt` is older than `staleBefore`. This means a
-    // scheduler that runs every minute will naturally rotate
-    // through the set without needing explicit bookkeeping.
     const providers = await this.prisma.paymentProvider.findMany({
       where: {
         deletedAt: null,
@@ -3812,11 +3932,6 @@ export class PaymentService extends BaseService {
       };
     }
 
-    // ── 2. Compute stats in bounded-parallel batches ──────────
-    //
-    // `updateProviderStatsForOne` throws on failure; the wrapper
-    // catches per provider. The concurrency cap is enforced by
-    // slicing into chunks of `concurrency` and awaiting each chunk.
     let processed = 0;
     let failed = 0;
     let skipped = 0;
@@ -3826,9 +3941,6 @@ export class PaymentService extends BaseService {
       paymentMethods: Array<{ code: string }>;
     }): Promise<'processed' | 'failed' | 'skipped'> => {
       try {
-        // Drop codes that don't map to a real enum value. A method
-        // whose code drifts (e.g. a renamed provider) contributes
-        // zero to stats but must not error the whole batch.
         const validEnumValues = new Set<string>(
           Object.values(PaymentMethod) as string[],
         );
@@ -3837,8 +3949,6 @@ export class PaymentService extends BaseService {
           .filter((c): c is string => validEnumValues.has(c)) as any[];
 
         if (methodCodes.length === 0) {
-          // No recognised methods — still touch updatedAt so this
-          // provider rotates to the back of the queue.
           await this.prisma.paymentProvider.update({
             where: { id: provider.id },
             data: { updatedAt: new Date() },
@@ -3846,11 +3956,6 @@ export class PaymentService extends BaseService {
           return 'skipped';
         }
 
-        // ── Single round-trip aggregation ──────────────────
-        //
-        // Instead of three separate aggregates, use one groupBy
-        // over a 30-day window and bucket the results in JS. This
-        // is 1 round-trip per provider instead of 3.
         const now = new Date();
         const start30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
@@ -3865,12 +3970,6 @@ export class PaymentService extends BaseService {
           _sum: { amount: true },
         });
 
-        // But we still need time-bucketed counts. Instead of a
-        // second DB pass, we do one more query with a `select` that
-        // returns only the fields we need, then bucket in JS.
-        //
-        // For very large payment tables this should move to a
-        // materialized view; for now, `select` two fields.
         const recent = await this.prisma.payment.findMany({
           where: {
             paymentMethod: { in: methodCodes },
@@ -3922,9 +4021,6 @@ export class PaymentService extends BaseService {
           },
         });
 
-        // `grouped` is unused for the write but is available if you
-        // want to persist per-method breakdowns later. Silencing
-        // the linter:
         void grouped;
 
         return 'processed';
@@ -4152,10 +4248,6 @@ export class PaymentService extends BaseService {
 
     const result = await paypalHandler.handleWebhook(payload, headers);
 
-    // Resolve the local sale id from the PayPal payload. PayPal sends
-    // the merchant-supplied `custom_id` back on the order; we set it
-    // to the local saleId at order-creation time. Fall back to a
-    // lookup by transaction reference.
     let saleId =
       payload?.resource?.custom_id ||
       payload?.resource?.purchase_units?.[0]?.custom_id ||
@@ -4171,9 +4263,6 @@ export class PaymentService extends BaseService {
       );
     }
 
-    // Apply the same downstream side effects that Stripe webhooks
-    // apply, so a PayPal payment completes the sale exactly like a
-    // Stripe payment would.
     if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
       await this.handlePayPalPaymentCompleted(payload, saleId);
     } else if (eventType === 'PAYMENT.CAPTURE.DENIED') {
@@ -4685,9 +4774,6 @@ export class PaymentService extends BaseService {
         `Processing payment success: ${id} (${amount} ${currency})`,
       );
 
-      // Atomically claim the payment for the success transition.
-      // If another webhook (e.g. charge.succeeded) already moved it
-      // to PAID, `claimed.count` is 0 and we skip the side effects.
       const claimed = await this.prisma.payment.updateMany({
         where: {
           transactionId: id,
@@ -4708,9 +4794,6 @@ export class PaymentService extends BaseService {
         },
       });
 
-      // Even when we didn't claim (already PAID), we still want to
-      // reconcile metadata if the Payment row exists — that write
-      // is idempotent and safe to repeat.
       if (payment) {
         await this.prisma.payment.update({
           where: { id: payment.id },
@@ -4724,9 +4807,6 @@ export class PaymentService extends BaseService {
         });
       }
 
-      // Only run the sale/order side effects the first time the
-      // status transitions. Repeated webhook deliveries land in
-      // `claimed.count === 0`.
       if (claimed.count > 0 && payment) {
         if (payment.sale) {
           await this.updateSaleAfterPayment(
@@ -5143,10 +5223,6 @@ export class PaymentService extends BaseService {
         return { success: true, ignored: true };
       }
 
-      // `invoice.customer` is a Stripe customer ID (cus_xxx). The
-      // local Customer.id is a CUID, so we must resolve the local
-      // Customer through the User that owns the Stripe customer,
-      // then through that user's company.
       let customerId: string | null = null;
 
       if (customer) {
@@ -5156,9 +5232,6 @@ export class PaymentService extends BaseService {
         });
 
         if (user) {
-          // Preferred: a Customer row scoped to the user's company
-          // whose email matches. Fall back to the first Customer
-          // for that company when there's no email match.
           const scoped = await this.prisma.customer.findFirst({
             where: {
               companyId: user.companyId ?? companyId,
@@ -5325,21 +5398,13 @@ export class PaymentService extends BaseService {
    *
    * Policy:
    *   - Events on a small "ignore list" are dropped silently.
-   *     These are the Stripe chatter events that fire constantly
-   *     and never require action.
-   *   - Everything else is logged once per (type, day) and, at
-   *     most, produces a single aggregated notification per type
-   *     per day. This keeps the admin feed actionable instead of
-   *     drowning it.
+   *   - Everything else is logged once per (type, day) and produces
+   *     at most one aggregated notification per type per day.
    */
   private async handleUnhandledEvent(event: any): Promise<any> {
     try {
       const eventType: string = event?.type ?? 'unknown';
 
-      // ── 1. Silence the known-noise event types ──────────────
-      //
-      // These fire constantly and never need action. Extend this
-      // list as you identify more chatter.
       const NOISY_EVENT_PATTERNS: RegExp[] = [
         /^invoice\.created$/,
         /^invoice\.finalized$/,
@@ -5356,7 +5421,7 @@ export class PaymentService extends BaseService {
         /^terminal\./,
         /^issuing_/,
         /^billing_portal\./,
-        /^checkout\.session\.(?!completed|expired)/, // everything except the two we handle
+        /^checkout\.session\.(?!completed|expired)/,
         /^charge\.(?!succeeded|failed|refunded|dispute)/,
         /^payment_intent\.(?!succeeded|payment_failed|processing|canceled)/,
       ];
@@ -5368,22 +5433,17 @@ export class PaymentService extends BaseService {
         return { success: true, ignored: true, eventType };
       }
 
-      // ── 2. Everything else: log once, notify at most once/day ─
       logger.warn(
         `[webhook] Unhandled Stripe event: ${eventType} (${event.id})`,
       );
 
-      // Day bucket in UTC, so the dedupe key is stable across
-      // timezones and server restarts.
-      const dayBucket = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const dayBucket = new Date().toISOString().slice(0, 10);
       const dedupeKey = `unhandled_webhook:${eventType}:${dayBucket}`;
 
-      // ── 3. Find any admin who has already received today's
-      //     notification for this event type ─────────────────
       const existing = await this.prisma.notification.findFirst({
         where: {
           type: 'SYSTEM',
-          link: dedupeKey, // reusing `link` as a dedupe key
+          link: dedupeKey,
         },
         select: { id: true },
       });
@@ -5395,18 +5455,13 @@ export class PaymentService extends BaseService {
         return { success: true, unhandled: true, deduped: true, eventType };
       }
 
-      // ── 4. Notify all active admins once ───────────────────
-      //
-      // SUPER_ADMIN + ADMIN, active only. If there are none, we
-      // log and move on — the event is still recorded in the
-      // audit trail below.
       const admins = await this.prisma.user.findMany({
         where: {
           role: { in: ['SUPER_ADMIN', 'ADMIN'] },
           isActive: true,
         },
         select: { id: true },
-        take: 50, // hard cap so a misconfigured role table can't fan out unbounded
+        take: 50,
       });
 
       if (admins.length === 0) {
@@ -5435,8 +5490,6 @@ export class PaymentService extends BaseService {
       return { success: true, unhandled: true, eventType };
     } catch (error) {
       logger.error('Error handling unhandled event:', error);
-      // Never rethrow from this path — the webhook has already been
-      // acknowledged. A failure to notify must not fail the request.
       return { success: true, unhandled: true, error: true };
     }
   }
@@ -5487,13 +5540,6 @@ export class PaymentService extends BaseService {
       });
 
       for (const item of saleItems) {
-        // Resolve the exact Inventory row for this line item.
-        //
-        // If the line has a variant, the inventory row is linked to
-        // the variant (ProductVariant.inventoryId). If it has only a
-        // product, the inventory row is linked to the product
-        // (Product.inventoryId), falling back to productId +
-        // businessUnitId when the direct link is missing.
         let inventoryId: string | null = null;
 
         if (item.variantId) {
@@ -5511,8 +5557,6 @@ export class PaymentService extends BaseService {
           });
           inventoryId = product?.inventoryId ?? null;
 
-          // Fallback: locate by productId + businessUnitId when the
-          // direct FK wasn't populated.
           if (!inventoryId && product) {
             const fallback = await this.prisma.inventory.findFirst({
               where: {
@@ -5534,8 +5578,6 @@ export class PaymentService extends BaseService {
           continue;
         }
 
-        // Decrement quantity AND recompute available in the same
-        // transaction so the two never drift.
         await this.prisma.$transaction(async (tx) => {
           const current = await tx.inventory.findUnique({
             where: { id: inventoryId! },

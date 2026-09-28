@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\orders\[id]\page.tsx
+// packages/web/app/(dashboard)/admin/orders/[id]/page.tsx
 
 'use client';
 
@@ -46,6 +46,12 @@ import {
 // CONSTANTS
 // ============================================
 
+/**
+ * Statuses the status-update modal offers. Deliberately does NOT
+ * include `CANCELLED` — cancellation requires a reason and goes
+ * through the dedicated Cancel action, which posts a different
+ * payload.
+ */
 const UPDATABLE_STATUSES: OrderStatus[] = [
   OrderStatus.PENDING,
   OrderStatus.PROCESSING,
@@ -109,7 +115,6 @@ export default function AdminOrderDetailPage() {
 
     try {
       setLoading(true);
-      setError(null);
 
       // Load the order plus its timeline and history in parallel.
       // Timeline and history are non-fatal — a failure to load them
@@ -134,6 +139,10 @@ export default function AdminOrderDetailPage() {
       setHistory(
         historyResult.status === 'fulfilled' ? historyResult.value : [],
       );
+      // Only clear the previous error once the order loads
+      // successfully — that avoids a flash of blank error content
+      // between a failed attempt and a successful one.
+      setError(null);
     } catch (err: any) {
       if (!isMountedRef.current) return;
       console.error('Failed to load order:', err);
@@ -204,12 +213,14 @@ export default function AdminOrderDetailPage() {
     try {
       const sale = await orderService.convertOrderToSale(order.id);
       toast.success('Order converted to sale');
-      // Reload so the UI reflects the new status, then optionally
-      // navigate to the sale detail page. The backend exposes the
-      // sale through the order detail payload after conversion.
-      await loadOrder();
+      // Navigate to the new sale. A post-convert `loadOrder` would
+      // re-fetch state for a page the user is about to leave —
+      // wasted bandwidth. If the sale id isn't in the response,
+      // stay put and let the user refresh manually.
       if (sale?.id) {
         router.push(`/admin/sales/${sale.id}`);
+      } else {
+        await loadOrder();
       }
     } catch (err: any) {
       toast.error(

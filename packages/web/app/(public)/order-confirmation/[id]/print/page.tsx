@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(public)\order-confirmation\[id]\print\page.tsx
+// packages/web/app/(public)/order-confirmation/[id]/print/page.tsx
 
 'use client';
 
@@ -9,7 +9,10 @@ import {
   orderService,
   type Order,
 } from '../../../../../services/orderService';
-import { formatCurrency, formatDateTime } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatDateTime,
+} from '../../../../../utils/formatters';
 
 export default function PrintReceiptPage() {
   const params = useParams();
@@ -32,8 +35,11 @@ export default function PrintReceiptPage() {
     if (!id) return;
     try {
       setLoading(true);
-      setError(null);
 
+      // Try the order by id first (cuid). If that fails, try
+      // resolving the param as an order number (e.g. `ORD-...`).
+      // A printer URL might carry either; the fallback keeps both
+      // shapes working without a second route.
       let data: Order;
       try {
         data = await orderService.getOrderById(id);
@@ -43,6 +49,10 @@ export default function PrintReceiptPage() {
 
       if (!isMountedRef.current) return;
       setOrder(data);
+      // Only clear the previous error once the order loads
+      // successfully — that avoids a flash of blank error content
+      // between a failed attempt and a successful one.
+      setError(null);
     } catch (err: any) {
       if (!isMountedRef.current) return;
       setError(

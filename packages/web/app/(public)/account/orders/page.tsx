@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\account\orders\page.tsx
+// packages/web/app/account/orders/page.tsx
 
 'use client';
 
@@ -35,15 +35,15 @@ import {
   FileText,
   Printer,
 } from 'lucide-react';
-import { useThemeStore } from '../../stores/themeStore';
-import { orderService } from '../../../services/orderService';
-import { useAuth } from '../../../hooks/useAuth';
+import { useThemeStore } from '../../../stores/themeStore';
+import { orderService } from '../../../../services/orderService';
+import { useAuth } from '../../../../hooks/useAuth';
 import {
   formatCurrency,
   formatDate,
   formatDateTime,
-} from '../../../utils/formatters';
-import { toast } from '../../../utils/toast-manager';
+} from '../../../../utils/formatters';
+import { toast } from '../../../../utils/toast-manager';
 
 // ============================================
 // TYPES
@@ -57,7 +57,12 @@ type OrderStatus =
   | 'REFUNDED'
   | 'ON_HOLD';
 
-type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'PARTIAL';
+type PaymentStatus =
+  | 'PENDING'
+  | 'PAID'
+  | 'FAILED'
+  | 'REFUNDED'
+  | 'PARTIAL';
 
 interface OrderItem {
   id: string;
@@ -112,33 +117,39 @@ interface PaginationState {
 // ============================================
 // CONSTANTS — PROVIDER IMAGES
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. Historical rows
+//   with `payment.provider === 'PAYSTACK'` fall through to the
+//   generic config in `getProviderConfig`.
+//
+// Icon URLs are local paths under `packages/web/public/`. Add one
+// SVG per code to restore the images. Until then, the `<Image>`
+// onError handler hides the broken image and the emoji from
+// `PROVIDER_CONFIGS` renders.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  ...PROVIDER_IMAGE_URLS,
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PAYMENT_METHOD_ICONS: Record<string, React.ElementType> = {
   CASH: Banknote,
@@ -151,7 +162,6 @@ const PAYMENT_METHOD_ICONS: Record<string, React.ElementType> = {
   CHECK: FileText,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
   MTN: Smartphone,
   AIRTEL: Smartphone,
@@ -166,7 +176,6 @@ const PROVIDER_CONFIGS: Record<
   STRIPE: { icon: '💳', name: 'Stripe', color: 'blue' },
   PAYPAL: { icon: '💸', name: 'PayPal', color: 'blue' },
   FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan' },
-  PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky' },
   SQUARE: { icon: '⬜', name: 'Square', color: 'gray' },
   CASH: { icon: '💰', name: 'Cash', color: 'green' },
   MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'orange' },
@@ -219,9 +228,10 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
 // ============================================
 
 /**
- * Normalize an order coming from the backend into the shape we expect.
- * The backend may return items with `product` nested, and payment may be
- * `payment` (single) or `payments` (array). We consolidate both.
+ * Normalize an order coming from the backend into the shape we
+ * expect. The backend may return items with `product` nested, and
+ * payment may be `payment` (single) or `payments` (array). We
+ * consolidate both.
  */
 function normalizeOrder(raw: any): Order {
   const payment =
@@ -352,6 +362,10 @@ export default function AccountOrdersPage() {
 
         const normalized = (result.data || []).map(normalizeOrder);
         setOrders(normalized);
+        // A successful load clears the error banner even on a
+        // manual refresh — otherwise a stale error stays visible
+        // after the refresh succeeds.
+        setError(null);
 
         setPagination({
           page: result.page || 1,
@@ -392,69 +406,87 @@ export default function AccountOrdersPage() {
   // HANDLERS
   // ============================================
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     loadOrders(true);
-  };
+  }, [loadOrders]);
 
-  const handleViewOrder = (order: Order) => {
+  const handleViewOrder = useCallback((order: Order) => {
     setSelectedOrder(order);
     setShowOrderDetail(true);
-  };
+  }, []);
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= pagination.totalPages) {
-      setPagination((prev) => ({ ...prev, page: newPage }));
-    }
-  };
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      if (newPage >= 1 && newPage <= pagination.totalPages) {
+        setPagination((prev) => ({ ...prev, page: newPage }));
+      }
+    },
+    [pagination.totalPages],
+  );
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setPagination((prev) => ({ ...prev, page: 1 }));
     setAppliedSearch(searchQuery);
-  };
+  }, [searchQuery]);
 
-  const handleClearFilters = () => {
+  const handleClearFilters = useCallback(() => {
     setSearchQuery('');
     setAppliedSearch('');
     setStatusFilter('all');
     setPagination((prev) => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
   // ============================================
   // UI HELPERS
   // ============================================
 
-  const getProviderImageUrl = (providerCode: string): string => {
-    if (!providerCode) return '';
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-      : PROVIDER_IMAGE_URLS[providerCode] || '';
-  };
+  const getProviderImageUrl = useCallback(
+    (providerCode: string): string => {
+      if (!providerCode) return '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[providerCode];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[providerCode] || '';
+    },
+    [isDark],
+  );
 
-  const getProviderConfig = (providerCode: string) =>
-    PROVIDER_CONFIGS[providerCode] || {
-      icon: '💳',
-      name: providerCode || 'Payment',
-      color: 'gray',
-    };
+  const getProviderConfig = useCallback((providerCode: string) => {
+    return (
+      PROVIDER_CONFIGS[providerCode] || {
+        icon: '💳',
+        name: providerCode || 'Payment',
+        color: 'gray',
+      }
+    );
+  }, []);
 
-  const getStatusColor = (status: string) =>
-    ORDER_STATUS_COLORS[status] ||
-    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
+  const getStatusColor = useCallback((status: string) => {
+    return (
+      ORDER_STATUS_COLORS[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
+    );
+  }, []);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = useCallback((status: string) => {
     const Icon = ORDER_STATUS_ICONS[status] || AlertCircle;
     return <Icon className="w-4 h-4" />;
-  };
+  }, []);
 
-  const getPaymentStatusColor = (status: string) =>
-    PAYMENT_STATUS_COLORS[status] ||
-    'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
+  const getPaymentStatusColor = useCallback((status: string) => {
+    return (
+      PAYMENT_STATUS_COLORS[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
+    );
+  }, []);
 
-  const getStatusLabel = (status: string) =>
-    status.charAt(0).toUpperCase() +
-    status.slice(1).toLowerCase().replace('_', ' ');
+  const getStatusLabel = useCallback((status: string) => {
+    return (
+      status.charAt(0).toUpperCase() +
+      status.slice(1).toLowerCase().replace('_', ' ')
+    );
+  }, []);
 
-  const getPaymentMethodLabel = (method: string) => {
+  const getPaymentMethodLabel = useCallback((method: string) => {
     const labels: Record<string, string> = {
       CASH: 'Cash',
       CREDIT_CARD: 'Credit Card',
@@ -466,7 +498,6 @@ export default function AccountOrdersPage() {
       CHECK: 'Check',
       PAYPAL: 'PayPal',
       FLUTTERWAVE: 'Flutterwave',
-      PAYSTACK: 'Paystack',
       SQUARE: 'Square',
       MTN: 'MTN Mobile Money',
       AIRTEL: 'Airtel Money',
@@ -474,17 +505,23 @@ export default function AccountOrdersPage() {
       VODAFONE: 'Vodafone Cash',
     };
     return labels[method] || method;
-  };
+  }, []);
 
-  const handleViewInvoice = (order: Order) => {
-    setShowOrderDetail(false);
-    router.push(`/order-confirmation/${order.id}`);
-  };
+  const handleViewInvoice = useCallback(
+    (order: Order) => {
+      setShowOrderDetail(false);
+      router.push(`/order-confirmation/${order.id}`);
+    },
+    [router],
+  );
 
-  const handlePrint = (order: Order) => {
-    setShowOrderDetail(false);
-    router.push(`/order-confirmation/${order.id}/print`);
-  };
+  const handlePrint = useCallback(
+    (order: Order) => {
+      setShowOrderDetail(false);
+      router.push(`/order-confirmation/${order.id}/print`);
+    },
+    [router],
+  );
 
   // ============================================
   // LOADING STATE

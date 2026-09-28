@@ -1,15 +1,15 @@
+// packages/shared/src/validators/provider-specific.ts
+
 import {
   flutterwaveVirtualAccountSchema,
   payPalCaptureSchema,
-  paystackVerifySchema,
   squareCustomerSchema,
   squarePaymentSchema,
   type FlutterwaveVirtualAccountInput,
   type PayPalCaptureInput,
-  type PaystackVerifyInput,
   type SquareCustomerInput,
   type SquarePaymentInput,
-} from "../schemas/provider-specific";
+} from "../schemas/provider-specific.js";
 
 export class PayPalValidation {
   static validateCapture(data: unknown): PayPalCaptureInput {
@@ -22,12 +22,6 @@ export class FlutterwaveValidation {
     data: unknown,
   ): FlutterwaveVirtualAccountInput {
     return flutterwaveVirtualAccountSchema.parse(data);
-  }
-}
-
-export class PaystackValidation {
-  static validateVerify(data: unknown): PaystackVerifyInput {
-    return paystackVerifySchema.parse(data);
   }
 }
 

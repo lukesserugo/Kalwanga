@@ -12,12 +12,6 @@ import { computeCartTotals, round2 } from '../utils/money.js';
 
 interface CartItemInput {
   productId: string;
-  /**
-   * Accept `null` at the service boundary so any caller (controller,
-   * POS service, bulk route, test) can pass `null` without breaking
-   * the type contract. Collapsed to `undefined` by `normalizeVariantId`
-   * before reaching Prisma.
-   */
   variantId?: string | null;
   quantity: number;
   notes?: string;
@@ -156,6 +150,11 @@ function normalizeVariantId(
  * `variantId` columns. The FK lives on the *other* side of the relation
  * (`Product.inventoryId` and `ProductVariant.inventoryId`). Prisma's
  * generated client therefore only accepts relation filters here.
+ *
+ * ⚠ These filters only match when the FK on the product/variant side
+ *    is populated. If `Product.inventoryId` is null, the query
+ *    silently returns no rows and `availableStock` falls back to 0.
+ *    See `ensureInventory.ts` and the backfill script for the fix.
  */
 function inventoryWhereFor(
   productId: string,
@@ -763,6 +762,21 @@ export class CartService extends BaseService {
             : 0;
 
           if (availableStock < data.quantity) {
+            console.warn(
+              `[cart.addItem] Insufficient stock. ` +
+                `product=${data.productId} ` +
+                `variant=${variantId ?? '-'} ` +
+                `bu=${businessUnitId} ` +
+                `inventory=${
+                  inventory
+                    ? JSON.stringify({
+                        id: inventory.id,
+                        qty: inventory.quantity,
+                        reserved: inventory.reserved,
+                      })
+                    : 'NOT LINKED'
+                }`,
+            );
             throw new AppError(
               `Insufficient stock. Available: ${availableStock}`,
               400,
@@ -781,6 +795,22 @@ export class CartService extends BaseService {
             const newQuantity = existingItem.quantity + data.quantity;
 
             if (availableStock < newQuantity) {
+              console.warn(
+                `[cart.addItem] Insufficient stock (existing item). ` +
+                  `product=${data.productId} ` +
+                  `variant=${variantId ?? '-'} ` +
+                  `bu=${businessUnitId} ` +
+                  `inventory=${
+                    inventory
+                      ? JSON.stringify({
+                          id: inventory.id,
+                          qty: inventory.quantity,
+                          reserved: inventory.reserved,
+                        })
+                      : 'NOT LINKED'
+                  } ` +
+                  `requested=${newQuantity}`,
+              );
               throw new AppError(
                 `Insufficient stock. Available: ${availableStock}`,
                 400,
@@ -937,6 +967,22 @@ export class CartService extends BaseService {
               : 0;
 
             if (availableStock < quantity) {
+              console.warn(
+                `[cart.updateQty] Insufficient stock. ` +
+                  `product=${cartItem.productId} ` +
+                  `variant=${cartItem.variantId ?? '-'} ` +
+                  `bu=${businessUnitId} ` +
+                  `inventory=${
+                    inventory
+                      ? JSON.stringify({
+                          id: inventory.id,
+                          qty: inventory.quantity,
+                          reserved: inventory.reserved,
+                        })
+                      : 'NOT LINKED'
+                  } ` +
+                  `requested=${quantity}`,
+              );
               throw new AppError(
                 `Insufficient stock. Available: ${availableStock}`,
                 400,
@@ -1446,6 +1492,12 @@ export class CartService extends BaseService {
               : 0;
 
             if (!inventory) {
+              console.warn(
+                `[cart.sync] No inventory row for ` +
+                  `product=${item.productId} ` +
+                  `variant=${item.variantId ?? '-'} ` +
+                  `bu=${businessUnitId}`,
+              );
               issues.push(
                 `No inventory record for ${
                   (item as any).product?.name ?? item.productId
@@ -1453,6 +1505,13 @@ export class CartService extends BaseService {
               );
               await tx.cartItem.delete({ where: { id: item.id } });
             } else if (available === 0) {
+              console.warn(
+                `[cart.sync] Out of stock for ` +
+                  `product=${item.productId} ` +
+                  `inventory=${inventory.id} ` +
+                  `qty=${inventory.quantity} ` +
+                  `reserved=${inventory.reserved}`,
+              );
               issues.push(
                 `Out of stock: ${
                   (item as any).product?.name ?? item.productId
@@ -1460,6 +1519,13 @@ export class CartService extends BaseService {
               );
               await tx.cartItem.delete({ where: { id: item.id } });
             } else if (available < item.quantity) {
+              console.warn(
+                `[cart.sync] Insufficient stock for ` +
+                  `product=${item.productId} ` +
+                  `inventory=${inventory.id} ` +
+                  `available=${available} ` +
+                  `requested=${item.quantity}`,
+              );
               issues.push(
                 `Insufficient stock for ${
                   (item as any).product?.name ?? item.productId
@@ -2365,4 +2431,3 @@ export class CartService extends BaseService {
 }
 
 export default CartService;
-

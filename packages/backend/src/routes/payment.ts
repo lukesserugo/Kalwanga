@@ -1,18 +1,98 @@
-// D:\Projects\Kalwanga\packages\backend\src\routes\payment.ts
+// packages/backend/src/routes/payment.ts
 
 import { Router } from 'express';
 import express from 'express';
 import { paymentController } from '../controllers/paymentController.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { UserRole } from '../generated/prisma/index.js';
+import { logger } from '../lib/logger.js';
 
 const router = Router();
+
+// ============================================
+// MEMOIZED DYNAMIC IMPORT — CHECKOUT CONTROLLER
+// ============================================
+//
+// The `/checkout/online` alias forwards to `checkoutController`.
+// A top-level static import would create a circular dependency:
+//
+//   paymentRoutes → checkoutController → checkoutService
+//     → paymentService → provider services → other controllers
+//
+// To break the cycle cleanly we load `checkoutController`
+// dynamically on first use and memoize the promise. Node caches
+// the resolved module, so every request after the first gets the
+// already-loaded controller with no per-request loader overhead.
+//
+// Do NOT replace this with `await import(...)` inside the handler
+// — that re-enters the ESM loader on every request even though the
+// module is cached, and produces a fresh promise allocation per
+// call.
+
+let checkoutControllerPromise:
+  | Promise<typeof import('../controllers/checkoutController.js')>
+  | null = null;
+
+function loadCheckoutController() {
+  if (!checkoutControllerPromise) {
+    checkoutControllerPromise = import(
+      '../controllers/checkoutController.js'
+    );
+  }
+  return checkoutControllerPromise;
+}
+
+// ============================================
+// WEBHOOK SAFETY WRAPPER
+// ============================================
+//
+// Payment gateways retry aggressively on non-2xx responses.
+// Stripe retries for up to 72 hours, PayPal for 3 days, Square for
+// 24 hours. A transient bug in our handler must not produce a
+// retry storm.
+//
+// The wrapper guarantees a 200 response even if the underlying
+// handler throws. Errors are logged. Reconciliation for any
+// dropped event is out-of-band.
+//
+// ⚠ Applied ONLY to the routes whose contracts promise a 200 ACK
+//   on failure (PayPal, Flutterwave, Square). The Stripe route
+//   deliberately propagates 4xx (missing signature) so the caller
+//   gets a real error — wrapping it here would hide the
+//   misconfiguration.
+//
+// M-Pesa's callback manages its own response shape (Safaricom's
+// `{ ResultCode, ResultDesc }`) and is not wrapped here.
+
+function ackAlways(
+  provider: string,
+  handler: (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => any,
+) {
+  return async (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ): Promise<void> => {
+    try {
+      await handler(req, res, next);
+    } catch (err) {
+      logger.error(`[webhook:${provider}] swallowed error:`, err);
+      if (!res.headersSent) {
+        res.status(200).json({ success: true, received: true });
+      }
+    }
+  };
+}
 
 // ============================================
 // WEBHOOK ROUTES — NO AUTH, RAW BODY
 // ============================================
 //
-// Stripe, PayPal, Paystack, and Square sign the RAW request body.
+// Stripe, PayPal, and Square sign the RAW request body.
 // `express.json()` consumes the stream and replaces `req.body`
 // with a parsed object, which makes signature verification
 // impossible. Each signed webhook route below applies
@@ -23,23 +103,24 @@ const router = Router();
 // ⚠ Mount-order requirement: in `index.ts`, this router MUST be
 //   registered BEFORE `app.use(express.json())`. Route-level
 //   middleware cannot override a body parser that has already run
-//   on the request stream. See the note at the bottom of this file.
+//   on the request stream.
 //
 // M-Pesa and Flutterwave do NOT need the raw body:
 //   • M-Pesa posts JSON and validates via a shared callback URL,
 //     not a body HMAC.
 //   • Flutterwave uses the `verif-hash` header, not a body HMAC.
 //
-// Every route in this block returns 200 to the caller regardless of
-// internal outcome, because payment gateways retry aggressively on
-// non-2xx and a retry storm is worse than a dropped event. Failures
-// are logged and, where applicable, reconciled by out-of-band jobs.
+// PayPal, Flutterwave, and Square routes are wrapped with
+// `ackAlways` so an internal throw still returns 200. The Stripe
+// route is NOT wrapped — its controller deliberately propagates
+// 4xx (missing signature) so the caller sees a real error.
 
 /**
  * POST /payments/webhook
  * Canonical Stripe webhook endpoint.
  *
  * ⚠ Raw body — signature verification requires the raw bytes.
+ * ⚠ NOT wrapped by `ackAlways` — the controller propagates 4xx.
  */
 router.post(
   '/webhook',
@@ -52,6 +133,7 @@ router.post(
  * Explicit alias for the Stripe webhook.
  *
  * ⚠ Raw body — signature verification requires the raw bytes.
+ * ⚠ NOT wrapped by `ackAlways` — the controller propagates 4xx.
  */
 router.post(
   '/webhook/stripe',
@@ -63,7 +145,9 @@ router.post(
  * POST /payments/webhook/mpesa
  * Canonical M-Pesa STK push callback.
  *
- * M-Pesa sends JSON; no raw body required.
+ * M-Pesa sends JSON; no raw body required. The controller always
+ * returns a Safaricom-shaped 200 with a `ResultCode`, so no
+ * `ackAlways` wrapper is needed.
  */
 router.post('/webhook/mpesa', paymentController.handleMpesaCallback);
 
@@ -84,11 +168,13 @@ router.post('/mpesa-callback', paymentController.handleMpesaCallback);
  * PayPal from inside `PayPalService.handleWebhook`.
  *
  * ⚠ Raw body — signature verification requires the raw bytes.
+ * ⚠ Wrapped by `ackAlways` — a throw returns 200 so PayPal does
+ *   not retry indefinitely.
  */
 router.post(
   '/webhook/paypal',
   express.raw({ type: 'application/json' }),
-  paymentController.handlePayPalWebhook,
+  ackAlways('PAYPAL', paymentController.handlePayPalWebhook),
 );
 
 /**
@@ -97,12 +183,13 @@ router.post(
  * Flutterwave's signature is the `verif-hash` header (a plain
  * string equality check against `FLUTTERWAVE_SECRET_HASH`), not a
  * body HMAC. The body may be parsed normally.
+ *
+ * ⚠ Wrapped by `ackAlways` — a throw returns 200.
  */
 router.post(
   '/webhook/flutterwave',
-  paymentController.handleFlutterwaveWebhook,
+  ackAlways('FLUTTERWAVE', paymentController.handleFlutterwaveWebhook),
 );
-
 
 /**
  * POST /payments/webhook/square
@@ -111,11 +198,12 @@ router.post(
  * HMAC-SHA256 hash of `(notificationUrl + rawBody)`.
  *
  * ⚠ Raw body — signature verification requires the raw bytes.
+ * ⚠ Wrapped by `ackAlways` — a throw returns 200.
  */
 router.post(
   '/webhook/square',
   express.raw({ type: 'application/json' }),
-  paymentController.handleSquareWebhook,
+  ackAlways('SQUARE', paymentController.handleSquareWebhook),
 );
 
 // ============================================
@@ -365,8 +453,9 @@ router.post(
 // PAYMENT PROVIDER MANAGEMENT
 // ============================================
 //
-// All literal-prefix routes (`/payment-providers/...`). They MUST
-// be registered before `/:id` at the bottom.
+// All routes live under `/payment-providers`. The block is ordered
+// specific-to-general so a future `/:id/subpath` addition can't be
+// shadowed by the bare `/:id` route below.
 
 /**
  * GET /payments/payment-providers
@@ -407,32 +496,11 @@ router.post(
 );
 
 /**
- * PATCH /payments/payment-providers/:id
- * Update a provider's mutable fields.
- * @auth Required — Manager+
- */
-router.patch(
-  '/payment-providers/:id',
-  requireAuth,
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
-  paymentController.updateProvider,
-);
-
-/**
- * DELETE /payments/payment-providers/:id
- * Soft-delete a provider.
- * @auth Required — Admin+
- */
-router.delete(
-  '/payment-providers/:id',
-  requireAuth,
-  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
-  paymentController.deleteProvider,
-);
-
-/**
  * PATCH /payments/payment-providers/:id/health
  * Manually flip a provider's health flag.
+ *
+ * MUST be registered before `PATCH /payment-providers/:id` so a
+ * future shadowing regression is impossible.
  * @auth Required — Admin+
  */
 router.patch(
@@ -478,53 +546,138 @@ router.delete(
   paymentController.removeProviderCurrency,
 );
 
+// --------------------------------------------
+// Provider payment-method sub-resource
+// --------------------------------------------
+//
+// ⚠ BLOCKED — the four routes below reference controller methods
+//   that do NOT exist on `paymentController` yet:
+//
+//     getProviderPaymentMethods
+//     createProviderPaymentMethod
+//     updateProviderPaymentMethod
+//     deleteProviderPaymentMethod
+//
+//   Registering them produces TypeScript 2551 / 2339 errors and
+//   blocks the whole file from compiling.
+//
+//   The web `paymentService` calls all four — the provider-config
+//   UI's "add / edit / delete payment method" flows will 404 until
+//   the controller methods are added.
+//
+//   ── To unblock ──
+//   1. Add the four methods to
+//      `packages/backend/src/controllers/paymentController.ts`.
+//      Each should follow the pattern of `addProviderCurrency` /
+//      `removeProviderCurrency` (parse the body, call into
+//      `paymentService`, send the response).
+//   2. Delete the `/*` line below and the `*/` line at the end of
+//      this block.
+//   3. Uncomment the four `router.*` registrations.
+//
+//   The routes are kept commented rather than deleted so the
+//   intent is recorded next to the surrounding code. Do not
+//   delete this block — if the four controller methods are
+//   intentionally not wanted, remove the corresponding methods
+//   from `packages/web/services/paymentService.ts` first.
+
+/*
+router.get(
+  '/payment-providers/:providerId/methods',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.getProviderPaymentMethods,
+);
+
+router.post(
+  '/payment-providers/:providerId/methods',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.createProviderPaymentMethod,
+);
+
+router.patch(
+  '/payment-providers/:providerId/methods/:methodId',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.updateProviderPaymentMethod,
+);
+
+router.delete(
+  '/payment-providers/:providerId/methods/:methodId',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.deleteProviderPaymentMethod,
+);
+*/
+
+/**
+ * PATCH /payments/payment-providers/:id
+ * Update a provider's mutable fields.
+ *
+ * MUST be registered AFTER every `/payment-providers/:id/<subpath>`
+ * route above, so the more specific paths match first.
+ * @auth Required — Manager+
+ */
+router.patch(
+  '/payment-providers/:id',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  paymentController.updateProvider,
+);
+
+/**
+ * DELETE /payments/payment-providers/:id
+ * Soft-delete a provider.
+ * @auth Required — Admin+
+ */
+router.delete(
+  '/payment-providers/:id',
+  requireAuth,
+  requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN]),
+  paymentController.deleteProvider,
+);
+
 // ============================================
 // CHECKOUT ALIASES
 // ============================================
 //
 // The canonical gateway-backed checkout endpoint lives at
-// `POST /checkout/online` (see `routes/checkout.ts`). The alias
-// below lets tooling that only knows the payments surface create
-// the same flow without a second router mount.
+// `POST /checkout/online` (see `routes/checkout.ts`). That route is
+// gated with `requireAuth` only — any authenticated user can create
+// an online checkout. The alias below replicates that role set
+// exactly.
+//
+// ⚠ Confirmed by inspection of `routes/checkout.ts`: the canonical
+//   route uses `requireAuth` with no `requireRole`. If that changes,
+//   update the alias to match — otherwise this alias becomes a
+//   privilege-escalation path (or, in the other direction, a lockout
+//   for legitimate callers).
 //
 // ⚠ The canonical route is still `POST /checkout/online`. Do not
 //   remove it. This is an additive alias.
-//
-// ⚠ Role check: this alias currently permits any authenticated
-//   caller. If `routes/checkout.ts` restricts `POST /checkout/online`
-//   to a narrower set of roles, replicate that set here — otherwise
-//   this alias is a privilege-escalation bypass. I did NOT change
-//   the role check in this rewrite because I don't know what the
-//   canonical route uses. Change it yourself once you've checked
-//   `routes/checkout.ts`.
 
 /**
  * POST /payments/checkout/online
  * Alias for `POST /checkout/online`.
  * @auth Required
  */
-router.post(
-  '/checkout/online',
-  requireAuth,
-  async (req, res, next) => {
-    try {
-      const { checkoutController } = await import(
-        '../controllers/checkoutController.js'
-      );
-      return checkoutController.createOnlineCheckout(req, res, next);
-    } catch (error) {
-      next(error);
-    }
-  },
-);
+router.post('/checkout/online', requireAuth, async (req, res, next) => {
+  try {
+    const { checkoutController } = await loadCheckoutController();
+    return checkoutController.createOnlineCheckout(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // ============================================
 // GENERIC WILDCARD ROUTES — MUST COME LAST
 // ============================================
 //
-// ⚠ `/:id` is a catch-all. Any route registered after this one
-//   that starts with a literal segment will never be matched.
-//   Do not add new routes below this line.
+// ⚠ `/:id` is a catch-all. Any route registered after these that
+//   starts with a literal segment will never be matched. Do not add
+//   new routes below this line.
 
 /**
  * POST /payments

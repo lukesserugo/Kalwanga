@@ -1,8 +1,14 @@
-// D:\Projects\Kalwanga\packages\web\app\payment\cancel\page.tsx
+// packages/web/app/payment/cancel/page.tsx
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -21,17 +27,21 @@ import {
   Copy,
 } from 'lucide-react';
 import { useThemeStore } from '../../../stores/themeStore';
-import { toast } from '../../../utils/toast-manager';
+import { toast } from '../../../../utils/toast-manager';
 
 // ============================================
 // CONSTANTS
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. A historical
+//   redirect URL carrying `provider=PAYSTACK` renders the raw
+//   code instead of a friendly name — everything else about the
+//   page works normally.
 
 const PROVIDER_NAMES: Record<string, string> = {
   STRIPE: 'Stripe',
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
-  PAYSTACK: 'Paystack',
   SQUARE: 'Square',
   MTN: 'MTN Mobile Money',
   AIRTEL: 'Airtel Money',
@@ -44,6 +54,14 @@ const PROVIDER_NAMES: Record<string, string> = {
   LOYALTY_POINTS: 'Loyalty Points',
 };
 
+/**
+ * Support phone number, overridable per deployment via
+ * `NEXT_PUBLIC_SUPPORT_PHONE`. Falls back to a placeholder when
+ * the env var is absent so the existing link keeps working.
+ */
+const SUPPORT_PHONE =
+  process.env.NEXT_PUBLIC_SUPPORT_PHONE || '+1-800-555-0199';
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -55,9 +73,12 @@ export default function PaymentCancelPage() {
 
   // ── Parse the URL once ───────────────────────────────────────
   //
-  // Doing this inside a `useMemo` means the parse runs once per
-  // mount and the derived values are stable identities for the
-  // rest of the component's life.
+  // Keyed on the serialized query string rather than the
+  // `searchParams` object, so a re-render that doesn't change the
+  // URL doesn't recompute the parse.
+
+  const searchParamsKey = searchParams.toString();
+
   const { provider, reference } = useMemo(() => {
     const providerParam =
       searchParams.get('provider') ||
@@ -75,15 +96,27 @@ export default function PaymentCancelPage() {
       provider: providerParam,
       reference: referenceParam,
     };
-  }, [searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParamsKey]);
 
   const [countdown, setCountdown] = useState(5);
+
+  /**
+   * Guards against a double `router.push('/cart')` when the effect
+   * re-runs due to a `router` identity change. The push is
+   * idempotent anyway, but avoiding the redundant navigation keeps
+   * the history stack clean on some Next.js versions.
+   */
+  const redirectedRef = useRef(false);
 
   // ── Countdown to auto-redirect ───────────────────────────────
 
   useEffect(() => {
     if (countdown <= 0) {
-      router.push('/cart');
+      if (!redirectedRef.current) {
+        redirectedRef.current = true;
+        router.push('/cart');
+      }
       return;
     }
     const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
@@ -260,7 +293,7 @@ export default function PaymentCancelPage() {
                 FAQ
               </Link>
               <a
-                href="tel:+1-800-555-0199"
+                href={`tel:${SUPPORT_PHONE}`}
                 className={`inline-flex items-center gap-1 text-sm ${
                   isDark
                     ? 'text-orange-400 hover:text-orange-300'
