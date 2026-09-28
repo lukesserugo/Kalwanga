@@ -5,7 +5,7 @@ import {
   applyDiscountSchema,
   cancelCheckoutSchema,
   createCheckoutSchema,
-  onlineCheckoutSchema,          // ← new
+  onlineCheckoutSchema,
   emailReceiptSchema,
   exportCheckoutsSchema,
   getCheckoutHistorySchema,
@@ -20,7 +20,7 @@ import {
   type ApplyDiscountInput,
   type CancelCheckoutInput,
   type CreateCheckoutInput,
-  type OnlineCheckoutInput,      // ← new
+  type OnlineCheckoutInput,
   type EmailReceiptInput,
   type ExportCheckoutsInput,
   type GetCheckoutHistoryInput,
@@ -31,27 +31,24 @@ import {
   type UpdateCheckoutItemInput,
   type UpdateCheckoutSettingsInput,
   type VoidCheckoutInput,
-  // ── Convenience re-exports ────────────────────────────
-  MOBILE_MONEY_PROVIDERS,        // ← new
-  DISCOUNT_TYPE_VALUES,          // ← new
-  mobileMoneyProviderSchema,     // ← new
-  type MobileMoneyProvider,      // ← new
-  type DiscountType,             // ← new
-} from "../../../shared/src/schemas/checkout";
+  MOBILE_MONEY_PROVIDERS,
+  DISCOUNT_TYPE_VALUES,
+  mobileMoneyProviderSchema,
+  type MobileMoneyProvider,
+  type DiscountType,
+} from "../schemas/checkout.js";
 
 export class CheckoutValidation {
   static validateCreateCheckout(data: unknown): CreateCheckoutInput {
     return createCheckoutSchema.parse(data);
   }
 
-  // ── NEW: online checkout validator ─────────────────────
-  //
-  // The backend `/checkout/online` route must validate against
+  // The backend `/checkout/online` route validates against
   // `onlineCheckoutSchema` (createCheckoutSchema minus
-  // `paidAmount`). Without this method, the controller is forced
-  // to re-declare its own schema locally — which is exactly the
-  // drift that let `mobileMoneyProvider` get stripped before it
-  // reached the service.
+  // `paidAmount`). Keeping this method here is what prevents the
+  // controller from re-declaring its own schema and drifting out
+  // of sync — the failure mode that previously stripped
+  // `mobileMoneyProvider` before it reached the service.
   static validateOnlineCheckout(data: unknown): OnlineCheckoutInput {
     return onlineCheckoutSchema.parse(data);
   }
@@ -115,11 +112,8 @@ export class CheckoutValidation {
   }
 }
 
-// ── Re-exports ───────────────────────────────────────────
-// Consumers that want to avoid importing from the schemas file
-// directly can pull the provider/discount unions from the
-// validator barrel instead. Keeps the public surface of the
-// `validators/checkout` module a superset of what it was before.
+// Re-exports so consumers that prefer to import from the validator
+// barrel do not have to reach into `schemas/checkout` directly.
 export {
   MOBILE_MONEY_PROVIDERS,
   DISCOUNT_TYPE_VALUES,

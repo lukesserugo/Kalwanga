@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -13,9 +13,6 @@ import {
   ArrowDownRight,
   DollarSign,
   CreditCard,
-  User,
-  Calendar,
-  Clock,
   Search,
   Filter,
   Eye,
@@ -29,16 +26,13 @@ import {
   Receipt,
   Banknote,
   Wallet,
-  Building,
-  QrCode,
   Gift,
   Star,
   Smartphone,
   Landmark,
   TrendingDown,
-  TrendingUp,
   Globe,
-  Shield,
+  Clock,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
@@ -69,6 +63,12 @@ interface Refund {
     reference: string;
     amount: number;
     paymentMethod: string;
+    /**
+     * The concrete gateway name the backend recorded for this
+     * payment. Read from `Payment.metadata.provider` (or the
+     * legacy top-level `Payment.provider` when present) via
+     * `resolvePaymentProvider` below — never read directly.
+     */
     provider?: string;
     gatewayId?: string;
     status?: string;
@@ -101,6 +101,52 @@ function resolvePaymentProvider(payment: any): string | undefined {
   const metaProvider =
     typeof meta.provider === 'string' ? meta.provider : undefined;
   return metaProvider || payment.gatewayId || undefined;
+}
+
+/**
+ * Provider logo with a graceful emoji fallback. Kept as a component
+ * rather than an `onError` DOM mutation so React owns the tree and
+ * a re-render doesn't leak a fresh `<span>` into the DOM.
+ */
+function ProviderLogo({
+  provider,
+  fallbackEmoji,
+  size = 24,
+  isDark,
+}: {
+  provider?: string;
+  fallbackEmoji: string;
+  size?: number;
+  isDark: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  const url =
+    provider &&
+    (isDark
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
+      : PROVIDER_IMAGE_URLS[provider]);
+
+  if (!url || failed) {
+    return <span className="text-sm leading-none">{fallbackEmoji}</span>;
+  }
+
+  return (
+    <div
+      className="relative flex-shrink-0"
+      style={{ width: size, height: size }}
+    >
+      <Image
+        src={url}
+        alt=""
+        width={size}
+        height={size}
+        className="rounded object-contain"
+        onError={() => setFailed(true)}
+        unoptimized
+      />
+    </div>
+  );
 }
 
 // ============================================
@@ -258,7 +304,6 @@ export default function AdminPaymentRefundsPage() {
   const canViewPayments =
     canView(PermissionResource.PAYMENT) ||
     canManage(PermissionResource.PAYMENT);
-  const canManagePayments = canManage(PermissionResource.PAYMENT);
 
   // ── Data loading ─────────────────────────────────────────────
 
@@ -268,19 +313,23 @@ export default function AdminPaymentRefundsPage() {
       const params: Record<string, unknown> = {
         page: pagination.page,
         limit: pagination.limit,
-        // Always filter by refunded status — the backend returns
-        // payments, not refunds, so we narrow to REFUNDED and let
-        // the mapping step below shape them as refunds.
+        // The backend returns *payments*, not refunds. Narrowing to
+        // REFUNDED gives us the refunded rows; the mapping below
+        // re-shapes them as Refund view-models.
         status: 'REFUNDED',
       };
 
       if (dateFrom) params.startDate = dateFrom;
       if (dateTo) params.endDate = dateTo;
+      // `search` is forwarded for forward-compatibility — the
+      // backend ignores unknown query keys today, and the client
+      // does the substring filter locally below. The moment a
+      // `search` field is added to `getPaymentsSchema`, this
+      // starts working server-side with no UI change.
       if (search) params.search = search;
 
       const response = await paymentService.getPayments(params);
 
-      // Shape each refunded payment into the Refund view-model.
       const refundData: Refund[] = (response.data || []).map(
         (payment: any) => ({
           id: payment.id,
@@ -311,8 +360,7 @@ export default function AdminPaymentRefundsPage() {
       setRefunds(refundData);
 
       // Prefer the canonical `pagination` shape, fall back to the
-      // legacy flat fields. Functional update so a concurrent page
-      // change isn't clobbered by a stale snapshot.
+      // legacy flat fields.
       const paginationData =
         (response as any).pagination ??
         ({
@@ -339,7 +387,6 @@ export default function AdminPaymentRefundsPage() {
   }, [
     pagination.page,
     pagination.limit,
-    statusFilter,
     dateFrom,
     dateTo,
     search,
@@ -354,9 +401,12 @@ export default function AdminPaymentRefundsPage() {
     canViewPayments,
     pagination.page,
     pagination.limit,
-    statusFilter,
     dateFrom,
     dateTo,
+    // statusFilter intentionally omitted: the API call always
+    // filters by REFUNDED, and the visible status filter is
+    // applied client-side below. If a future change makes the API
+    // honour a status param, add it here.
   ]);
 
   const handleRefresh = useCallback(async () => {
@@ -367,16 +417,65 @@ export default function AdminPaymentRefundsPage() {
 
   const handleSearch = useCallback(() => {
     setPagination((prev) => ({ ...prev, page: 1 }));
-    // The effect above will fire when pagination.page changes; if
-    // we're already on page 1, call loadRefunds directly.
+    // If we're already on page 1, the effect above won't re-fire
+    // (page is unchanged), so call directly.
     if (pagination.page === 1) {
       void loadRefunds();
     }
   }, [pagination.page, loadRefunds]);
 
+  const handleClearFilters = useCallback(() => {
+    setStatusFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setSearch('');
+    setPagination((prev) => ({ ...prev, page: 1 }));
+    // Reset can land on the same deps the effect already saw, so
+    // always call directly to guarantee a repaint.
+    void loadRefunds();
+  }, [loadRefunds]);
+
   const goToPage = useCallback((page: number) => {
     setPagination((prev) => ({ ...prev, page }));
   }, []);
+
+  // ── Client-side filtering ────────────────────────────────────
+
+  /**
+   * The backend returns every REFUNDED payment in the page. Apply
+   * the status filter and the free-text search client-side so the
+   * UI is honest even when the backend ignores those params.
+   */
+  const visibleRefunds = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    return refunds.filter((refund) => {
+      if (
+        statusFilter !== 'all' &&
+        refund.status.toUpperCase() !== statusFilter.toUpperCase()
+      ) {
+        return false;
+      }
+
+      if (!q) return true;
+
+      const haystack = [
+        refund.payment?.reference,
+        refund.paymentId,
+        refund.sale?.receiptNumber,
+        refund.payment?.user?.firstName,
+        refund.payment?.user?.lastName,
+        refund.payment?.user?.email,
+        refund.payment?.provider,
+        refund.payment?.paymentMethod,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [refunds, statusFilter, search]);
 
   // ── Lookups ──────────────────────────────────────────────────
 
@@ -420,16 +519,6 @@ export default function AdminPaymentRefundsPage() {
     return PAYMENT_METHOD_EMOJI[method] || '💳';
   }, []);
 
-  const getProviderImageUrl = useCallback(
-    (provider?: string): string => {
-      if (!provider) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-        ? PROVIDER_DARK_IMAGE_URLS[provider]
-        : PROVIDER_IMAGE_URLS[provider] || '';
-    },
-    [isDark],
-  );
-
   const getProviderName = useCallback((provider?: string): string => {
     if (!provider) return 'N/A';
     return PROVIDER_NAMES[provider] || provider;
@@ -471,7 +560,7 @@ export default function AdminPaymentRefundsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">
-          You don't have permission to view refunds.
+          You don&apos;t have permission to view refunds.
         </p>
         <button
           onClick={() => router.push('/admin/payments')}
@@ -484,6 +573,15 @@ export default function AdminPaymentRefundsPage() {
   }
 
   // ── Main render ──────────────────────────────────────────────
+
+  const completedOnPage = visibleRefunds.filter(
+    (r) => r.status === 'COMPLETED' || r.status === 'PAID',
+  ).length;
+
+  const pageRefundTotal = visibleRefunds.reduce(
+    (sum, r) => sum + r.amount,
+    0,
+  );
 
   return (
     <div
@@ -560,7 +658,14 @@ export default function AdminPaymentRefundsPage() {
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {refunds.length}
+                  {pagination.total}
+                </p>
+                <p
+                  className={`text-xs mt-1 ${
+                    isDark ? 'text-gray-500' : 'text-gray-400'
+                  }`}
+                >
+                  Matching current filters
                 </p>
               </div>
               <div
@@ -584,16 +689,21 @@ export default function AdminPaymentRefundsPage() {
                     isDark ? 'text-gray-400' : 'text-gray-600'
                   }`}
                 >
-                  Total Refund Amount
+                  Refunded on This Page
                 </p>
                 <p
                   className={`text-2xl font-bold mt-1 tabular-nums ${
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {formatCurrency(
-                    refunds.reduce((sum, r) => sum + r.amount, 0),
-                  )}
+                  {formatCurrency(pageRefundTotal)}
+                </p>
+                <p
+                  className={`text-xs mt-1 ${
+                    isDark ? 'text-gray-500' : 'text-gray-400'
+                  }`}
+                >
+                  Sum of visible rows
                 </p>
               </div>
               <div
@@ -617,20 +727,21 @@ export default function AdminPaymentRefundsPage() {
                     isDark ? 'text-gray-400' : 'text-gray-600'
                   }`}
                 >
-                  Completed Refunds
+                  Completed on This Page
                 </p>
                 <p
                   className={`text-2xl font-bold mt-1 tabular-nums ${
                     isDark ? 'text-white' : 'text-gray-900'
                   }`}
                 >
-                  {
-                    refunds.filter(
-                      (r) =>
-                        r.status === 'COMPLETED' ||
-                        r.status === 'PAID',
-                    ).length
-                  }
+                  {completedOnPage}
+                </p>
+                <p
+                  className={`text-xs mt-1 ${
+                    isDark ? 'text-gray-500' : 'text-gray-400'
+                  }`}
+                >
+                  Of {visibleRefunds.length} visible
                 </p>
               </div>
               <div
@@ -655,7 +766,7 @@ export default function AdminPaymentRefundsPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by payment reference..."
+                placeholder="Search by reference, receipt, or customer..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -670,7 +781,10 @@ export default function AdminPaymentRefundsPage() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition duration-250 focus-ring ${
-                showFilters || statusFilter !== 'all' || dateFrom || dateTo
+                showFilters ||
+                statusFilter !== 'all' ||
+                dateFrom ||
+                dateTo
                   ? 'bg-brand-gradient text-white'
                   : isDark
                     ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
@@ -760,16 +874,7 @@ export default function AdminPaymentRefundsPage() {
               </div>
               <div className="mt-4 flex justify-end">
                 <button
-                  onClick={() => {
-                    setStatusFilter('all');
-                    setDateFrom('');
-                    setDateTo('');
-                    setSearch('');
-                    setPagination((prev) => ({
-                      ...prev,
-                      page: 1,
-                    }));
-                  }}
+                  onClick={handleClearFilters}
                   className="text-sm text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 transition duration-250 focus-ring"
                 >
                   Clear All Filters
@@ -785,7 +890,7 @@ export default function AdminPaymentRefundsPage() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
             </div>
-          ) : refunds.length === 0 ? (
+          ) : visibleRefunds.length === 0 ? (
             <div className="text-center py-12">
               <ArrowDownRight className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3
@@ -800,7 +905,9 @@ export default function AdminPaymentRefundsPage() {
                   isDark ? 'text-gray-400' : 'text-gray-500'
                 }`}
               >
-                No refunds have been processed yet
+                {refunds.length === 0
+                  ? 'No refunds have been processed yet'
+                  : 'No refunds match the current filters'}
               </p>
             </div>
           ) : (
@@ -842,9 +949,8 @@ export default function AdminPaymentRefundsPage() {
                       isDark ? 'divide-gray-700' : 'divide-gray-200'
                     }`}
                   >
-                    {refunds.map((refund) => {
+                    {visibleRefunds.map((refund) => {
                       const paymentProvider = refund.payment?.provider;
-                      const imageUrl = getProviderImageUrl(paymentProvider);
 
                       return (
                         <tr
@@ -919,52 +1025,14 @@ export default function AdminPaymentRefundsPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              {imageUrl ? (
-                                <div className="relative w-6 h-6 flex-shrink-0">
-                                  <Image
-                                    src={imageUrl}
-                                    alt={getProviderName(
-                                      paymentProvider,
-                                    )}
-                                    width={24}
-                                    height={24}
-                                    className="rounded object-contain"
-                                    onError={(e) => {
-                                      (
-                                        e.target as HTMLImageElement
-                                      ).style.display = 'none';
-                                      const parent = (
-                                        e.target as HTMLImageElement
-                                      ).parentElement;
-                                      if (parent) {
-                                        const fallback =
-                                          document.createElement(
-                                            'span',
-                                          );
-                                        fallback.className = `text-sm ${
-                                          isDark
-                                            ? 'text-gray-300'
-                                            : 'text-gray-600'
-                                        }`;
-                                        fallback.textContent =
-                                          getPaymentEmoji(
-                                            refund.payment
-                                              ?.paymentMethod ||
-                                              'CREDIT_CARD',
-                                          );
-                                        parent.appendChild(fallback);
-                                      }
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                <span className="text-sm">
-                                  {getPaymentIcon(
-                                    refund.payment?.paymentMethod ||
-                                      'CREDIT_CARD',
-                                  )}
-                                </span>
-                              )}
+                              <ProviderLogo
+                                provider={paymentProvider}
+                                fallbackEmoji={getPaymentEmoji(
+                                  refund.payment?.paymentMethod ||
+                                    'CREDIT_CARD',
+                                )}
+                                isDark={isDark}
+                              />
                               <div>
                                 <p
                                   className={`text-sm capitalize ${
@@ -1240,7 +1308,6 @@ export default function AdminPaymentRefundsPage() {
                   </div>
                 </div>
 
-                {/* Payment Method & Provider */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div
                     className={`p-4 rounded-xl ${
@@ -1283,28 +1350,14 @@ export default function AdminPaymentRefundsPage() {
                       Provider
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      {getProviderImageUrl(
-                        selectedRefund.payment?.provider,
-                      ) ? (
-                        <div className="relative w-6 h-6">
-                          <Image
-                            src={getProviderImageUrl(
-                              selectedRefund.payment?.provider,
-                            )}
-                            alt={getProviderName(
-                              selectedRefund.payment?.provider,
-                            )}
-                            width={24}
-                            height={24}
-                            className="rounded object-contain"
-                            onError={(e) => {
-                              (
-                                e.target as HTMLImageElement
-                              ).style.display = 'none';
-                            }}
-                          />
-                        </div>
-                      ) : null}
+                      <ProviderLogo
+                        provider={selectedRefund.payment?.provider}
+                        fallbackEmoji={getPaymentEmoji(
+                          selectedRefund.payment?.paymentMethod ||
+                            'CREDIT_CARD',
+                        )}
+                        isDark={isDark}
+                      />
                       <span
                         className={`font-medium ${
                           isDark ? 'text-white' : 'text-gray-900'
@@ -1399,9 +1452,11 @@ export default function AdminPaymentRefundsPage() {
                     selectedRefund.payment.id,
                   amount: selectedRefund.payment.amount,
                   paymentMethod: selectedRefund.payment.paymentMethod,
-                  status:
-                    selectedRefund.payment.status ||
-                    selectedRefund.status,
+                  // Prefer the refund's own status on this page —
+                  // the payment's status is always REFUNDED (that's
+                  // the filter), so the refund status is the more
+                  // informative one to display.
+                  status: selectedRefund.status,
                   processedAt: selectedRefund.refundedAt,
                   provider: selectedRefund.payment.provider,
                   metadata: selectedRefund.payment.metadata,

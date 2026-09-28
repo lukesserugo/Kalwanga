@@ -1,3 +1,5 @@
+// packages/web/app/(dashboard)/admin/payments/stats/page.tsx
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -95,8 +97,9 @@ type DateRange =
  * Resolve the resolved `{ startDate, endDate }` for a named range.
  *
  * Returns ISO strings so the backend receives the same format it
- * already expects. For `custom`, returns whatever the caller passed
- * (empty strings mean "not provided").
+ * already expects. For `custom`, converts the user-supplied
+ * `YYYY-MM-DD` values to ISO boundaries inclusive of the end-of-day
+ * on the `endDate` day.
  */
 function resolveDateRange(
   range: DateRange,
@@ -108,12 +111,14 @@ function resolveDateRange(
     if (customStart) {
       const start = new Date(customStart);
       if (!Number.isNaN(start.getTime())) {
+        start.setHours(0, 0, 0, 0);
         params.startDate = start.toISOString();
       }
     }
     if (customEnd) {
       const end = new Date(customEnd);
       if (!Number.isNaN(end.getTime())) {
+        end.setHours(23, 59, 59, 999);
         params.endDate = end.toISOString();
       }
     }
@@ -169,8 +174,18 @@ const METHOD_TO_PROVIDER: Record<string, string> = {
 };
 
 // ============================================
-// CONSTANTS - EXACT IMAGE URLs
+// CONSTANTS
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. Historical payments
+//   with a PAYSTACK provider code fall through to the generic
+//   config in `PROVIDER_CONFIGS` (`{ icon: '📊', name: code,
+//   color: 'gray' }`).
+//
+// Icon URLs are local paths under `packages/web/public/`. Add one
+// SVG per code to restore the images. Until then, the `<Image>`
+// onError handler hides the broken image and the emoji from
+// `PROVIDER_CONFIGS` renders.
 
 const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CASH: Banknote,
@@ -221,46 +236,28 @@ const PAYMENT_METHOD_COLORS: Record<string, string> = {
 };
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PROVIDER_CONFIGS: Record<
   string,
@@ -376,6 +373,63 @@ export default function AdminPaymentStatsPage() {
 
   // ── Data loading ─────────────────────────────────────────────
 
+  const calculateProviderStats = useCallback(
+    (data: PaymentSummaryData): ProviderStat[] => {
+      const providerMap: Record<
+        string,
+        { amount: number; methods: number }
+      > = {};
+
+      Object.entries(data.byMethod || {}).forEach(([method, amount]) => {
+        const numericAmount = typeof amount === 'number' ? amount : 0;
+        const provider = METHOD_TO_PROVIDER[method] || 'OTHER';
+        if (!providerMap[provider]) {
+          providerMap[provider] = { amount: 0, methods: 0 };
+        }
+        providerMap[provider].amount += numericAmount;
+        providerMap[provider].methods += 1;
+      });
+
+      const total = data.totalAmount || 1;
+
+      return Object.entries(providerMap)
+        .map(([provider, stats]) => {
+          const config = PROVIDER_CONFIGS[provider] || {
+            icon: '📊',
+            color: 'gray',
+            bgColor: 'bg-gray-50 dark:bg-gray-800/50',
+            name: provider,
+          };
+          const imageUrl = PROVIDER_IMAGE_URLS[provider] || '';
+
+          return {
+            provider,
+            name: config.name,
+            amount: stats.amount,
+            // ⚠ The backend's `/payments/summary` endpoint only
+            //   exposes the amount per method, not the transaction
+            //   count per method. When two methods map to the same
+            //   provider (e.g. CREDIT_CARD and DEBIT_CARD both →
+            //   STRIPE), `methods` counts distinct method codes,
+            //   not transactions. If the backend gains a
+            //   per-method count, replace this with the real sum.
+            count: stats.methods,
+            average:
+              stats.methods > 0
+                ? stats.amount / stats.methods
+                : 0,
+            percentage: (stats.amount / total) * 100,
+            icon: config.icon,
+            color: config.color,
+            bgColor: config.bgColor,
+            imageUrl,
+          };
+        })
+        .sort((a, b) => b.amount - a.amount);
+    },
+    [],
+  );
+
   const loadStats = useCallback(
     async (isRefresh = false) => {
       try {
@@ -410,7 +464,12 @@ export default function AdminPaymentStatsPage() {
         setRefreshing(false);
       }
     },
-    [dateRange, customStartDate, customEndDate],
+    [
+      dateRange,
+      customStartDate,
+      customEndDate,
+      calculateProviderStats,
+    ],
   );
 
   // Load on mount and whenever the resolved range changes.
@@ -499,83 +558,11 @@ export default function AdminPaymentStatsPage() {
 
   const getProviderImageUrl = useCallback(
     (provider: string): string => {
-      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-        ? PROVIDER_DARK_IMAGE_URLS[provider]
-        : PROVIDER_IMAGE_URLS[provider] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[provider];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[provider] || '';
     },
     [isDark],
-  );
-
-  // ── Provider stats derivation ────────────────────────────────
-
-  /**
-   * Build per-provider stats from the summary's `byMethod` map.
-   *
-   * ⚠ The backend's `/payments/summary` endpoint only exposes the
-   *   amount per method, not the transaction count per method. That
-   *   means when two methods map to the same provider (e.g.
-   *   `CREDIT_CARD` and `DEBIT_CARD` both → `STRIPE`), we have to
-   *   decide how to represent the count.
-   *
-   *   The rewrite uses the number of *distinct methods* that hit
-   *   each provider, not the sum of amounts, because each method is
-   *   one row in `byMethod`. `average` is then `amount / distinct
-   *   methods`. This is documented in the UI as an approximation.
-   *
-   *   If you later extend the summary endpoint to return per-method
-   *   counts, update this function to use them directly.
-   */
-  const calculateProviderStats = useCallback(
-    (data: PaymentSummaryData): ProviderStat[] => {
-      const providerMap: Record<
-        string,
-        { amount: number; methods: number }
-      > = {};
-
-      Object.entries(data.byMethod || {}).forEach(([method, amount]) => {
-        const numericAmount = typeof amount === 'number' ? amount : 0;
-        const provider = METHOD_TO_PROVIDER[method] || 'OTHER';
-        if (!providerMap[provider]) {
-          providerMap[provider] = { amount: 0, methods: 0 };
-        }
-        providerMap[provider].amount += numericAmount;
-        providerMap[provider].methods += 1;
-      });
-
-      const total = data.totalAmount || 1;
-
-      return Object.entries(providerMap)
-        .map(([provider, stats]) => {
-          const config = PROVIDER_CONFIGS[provider] || {
-            icon: '📊',
-            color: 'gray',
-            bgColor: 'bg-gray-50 dark:bg-gray-800/50',
-            name: provider,
-          };
-          const imageUrl = PROVIDER_IMAGE_URLS[provider] || '';
-
-          return {
-            provider,
-            name: config.name,
-            amount: stats.amount,
-            // ⚠ `methods` is a proxy for transaction count. See the
-            //    doc comment above. If the backend starts returning
-            //    per-method counts, replace this with the real sum.
-            count: stats.methods,
-            average:
-              stats.methods > 0
-                ? stats.amount / stats.methods
-                : 0,
-            percentage: (stats.amount / total) * 100,
-            icon: config.icon,
-            color: config.color,
-            bgColor: config.bgColor,
-            imageUrl,
-          };
-        })
-        .sort((a, b) => b.amount - a.amount);
-    },
-    [],
   );
 
   // ── Render gates ─────────────────────────────────────────────
@@ -602,7 +589,7 @@ export default function AdminPaymentStatsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">
-          You don't have permission to view payment statistics.
+          You don&apos;t have permission to view payment statistics.
         </p>
         <button
           onClick={() => router.push('/admin/payments')}

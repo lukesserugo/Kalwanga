@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\backend\src\controllers\checkoutController.ts
+// packages/backend/src/controllers/checkoutController.ts
 
 import { Request, Response, NextFunction } from 'express';
 import { CheckoutService } from '../services/checkoutService.js';
@@ -14,19 +14,7 @@ import { z } from 'zod';
 // The canonical checkout schemas live in the shared package so
 // every consumer (this controller, the mobile app, the web app)
 // validates against the exact same shape. This file no longer
-// re-declares them. The "MUST stay in lock-step" comments that
-// used to live here are gone — there is one source of truth.
-//
-// Imported schemas:
-//   createCheckoutSchema     offline create  (requires paidAmount)
-//   onlineCheckoutSchema     online create   (no paidAmount)
-//   voidCheckoutSchema       void reason
-//   getCheckoutsSchema       list query params
-//   addCheckoutItemSchema    add item body
-//   updateCheckoutItemSchema update quantity body
-//   applyDiscountSchema      discount code body
-//   mobileMoneyProviderSchema  MPESA | MTN | AIRTEL | undefined
-//   DISCOUNT_TYPE_VALUES     9-value discount enum
+// re-declares them.
 
 import {
   createCheckoutSchema,
@@ -94,17 +82,53 @@ const paymentMethodSchema = z
   });
 
 // ============================================
-// LOCAL ALIASES FOR UPDATED ITEM BODY
+// LOCAL SCHEMAS
 // ============================================
 //
-// `updateCheckoutItemSchema` from the shared package only
-// validates `quantity`. The controller additionally accepts a
-// bare integer body for backwards compatibility with older
-// clients that posted `{ "quantity": 3 }` without the wrapper.
-// We reuse the shared schema's quantity validator.
+// Settings validation. The service does read-modify-write on the
+// business unit's `settings` JSON, but the shape itself is not
+// validated there. This schema bounds the allowed keys and value
+// types so a caller can't persist arbitrary JSON.
 
-const updateItemSchema = z.object({
-  quantity: z.number().int().positive(),
+const updateCheckoutSettingsSchema = z
+  .object({
+    allowPartialPayment: z.boolean().optional(),
+    requireCustomer: z.boolean().optional(),
+    requireSignature: z.boolean().optional(),
+    maxDiscount: z.number().min(0).max(100).optional(),
+    taxInclusive: z.boolean().optional(),
+    defaultPaymentMethod: paymentMethodSchema.optional(),
+    receiptFooter: z.string().max(500).optional(),
+    loyaltyPointsEnabled: z.boolean().optional(),
+    pointsPerDollar: z.number().int().nonnegative().optional(),
+    allowGuestCheckout: z.boolean().optional(),
+    maxCartItems: z.number().int().positive().optional(),
+    cartExpiryHours: z.number().int().positive().optional(),
+    discountEnabled: z.boolean().optional(),
+    maxDiscountPercentage: z.number().min(0).max(100).optional(),
+    autoApplyPromotions: z.boolean().optional(),
+    reserveStockOnAdd: z.boolean().optional(),
+    reserveStockMinutes: z.number().int().positive().optional(),
+    lowStockThreshold: z.number().int().nonnegative().optional(),
+    freeShippingThreshold: z.number().nonnegative().optional(),
+    shippingCost: z.number().nonnegative().optional(),
+    taxRate: z.number().min(0).max(100).optional(),
+    notifyOnAbandonedCart: z.boolean().optional(),
+    abandonedCartHours: z.number().int().positive().optional(),
+    currencyCode: z.string().length(3).optional(),
+    currencySymbol: z.string().max(8).optional(),
+    showStockBadge: z.boolean().optional(),
+    showVariantImages: z.boolean().optional(),
+  })
+  .strict();
+
+// Split-payment body (added after the initial checkout). This is
+// NOT the gateway entry point — that is `createOnlineCheckout`.
+
+const processCheckoutPaymentSchema = z.object({
+  paymentMethod: paymentMethodSchema,
+  amount: z.number().finite().positive(),
+  paymentDetails: z.unknown().optional(),
 });
 
 // ============================================
@@ -126,6 +150,14 @@ function getUserId(req: Request): string | undefined {
   return (req as any).user?.id ?? (req as any).user?.userId;
 }
 
+function getCompanyId(req: Request): string | undefined {
+  return (
+    (req as any).user?.companyId ??
+    (req as any).user?.company?.id ??
+    undefined
+  );
+}
+
 function resolveCartId(req: Request): string | undefined {
   const { cartId, id } = req.params as {
     cartId?: string;
@@ -137,35 +169,55 @@ function resolveCartId(req: Request): string | undefined {
 /**
  * Read a numeric HTTP status code off an unknown error value.
  *
- * `AppError` in this codebase exposes the status code as `status`
- * (see `../middleware/errorHandler.ts`). Some errors thrown by
- * third-party libraries (axios, Stripe SDK) use `statusCode` or
- * `response.status`. We check all three and return `undefined` when
- * none matches, so the caller can fall through to the generic
- * handler.
+ * Walks the `.cause` chain (cycle-safe) because axios, undici, the
+ * Stripe SDK, and Node network errors attach the status to the
+ * wrapped error rather than the top-level one. Returns `undefined`
+ * when nothing on the chain carries a positive finite number.
  */
 function getErrorStatusCode(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') return undefined;
 
-  const anyErr = error as {
-    status?: unknown;
-    statusCode?: unknown;
-    response?: { status?: unknown };
-  };
+  const seen = new Set<unknown>();
+  let node: any = error;
 
-  const candidates = [
-    anyErr.status,
-    anyErr.statusCode,
-    anyErr.response?.status,
-  ];
+  while (node && typeof node === 'object' && !seen.has(node)) {
+    seen.add(node);
 
-  for (const candidate of candidates) {
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      return candidate;
+    const candidates = [
+      node.status,
+      node.statusCode,
+      node.response?.status,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        typeof candidate === 'number' &&
+        Number.isFinite(candidate) &&
+        candidate > 0
+      ) {
+        return candidate;
+      }
     }
+
+    node = node.cause;
   }
 
   return undefined;
+}
+
+/**
+ * Coerce a query-string or numeric value to a bounded integer.
+ * Returns `fallback` when the input can't be parsed.
+ */
+function toInt(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
 }
 
 /**
@@ -265,6 +317,25 @@ function findMissingCreateFields(
   return missing;
 }
 
+/**
+ * Read the first present value from a set of query-param aliases.
+ * Used by the two export endpoints so clients can use either the
+ * `dateFrom`/`dateTo` naming (from `getCheckouts`) or the
+ * `startDate`/`endDate` naming (from `getCheckoutHistory`).
+ */
+function pickQueryString(
+  query: Record<string, unknown>,
+  ...names: string[]
+): string | undefined {
+  for (const name of names) {
+    const value = query[name];
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 // ============================================
 // CHECKOUT CONTROLLER
 // ============================================
@@ -284,8 +355,9 @@ export const checkoutController = {
       const userId = getUserId(req);
       if (!userId) throw new AppError('User ID is required', 400);
 
-      logger.info('🧾 POST /checkout payload:', {
-        body: req.body,
+      logger.info('🧾 POST /checkout payload received', {
+        keys: Object.keys(req.body ?? {}),
+        cartId: req.body?.cartId ?? req.body?.cart_id,
       });
 
       const normalized = normalizeCheckoutBody(req.body);
@@ -307,12 +379,19 @@ export const checkoutController = {
 
       const validatedData = createCheckoutSchema.parse(normalized);
 
+      // Advisory early-out. The authoritative ownership check runs
+      // inside the service's transaction; this just produces a
+      // clean 403/404 before we open one.
       const cart = await cartService.getCartById(validatedData.cartId);
       if (!cart) throw new AppError('Cart not found', 404);
       if (cart.userId !== userId) {
         throw new AppError('Cart does not belong to this user', 403);
       }
 
+      // Ignore any caller-supplied `businessUnitId`. The cart's own
+      // BU is authoritative; letting a client pick a different one
+      // opens a cross-BU write surface (stock checks, currency,
+      // audit row, Sale.businessUnitId).
       const result = await checkoutService.processCheckout(
         {
           cartId: validatedData.cartId,
@@ -324,7 +403,7 @@ export const checkoutController = {
           cashRegisterId: validatedData.cashRegisterId,
           cashRegisterSessionId: validatedData.cashRegisterSessionId,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          businessUnitId: validatedData.businessUnitId,
+          businessUnitId: undefined,
           customerEmail: validatedData.customerEmail,
           customerPhone: validatedData.customerPhone,
           customerName: validatedData.customerName,
@@ -373,8 +452,7 @@ export const checkoutController = {
   // ⚠ On gateway failure the sale is marked CANCELLED, inventory is
   //   restored, and the service re-throws with the provider's own
   //   status code and message. This controller forwards that status
-  //   verbatim — see the catch block. A missing MTN credential now
-  //   surfaces as a clean 503 rather than an opaque 502.
+  //   verbatim.
   //
   // ── Idempotency semantics ──────────────────────────────────
   //
@@ -385,11 +463,6 @@ export const checkoutController = {
   //   PENDING / PROCESSING  → 201 with `nextAction: OFFLINE`
   //   COMPLETED             → 200 with `nextAction: NONE`
   //   CANCELLED             → **409 Conflict**
-  //
-  // 409 means "your previous attempt at this key failed; generate
-  // a new key and retry". The frontend must NOT show the
-  // awaiting-confirmation screen for a CANCELLED sale — the user
-  // would be stuck waiting for a callback that will never come.
 
   async createOnlineCheckout(
     req: Request,
@@ -400,8 +473,9 @@ export const checkoutController = {
       const userId = getUserId(req);
       if (!userId) throw new AppError('User ID is required', 400);
 
-      logger.info('🧾 POST /checkout/online payload:', {
-        body: req.body,
+      logger.info('🧾 POST /checkout/online payload received', {
+        keys: Object.keys(req.body ?? {}),
+        cartId: req.body?.cartId ?? req.body?.cart_id,
       });
 
       const normalized = normalizeCheckoutBody(req.body);
@@ -424,7 +498,8 @@ export const checkoutController = {
 
       const validatedData = onlineCheckoutSchema.parse(normalized);
 
-      // Ownership check before the service even opens a transaction.
+      // Advisory early-out — the service re-checks inside the
+      // transaction.
       const cart = await cartService.getCartById(validatedData.cartId);
       if (!cart) throw new AppError('Cart not found', 404);
       if (cart.userId !== userId) {
@@ -441,7 +516,9 @@ export const checkoutController = {
           discount: validatedData.discount,
           notes: validatedData.notes,
           applyLoyaltyPoints: validatedData.applyLoyaltyPoints,
-          businessUnitId: validatedData.businessUnitId,
+          // Same as the offline path: the cart's BU is
+          // authoritative. Drop the caller-supplied value.
+          businessUnitId: undefined,
           customerEmail: validatedData.customerEmail,
           customerPhone: validatedData.customerPhone,
           customerName: validatedData.customerName,
@@ -460,10 +537,7 @@ export const checkoutController = {
           giftCardCode: validatedData.giftCardCode,
           gatewayId: validatedData.gatewayId,
 
-          // Mobile-money provider selector. Forwarded so the
-          // service routes to the right provider handler
-          // (MPESA / MTN / AIRTEL). When absent, the service
-          // defaults to M-Pesa.
+          // Mobile-money provider selector.
           mobileMoneyProvider: validatedData.mobileMoneyProvider,
 
           // Promotion / loyalty passthrough
@@ -480,14 +554,10 @@ export const checkoutController = {
       // that return an existing Sale without doing any gateway
       // work:
       //
-      //   1. A COMPLETED replay — legitimate, user should see
-      //      the receipt.
+      //   1. A COMPLETED replay — legitimate.
       //   2. A CANCELLED replay — the previous attempt at this
-      //      key failed. Returning success here would strand the
-      //      user on the "awaiting confirmation" screen for a
-      //      callback that will never arrive. Return 409 instead
-      //      and let the frontend prompt a retry with a fresh
-      //      key.
+      //      key failed. Return 409 so the frontend prompts a
+      //      retry with a fresh key.
       if (
         validatedData.idempotencyKey &&
         result.sale?.status === 'CANCELLED'
@@ -505,9 +575,6 @@ export const checkoutController = {
         });
       }
 
-      // ── If the sale is already complete (idempotent replay or an
-      //    offline method that resolves synchronously), return 200
-      //    instead of 201 so clients can distinguish.
       const isComplete = result.sale?.status === 'COMPLETED';
       const status = isComplete ? 200 : 201;
 
@@ -529,11 +596,9 @@ export const checkoutController = {
       // ── Status-code passthrough ──────────────────────────
       //
       // `AppError` exposes its status as `status`; axios / Stripe
-      // SDK errors use `statusCode` or `response.status`.
-      // `getErrorStatusCode` handles all three. Preserving the
-      // status is what lets a clean 503 ("MTN is not configured")
-      // reach the frontend as a 503 instead of being flattened to
-      // a generic 502 by the fallback below.
+      // SDK errors use `statusCode` or `response.status`; and
+      // sometimes the status lives on the wrapped `cause`.
+      // `getErrorStatusCode` walks the whole chain.
       const statusCode = getErrorStatusCode(error);
       if (typeof statusCode === 'number') {
         return res.status(statusCode).json({
@@ -547,12 +612,12 @@ export const checkoutController = {
 
       // ── Narrow 502 fallback ──────────────────────────────
       //
-      // Only errors that explicitly announce themselves as
-      // gateway failures AND carry no status code land here.
-      // The previous `message.includes('gateway')` check was too
-      // broad — it matched the word "gateway" anywhere, including
-      // in legible 4xx messages. Restricted to the two exact
-      // prefixes the service throws.
+      // Only reached when the error carries no status anywhere on
+      // its chain AND announces itself as a gateway failure. In
+      // practice `resolveGatewayError` produces an `AppError` with
+      // `.status`, so this is a belt-and-braces branch for a
+      // provider SDK that throws a bare Error with a
+      // gateway-shaped message.
       const message: string = error?.message ?? '';
       if (
         message.startsWith('Payment gateway error') ||
@@ -575,8 +640,11 @@ export const checkoutController = {
   async getCheckouts(req: Request, res: Response, next: NextFunction) {
     try {
       const params = getCheckoutsSchema.parse(req.query);
-      const page = parseInt(params.page, 10);
-      const limit = parseInt(params.limit, 10);
+      const page = Math.max(1, toInt((params as any).page, 1));
+      const limit = Math.min(
+        100,
+        Math.max(1, toInt((params as any).limit, 20)),
+      );
       const skip = (page - 1) * limit;
 
       const filters: any = {};
@@ -584,6 +652,9 @@ export const checkoutController = {
       if (params.status) filters.status = params.status;
       if (params.paymentStatus) filters.paymentStatus = params.paymentStatus;
       if (params.customerId) filters.customerId = params.customerId;
+      if ((params as any).businessUnitId) {
+        filters.businessUnitId = (params as any).businessUnitId;
+      }
       if (params.search) {
         filters.OR = [
           {
@@ -630,8 +701,10 @@ export const checkoutController = {
 
       const orderBy: any = {};
       orderBy[
-        params.sortBy === 'createdAt' ? 'saleDate' : params.sortBy
-      ] = params.sortOrder;
+        (params as any).sortBy === 'createdAt'
+          ? 'saleDate'
+          : (params as any).sortBy
+      ] = (params as any).sortOrder;
 
       const result = await checkoutService.getAllCheckouts(
         limit,
@@ -742,14 +815,22 @@ export const checkoutController = {
         status,
         customerId,
         search,
+        businessUnitId,
       } = req.query;
 
-      const pageNum = parseInt(page as string, 10);
-      const limitNum = parseInt(limit as string, 10);
+      const pageNum = Math.max(1, toInt(page, 1));
+      const limitNum = Math.min(100, Math.max(1, toInt(limit, 20)));
 
       const filters: any = {};
       if (status) filters.status = status;
       if (customerId) filters.customerId = customerId;
+      // Forward the business-unit scope. The service's
+      // `buildWhereClause` already supports it; the previous
+      // version never supplied it, so `/checkout/history`
+      // returned sales across every BU.
+      if (typeof businessUnitId === 'string' && businessUnitId.trim() !== '') {
+        filters.businessUnitId = businessUnitId;
+      }
       if (startDate || endDate) {
         filters.saleDate = {};
         if (startDate) filters.saleDate.gte = new Date(startDate as string);
@@ -824,8 +905,31 @@ export const checkoutController = {
         throw new AppError('Customer ID is required', 400);
       }
 
-      const pageNum = parseInt(page as string, 10);
-      const limitNum = parseInt(limit as string, 10);
+      // Scope check: a customer's history is only visible to users
+      // in the same company. Without this, any authenticated caller
+      // could enumerate `customerId`s and read purchase history.
+      const companyId = getCompanyId(req);
+      if (companyId) {
+        const customer = await (checkoutService as any).prisma.customer
+          .findUnique({
+            where: { id: customerId },
+            select: { companyId: true },
+          })
+          .catch(() => null);
+
+        if (!customer) {
+          throw new AppError('Customer not found', 404);
+        }
+        if (customer.companyId !== companyId) {
+          throw new AppError(
+            'Customer does not belong to your company',
+            403,
+          );
+        }
+      }
+
+      const pageNum = Math.max(1, toInt(page, 1));
+      const limitNum = Math.min(100, Math.max(1, toInt(limit, 20)));
 
       const result = await checkoutService.getCustomerCheckoutHistory(
         customerId,
@@ -1022,14 +1126,16 @@ export const checkoutController = {
       const { id, itemId } = req.params;
       const userId = getUserId(req);
 
-      // Prefer the local `updateItemSchema` (which accepts a bare
-      // integer body) but fall back to the shared
-      // `updateCheckoutItemSchema` if the caller posted the wrapper
-      // shape. Both produce the same `{ quantity }` output.
-      const data =
+      // Schema-driven: unwrap a bare number or `{ quantity }` into
+      // `{ quantity }`, then validate once.
+      const raw =
         req.body && typeof req.body.quantity === 'number'
-          ? updateItemSchema.parse(req.body)
-          : updateCheckoutItemSchema.parse(req.body);
+          ? req.body
+          : typeof req.body === 'number'
+            ? { quantity: req.body }
+            : req.body;
+
+      const data = updateCheckoutItemSchema.parse(raw);
 
       if (!id || !itemId) {
         throw new AppError('Checkout ID and Item ID are required', 400);
@@ -1147,17 +1253,18 @@ export const checkoutController = {
   //
   // ⚠ This handles SPLIT / PARTIAL payments added AFTER the initial
   //    checkout. It is NOT the gateway-call entry point — that is
-  //    `createOnlineCheckout`. If you need to charge a card for a
-  //    split payment, call the payment service directly.
+  //    `createOnlineCheckout`.
 
   async processPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
       const userId = getUserId(req);
-      const { paymentMethod, amount, paymentDetails } = req.body;
 
       if (!id) throw new AppError('Checkout ID is required', 400);
       if (!userId) throw new AppError('User ID is required', 400);
+
+      const { paymentMethod, amount, paymentDetails } =
+        processCheckoutPaymentSchema.parse(req.body);
 
       const result = await checkoutService.processPaymentForCheckout(
         id,
@@ -1175,6 +1282,9 @@ export const checkoutController = {
         message: 'Payment processed successfully',
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
       next(error);
     }
   },
@@ -1303,9 +1413,14 @@ export const checkoutController = {
   ) {
     try {
       const userId = getUserId(req);
-      const settings = req.body;
 
       if (!userId) throw new AppError('User ID is required', 400);
+
+      // Validate the body against a bounded schema. The service
+      // does read-modify-write on the BU's settings JSON, but the
+      // shape itself must be validated here — otherwise a caller
+      // can persist arbitrary JSON.
+      const settings = updateCheckoutSettingsSchema.parse(req.body);
 
       const updated = await checkoutService.updateCheckoutSettings(
         userId,
@@ -1318,6 +1433,9 @@ export const checkoutController = {
         message: 'Settings updated successfully',
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json(zodErrorResponse(error));
+      }
       next(error);
     }
   },
@@ -1333,18 +1451,32 @@ export const checkoutController = {
   ) {
     try {
       const userId = getUserId(req);
-      const { format = 'csv', dateFrom, dateTo, businessUnitId } =
-        req.query;
 
       if (!userId) throw new AppError('User ID is required', 400);
+
+      // Accept both date-param naming conventions.
+      const format =
+        pickQueryString(req.query as any, 'format') ?? 'csv';
+      const dateFrom = pickQueryString(
+        req.query as any,
+        'dateFrom',
+        'startDate',
+      );
+      const dateTo = pickQueryString(
+        req.query as any,
+        'dateTo',
+        'endDate',
+      );
+      const businessUnitId = pickQueryString(
+        req.query as any,
+        'businessUnitId',
+      );
 
       const result = await checkoutService.exportCheckouts({
         userId,
         format: format as string,
-        dateFrom: dateFrom
-          ? new Date(dateFrom as string)
-          : undefined,
-        dateTo: dateTo ? new Date(dateTo as string) : undefined,
+        dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+        dateTo: dateTo ? new Date(dateTo) : undefined,
         businessUnitId: businessUnitId as string,
       });
 
@@ -1370,66 +1502,51 @@ export const checkoutController = {
   ) {
     try {
       const userId = getUserId(req);
-      const { format = 'csv', startDate, endDate, status } = req.query;
 
       if (!userId) throw new AppError('User ID is required', 400);
 
-      const filters: any = {};
-      if (status) filters.status = status;
-      if (startDate || endDate) {
-        filters.saleDate = {};
-        if (startDate) {
-          filters.saleDate.gte = new Date(startDate as string);
-        }
-        if (endDate) filters.saleDate.lte = new Date(endDate as string);
-      }
-
-      const result = await checkoutService.getAllCheckouts(
-        1000,
-        0,
-        filters,
+      // Accept both date-param naming conventions. `exportCheckouts`
+      // uses `dateFrom`/`dateTo`; `getCheckoutHistory` uses
+      // `startDate`/`endDate`. Recognize both here.
+      const format =
+        pickQueryString(req.query as any, 'format') ?? 'csv';
+      const startDate = pickQueryString(
+        req.query as any,
+        'startDate',
+        'dateFrom',
       );
+      const endDate = pickQueryString(
+        req.query as any,
+        'endDate',
+        'dateTo',
+      );
+      const status = pickQueryString(req.query as any, 'status');
+
+      // Delegate to the service's own export method. The previous
+      // controller re-implemented CSV generation inline with a
+      // different column set and a hard-coded 1 000-row cap.
+      const result = await checkoutService.exportCheckoutData(userId, {
+        format: format as 'csv' | 'json' | 'excel',
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        status: status as string | undefined,
+      });
 
       if (format === 'csv') {
-        let csv =
-          'Receipt Number,Date,Customer,Total,Tax,Discount,' +
-          'Discount Type,Promotion Code,Promotion Discount,' +
-          'Loyalty Points Used,Loyalty Discount,' +
-          'Status,Payment Method\n';
-        for (const checkout of result.checkouts) {
-          const customerName = checkout.customer
-            ? `${checkout.customer.firstName} ${checkout.customer.lastName}`
-            : 'Guest';
-          const paymentMethod =
-            checkout.payments[0]?.paymentMethod || 'N/A';
-          csv +=
-            `${checkout.receiptNumber},` +
-            `${checkout.saleDate?.toISOString() || ''},` +
-            `${customerName},` +
-            `${checkout.total},` +
-            `${(checkout.tax || 0).toFixed(2)},` +
-            `${(checkout.discount || 0).toFixed(2)},` +
-            `${checkout.discountType || ''},` +
-            `${checkout.promotionCode || ''},` +
-            `${(checkout.promotionDiscount || 0).toFixed(2)},` +
-            `${checkout.loyaltyPointsUsed ?? 0},` +
-            `${(checkout.loyaltyDiscount || 0).toFixed(2)},` +
-            `${checkout.status},` +
-            `${paymentMethod}\n`;
-        }
-
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader(
           'Content-Disposition',
           `attachment; filename=checkout_export_${Date.now()}.csv`,
         );
-        return res.send(csv);
+        return res.send(result);
       }
 
+      // Non-CSV: the service returns `{ format, total, data }`.
+      const anyResult = result as any;
       res.status(200).json({
         success: true,
-        data: result.checkouts,
-        total: result.total,
+        data: anyResult?.data ?? anyResult,
+        total: anyResult?.total ?? undefined,
       });
     } catch (error) {
       next(error);

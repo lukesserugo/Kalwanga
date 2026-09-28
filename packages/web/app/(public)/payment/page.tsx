@@ -1,8 +1,14 @@
-// D:\Projects\Kalwanga\packages\web\app\(public)\payment\page.tsx
+// packages/web/app/(public)/payment/page.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -49,50 +55,44 @@ function extractProviderList(response: any): any[] {
 // ============================================
 // CONSTANTS
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. Historical
+//   payments with `metadata.provider: 'PAYSTACK'` fall through
+//   to the generic config (`{ icon: '💳', name: <code>, color:
+//   'gray' }`).
 
+/**
+ * Local icon paths under `packages/web/public/`. Add one SVG per
+ * code to restore the images. Until then, the `<Image>` onError
+ * handler hides the broken image and the emoji from
+ * `PROVIDER_CONFIGS` renders.
+ *
+ * ⚠ No external CDN dependencies — every request stays on the
+ *   deployment's own origin.
+ */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PROVIDER_CONFIGS: Record<
   string,
@@ -101,7 +101,6 @@ const PROVIDER_CONFIGS: Record<
   STRIPE: { icon: '💳', name: 'Stripe', color: 'blue' },
   PAYPAL: { icon: '💸', name: 'PayPal', color: 'blue' },
   FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan' },
-  PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky' },
   SQUARE: { icon: '⬜', name: 'Square', color: 'gray' },
   CASH: { icon: '💰', name: 'Cash', color: 'green' },
   MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'orange' },
@@ -125,8 +124,7 @@ export default function PaymentPage() {
   const { user, isAuthenticated } = useAuth();
 
   // URL params — captured once so the loader doesn't re-run when
-  // `searchParams` identity changes (it doesn't on Next 14, but
-  // this makes the intent explicit).
+  // `searchParams` identity changes.
   const amountParam = searchParams.get('amount');
   const orderIdParam = searchParams.get('orderId');
   const saleIdParam = searchParams.get('saleId');
@@ -155,6 +153,7 @@ export default function PaymentPage() {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
+  const pollStoppedRef = useRef(false);
 
   // ── Data loading ─────────────────────────────────────────────
 
@@ -282,13 +281,40 @@ export default function PaymentPage() {
   const startPollingSale = useCallback(
     (saleId: string) => {
       stopPolling();
+      pollStoppedRef.current = false;
+
       const startTime = Date.now();
       const MAX_WAIT_MS = 3 * 60 * 1000;
 
+      const finalizeTimeout = () => {
+        if (pollStoppedRef.current) return;
+        pollStoppedRef.current = true;
+        stopPolling();
+        toast.info(
+          'Still processing. You will be notified when complete.',
+        );
+      };
+
       pollIntervalRef.current = setInterval(async () => {
+        if (pollStoppedRef.current) return;
+
         try {
           const sale = await checkoutService.getCheckoutById(saleId);
-          if (sale.status === 'COMPLETED') {
+
+          // Success signal 1: the Sale flipped to COMPLETED.
+          // Success signal 2: a Payment on the Sale is PAID even
+          // if the Sale row hasn't been updated yet (partial
+          // webhook write). Treating the Payment as authoritative
+          // avoids a stuck polling loop on a successfully paid
+          // order.
+          const hasPaidPayment =
+            Array.isArray((sale as any).payments) &&
+            (sale as any).payments.some(
+              (p: any) => p?.status === 'PAID',
+            );
+
+          if (sale.status === 'COMPLETED' || hasPaidPayment) {
+            pollStoppedRef.current = true;
             stopPolling();
             setPaymentResult((prev: any) => ({
               ...(prev || {}),
@@ -299,11 +325,13 @@ export default function PaymentPage() {
             toast.success('Payment confirmed');
             return;
           }
+
           if (
             sale.status === 'CANCELLED' ||
-            sale.status === 'VOIDED' ||
+            sale.status === 'VOID' ||
             sale.status === 'REFUNDED'
           ) {
+            pollStoppedRef.current = true;
             stopPolling();
             toast.error('Payment was not completed');
             return;
@@ -311,11 +339,9 @@ export default function PaymentPage() {
         } catch (err) {
           console.warn('Poll error:', err);
         }
+
         if (Date.now() - startTime > MAX_WAIT_MS) {
-          stopPolling();
-          toast.info(
-            'Still processing. You will be notified when complete.',
-          );
+          finalizeTimeout();
         }
       }, 2500);
     },
@@ -385,9 +411,9 @@ export default function PaymentPage() {
   const getProviderImageUrl = useCallback(
     (providerCode: string): string => {
       if (!providerCode) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-        : PROVIDER_IMAGE_URLS[providerCode] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[providerCode];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[providerCode] || '';
     },
     [isDark],
   );
@@ -628,6 +654,8 @@ export default function PaymentPage() {
                           const config = getProviderConfig(
                             provider.provider,
                           );
+                          const displayName =
+                            provider.name || config.name;
                           return (
                             <span
                               key={
@@ -638,7 +666,7 @@ export default function PaymentPage() {
                               {imageUrl ? (
                                 <Image
                                   src={imageUrl}
-                                  alt={config.name}
+                                  alt={displayName}
                                   width={16}
                                   height={16}
                                   className="rounded object-contain"
@@ -660,7 +688,7 @@ export default function PaymentPage() {
                                     : 'text-gray-700'
                                 }
                               >
-                                {config.name}
+                                {displayName}
                               </span>
                               <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                             </span>
@@ -683,13 +711,14 @@ export default function PaymentPage() {
                         setSelectedProvider('PAYPAL');
                       } else if (method === 'FLUTTERWAVE') {
                         setSelectedProvider('FLUTTERWAVE');
-                      } else if (method === 'PAYSTACK') {
-                        setSelectedProvider('PAYSTACK');
                       } else if (method === 'SQUARE') {
                         setSelectedProvider('SQUARE');
                       } else if (method === 'MOBILE_MONEY') {
                         setSelectedProvider('MOBILE_MONEY');
                       }
+                      // Methods not listed above (CASH, BANK_TRANSFER,
+                      // GIFT_CARD, LOYALTY_POINTS, …) leave the
+                      // previously-selected provider unchanged.
                       setStep('pay');
                     }}
                   />
@@ -767,7 +796,6 @@ export default function PaymentPage() {
 
                   <PaymentForm
                     amount={paymentData.amount}
-                    currency="USD"
                     paymentMethod={selectedMethod}
                     provider={selectedProvider}
                     customerId={user?.id}

@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\checkout\export\page.tsx
+// packages/web/app/(dashboard)/admin/checkout/export/page.tsx
 
 'use client';
 
@@ -20,6 +20,56 @@ import { checkoutService } from '../../../../../services/checkoutService';
 import { toast } from '../../../../../utils/toast-manager';
 
 type ExportFormat = 'csv' | 'json';
+
+/**
+ * Build the ISO date boundaries for the export request.
+ *
+ * A bare `YYYY-MM-DD` string is interpreted by `new Date()` as
+ * midnight UTC — so `dateTo: '2024-01-15'` excludes any
+ * transaction that occurred after 00:00 UTC on the 15th. This
+ * helper normalises the input so the range is inclusive of the
+ * end-of-day on the `dateTo` boundary.
+ *
+ * Returns `undefined` for either boundary when the caller omitted
+ * it.
+ */
+function toIsoBoundaries(
+  dateFrom: string,
+  dateTo: string,
+): { from: string | undefined; to: string | undefined } {
+  let from: string | undefined;
+  let to: string | undefined;
+
+  if (dateFrom) {
+    const start = new Date(dateFrom);
+    start.setHours(0, 0, 0, 0);
+    from = start.toISOString();
+  }
+
+  if (dateTo) {
+    const end = new Date(dateTo);
+    end.setHours(23, 59, 59, 999);
+    to = end.toISOString();
+  }
+
+  return { from, to };
+}
+
+/**
+ * Build a local-date stamp for the export filename.
+ *
+ * `new Date().toISOString()` returns the UTC date, so a user in
+ * Uganda exporting at 01:00 local on the 16th would see a filename
+ * stamped "15". Using the local `getFullYear / getMonth / getDate`
+ * makes the filename match the user's calendar.
+ */
+function localDateStamp(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 export default function CheckoutExportPage() {
   const router = useRouter();
@@ -47,10 +97,16 @@ export default function CheckoutExportPage() {
     setExportComplete(false);
 
     try {
+      const { from, to } = toIsoBoundaries(dateFrom, dateTo);
+
       const result = await checkoutService.exportCheckouts({
         format,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
+        dateFrom: from,
+        dateTo: to,
+        // The backend now applies the status filter server-side.
+        // Sending `'all'` would be rejected by its schema, so we
+        // omit the field entirely for the "no filter" case.
+        status: status !== 'all' ? status : undefined,
       });
 
       const blob =
@@ -63,9 +119,7 @@ export default function CheckoutExportPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `checkout_export_${new Date()
-        .toISOString()
-        .split('T')[0]}.${format}`;
+      link.download = `checkout_export_${localDateStamp()}.${format}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -83,7 +137,7 @@ export default function CheckoutExportPage() {
     } finally {
       if (isMountedRef.current) setIsExporting(false);
     }
-  }, [format, dateFrom, dateTo]);
+  }, [format, dateFrom, dateTo, status]);
 
   // ============================================
   // GUARDS
@@ -107,7 +161,7 @@ export default function CheckoutExportPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to export checkout data.
+          You don&apos;t have permission to export checkout data.
         </p>
         <button
           type="button"
@@ -224,7 +278,7 @@ export default function CheckoutExportPage() {
               </div>
             </div>
 
-            {/* Status filter — informational only, see note */}
+            {/* Status filter */}
             <div className="mb-6">
               <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
                 Status
@@ -242,8 +296,8 @@ export default function CheckoutExportPage() {
                 <option value="VOID">Void</option>
               </select>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                The status filter is not applied server-side for this
-                endpoint. Filter the file client-side after download.
+                The selected status is applied server-side to the
+                exported data.
               </p>
             </div>
           </div>

@@ -1,8 +1,13 @@
-// D:\Projects\Kalwanga\packages\web\components\payment\PaymentSection.tsx
+// packages/web/components/payment/PaymentSection.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CreditCard,
@@ -55,6 +60,15 @@ interface PaymentDetails {
 
 interface PaymentSectionProps {
   total: number;
+  /**
+   * Optional currency.
+   *
+   * ⚠ When omitted, `formatCurrency` is called without a currency
+   *   argument and falls back to its own default. Do NOT default
+   *   this to `'USD'` on the client — the backend resolves the
+   *   currency from the business unit, and the client should not
+   *   invent one.
+   */
   currency?: string;
   onPaymentComplete: (
     paymentMethod: PaymentMethod,
@@ -159,13 +173,36 @@ function formatExpiry(value: string): string {
   return cleaned;
 }
 
+/**
+ * Strip everything but digits, but keep a leading `+` if the user
+ * typed one. `validateDetails` strips non-digits before the length
+ * check, so the `+` is cosmetic.
+ */
+function sanitizePhoneInput(value: string): string {
+  const withoutExtra = value.replace(/[^\d+]/g, '');
+  const [first, ...rest] = withoutExtra.split('');
+  if (first === '+') {
+    return `+${rest.join('').replace(/\+/g, '')}`.slice(0, 16);
+  }
+  return withoutExtra.replace(/\+/g, '').slice(0, 15);
+}
+
+/**
+ * Build a stable bank reference for the current component
+ * instance. Uses a state initializer so the value is computed
+ * exactly once per mount even under StrictMode's double-invoke.
+ */
+function makeBankReference(): string {
+  return `PAY-${Date.now().toString().slice(-6)}`;
+}
+
 // ============================================
 // COMPONENT
 // ============================================
 
 export function PaymentSection({
   total,
-  currency = 'USD',
+  currency,
   onPaymentComplete,
   onPaymentCancel,
   isProcessing = false,
@@ -198,20 +235,22 @@ export function PaymentSection({
   // Bank transfer
   const [bankReference, setBankReference] = useState('');
 
+  // Stable per-mount reference shown in the bank-transfer form.
+  // `useState` with a lazy initializer runs the factory exactly
+  // once per component instance, even under StrictMode.
+  const [bankReferenceDisplay] = useState(makeBankReference);
+
   const selectedPaymentMethod = useMemo(
     () => availablePaymentMethods.find((m) => m.id === selectedMethod),
     [availablePaymentMethods, selectedMethod],
   );
 
   const maxLoyaltyPoints = useMemo(
-    () =>
-      Math.min(
-        customerLoyaltyPoints,
-        Math.floor(total * 10),
-      ),
+    () => Math.min(customerLoyaltyPoints, Math.floor(total * 10)),
     [customerLoyaltyPoints, total],
   );
 
+  // 1 point = 0.1 currency units (a $10 discount per 100 points).
   const loyaltyDiscount = useMemo(
     () => (loyaltyPointsToUse || 0) * 0.1,
     [loyaltyPointsToUse],
@@ -222,12 +261,20 @@ export function PaymentSection({
     [total, loyaltyDiscount],
   );
 
-  const bankReferenceDisplay = useMemo(
-    () => `PAY-${Date.now().toString().slice(-6)}`,
-    [],
+  /**
+   * Format an amount using the caller-supplied currency when one
+   * was provided. When omitted, `formatCurrency`'s own default
+   * applies.
+   */
+  const fmt = useCallback(
+    (amount: number): string =>
+      currency
+        ? formatCurrency(amount, currency)
+        : formatCurrency(amount),
+    [currency],
   );
 
-  // Reset transient state when the user picks a different method
+  // Reset transient state when the user picks a different method.
   useEffect(() => {
     setErrors({});
     if (selectedMethod === 'LOYALTY_POINTS') {
@@ -261,8 +308,16 @@ export function PaymentSection({
           newErrors.cardExpiry = 'Month must be 01–12';
         } else {
           const now = new Date();
-          const expiry = new Date(2000 + yy, mm);
-          if (expiry <= now) {
+          // The expiry month is the LAST month the card is valid.
+          // `new Date(2000 + yy, mm, 1)` produces the first instant
+          // of the month AFTER expiry (because JS months are
+          // 0-indexed and `mm` is 1-indexed, so `mm=12` overflows
+          // into January of the next year). Comparing against that
+          // boundary correctly rejects a card that expired at the
+          // start of this month while accepting one whose expiry
+          // is the current month. Do not "fix" the overflow.
+          const expiryBoundary = new Date(2000 + yy, mm, 1);
+          if (expiryBoundary <= now) {
             newErrors.cardExpiry = 'Card has expired';
           }
         }
@@ -454,7 +509,7 @@ export function PaymentSection({
           ) : (
             <Zap className="w-5 h-5" />
           )}
-          Pay {formatCurrency(finalTotal)}
+          Pay {fmt(finalTotal)}
         </button>
       )}
     </div>
@@ -583,9 +638,7 @@ export function PaymentSection({
             inputMode="tel"
             autoComplete="tel"
             value={mobileNumber}
-            onChange={(e) =>
-              setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 15))
-            }
+            onChange={(e) => setMobileNumber(sanitizePhoneInput(e.target.value))}
             placeholder="256700000000"
             className={`${inputClass(!!errors.mobileNumber)} pl-10 font-mono tabular-nums`}
           />
@@ -607,6 +660,7 @@ export function PaymentSection({
           onChange={(e) => setProvider(e.target.value)}
           className={inputClass(false)}
         >
+          <option value="MPESA">M-Pesa</option>
           <option value="MTN">MTN Mobile Money</option>
           <option value="AIRTEL">Airtel Money</option>
           <option value="TIGO">Tigo Pesa</option>
@@ -685,14 +739,16 @@ export function PaymentSection({
           </p>
         )}
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-          Discount: {formatCurrency(loyaltyDiscount)}
+          Discount: {fmt(loyaltyDiscount)}
         </p>
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer select-none">
         <input
           type="checkbox"
-          checked={loyaltyPointsToUse === maxLoyaltyPoints && maxLoyaltyPoints > 0}
+          checked={
+            loyaltyPointsToUse === maxLoyaltyPoints && maxLoyaltyPoints > 0
+          }
           onChange={(e) =>
             setLoyaltyPointsToUse(e.target.checked ? maxLoyaltyPoints : 0)
           }
@@ -780,7 +836,7 @@ export function PaymentSection({
           ) : (
             <>
               <Lock className="w-4 h-4" />
-              Pay {formatCurrency(finalTotal)}
+              Pay {fmt(finalTotal)}
             </>
           )}
         </button>
@@ -822,7 +878,7 @@ export function PaymentSection({
         Your payment has been processed successfully.
       </p>
       <p className="text-sm font-medium mt-1 text-gray-900 dark:text-white tabular-nums">
-        Amount: {formatCurrency(finalTotal)}
+        Amount: {fmt(finalTotal)}
       </p>
       <button
         type="button"
@@ -861,7 +917,7 @@ export function PaymentSection({
             Total Amount
           </span>
           <span className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
-            {formatCurrency(finalTotal)}
+            {fmt(finalTotal)}
           </span>
         </div>
         {loyaltyDiscount > 0 && (
@@ -870,7 +926,7 @@ export function PaymentSection({
               Loyalty Discount
             </span>
             <span className="text-sm text-success-600 dark:text-success-400 tabular-nums">
-              -{formatCurrency(loyaltyDiscount)}
+              -{fmt(loyaltyDiscount)}
             </span>
           </div>
         )}

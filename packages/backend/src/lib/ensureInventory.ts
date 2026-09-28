@@ -81,6 +81,10 @@ async function resolveLocationId(
 // ============================================
 // PRODUCT INVENTORY
 // ============================================
+//
+// The owning FK lives on `Product.inventoryId` (one-to-one, unique).
+// `Inventory` has only the back-relation `product`. So the link MUST be
+// written from the Product side — we cannot set it on `Inventory.create`.
 
 /**
  * Ensure a Product has an Inventory row in the given business unit.
@@ -102,6 +106,7 @@ export async function ensureProductInventory(
       weight: true,
       tags: true,
       description: true,
+      inventoryId: true, // owning FK
     },
   });
 
@@ -109,19 +114,38 @@ export async function ensureProductInventory(
     throw new Error(`ensureProductInventory: product ${productId} not found`);
   }
 
-  // Look for an existing Inventory row for this product in this BU.
-  // The schema now has `Inventory.productId` directly, so the filter
-  // is a plain scalar equality.
-  const existing = await tx.inventory.findFirst({
-    where: { product: { is: { id: productId } }, businessUnitId },
-    select: { id: true },
-  });
-
-  if (existing) {
-    return existing.id;
+  // Already linked → reuse if the linked row is in the same BU.
+  if (product.inventoryId) {
+    const existing = await tx.inventory.findUnique({
+      where: { id: product.inventoryId },
+      select: { id: true, businessUnitId: true },
+    });
+    if (existing && existing.businessUnitId === businessUnitId) {
+      return existing.id;
+    }
   }
 
-  // Resolve (or create) the Location row, then create Inventory.
+  // Defensive: check for a stale orphan Inventory row in this BU that
+  // isn't linked to anything and adopt it, rather than piling up more.
+  const orphan = await tx.inventory.findFirst({
+    where: {
+      businessUnitId,
+      product: null,
+      variant: null,
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (orphan) {
+    await tx.product.update({
+      where: { id: productId },
+      data: { inventoryId: orphan.id },
+    });
+    return orphan.id;
+  }
+
+  // Create a fresh Inventory row and link it to the Product.
   const locationName = options.location ?? 'Warehouse';
   const locationId =
     options.locationId ?? (await resolveLocationId(tx, businessUnitId, locationName));
@@ -154,8 +178,14 @@ export async function ensureProductInventory(
     select: { id: true },
   });
 
+  // ✅ Write the owning side of the relation.
+  await tx.product.update({
+    where: { id: productId },
+    data: { inventoryId: inventory.id },
+  });
+
   console.log(
-    `✅ ensureProductInventory: created inventory ${inventory.id} for product ${productId} in BU ${businessUnitId}`
+    `✅ ensureProductInventory: created + linked inventory ${inventory.id} for product ${productId} in BU ${businessUnitId}`
   );
 
   return inventory.id;
@@ -164,6 +194,8 @@ export async function ensureProductInventory(
 // ============================================
 // VARIANT INVENTORY
 // ============================================
+//
+// Same shape as above: `ProductVariant.inventoryId` is the owner.
 
 /**
  * Ensure a ProductVariant has an Inventory row in the given business unit.
@@ -182,6 +214,7 @@ export async function ensureVariantInventory(
       name: true,
       productId: true,
       images: true, // ProductVariantImage[]
+      inventoryId: true, // owning FK
     },
   });
 
@@ -189,13 +222,32 @@ export async function ensureVariantInventory(
     throw new Error(`ensureVariantInventory: variant ${variantId} not found`);
   }
 
-  const existing = await tx.inventory.findFirst({
-    where: { variant: { is: { id: variantId } }, businessUnitId },
+  if (variant.inventoryId) {
+    const existing = await tx.inventory.findUnique({
+      where: { id: variant.inventoryId },
+      select: { id: true, businessUnitId: true },
+    });
+    if (existing && existing.businessUnitId === businessUnitId) {
+      return existing.id;
+    }
+  }
+
+  const orphan = await tx.inventory.findFirst({
+    where: {
+      businessUnitId,
+      product: null,
+      variant: null,
+    },
     select: { id: true },
+    orderBy: { createdAt: 'asc' },
   });
 
-  if (existing) {
-    return existing.id;
+  if (orphan) {
+    await tx.productVariant.update({
+      where: { id: variantId },
+      data: { inventoryId: orphan.id },
+    });
+    return orphan.id;
   }
 
   const locationName = options.location ?? 'Warehouse';
@@ -229,8 +281,14 @@ export async function ensureVariantInventory(
     select: { id: true },
   });
 
+  // ✅ Write the owning side of the relation.
+  await tx.productVariant.update({
+    where: { id: variantId },
+    data: { inventoryId: inventory.id },
+  });
+
   console.log(
-    `✅ ensureVariantInventory: created inventory ${inventory.id} for variant ${variantId} in BU ${businessUnitId}`
+    `✅ ensureVariantInventory: created + linked inventory ${inventory.id} for variant ${variantId} in BU ${businessUnitId}`
   );
 
   return inventory.id;
@@ -243,14 +301,18 @@ export async function ensureVariantInventory(
 /**
  * Backfill: ensure every product and variant in a business unit has a
  * linked Inventory row. Safe to run repeatedly.
+ *
+ * Also re-points any Inventory rows that are orphaned (no Product and no
+ * ProductVariant referencing them) back onto a matching product/variant,
+ * so pre-existing data created by the old buggy version gets repaired.
  */
 export async function backfillInventoryForBusinessUnit(
   tx: Tx,
   businessUnitId: string
 ): Promise<{ products: number; variants: number }> {
   const products = await tx.product.findMany({
-    where: { businessUnitId },
-    select: { id: true },
+    where: { businessUnitId, deletedAt: null },
+    select: { id: true, inventoryId: true },
   });
 
   let productCount = 0;
@@ -264,8 +326,8 @@ export async function backfillInventoryForBusinessUnit(
   }
 
   const variants = await tx.productVariant.findMany({
-    where: { product: { businessUnitId } },
-    select: { id: true },
+    where: { product: { businessUnitId }, deletedAt: null },
+    select: { id: true, inventoryId: true },
   });
 
   let variantCount = 0;

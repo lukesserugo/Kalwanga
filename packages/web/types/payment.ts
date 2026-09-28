@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\types\payment.ts
+// packages/web/types/payment.ts
 
 import { Sale } from './sale';
 import { Order } from './order';
@@ -11,6 +11,29 @@ import {
 } from './register';
 
 // ============================================
+// CURRENCY
+// ============================================
+//
+// The backend no longer uses a Prisma `Currency` enum for
+// `Payment.currency` or `BusinessUnit.currency` — those columns are
+// free strings, resolved by `currencyService.resolveForBusiness`
+// against the `lib/currencies.ts` registry. This type is kept for
+// backwards compatibility with any web code that still imports
+// `Currency` from this module; new code should use `string` and
+// treat the value as an ISO 4217 code.
+export type Currency =
+  | 'USD'
+  | 'EUR'
+  | 'GBP'
+  | 'NGN'
+  | 'KES'
+  | 'ZAR'
+  | 'GHS'
+  | 'UGX'
+  | 'TZS'
+  | (string & {});
+
+// ============================================
 // PAYMENT
 // ============================================
 
@@ -21,6 +44,11 @@ import {
  * interface documents the keys the backend is known to write so
  * consumers get autocomplete on the common ones while keeping the
  * open-ended index signature for provider-specific fields.
+ *
+ * The backend writes these keys from two places:
+ *   - `paymentService.processPayment` (direct payment path)
+ *   - `checkoutService.processOnlineCheckout` (gateway redirect path)
+ * plus the webhook handlers, which merge provider payloads in.
  */
 export interface PaymentMetadata {
   // ── Backend-authored provider context ────────────────────────
@@ -31,6 +59,13 @@ export interface PaymentMetadata {
   customerId?: string;
   tipAmount?: number;
   savePaymentMethod?: boolean;
+  /**
+   * The currency the backend actually charged in, resolved by
+   * `paymentService.resolveCurrency` (business unit → env →
+   * registry default). Recorded explicitly so the audit trail
+   * shows what applied when the caller omitted `currency`.
+   */
+  currency?: string;
 
   // ── POS metadata ─────────────────────────────────────────────
   saleId?: string;
@@ -38,8 +73,15 @@ export interface PaymentMetadata {
   cashierId?: string;
   receiptNumber?: string;
 
+  // ── Online checkout (phase-1 metadata) ───────────────────────
+  returnUrl?: string | null;
+  cancelUrl?: string | null;
+  giftCardCode?: string | null;
+  mobileMoneyProvider?: string | null;
+
   // ── Mobile money ─────────────────────────────────────────────
   phoneNumber?: string;
+  payerPhoneNumber?: string;
   network?: string;
   checkoutRequestId?: string;
   merchantRequestId?: string;
@@ -47,6 +89,7 @@ export interface PaymentMetadata {
   mpesaResult?: Record<string, unknown>;
   resultCode?: string;
   resultDesc?: string;
+  customerMessage?: string;
 
   // ── Stripe ───────────────────────────────────────────────────
   stripeCustomerId?: string | null;
@@ -54,24 +97,33 @@ export interface PaymentMetadata {
   clientSecret?: string;
   paymentIntentStatus?: string;
   webhookPayload?: Record<string, unknown>;
+  sessionId?: string;
 
-  // ── PayPal / Flutterwave / Square ────────────────────────────
+  // ── PayPal ───────────────────────────────────────────────────
   approvalUrl?: string;
+  paypalCapture?: Record<string, unknown>;
+  paypalOrderId?: string;
+  paypalCaptureId?: string;
+  paypalAmount?: number;
+  paypalCurrency?: string;
+  paypalFailure?: Record<string, unknown>;
+  paypalRefund?: Record<string, unknown>;
+
+  // ── Flutterwave / Square ─────────────────────────────────────
   authorizationUrl?: string;
   redirectUrl?: string;
   custom_id?: string;
   tx_ref?: string;
   reference?: string;
-  sessionId?: string;
+  squarePayment?: Record<string, unknown>;
 
   // ── Card nonce (Square) ──────────────────────────────────────
   cardNonce?: string;
 
-  // ── Return / cancel URLs (redirect providers) ────────────────
-  returnUrl?: string;
-  cancelUrl?: string;
-
-  // ── Failures ─────────────────────────────────────────────────
+  // ── Gateway lifecycle (online checkout) ──────────────────────
+  gateway?: string;
+  gatewayStatus?: string;
+  gatewayResponse?: Record<string, unknown>;
   gatewayError?: {
     message?: string;
     code?: string;
@@ -87,6 +139,18 @@ export interface PaymentMetadata {
 export interface Payment {
   id: string;
   amount: number;
+  /**
+   * ISO 4217 code. Populated by the backend's currency resolver:
+   *   - direct path (`POST /payments`): `resolveCurrency()` walks
+   *     caller → businessUnit.currency → DEFAULT_CURRENCY →
+   *     registry default.
+   *   - online path (`POST /checkout/online`): read from
+   *     `businessUnit.currency` via
+   *     `checkoutService.resolveBusinessUnitCurrency`.
+   *
+   * Declared optional here for forward-compat with pre-refactor
+   * rows that predate the column being populated.
+   */
   currency?: string;
   paymentMethod: PaymentMethod;
   status: PaymentStatus;
@@ -113,6 +177,12 @@ export interface Payment {
   paymentGateway?: PaymentGateway;
   businessUnitId?: string;
   businessUnit?: BusinessUnit;
+  /**
+   * Server-side idempotency key. `@unique` on the Prisma model, so
+   * a retry with the same key returns the original row instead of
+   * creating a duplicate.
+   */
+  idempotencyKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -191,6 +261,12 @@ export interface PaymentFilters {
   userId?: string;
   saleId?: string;
   orderId?: string;
+  /**
+   * Filters by `Payment.gatewayId` on the backend — i.e. by the
+   * `PaymentGateway` credential row, NOT by `PaymentProvider`. The
+   * backend's `getPaymentSummary` and `getAllPayments` both map
+   * `provider` to `{ gatewayId: provider }`.
+   */
   provider?: string;
   page?: number;
   limit?: number;
@@ -207,6 +283,8 @@ export interface PaymentSearchParams {
   userId?: string;
   saleId?: string;
   orderId?: string;
+  /** Same caveat as `PaymentFilters.provider` — maps to `gatewayId`. */
+  provider?: string;
 }
 
 // ============================================
@@ -228,6 +306,13 @@ export interface ProcessPaymentRequest {
   orderId?: string;
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
+  /**
+   * Optional. When omitted, the backend resolves the currency from
+   * the business unit (then `DEFAULT_CURRENCY`, then the registry
+   * default). Do NOT default this to `'USD'` on the client — a
+   * Ugandan deployment charging a Ugandan customer must default to
+   * UGX, or MTN/Airtel reject the request outright.
+   */
   currency?: string;
   source?: string;
   customerId?: string;
@@ -235,6 +320,12 @@ export interface ProcessPaymentRequest {
   description?: string;
   tipAmount?: number;
   savePaymentMethod?: boolean;
+  /**
+   * Business unit the payment belongs to. The backend reads this
+   * (via `paymentService.resolveCurrency`) to pick the currency
+   * when `currency` is omitted. Without it, only the platform
+   * default applies.
+   */
   businessUnitId?: string;
 
   // ── Square ───────────────────────────────────────────────────
@@ -242,13 +333,38 @@ export interface ProcessPaymentRequest {
 
   // ── Gateway resolution / idempotency ─────────────────────────
   gatewayId?: string;
+  /**
+   * Caller-supplied idempotency key. The backend's
+   * `Payment.idempotencyKey` column is `@unique`; two concurrent
+   * requests with the same key produce one Payment, not two.
+   *
+   * If omitted, the backend derives a deterministic key from the
+   * payment's salient fields (userId, amount, method, saleId,
+   * orderId, customerId).
+   */
   idempotencyKey?: string;
+
+  /**
+   * Advisory provider hint. The backend declares this on
+   * `ProcessPaymentData` but does not currently read it — the
+   * concrete provider is derived from `paymentMethod` (e.g.
+   * `CREDIT_CARD` → STRIPE). Declared here so the web service's
+   * `ProviderPaymentRequest` extension can set it without a
+   * structural-widening error.
+   */
+  provider?: string;
 }
 
 export interface RefundPaymentRequest {
   amount?: number;
   reason?: string;
   metadata?: PaymentMetadata;
+  /**
+   * User performing the refund. Written to
+   * `Payment.refundedBy` and used as the `AuditLog.userId` on the
+   * refund audit row.
+   */
+  userId?: string;
 }
 
 export interface CheckoutSessionRequest {
@@ -264,17 +380,25 @@ export interface CheckoutSessionRequest {
   successUrl?: string;
   cancelUrl?: string;
   metadata?: PaymentMetadata;
+  /**
+   * Forwarded to Stripe as the `Idempotency-Key` request option.
+   * The backend's `createCheckoutSession` does not currently
+   * forward it, but Stripe accepts it, so declaring it here is
+   * forward-compatible.
+   */
+  idempotencyKey?: string;
 }
 
 // ============================================
 // PAGINATED RESPONSE
 // ============================================
 //
-// The backend returns `{ success, data: Payment[], pagination: {…} }`.
-// The legacy `paymentService.getPayments` flattens this into
-// `{ data, total, page, totalPages, limit }`. This interface supports
-// both shapes so callers migrating to the new response don't break
-// old ones.
+// The backend's `getAllPayments` returns
+// `{ payments, total, page, limit, totalPages }`. The legacy
+// `paymentService.getPayments` in the web service flattens this
+// into `{ data, total, page, totalPages, limit }`. This interface
+// supports both shapes so callers migrating to the new response
+// don't break old ones.
 
 export interface PaymentPagination {
   total: number;
@@ -310,6 +434,23 @@ export interface PaginatedPaymentResponse {
 
 export type PaymentProviderType = 'ONLINE' | 'OFFLINE' | 'HYBRID';
 
+/**
+ * Mirrors the backend's `PaymentProviderEnum` in `schema.prisma`.
+ *
+ * Note: the Prisma `PaymentMethod` enum also has `MTN`, `AIRTEL`,
+ * and `PAYPAL`/`FLUTTERWAVE`/`SQUARE` entries, but
+ * `PaymentProviderEnum` does NOT include MTN/AIRTEL/MPESA — those
+ * are sub-providers of `MOBILE_MONEY`. Keep this union in sync with
+ * the Prisma enum, not with `PaymentMethod`.
+ *
+ * ⚠ `PAYSTACK` is intentionally absent. It was removed from the
+ *   backend's `PAYMENT_PROVIDERS` constant and from the
+ *   `paymentService` handler registry; no factory exists for it,
+ *   and the UI no longer offers it. Re-adding it here without
+ *   re-adding the backend handler would let a caller type-check a
+ *   request that fails at runtime with
+ *   "Unsupported payment method: PAYSTACK".
+ */
 export type PaymentProviderName =
   | 'STRIPE'
   | 'CASH'
@@ -323,6 +464,11 @@ export type PaymentProviderName =
 
 export interface PaymentProviderStatus {
   id?: string;
+  /**
+   * The `PaymentProviderEnum` value (`'STRIPE'`, `'MOBILE_MONEY'`,
+   * …). Distinct from `code`, which is the string the provider
+   * itself uses.
+   */
   provider: string;
   name: string;
   code: string;
@@ -336,6 +482,14 @@ export interface PaymentProviderStatus {
   volume7d: number;
   transactions30d: number;
   volume30d: number;
+  /**
+   * Derived by the backend from the provider's FIRST
+   * `PaymentMethodConfig` row (`provider.paymentMethods[0]`). That
+   * means `description`, `icon`, `minAmount`, `maxAmount`,
+   * `feePercentage`, and `feeFixed` are only populated when the
+   * first method happens to carry them — other methods on the same
+   * provider are not consulted.
+   */
   config: {
     name: string;
     type: string;
@@ -443,6 +597,13 @@ export interface CreatePaymentIntentRequest {
   description?: string;
   metadata?: Record<string, string>;
   customerId?: string;
+  /**
+   * Forwarded to Stripe as the `Idempotency-Key` request option.
+   * Without it, a client-side retry (network drop, timeout)
+   * creates a second PaymentIntent and double-charges the
+   * customer.
+   */
+  idempotencyKey?: string;
 }
 
 export interface CreatePaymentIntentResponse {
@@ -468,6 +629,16 @@ export interface MpesaSTKPushRequest {
   customerId?: string;
   businessUnitId?: string;
   idempotencyKey?: string;
+  /**
+   * Optional. M-Pesa is currency-locked to the country of the
+   * shortcode (KE → KES, TZ → TZS, …). The backend's
+   * `mpesaSTKPushSchema` does not declare this field, and
+   * `mobileMoneyService` overrides whatever the caller sends with
+   * the country config. Declared here so a caller can pass it
+   * without a TS2353 excess-property error; the backend will
+   * ignore it.
+   */
+  currency?: string;
 }
 
 export interface MpesaSTKPushResponse {
@@ -613,7 +784,27 @@ export interface ProcessOrderPaymentInput {
   customerId?: string;
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
+  /**
+   * Optional. When omitted, the backend resolves the currency from
+   * `businessUnitId` (then env → registry default). Do NOT default
+   * to `'USD'` on the client.
+   */
   currency?: string;
+  /**
+   * Forwarded so the backend can read `businessUnit.currency`
+   * during resolution.
+   */
+  businessUnitId?: string;
+  /**
+   * Stable idempotency key. If omitted, the web service uses
+   * `pos_${saleId}` — deterministic and timestamp-free, so a retry
+   * of the same sale returns the original Payment row instead of
+   * double-charging.
+   *
+   * Supply an explicit key for legitimate second charges on the
+   * same sale (partial payments, split tender).
+   */
+  idempotencyKey?: string;
   description?: string;
   metadata?: PaymentMetadata;
   tipAmount?: number;
@@ -630,6 +821,15 @@ export interface InitiateMpesaSTKPushInput {
   callbackUrl?: string;
   saleId?: string;
   orderId?: string;
+  customerId?: string;
+  businessUnitId?: string;
+  idempotencyKey?: string;
+  /**
+   * Optional. M-Pesa ignores this — the shortcode country is
+   * authoritative. Declared so callers can pass it without a
+   * TS2353 excess-property error. See `MpesaSTKPushRequest`.
+   */
+  currency?: string;
 }
 
 // ============================================

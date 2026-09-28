@@ -320,7 +320,8 @@ model BusinessUnit {
   isActive              Boolean                @default(true)
   settings              Json?
   taxRate               Float?
-  currency              String                 @default("USD")
+  currency              String                 @default("UGX")
+  currencyRates         CurrencyRate[]
   timezone              String                 @default("UTC")
   logo                  String?
   description           String?
@@ -1103,6 +1104,27 @@ model SaleItem {
   variant   ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@map("sale_items")
+}
+
+// ============================================
+// CURRENCY RATES
+// ============================================
+
+model CurrencyRate {
+  id             String       @id @default(cuid())
+  businessUnitId String
+  currencyCode   String       // "USD", "UGX", "KES", ...
+  rate           Float        // optional, for display conversion
+  isEnabled      Boolean      @default(true)
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([businessUnitId, currencyCode])
+  @@index([businessUnitId])
+  @@index([currencyCode])
+  @@map("currency_rates")
 }
 
 model Payment {

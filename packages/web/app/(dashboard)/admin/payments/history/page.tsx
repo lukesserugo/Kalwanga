@@ -5,45 +5,32 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import Link from 'next/link';
 import {
   ArrowLeft,
   Search,
   Filter,
   RefreshCw,
   Loader2,
-  Eye,
-  Download,
-  Printer,
   ChevronLeft,
   ChevronRight,
-  Calendar,
   Clock,
-  User,
-  Mail,
-  Phone,
-  DollarSign,
   CreditCard,
   CheckCircle,
   XCircle,
   AlertCircle,
   FileText,
-  Trash2,
-  MoreVertical,
   Copy,
   Receipt,
   Banknote,
   Wallet,
-  Building,
-  QrCode,
   Gift,
   Star,
   Smartphone,
   Landmark,
-  ArrowUpRight,
   ArrowDownRight,
   Lock,
   Globe,
+  Download,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
@@ -92,7 +79,6 @@ interface Payment {
     email: string;
     phone?: string;
   };
-  provider?: string;
   gatewayId?: string;
   metadata?: Record<string, unknown>;
   providerTransactionId?: string;
@@ -133,16 +119,59 @@ type DateRange =
 // ============================================
 
 /**
- * Resolve the provider name from a payment. Reads the legacy
- * top-level `provider` field first, then `metadata.provider` (where
- * the backend actually writes it), then `gatewayId`.
+ * Resolve the provider name from a payment. Reads `metadata.provider`
+ * (where the backend actually writes it) first, then falls back to
+ * `gatewayId` for rows that predate the metadata write.
  */
 function resolveProvider(payment: Payment): string | undefined {
-  if (payment.provider) return payment.provider;
   const meta = payment.metadata ?? {};
   const metaProvider =
     typeof meta.provider === 'string' ? meta.provider : undefined;
   return metaProvider || payment.gatewayId || undefined;
+}
+
+/**
+ * Provider logo with a graceful emoji fallback. Kept as a component
+ * rather than an `onError` DOM mutation so React owns the tree and
+ * a re-render doesn't leak a fresh `<span>` into the DOM.
+ */
+function ProviderLogo({
+  provider,
+  isDark,
+  size = 28,
+}: {
+  provider?: string;
+  isDark: boolean;
+  size?: number;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  const url =
+    provider &&
+    (isDark
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
+      : PROVIDER_IMAGE_URLS[provider]);
+
+  if (!url || failed) {
+    return <span className="text-base leading-none">💳</span>;
+  }
+
+  return (
+    <div
+      className="relative flex-shrink-0"
+      style={{ width: size, height: size }}
+    >
+      <Image
+        src={url}
+        alt=""
+        width={size}
+        height={size}
+        className="rounded object-contain"
+        onError={() => setFailed(true)}
+        unoptimized
+      />
+    </div>
+  );
 }
 
 /**
@@ -440,7 +469,10 @@ export default function AdminPaymentHistoryPage() {
     setSearch('');
     setDateRange('month');
     setPagination((prev) => ({ ...prev, page: 1 }));
-  }, []);
+    // Reset can land on the same deps the effect already saw, so
+    // always call directly to guarantee a repaint.
+    void loadPayments();
+  }, [loadPayments]);
 
   const handleCopyReference = useCallback((reference: string) => {
     navigator.clipboard
@@ -453,6 +485,36 @@ export default function AdminPaymentHistoryPage() {
     setSelectedPayment(payment);
     setShowReceiptModal(true);
   }, []);
+
+  // ── Client-side filtering ────────────────────────────────────
+
+  /**
+   * Apply the free-text search client-side so the UI is honest even
+   * when the backend ignores the `search` param (it does today —
+   * `getPaymentsSchema` doesn't declare it). The moment a `search`
+   * field lands on the backend, this becomes a no-op double-check.
+   */
+  const visiblePayments = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return payments;
+
+    return payments.filter((payment) => {
+      const haystack = [
+        payment.reference,
+        payment.id,
+        payment.sale?.receiptNumber,
+        payment.user?.firstName,
+        payment.user?.lastName,
+        payment.user?.email,
+        payment.paymentMethod,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [payments, search]);
 
   // ── Lookups ──────────────────────────────────────────────────
 
@@ -495,16 +557,6 @@ export default function AdminPaymentHistoryPage() {
     if (!provider) return 'N/A';
     return PROVIDER_NAMES[provider] || provider;
   }, []);
-
-  const getProviderImageUrl = useCallback(
-    (provider?: string): string => {
-      if (!provider) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-        ? PROVIDER_DARK_IMAGE_URLS[provider]
-        : PROVIDER_IMAGE_URLS[provider] || '';
-    },
-    [isDark],
-  );
 
   const getCustomerName = useCallback(
     (user?: { firstName: string; lastName: string }) => {
@@ -554,7 +606,7 @@ export default function AdminPaymentHistoryPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view payment history.
+          You don&apos;t have permission to view payment history.
         </p>
         <button
           onClick={() => router.push('/admin/payments')}
@@ -633,6 +685,8 @@ export default function AdminPaymentHistoryPage() {
             <button
               onClick={() => router.push('/admin/payments/export')}
               className="btn-brand"
+              aria-label="Export payments"
+              title="Export payments"
             >
               <Download className="w-4 h-4" />
               Export
@@ -878,7 +932,7 @@ export default function AdminPaymentHistoryPage() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
             </div>
-          ) : payments.length === 0 ? (
+          ) : visiblePayments.length === 0 ? (
             <div className="text-center py-12">
               <CreditCard className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3
@@ -893,7 +947,9 @@ export default function AdminPaymentHistoryPage() {
                   isDark ? 'text-gray-400' : 'text-gray-500'
                 }`}
               >
-                Try adjusting your filters or search terms
+                {payments.length === 0
+                  ? 'Try adjusting your filters or search terms'
+                  : 'No payments match the current search'}
               </p>
             </div>
           ) : (
@@ -935,9 +991,8 @@ export default function AdminPaymentHistoryPage() {
                       isDark ? 'divide-gray-700' : 'divide-gray-200'
                     }`}
                   >
-                    {payments.map((payment) => {
+                    {visiblePayments.map((payment) => {
                       const providerCode = resolveProvider(payment);
-                      const imageUrl = getProviderImageUrl(providerCode);
 
                       return (
                         <tr
@@ -1020,40 +1075,10 @@ export default function AdminPaymentHistoryPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              {imageUrl ? (
-                                <div className="relative w-7 h-7 flex-shrink-0">
-                                  <Image
-                                    src={imageUrl}
-                                    alt={getProviderName(providerCode)}
-                                    width={28}
-                                    height={28}
-                                    className="rounded object-contain"
-                                    onError={(e) => {
-                                      (
-                                        e.target as HTMLImageElement
-                                      ).style.display = 'none';
-                                      const parent = (
-                                        e.target as HTMLImageElement
-                                      ).parentElement;
-                                      if (parent) {
-                                        const fallback =
-                                          document.createElement(
-                                            'span',
-                                          );
-                                        fallback.className = `text-base ${
-                                          isDark
-                                            ? 'text-gray-300'
-                                            : 'text-gray-600'
-                                        }`;
-                                        fallback.textContent = '💳';
-                                        parent.appendChild(fallback);
-                                      }
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                getPaymentIcon(payment.paymentMethod)
-                              )}
+                              <ProviderLogo
+                                provider={providerCode}
+                                isDark={isDark}
+                              />
                               <div>
                                 <span
                                   className={`text-sm capitalize ${

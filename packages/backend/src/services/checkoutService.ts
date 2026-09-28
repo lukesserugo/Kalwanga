@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\backend\src\services\checkoutService.ts
+// packages/backend/src/services/checkoutService.ts
 
 import { BaseService } from './BaseService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -13,14 +13,12 @@ import {
   round2,
 } from '../utils/money.js';
 import { applyInventoryDelta } from '../utils/inventory.js';
+import { currencyService } from './currencyService.js';
+import type { SupportedProvider } from '../lib/currencies.js';
 
 // ============================================
 // CANONICAL PAYMENT METHODS
 // ============================================
-//
-// Mirrors `CANONICAL_PAYMENT_METHODS` in `../utils/validators.ts` and
-// `../controllers/checkoutController.ts`. Kept local to the service
-// to avoid a circular import; the three must stay in sync.
 
 const CANONICAL_PAYMENT_METHODS = [
   'CASH',
@@ -51,8 +49,6 @@ const CANONICAL_PAYMENT_METHODS_SET = new Set<string>(
   CANONICAL_PAYMENT_METHODS,
 );
 
-// Payment methods that require a real gateway round-trip and are
-// therefore not eligible for the offline `processCheckout` path.
 const ONLINE_PAYMENT_METHODS = new Set<string>([
   'CREDIT_CARD',
   'DEBIT_CARD',
@@ -67,24 +63,8 @@ const MOBILE_PAYMENT_METHODS = new Set<string>([
   'MPESA',
 ]);
 
-/**
- * Mobile-money provider selector.
- *
- * `MOBILE_MONEY` covers three distinct providers in the backend:
- *   MPESA   → mpesaService (Safaricom STK push)
- *   MTN     → mobileMoneyService.initiatePayment('MTN', ...)
- *   AIRTEL  → mobileMoneyService.initiatePayment('AIRTEL', ...)
- *
- * The frontend uses this field to tell the backend which provider the
- * user picked. When omitted, the backend defaults to `MPESA` (the
- * historical behaviour before the selector existed).
- */
 type MobileMoneyProvider = 'MPESA' | 'MTN' | 'AIRTEL';
 
-/**
- * Map a user-supplied payment method to the value the Prisma
- * `PaymentMethod` enum accepts.
- */
 function normalizePaymentMethod(method: string): string {
   const upper = method.trim().toUpperCase();
 
@@ -104,27 +84,11 @@ function normalizePaymentMethod(method: string): string {
   return aliasMap[upper] || upper;
 }
 
-/**
- * Normalize a tax rate from the database.
- *
- * ⚠ The schema stores `taxRate` as a **percentage** (8 = 8%).
- * This helper only coerces null/non-finite to 0 — the /100
- * conversion happens inside `computeLine` in `money.ts`.
- */
 function safeTaxRate(raw: number | null | undefined): number {
   if (raw == null || !Number.isFinite(raw) || raw < 0) return 0;
   return raw;
 }
 
-/**
- * The discount category stored on `Sale.discountType`.
- *
- * ⚠ Must stay in lock-step with `DISCOUNT_TYPE_VALUES` in
- *   `../controllers/checkoutController.ts` and the Prisma enum
- *   `DiscountType`. Any drift produces TS2322 at every callsite
- *   that forwards a schema-validated `discountType` into this
- *   service.
- */
 type DiscountType =
   | 'PERCENTAGE'
   | 'FIXED'
@@ -150,20 +114,6 @@ function inferDiscountType(input: {
   return null;
 }
 
-/**
- * Gateway statuses that mean "money is in the account right now".
- *
- * Stripe returns `succeeded`; Square returns `COMPLETED`; the
- * others return `SUCCESS` / `PAID` / `CAPTURED` depending on the
- * provider. Anything in this set causes the sale to be marked
- * paid immediately inside `processOnlineCheckout` — without
- * waiting for the webhook — so the success page sees a
- * `COMPLETED` sale on first load.
- *
- * Asynchronous providers (M-Pesa STK push, PayPal redirects) are
- * deliberately NOT included here because their confirmation
- * arrives later via the webhook.
- */
 const SYNCHRONOUS_SUCCESS_STATUSES = new Set<string>([
   'succeeded',
   'SUCCEEDED',
@@ -176,6 +126,33 @@ const SYNCHRONOUS_SUCCESS_STATUSES = new Set<string>([
   'paid',
   'PAID',
 ]);
+
+// ============================================
+// CURRENCY RESOLUTION
+// ============================================
+//
+// The cart carries no currency. The business unit does. If the
+// business unit has none (older rows before the migration),
+// `currencyService.resolveForBusiness` walks:
+//
+//   1. businessUnit.currency  (from DB)
+//   2. process.env.DEFAULT_CURRENCY
+//   3. DEFAULT_CURRENCY_CODE  (registry default — currently 'UGX')
+//
+// Mobile-money providers (MTN, Airtel, M-Pesa) IGNORE the value
+// this returns and use their own country config — a UG MTN
+// environment only accepts UGX regardless of what the cart or
+// business unit says. They enforce that themselves via
+// `currencyService.resolveForCountry`.
+//
+// The function name and signature are preserved from the previous
+// local implementation so callers inside this file don't change.
+
+function resolveBusinessUnitCurrency(
+  businessUnitCurrency: string | null | undefined,
+): string {
+  return currencyService.resolveForBusiness(businessUnitCurrency);
+}
 
 // ============================================
 // INTERFACES
@@ -199,6 +176,11 @@ interface CheckoutData {
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
   applyLoyaltyPoints?: boolean;
+  /**
+   * Business unit the sale belongs to. When omitted, the cart's
+   * own `businessUnitId` is used. Either way, the resolved BU is
+   * the source of truth for the currency.
+   */
   businessUnitId?: string;
   customerEmail?: string;
   customerPhone?: string;
@@ -206,7 +188,6 @@ interface CheckoutData {
   customerAddress?: string;
   idempotencyKey?: string;
 
-  // Promotion / loyalty passthrough
   discountType?: DiscountType | null;
   promotionCode?: string | null;
   promotionDiscount?: number;
@@ -215,34 +196,20 @@ interface CheckoutData {
 interface OnlineCheckoutData extends CheckoutData {
   returnUrl?: string;
   cancelUrl?: string;
-  /**
-   * Gateway-specific card nonce (Square Web SDK tokenization).
-   * Required for `SQUARE`; ignored for every other method.
-   */
   cardNonce?: string;
-  /**
-   * Stripe PaymentMethod id (pm_xxx). Optional — the frontend
-   * normally confirms the PaymentIntent client-side and never
-   * sends this.
-   */
   paymentMethodId?: string;
   /**
-   * Gift card code for `paymentMethod === 'GIFT_CARD'`. The frontend
-   * sends the same value under both `giftCardCode` (natural name)
-   * and `gatewayId` (backend-compatible name). Either resolves.
+   * Gift-card code, natural name. The controller forwards whichever
+   * of `giftCardCode` / `gatewayId` the client sent; this service
+   * resolves `giftCardCode ?? gatewayId` before dispatching.
    */
   giftCardCode?: string;
-  gatewayId?: string;
   /**
-   * Mobile-money provider selector.
-   *
-   * Only meaningful when the resolved payment method is
-   * `MOBILE_MONEY`. Tells `invokeGateway` whether to route to
-   * M-Pesa (Safaricom STK push), MTN MoMo, or Airtel Money.
-   *
-   * When omitted, `invokeGateway` defaults to M-Pesa — the
-   * historical behaviour before the selector existed.
+   * Gift-card code, backend-compatible key. Preserved on the
+   * request type so a caller that only sets `gatewayId` still
+   * reaches the gift-card branch.
    */
+  gatewayId?: string;
   mobileMoneyProvider?: MobileMoneyProvider;
 }
 
@@ -255,11 +222,6 @@ interface CheckoutResponse {
   changeAmount: number;
 }
 
-/**
- * Normalized gateway response. Every provider returns this shape so
- * the frontend has a single contract regardless of which gateway was
- * used.
- */
 type NextAction =
   | { type: 'CONFIRM_STRIPE'; clientSecret: string }
   | { type: 'REDIRECT'; url: string }
@@ -320,6 +282,17 @@ interface CheckoutSummaryResponse {
   loyaltyPointsRedeemable: number;
   maxLoyaltyDiscount: number;
   customerId?: string;
+  /**
+   * Resolved from the cart's business unit via
+   * `resolveBusinessUnitCurrency`. Additive — existing consumers
+   * that ignore this field continue to work.
+   */
+  currency?: string;
+  /**
+   * Display symbol for `currency`, from the registry. Falls back
+   * to the ISO code when the registry has no symbol.
+   */
+  currencySymbol?: string;
 }
 
 interface CheckoutHistoryFilters {
@@ -422,6 +395,8 @@ const SALE_FULL_INCLUDE = {
       address: true,
       phone: true,
       email: true,
+      currency: true,
+      companyId: true,
     },
   },
 } as const;
@@ -429,40 +404,60 @@ const SALE_FULL_INCLUDE = {
 // ============================================
 // GATEWAY ERROR NORMALIZATION
 // ============================================
-//
-// Gateway failures arrive in three shapes:
-//
-//   1. `AppError` thrown by this service (e.g. "M-Pesa is not
-//      configured", "Unsupported payment method"). Carries a
-//      well-formed `status` and a user-safe `message`.
-//
-//   2. `AxiosError` from a provider SDK (MTN MoMo, Flutterwave,
-//      Paystack, …). Carries `response.status` and a nested
-//      `response.data.message`.
-//
-//   3. Anything else — a raw `Error`, a thrown string, an SDK
-//      that forgot to attach a status. These collapse to 502.
-//
-// `resolveGatewayError` normalizes all three into a single
-// `AppError` with a status the controller can forward verbatim.
-// Without this, every mobile-money failure surfaced as an opaque
-// 502 even when the real cause was "credentials missing" (503)
-// or "invalid phone" (400).
 
 function resolveGatewayError(error: any): AppError {
   if (error instanceof AppError) return error;
 
+  const seen = new Set<any>();
+  let node = error;
+  while (node?.cause && !seen.has(node.cause)) {
+    seen.add(node.cause);
+    node = node.cause;
+  }
+
+  const nodeCodeMap: Record<string, number> = {
+    ECONNREFUSED: 503,
+    ENOTFOUND: 503,
+    EAI_AGAIN: 503,
+    ETIMEDOUT: 504,
+    ECONNABORTED: 504,
+  };
+
+  // Hardened fallback: guard against a falsy `node.code` yielding
+  // HTTP status 0. The `?? 502` only protects against `undefined`
+  // / `null`, not against `0` or `''`, so we use a small ladder
+  // that funnels everything non-positive to 502.
+  const explicitStatus: unknown =
+    node?.response?.status ??
+    node?.status ??
+    node?.statusCode ??
+    node?.httpStatus;
+
+  const codeMapped: number | undefined =
+    typeof node?.code === 'string' ? nodeCodeMap[node.code] : undefined;
+
+  const candidate =
+    typeof explicitStatus === 'number' && explicitStatus > 0
+      ? explicitStatus
+      : codeMapped;
+
   const status: number =
-    error?.response?.status ??
-    error?.status ??
-    error?.statusCode ??
-    502;
+    typeof candidate === 'number' && candidate > 0 ? candidate : 502;
 
   const message: string =
-    error?.response?.data?.message ??
-    error?.response?.data?.error ??
-    error?.message ??
-    'Payment gateway error';
+    node?.response?.data?.message ??
+    node?.response?.data?.error_description ??
+    node?.response?.data?.error ??
+    node?.message ??
+    (typeof node === 'string' ? node : 'Payment gateway error');
+
+  logger.error('[checkout] Gateway error chain:', {
+    top: error?.message,
+    cause: error?.cause?.message,
+    deepest: node?.message,
+    code: node?.code,
+    status,
+  });
 
   return new AppError(message, status);
 }
@@ -517,8 +512,6 @@ export class CheckoutService extends BaseService {
       businessUnitId: extra.businessUnitId ?? sale.businessUnitId,
       createdAt: sale.saleDate ?? sale.createdAt,
       paymentMethod: extra.paymentMethod ?? 'CASH',
-
-      // Promotion / loyalty breakdown
       discountType: extra.discountType ?? sale.discountType ?? null,
       promotionCode: extra.promotionCode ?? sale.promotionCode ?? null,
       promotionDiscount:
@@ -527,6 +520,7 @@ export class CheckoutService extends BaseService {
         extra.loyaltyPointsUsed ?? sale.loyaltyPointsUsed ?? 0,
       loyaltyDiscount:
         extra.loyaltyDiscount ?? sale.loyaltyDiscount ?? 0,
+      currency: extra.currency ?? sale.currency ?? null,
     };
   }
 
@@ -574,21 +568,12 @@ export class CheckoutService extends BaseService {
   // ============================================
   // CANONICAL CHECKOUT (POS / OFFLINE)
   // ============================================
-  //
-  // This is the "cash on the counter" path. It assumes the money is
-  // already in hand (or will be handed over by staff), so it writes a
-  // PAID Payment row directly.
-  //
-  // ⚠ For ONLINE payments (card, PayPal, Flutterwave, Paystack,
-  // Mobile Money) you MUST use `processOnlineCheckout` below. It
-  // defers the PAID status to the gateway webhook.
 
   async processCheckout(
     data: CheckoutData & { idempotencyKey?: string },
     userId: string,
   ): Promise<CheckoutResponse> {
     try {
-      // Reject online methods here — they belong on processOnlineCheckout.
       const upper = data.paymentMethod.trim().toUpperCase();
       if (
         ONLINE_PAYMENT_METHODS.has(upper) ||
@@ -602,9 +587,6 @@ export class CheckoutService extends BaseService {
       }
 
       return await this.prisma.$transaction(async (tx: any) => {
-        // ------------------------------------------------------
-        // 0. Idempotency
-        // ------------------------------------------------------
         if (data.idempotencyKey) {
           const existing = await tx.sale.findUnique({
             where: { idempotencyKey: data.idempotencyKey },
@@ -622,9 +604,6 @@ export class CheckoutService extends BaseService {
           }
         }
 
-        // ------------------------------------------------------
-        // 1. Load the cart with authoritative product data
-        // ------------------------------------------------------
         const cart = await tx.cart.findUnique({
           where: { id: data.cartId },
           include: {
@@ -669,9 +648,21 @@ export class CheckoutService extends BaseService {
 
         const businessUnitId = data.businessUnitId || cart.businessUnitId;
 
-        // ------------------------------------------------------
-        // 2. Build server-authoritative lines
-        // ------------------------------------------------------
+        // ── Resolve currency + companyId from the business unit ──
+        // The cart has no currency; the BU does. Previously this
+        // path never resolved it, so the Prisma column default of
+        // 'USD' leaked into every POS Payment row on a UGX
+        // deployment. Now the resolved value is written on both
+        // the Payment row and its metadata.
+        const buRecord = await tx.businessUnit.findUnique({
+          where: { id: businessUnitId },
+          select: { currency: true, companyId: true },
+        });
+        const resolvedCurrency = resolveBusinessUnitCurrency(
+          buRecord?.currency,
+        );
+        const companyId = buRecord?.companyId ?? null;
+
         const lines = cart.items.map((item: any) => {
           if (item.product.isActive === false) {
             throw new AppError(
@@ -694,17 +685,11 @@ export class CheckoutService extends BaseService {
           };
         });
 
-        // ------------------------------------------------------
-        // 3. Compute totals server-side
-        // ------------------------------------------------------
         const totals = computeCartTotals(
           lines,
           data.discount ?? cart.discount ?? 0,
         );
 
-        // ------------------------------------------------------
-        // 4. Loyalty redemption
-        // ------------------------------------------------------
         let loyaltyPointsUsed = 0;
         let loyaltyDiscount = 0;
         if (data.applyLoyaltyPoints && (data.customerId || cart.customerId)) {
@@ -728,9 +713,6 @@ export class CheckoutService extends BaseService {
           Math.max(0, totals.total - loyaltyDiscount),
         );
 
-        // ------------------------------------------------------
-        // 5. Payment sufficiency
-        // ------------------------------------------------------
         const change = computeChange(data.paidAmount, finalTotal);
         if (change < 0) {
           throw new AppError(
@@ -739,9 +721,6 @@ export class CheckoutService extends BaseService {
           );
         }
 
-        // ------------------------------------------------------
-        // 6. Stock validation
-        // ------------------------------------------------------
         for (const item of cart.items) {
           const inventory = await tx.inventory.findFirst({
             where: {
@@ -768,9 +747,6 @@ export class CheckoutService extends BaseService {
           }
         }
 
-        // ------------------------------------------------------
-        // 7. Cash register check
-        // ------------------------------------------------------
         if (data.cashRegisterId) {
           const register = await tx.cashRegister.findUnique({
             where: { id: data.cashRegisterId },
@@ -782,9 +758,6 @@ export class CheckoutService extends BaseService {
           }
         }
 
-        // ------------------------------------------------------
-        // 8. Create Sale
-        // ------------------------------------------------------
         const promotionDiscount = round2(
           data.promotionDiscount ?? totals.discount,
         );
@@ -803,13 +776,11 @@ export class CheckoutService extends BaseService {
             subtotal: totals.subtotal,
             tax: totals.tax,
             discount: round2(totals.discount + loyaltyDiscount),
-
             discountType: resolvedDiscountType,
             promotionCode: data.promotionCode ?? null,
             promotionDiscount,
             loyaltyPointsUsed,
             loyaltyDiscount: round2(loyaltyDiscount),
-
             total: finalTotal,
             paidAmount: data.paidAmount,
             changeAmount: change > 0 ? change : 0,
@@ -824,9 +795,6 @@ export class CheckoutService extends BaseService {
           },
         });
 
-        // ------------------------------------------------------
-        // 9. Create SaleItems
-        // ------------------------------------------------------
         for (let i = 0; i < cart.items.length; i++) {
           const item = cart.items[i];
           const line = totals.lines[i];
@@ -844,9 +812,6 @@ export class CheckoutService extends BaseService {
           });
         }
 
-        // ------------------------------------------------------
-        // 10. Decrement inventory
-        // ------------------------------------------------------
         for (const item of cart.items) {
           await applyInventoryDelta(tx, {
             productId: item.productId,
@@ -861,13 +826,13 @@ export class CheckoutService extends BaseService {
           });
         }
 
-        // ------------------------------------------------------
-        // 11. Payment (offline — mark PAID immediately)
-        // ------------------------------------------------------
         const enumValue = normalizePaymentMethod(data.paymentMethod);
         const payment = await tx.payment.create({
           data: {
             amount: finalTotal,
+            // The Prisma column default is 'USD'. Writing the
+            // resolved currency explicitly prevents the leak.
+            currency: resolvedCurrency,
             paymentMethod: enumValue as any,
             status: 'PAID',
             saleId: sale.id,
@@ -877,6 +842,11 @@ export class CheckoutService extends BaseService {
             businessUnitId,
             processedAt: new Date(),
             reference: `PAY-${receiptNumber}`,
+            metadata: {
+              currency: resolvedCurrency,
+              paymentMethod: enumValue,
+              source: 'pos',
+            },
           },
         });
 
@@ -887,10 +857,12 @@ export class CheckoutService extends BaseService {
           });
         }
 
-        // ------------------------------------------------------
-        // 12. Loyalty accrual + redemption
-        // ------------------------------------------------------
-        const pointsEarned = Math.floor(finalTotal / 10);
+        // Loyalty basis: `sale.total` (the agreed cart total).
+        // Previously this was `finalTotal` (post-loyalty-discount),
+        // which meant a customer who redeemed points earned fewer
+        // points back than one who didn't — inconsistent with the
+        // webhook completion path, which uses `sale.total`.
+        const pointsEarned = Math.floor(sale.total / 10);
         const customerId = data.customerId || cart.customerId;
         if (customerId) {
           await tx.customer.update({
@@ -932,9 +904,6 @@ export class CheckoutService extends BaseService {
           }
         }
 
-        // ------------------------------------------------------
-        // 13. Clear cart
-        // ------------------------------------------------------
         await tx.cartItem.deleteMany({ where: { cartId: data.cartId } });
         await tx.cart.update({
           where: { id: data.cartId },
@@ -948,16 +917,13 @@ export class CheckoutService extends BaseService {
           },
         });
 
-        // ------------------------------------------------------
-        // 14. Audit log
-        // ------------------------------------------------------
         await tx.auditLog.create({
           data: {
             action: 'CREATE',
             entityType: 'SALE',
             entityId: sale.id,
             userId,
-            companyId: null,
+            companyId,
             businessUnitId,
             entityName: receiptNumber,
             changes: {
@@ -971,6 +937,7 @@ export class CheckoutService extends BaseService {
               loyaltyPointsUsed,
               loyaltyDiscount: round2(loyaltyDiscount),
               paymentMethod: enumValue,
+              currency: resolvedCurrency,
               itemCount: cart.items.length,
               loyaltyPointsEarned: pointsEarned,
               idempotencyKey: data.idempotencyKey ?? null,
@@ -979,14 +946,8 @@ export class CheckoutService extends BaseService {
           },
         });
 
-        // ------------------------------------------------------
-        // 15. Real-time event
-        // ------------------------------------------------------
         this.safeEmitNewSale(sale, businessUnitId);
 
-        // ------------------------------------------------------
-        // 16. Response
-        // ------------------------------------------------------
         const receipt = this.buildReceiptShape(sale, {
           items: cart.items.map((item: any, i: number) => ({
             productId: item.productId,
@@ -1002,12 +963,12 @@ export class CheckoutService extends BaseService {
           paymentMethod: enumValue,
           customerId: cart.customerId,
           businessUnitId,
-
           discountType: resolvedDiscountType,
           promotionCode: data.promotionCode ?? null,
           promotionDiscount,
           loyaltyPointsUsed,
           loyaltyDiscount: round2(loyaltyDiscount),
+          currency: resolvedCurrency,
         });
 
         return {
@@ -1028,28 +989,6 @@ export class CheckoutService extends BaseService {
   // ============================================
   // ONLINE CHECKOUT (GATEWAY-BACKED)
   // ============================================
-  //
-  // This is the PUBLIC WEB path. Unlike `processCheckout`, it does
-  // NOT mark the payment PAID at creation time. Instead it:
-  //
-  //   1. Creates the Sale (status PENDING) and Payment (status PENDING)
-  //   2. Reserves inventory
-  //   3. Calls the right gateway via `invokeGateway`
-  //   4. Returns a `nextAction` telling the frontend what to do next
-  //
-  // Final `PAID` status is normally set by the gateway webhook, which
-  // calls `markSalePaidFromWebhook`. HOWEVER, when the gateway
-  // confirms synchronously (Stripe card confirm, Square instant
-  // capture), we also flip the sale here BEFORE returning the
-  // response — see step 3b. This is what makes the success page
-  // render `Status: COMPLETED` on first load instead of `PENDING`.
-  //
-  // The webhook still fires a moment later and calls
-  // `markSalePaidFromWebhook`, which is idempotent and exits
-  // immediately if the sale is already COMPLETED.
-  //
-  // ⚠ The gateway call happens AFTER the transaction commits, so a
-  //   slow gateway never holds a database lock.
 
   async processOnlineCheckout(
     data: OnlineCheckoutData,
@@ -1059,30 +998,8 @@ export class CheckoutService extends BaseService {
       const upper = data.paymentMethod.trim().toUpperCase();
 
       // ----------------------------------------------------
-      // 0. Idempotency — return existing sale if key matched
+      // 0. Idempotency
       // ----------------------------------------------------
-      //
-      // Three cases for a matching idempotency key:
-      //
-      //   COMPLETED              → true replay. Return the
-      //   PROCESSING               existing sale with the same
-      //   PENDING                  nextAction the original
-      //                            attempt would have produced.
-      //                            The frontend resumes polling.
-      //
-      //   CANCELLED / VOID       → previous attempt failed or
-      //   REFUNDED                 was voided. This is NOT a
-      //                            valid replay. If we returned
-      //                            `nextAction: OFFLINE` the
-      //                            frontend would show the
-      //                            "awaiting confirmation" screen
-      //                            for a callback that will never
-      //                            arrive. Instead, free the key
-      //                            and fall through to a fresh
-      //                            attempt below.
-      //
-      // ⚠ `Sale.idempotencyKey` is `@unique`. Freeing it before
-      //   the fresh insert is what makes the fall-through safe.
       if (data.idempotencyKey) {
         const existing = await this.prisma.sale.findUnique({
           where: { idempotencyKey: data.idempotencyKey },
@@ -1103,8 +1020,6 @@ export class CheckoutService extends BaseService {
               where: { id: existing.id },
               data: { idempotencyKey: null },
             });
-            // Fall through to Phase 1 — a fresh Sale will be
-            // created with the same key.
           } else {
             const existingPayment = existing.payments[0] ?? null;
             return {
@@ -1178,7 +1093,19 @@ export class CheckoutService extends BaseService {
 
           const businessUnitId = data.businessUnitId || cart.businessUnitId;
 
-          // Server-side lines
+          // ── Resolve the currency from the business unit ─────
+          // The cart has no currency. The business unit does.
+          // `resolveBusinessUnitCurrency` delegates to
+          // `currencyService.resolveForBusiness`, which walks
+          // DB → env → registry default.
+          const businessUnitRecord = await tx.businessUnit.findUnique({
+            where: { id: businessUnitId },
+            select: { currency: true },
+          });
+          const businessUnitCurrency = resolveBusinessUnitCurrency(
+            businessUnitRecord?.currency,
+          );
+
           const lines = cart.items.map((item: any) => {
             if (item.product.isActive === false) {
               throw new AppError(
@@ -1206,7 +1133,6 @@ export class CheckoutService extends BaseService {
             data.discount ?? cart.discount ?? 0,
           );
 
-          // Loyalty
           let loyaltyPointsUsed = 0;
           let loyaltyDiscount = 0;
           if (
@@ -1232,7 +1158,6 @@ export class CheckoutService extends BaseService {
             Math.max(0, totals.total - loyaltyDiscount),
           );
 
-          // Stock check
           for (const item of cart.items) {
             const inventory = await tx.inventory.findFirst({
               where: {
@@ -1259,7 +1184,6 @@ export class CheckoutService extends BaseService {
             }
           }
 
-          // Discount breakdown
           const promotionDiscount = round2(
             data.promotionDiscount ?? totals.discount,
           );
@@ -1272,7 +1196,6 @@ export class CheckoutService extends BaseService {
 
           const receiptNumber = this.generateReceiptNumber();
 
-          // Create Sale as PENDING
           const sale = await tx.sale.create({
             data: {
               receiptNumber,
@@ -1297,7 +1220,6 @@ export class CheckoutService extends BaseService {
             },
           });
 
-          // SaleItems
           for (let i = 0; i < cart.items.length; i++) {
             const item = cart.items[i];
             const line = totals.lines[i];
@@ -1317,7 +1239,6 @@ export class CheckoutService extends BaseService {
             });
           }
 
-          // Reserve inventory
           for (const item of cart.items) {
             await applyInventoryDelta(tx, {
               productId: item.productId,
@@ -1332,11 +1253,13 @@ export class CheckoutService extends BaseService {
             });
           }
 
-          // Create Payment as PENDING
           const enumValue = normalizePaymentMethod(data.paymentMethod);
           const payment = await tx.payment.create({
             data: {
               amount: finalTotal,
+              // The Prisma column default is 'USD'; write the
+              // resolved value explicitly so the row is honest.
+              currency: businessUnitCurrency,
               paymentMethod: enumValue as any,
               status: 'PENDING',
               saleId: sale.id,
@@ -1348,20 +1271,17 @@ export class CheckoutService extends BaseService {
                 idempotencyKey: data.idempotencyKey ?? null,
                 returnUrl: data.returnUrl ?? null,
                 cancelUrl: data.cancelUrl ?? null,
-                // Gift-card code is persisted on the Payment's
-                // metadata so the audit trail retains it even if the
-                // gateway call later fails. The code itself is
-                // forwarded to the gateway via `invokeGateway`.
                 giftCardCode:
                   data.giftCardCode ?? data.gatewayId ?? null,
-                // Mobile-money provider hint persisted for audit.
                 mobileMoneyProvider:
                   data.mobileMoneyProvider ?? null,
+                // Record the resolved currency so the audit trail
+                // shows what we actually charged in.
+                currency: businessUnitCurrency,
               },
             },
           });
 
-          // Clear cart
           await tx.cartItem.deleteMany({
             where: { cartId: data.cartId },
           });
@@ -1377,7 +1297,6 @@ export class CheckoutService extends BaseService {
             },
           });
 
-          // Audit
           await tx.auditLog.create({
             data: {
               action: 'CREATE',
@@ -1392,6 +1311,7 @@ export class CheckoutService extends BaseService {
                 paymentMethod: enumValue,
                 mobileMoneyProvider:
                   data.mobileMoneyProvider ?? null,
+                currency: businessUnitCurrency,
                 status: 'PENDING',
               },
               severity: 'INFO',
@@ -1405,7 +1325,7 @@ export class CheckoutService extends BaseService {
               id: cart.id,
               customerId: cart.customerId,
               businessUnitId,
-              currency: (cart as any).currency ?? 'USD',
+              currency: businessUnitCurrency,
             },
             totals,
             finalTotal,
@@ -1425,12 +1345,11 @@ export class CheckoutService extends BaseService {
             })),
           };
         },
-        // Allow up to 15 seconds — reads + writes only, no network.
         { timeout: 15000 },
       );
 
       // ----------------------------------------------------
-      // 2. Phase 2 — call the gateway (outside the tx)
+      // 2. Phase 2 — call the gateway
       // ----------------------------------------------------
       let gatewayResult: GatewayResult;
       try {
@@ -1440,7 +1359,7 @@ export class CheckoutService extends BaseService {
           currency: phase1.cart.currency,
           sale: phase1.sale,
           payment: phase1.payment,
-          customer: null, // we don't have the joined customer here
+          customer: null,
           customerEmail: data.customerEmail,
           customerPhone: data.customerPhone,
           customerName: data.customerName,
@@ -1453,8 +1372,6 @@ export class CheckoutService extends BaseService {
           mobileMoneyProvider: data.mobileMoneyProvider,
         });
       } catch (gatewayError: any) {
-        // Gateway failed — mark Payment FAILED and Sale FAILED, then
-        // re-throw so the controller returns a 4xx/5xx to the client.
         logger.error(
           `Gateway call failed for sale ${phase1.sale.id}:`,
           gatewayError,
@@ -1480,7 +1397,6 @@ export class CheckoutService extends BaseService {
             where: { id: phase1.sale.id },
             data: { status: 'CANCELLED' },
           });
-          // Restore inventory
           for (const line of phase1.itemLines) {
             await applyInventoryDelta(tx, {
               productId: line.productId,
@@ -1496,15 +1412,6 @@ export class CheckoutService extends BaseService {
           }
         });
 
-        // Preserve the provider's own status code and message.
-        //
-        //   AppError (e.g. "MTN is not configured") → passthrough
-        //   AxiosError with response.status          → 4xx/5xx
-        //   Raw Error                                → 502
-        //
-        // Before this, every failure was re-wrapped as a generic
-        // 502, which hid the real cause (missing credentials, bad
-        // phone number, upstream timeout) from the caller.
         throw resolveGatewayError(gatewayError);
       }
 
@@ -1525,23 +1432,7 @@ export class CheckoutService extends BaseService {
       });
 
       // ----------------------------------------------------
-      // 3b. If the gateway confirmed synchronously, flip the
-      //     sale NOW instead of waiting for the webhook.
-      //
-      //     Without this, the success page renders before the
-      //     webhook arrives and shows `Status: PENDING`.
-      //
-      //     `markSalePaidFromWebhook` is idempotent — the real
-      //     webhook will arrive a moment later, see the sale is
-      //     already COMPLETED, and exit immediately. No double
-      //     loyalty accrual, no double inventory decrement, no
-      //     double payment row.
-      //
-      //     We only do this for gateways whose responses are
-      //     synchronous (Stripe card confirm, Square instant
-      //     capture). Async gateways like M-Pesa STK push and
-      //     PayPal redirects are NOT in the set — their
-      //     confirmation arrives later via webhook only.
+      // 3b. Inline synchronous completion
       // ----------------------------------------------------
       if (
         gatewayResult.transactionId &&
@@ -1558,9 +1449,6 @@ export class CheckoutService extends BaseService {
             `Sale ${phase1.sale.receiptNumber} marked PAID inline (${gatewayResult.gateway}, status=${gatewayResult.status})`,
           );
         } catch (inlineError) {
-          // Don't fail the whole checkout if the inline flip throws
-          // — the webhook will retry the same idempotent call. Log
-          // and continue.
           logger.warn(
             `Inline markSalePaidFromWebhook failed for sale ${phase1.sale.id} (webhook will retry):`,
             inlineError,
@@ -1583,6 +1471,7 @@ export class CheckoutService extends BaseService {
         promotionDiscount: phase1.promotionDiscount,
         loyaltyPointsUsed: phase1.loyaltyPointsUsed,
         loyaltyDiscount: round2(phase1.loyaltyDiscount),
+        currency: phase1.cart.currency,
       });
 
       return {
@@ -1625,23 +1514,7 @@ export class CheckoutService extends BaseService {
     idempotencyKey?: string;
     cardNonce?: string;
     paymentMethodId?: string;
-    /**
-     * Gift-card code. When set, it is passed as `gatewayId` to the
-     * provider invocation so `GiftCardProviderHandler` can find it
-     * without the caller having to know the handler's field name.
-     */
     giftCardCode?: string;
-    /**
-     * Mobile-money provider selector. Only consulted when the
-     * `paymentMethod` resolves to `MOBILE_MONEY` or `MPESA`.
-     * Determines which provider handler is invoked:
-     *
-     *   MPESA  → mpesaService (Safaricom STK push)
-     *   MTN    → mobileMoneyService.initiatePayment('MTN', ...)
-     *   AIRTEL → mobileMoneyService.initiatePayment('AIRTEL', ...)
-     *
-     * When omitted, defaults to `MPESA` (the historical behaviour).
-     */
     mobileMoneyProvider?: MobileMoneyProvider;
   }): Promise<GatewayResult> {
     const {
@@ -1674,10 +1547,8 @@ export class CheckoutService extends BaseService {
 
     const upper = paymentMethod.trim().toUpperCase();
 
-    // ── Offline methods (no gateway) ─────────────────────────
+    // ── Offline methods ─────────────────────────────────────
     if (['CASH', 'BANK_TRANSFER', 'CHECK'].includes(upper)) {
-      // Mark the payment PENDING with an offline note. Staff will
-      // confirm it later via a separate admin action.
       return {
         gateway: upper,
         status: 'PENDING_OFFLINE',
@@ -1694,6 +1565,17 @@ export class CheckoutService extends BaseService {
 
     // ── Card (Stripe) ───────────────────────────────────────
     if (['CREDIT_CARD', 'DEBIT_CARD', 'CARD'].includes(upper)) {
+      // Guard: Stripe may not support this currency.
+      currencyService.assertProviderAccepts('STRIPE', currency);
+
+      // Thread the idempotency key into Stripe as the
+      // `Idempotency-Key` request option. `payment.id` is stable
+      // across retries of `processOnlineCheckout` (the phase-1
+      // transaction is itself idempotent), so a client retry
+      // returns the original PaymentIntent instead of creating
+      // a second one and double-charging the customer.
+      const stripeIdempotencyKey = `stripe_intent_${payment.id}`;
+
       const intent = await this.paymentService.createPaymentIntent({
         amount,
         currency,
@@ -1704,11 +1586,9 @@ export class CheckoutService extends BaseService {
           userId: sale.userId,
         },
         customerId: customer?.id,
+        idempotencyKey: stripeIdempotencyKey,
       });
 
-      // If the caller already supplied a paymentMethodId, try to
-      // confirm server-side. Otherwise return the clientSecret and
-      // let the browser confirm.
       if (paymentMethodId) {
         logger.info(
           `Stripe: paymentMethodId supplied for sale ${sale.id} — client will confirm.`,
@@ -1729,20 +1609,6 @@ export class CheckoutService extends BaseService {
     }
 
     // ── Mobile money ────────────────────────────────────────
-    //
-    // `MOBILE_MONEY` is a *category* covering three distinct
-    // providers. `MPESA` is an explicit alias for the Safaricom
-    // flow. The caller disambiguates via `mobileMoneyProvider`.
-    //
-    // Resolution order:
-    //   1. `upper === 'MPESA'` always wins → M-Pesa.
-    //   2. `mobileMoneyProvider` if the caller supplied one.
-    //   3. Fall back to M-Pesa for backwards compatibility.
-    //
-    // ⚠ Do NOT pass `callbackUrl` to `mpesaService`. It reads
-    //   `process.env.MPESA_CALLBACK_URL` and validates that it's
-    //   HTTPS and non-localhost in its constructor, failing fast
-    //   if it can't reach Safaricom.
     if (MOBILE_PAYMENT_METHODS.has(upper)) {
       if (!customerPhone) {
         throw new AppError(
@@ -1754,8 +1620,14 @@ export class CheckoutService extends BaseService {
       const provider: MobileMoneyProvider =
         upper === 'MPESA' ? 'MPESA' : (mobileMoneyProvider ?? 'MPESA');
 
-      // ── M-Pesa (Safaricom STK push) ────────────────────────
+      // ── M-Pesa ───────────────────────────────────────────
       if (provider === 'MPESA') {
+        // Guard: M-Pesa only transacts in KES. `assertProviderAccepts`
+        // reads the registry, so a deployment without KES enabled
+        // in its currency config gets a clean 400 instead of a
+        // gateway timeout.
+        currencyService.assertProviderAccepts('MPESA', 'KES');
+
         const { mpesaService } = await import('./mpesaService.js');
         if (!mpesaService.isConfigured()) {
           throw new AppError(
@@ -1768,9 +1640,6 @@ export class CheckoutService extends BaseService {
           amount,
           accountReference: sale.receiptNumber,
           transactionDesc: `Payment for ${sale.receiptNumber}`,
-          // callbackUrl intentionally omitted — the service uses
-          // `MPESA_CALLBACK_URL` and validates it before calling
-          // Safaricom.
         });
 
         return {
@@ -1790,27 +1659,47 @@ export class CheckoutService extends BaseService {
         };
       }
 
-      // ── MTN MoMo / Airtel Money ────────────────────────────
-      //
-      // Both are handled by the shared `mobileMoneyService`,
-      // which dispatches internally on the provider code. The
-      // service reads credentials from env vars at construction
-      // time and exposes `isConfigured(provider)` /
-      // `initiatePayment(provider, params)`.
-      //
-      // ⚠ The `isConfigured` guard mirrors the MPESA branch above.
-      //   Without it, a missing MTN_API_KEY / MTN_USER_ID /
-      //   MTN_API_SECRET / MTN_SUBSCRIPTION_KEY throws inside the
-      //   SDK and surfaces to the client as an opaque 502 instead
-      //   of a self-explanatory 503.
+      // ── MTN MoMo / Airtel Money ──────────────────────────
       if (provider === 'MTN' || provider === 'AIRTEL') {
+        const requiredEnv: Record<'MTN' | 'AIRTEL', string[]> = {
+          MTN: [
+            'MTN_API_USER_ID',
+            'MTN_API_KEY',
+            'MTN_API_SECRET',
+            'MTN_SUBSCRIPTION_KEY',
+            'MTN_ENVIRONMENT',
+            'MTN_BASE_URL',
+            'MTN_CALLBACK_URL',
+          ],
+          AIRTEL: [
+            'AIRTEL_CLIENT_ID',
+            'AIRTEL_CLIENT_SECRET',
+            'AIRTEL_API_KEY',
+            'AIRTEL_API_SECRET',
+            'AIRTEL_BASE_URL',
+            'AIRTEL_CALLBACK_URL',
+          ],
+        };
+
+        const missing = requiredEnv[provider].filter(
+          (name) => !process.env[name] || process.env[name]!.trim() === '',
+        );
+
+        if (missing.length > 0) {
+          throw new AppError(
+            `${provider} is not configured. Missing env: ${missing.join(', ')}.`,
+            503,
+          );
+        }
+
         const { mobileMoneyService } = await import(
           './mobileMoneyService.js'
         );
 
         if (
-          typeof (mobileMoneyService as any).isConfigured === 'function' &&
-          !(mobileMoneyService as any).isConfigured(provider)
+          typeof (mobileMoneyService as any).isProviderConfigured ===
+            'function' &&
+          !(mobileMoneyService as any).isProviderConfigured(provider)
         ) {
           throw new AppError(
             `${provider} is not configured. Please contact support.`,
@@ -1818,24 +1707,22 @@ export class CheckoutService extends BaseService {
           );
         }
 
-        const result = await mobileMoneyService.initiatePayment(
-          provider,
-          {
-            phoneNumber: customerPhone,
-            amount,
-            currency,
-            reference: sale.receiptNumber,
-            description: `Payment for ${sale.receiptNumber}`,
-            // `callbackUrl` is omitted so the service falls back to
-            // its env-configured URL (`MTN_CALLBACK_URL` or
-            // `AIRTEL_CALLBACK_URL`).
-            metadata: {
-              saleId: sale.id,
-              paymentId: payment.id,
-              userId: sale.userId,
-            },
+        const result = await mobileMoneyService.initiatePayment(provider, {
+          phoneNumber: customerPhone,
+          amount,
+          // Deliberately `undefined`. MTN and Airtel derive their
+          // currency from their own country config (UG → UGX,
+          // GH → GHS, …). Passing a business-unit currency here is
+          // what produced the `41500 USD` bug.
+          currency: undefined,
+          reference: sale.receiptNumber,
+          description: `Payment for ${sale.receiptNumber}`,
+          metadata: {
+            saleId: sale.id,
+            paymentId: payment.id,
+            userId: sale.userId,
           },
-        );
+        });
 
         return {
           gateway: provider,
@@ -1861,6 +1748,8 @@ export class CheckoutService extends BaseService {
 
     // ── PayPal ──────────────────────────────────────────────
     if (upper === 'PAYPAL') {
+      currencyService.assertProviderAccepts('PAYPAL', currency);
+
       const { PayPalService } = await import('./paypalService.js');
       const paypal = new PayPalService();
       if (!paypal.validateConfig()) {
@@ -1902,6 +1791,8 @@ export class CheckoutService extends BaseService {
 
     // ── Flutterwave ─────────────────────────────────────────
     if (upper === 'FLUTTERWAVE') {
+      currencyService.assertProviderAccepts('FLUTTERWAVE', currency);
+
       const { FlutterwaveService } = await import(
         './flutterwaveService.js'
       );
@@ -1951,7 +1842,7 @@ export class CheckoutService extends BaseService {
       );
     }
 
-    // ── Square (requires card nonce from frontend) ──────────
+    // ── Square ──────────────────────────────────────────────
     if (upper === 'SQUARE') {
       if (!cardNonce) {
         throw new AppError(
@@ -1959,6 +1850,8 @@ export class CheckoutService extends BaseService {
           400,
         );
       }
+      currencyService.assertProviderAccepts('SQUARE', currency);
+
       const { SquareService } = await import('./squareService.js');
       const square = new SquareService();
       if (!square.validateConfig()) {
@@ -1977,9 +1870,6 @@ export class CheckoutService extends BaseService {
         },
       });
 
-      // Square payments can be instantly COMPLETED. If so, we still
-      // let the webhook flip the Sale status so the state machine is
-      // consistent, but we forward the result.
       return {
         gateway: 'SQUARE',
         status: result.status || 'PENDING',
@@ -1990,18 +1880,6 @@ export class CheckoutService extends BaseService {
     }
 
     // ── Gift Card ───────────────────────────────────────────
-    //
-    // The GiftCardProviderHandler reads `gatewayId` from the
-    // payment service's `ProcessPaymentData`. We forward the code
-    // under both names so either the handler or a future
-    // implementation resolving `giftCardCode` will find it.
-    //
-    // Gift cards are an OFFLINE method in the sense that no HTTP
-    // round-trip to a third-party gateway is required — the
-    // `GiftCardProviderHandler` performs a synchronous validation
-    // and returns `succeeded` immediately, exactly like CASH. The
-    // `markSalePaidFromWebhook` inline flip in step 3b then closes
-    // the sale.
     if (upper === 'GIFT_CARD' || upper === 'GIFT') {
       if (!giftCardCode) {
         throw new AppError(
@@ -2010,13 +1888,38 @@ export class CheckoutService extends BaseService {
         );
       }
 
+      // ── Idempotency for the gift-card redemption ──────────
+      //
+      // `paymentService.processPayment` writes to
+      // `Payment.idempotencyKey`, which is `@unique`. The Sale
+      // itself is protected by the caller-supplied
+      // `data.idempotencyKey` (the short-circuit at the top of
+      // `processOnlineCheckout` returns early on a retry with the
+      // same key), but that only guards the Sale row. If a caller
+      // ever passes a *different* sale key while reusing the same
+      // phase-1 Payment row — or a future refactor moves the
+      // short-circuit — a retry without a Payment-level key would
+      // create a second Payment row.
+      //
+      // Preference:
+      //   1. `idempotencyKey` — the Sale-level key, forwarded by
+      //      the caller. `processPayment` prefixes it with
+      //      `pay_` before writing, so it can't collide with the
+      //      Sale row's value.
+      //   2. `giftcard_${payment.id}` — deterministic per phase-1
+      //      Payment row, stable across retries. Used when the
+      //      caller didn't supply a key.
+      const giftCardIdempotencyKey =
+        idempotencyKey && idempotencyKey.trim() !== ''
+          ? `giftcard_sale_${idempotencyKey}`
+          : `giftcard_${payment.id}`;
+
       const result: any = await this.paymentService.processPayment({
         amount,
         paymentMethod: 'GIFT_CARD',
         saleId: sale.id,
         userId: sale.userId,
         currency,
-        // The provider handler reads this as the gift-card code.
         gatewayId: giftCardCode,
         metadata: {
           saleId: sale.id,
@@ -2024,12 +1927,11 @@ export class CheckoutService extends BaseService {
           giftCardCode,
         },
         description: `Sale ${sale.receiptNumber}`,
+        idempotencyKey: giftCardIdempotencyKey,
       });
 
       return {
         gateway: 'GIFT_CARD',
-        // Gift card validation is synchronous; the status will be
-        // `succeeded` (or `success`/`paid`) when the code is valid.
         status: result.status || 'succeeded',
         transactionId: result.transactionId || result.id,
         nextAction: { type: 'NONE' },
@@ -2046,16 +1948,6 @@ export class CheckoutService extends BaseService {
   // ============================================
   // WEBHOOK-DRIVEN SALE COMPLETION
   // ============================================
-  //
-  // Called by every gateway webhook (Stripe, PayPal, Flutterwave,
-  // Paystack, Square, M-Pesa callback) once the gateway confirms
-  // success. Flips the Sale from PENDING → COMPLETED, awards loyalty,
-  // creates the receipt, updates the cash register.
-  //
-  // Idempotent: a second call for an already-COMPLETED sale is a
-  // no-op. This is what makes the inline call in
-  // `processOnlineCheckout` step 3b safe — the webhook that arrives
-  // a moment later hits the COMPLETED check and exits.
 
   async markSalePaidFromWebhook(
     saleId: string,
@@ -2068,7 +1960,16 @@ export class CheckoutService extends BaseService {
         async (tx: any) => {
           const sale = await tx.sale.findUnique({
             where: { id: saleId },
-            include: { items: true, payments: true },
+            include: {
+              items: true,
+              payments: true,
+              // Needed for the Receipt.companyId write below. The
+              // `Sale` model has no direct `companyId`; it comes
+              // from the business unit.
+              businessUnit: {
+                select: { companyId: true },
+              },
+            },
           });
           if (!sale) {
             logger.warn(
@@ -2093,7 +1994,6 @@ export class CheckoutService extends BaseService {
             return;
           }
 
-          // Find the target payment
           const targetPayment = paymentId
             ? sale.payments.find((p: any) => p.id === paymentId)
             : sale.payments[0];
@@ -2112,7 +2012,6 @@ export class CheckoutService extends BaseService {
             return;
           }
 
-          // ── 1. Flip the Payment to PAID ────────────────────
           await tx.payment.update({
             where: { id: targetPayment.id },
             data: {
@@ -2127,7 +2026,6 @@ export class CheckoutService extends BaseService {
             },
           });
 
-          // ── 2. Compute total paid across all payments ─────
           const totalPaid = sale.payments
             .map((p: any) =>
               p.id === targetPayment.id
@@ -2140,7 +2038,6 @@ export class CheckoutService extends BaseService {
 
           const isFullyPaid = totalPaid >= sale.total;
 
-          // ── 3. Flip the Sale ──────────────────────────────
           await tx.sale.update({
             where: { id: saleId },
             data: {
@@ -2150,9 +2047,9 @@ export class CheckoutService extends BaseService {
             },
           });
 
-          // ── 4. Post-payment side effects (only when fully paid)
           if (isFullyPaid) {
-            // 4a. Loyalty accrual + redemption reconciliation
+            // Loyalty basis: `sale.total` (the agreed cart total),
+            // consistent with `processCheckout`.
             const pointsEarned = Math.floor(sale.total / 10);
             if (sale.customerId && pointsEarned > 0) {
               await tx.customer.update({
@@ -2194,7 +2091,6 @@ export class CheckoutService extends BaseService {
               }
             }
 
-            // 4b. Cash register bump (only for CASH on a real register)
             if (
               sale.cashRegisterId &&
               targetPayment.paymentMethod === 'CASH'
@@ -2205,7 +2101,6 @@ export class CheckoutService extends BaseService {
               });
             }
 
-            // 4c. Receipt row
             const companyId =
               (sale as any).companyId ||
               (sale.businessUnit as any)?.companyId ||
@@ -2228,8 +2123,6 @@ export class CheckoutService extends BaseService {
                 update: { status: 'ISSUED' },
               });
             } catch (receiptErr) {
-              // Non-fatal — a missing companyId shouldn't block the
-              // payment confirmation.
               logger.warn(
                 `[webhook:${gatewayName}] Receipt upsert skipped:`,
                 receiptErr,
@@ -2237,7 +2130,6 @@ export class CheckoutService extends BaseService {
             }
           }
 
-          // ── 5. Audit ──────────────────────────────────────
           await tx.auditLog.create({
             data: {
               action: 'UPDATE',
@@ -2273,14 +2165,6 @@ export class CheckoutService extends BaseService {
     }
   }
 
-  /**
-   * Mark a sale FAILED when the gateway reports a terminal failure
-   * (Stripe `payment_intent.payment_failed`, PayPal `DENIED`,
-   * Flutterwave `failed`, M-Pesa `ResultCode !== 0`, etc.).
-   *
-   * Restocks inventory so the reservation is released.
-   * Idempotent.
-   */
   async markSaleFailedFromWebhook(
     saleId: string,
     paymentId: string,
@@ -2329,7 +2213,6 @@ export class CheckoutService extends BaseService {
             return;
           }
 
-          // Payment → FAILED
           await tx.payment.update({
             where: { id: targetPayment.id },
             data: {
@@ -2346,13 +2229,11 @@ export class CheckoutService extends BaseService {
             },
           });
 
-          // Sale → CANCELLED
           await tx.sale.update({
             where: { id: saleId },
             data: { status: 'CANCELLED' },
           });
 
-          // Restock
           for (const item of sale.items) {
             await applyInventoryDelta(tx, {
               productId: item.productId,
@@ -2439,6 +2320,10 @@ export class CheckoutService extends BaseService {
             },
           },
           customer: true,
+          // Pulled in so we can resolve the currency for display.
+          businessUnit: {
+            select: { currency: true },
+          },
         },
       });
 
@@ -2453,6 +2338,12 @@ export class CheckoutService extends BaseService {
       const loyaltyPointsRedeemable = Math.floor(
         Math.min(loyaltyPointsAvailable, cart.subtotal / 0.1),
       );
+
+      const resolvedCurrency = resolveBusinessUnitCurrency(
+        (cart as any).businessUnit?.currency ?? null,
+      );
+      const currencyMeta =
+        currencyService.tryGetCurrency(resolvedCurrency);
 
       return {
         items: cart.items.map((item: any) => ({
@@ -2472,6 +2363,8 @@ export class CheckoutService extends BaseService {
         loyaltyPointsRedeemable,
         maxLoyaltyDiscount,
         customerId: cart.customerId || undefined,
+        currency: resolvedCurrency,
+        currencySymbol: currencyMeta?.symbol ?? resolvedCurrency,
       };
     } catch (error) {
       this.handleError(error, 'CheckoutService.getCheckoutSummary');
@@ -2618,7 +2511,7 @@ export class CheckoutService extends BaseService {
   }
 
   // ============================================
-  // ITEM MUTATIONS (server-priced)
+  // ITEM MUTATIONS
   // ============================================
 
   async addCheckoutItem(
@@ -2627,7 +2520,6 @@ export class CheckoutService extends BaseService {
       productId: string;
       variantId?: string;
       quantity: number;
-      /** @deprecated — ignored. Server always uses DB price. */
       unitPrice?: number;
     },
     userId: string,
@@ -3106,9 +2998,20 @@ export class CheckoutService extends BaseService {
           throw new AppError('Checkout is cancelled', 400);
         }
 
+        // Resolve the currency from the sale's business unit so
+        // the Payment row records what was actually charged.
+        const buRecord = await tx.businessUnit.findUnique({
+          where: { id: checkout.businessUnitId },
+          select: { currency: true },
+        });
+        const resolvedCurrency = resolveBusinessUnitCurrency(
+          buRecord?.currency,
+        );
+
         const payment = await tx.payment.create({
           data: {
             amount: paymentData.amount,
+            currency: resolvedCurrency,
             paymentMethod: normalizePaymentMethod(
               paymentData.paymentMethod,
             ) as any,
@@ -3117,6 +3020,12 @@ export class CheckoutService extends BaseService {
             userId: paymentData.userId,
             processedAt: new Date(),
             reference: `PAY-${checkout.receiptNumber}`,
+            metadata: {
+              currency: resolvedCurrency,
+              paymentMethod: normalizePaymentMethod(
+                paymentData.paymentMethod,
+              ),
+            },
           },
         });
 
@@ -3693,6 +3602,43 @@ export class CheckoutService extends BaseService {
 
   async getCheckoutSettings(userId: string): Promise<CheckoutSettings> {
     try {
+      // Pull the user's active business unit via the join table.
+      // The `include` below traverses `BusinessUnitUser.businessUnit`
+      // — reading `.settings` / `.currency` / `.id` off the join
+      // row was the previous behaviour and was always undefined.
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          businessUnits: {
+            where: { isActive: true },
+            take: 1,
+            include: {
+              businessUnit: {
+                select: {
+                  id: true,
+                  currency: true,
+                  settings: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const businessUnit = (user?.businessUnits?.[0] as any)
+        ?.businessUnit as
+        | { id: string; currency: string | null; settings: unknown }
+        | undefined;
+
+      // Derive the currency defaults from the registry rather than
+      // hard-coding 'USD' / '$'. On a UGX deployment the old
+      // default would render a `$` next to a UGX amount.
+      const resolvedCurrency = resolveBusinessUnitCurrency(
+        businessUnit?.currency ?? null,
+      );
+      const currencyMeta =
+        currencyService.tryGetCurrency(resolvedCurrency);
+
       const defaultSettings: CheckoutSettings = {
         allowPartialPayment: true,
         requireCustomer: false,
@@ -3717,37 +3663,17 @@ export class CheckoutService extends BaseService {
         taxRate: 8,
         notifyOnAbandonedCart: true,
         abandonedCartHours: 2,
-        currencyCode: 'USD',
-        currencySymbol: '$',
+        currencyCode: resolvedCurrency,
+        currencySymbol: currencyMeta?.symbol ?? resolvedCurrency,
         showStockBadge: true,
         showVariantImages: true,
       };
 
-      try {
-        const user = await this.prisma.user.findUnique({
-          where: { id: userId },
-          include: {
-            businessUnits: {
-              where: { isActive: true },
-              take: 1,
-            },
-          },
-        });
-
-        if (user?.businessUnits && user.businessUnits.length > 0) {
-          const businessUnit = user.businessUnits[0];
-          if ((businessUnit as any).settings) {
-            return {
-              ...defaultSettings,
-              ...(businessUnit as any).settings,
-            };
-          }
-        }
-      } catch (settingsError) {
-        logger.warn(
-          'Could not fetch user settings, using defaults:',
-          settingsError,
-        );
+      if (businessUnit?.settings && typeof businessUnit.settings === 'object') {
+        return {
+          ...defaultSettings,
+          ...(businessUnit.settings as Record<string, unknown>),
+        } as CheckoutSettings;
       }
 
       return defaultSettings;
@@ -3768,21 +3694,43 @@ export class CheckoutService extends BaseService {
           businessUnits: {
             where: { isActive: true },
             take: 1,
+            include: {
+              businessUnit: {
+                select: {
+                  id: true,
+                  settings: true,
+                  currency: true,
+                },
+              },
+            },
           },
         },
       });
 
-      if (!user?.businessUnits || user.businessUnits.length === 0) {
+      const businessUnit = (user?.businessUnits?.[0] as any)
+        ?.businessUnit as
+        | { id: string; settings: unknown; currency: string | null }
+        | undefined;
+
+      if (!businessUnit) {
         throw new AppError('User does not have a business unit', 400);
       }
 
-      const businessUnit = user.businessUnits[0];
+      // Read-modify-write the settings JSON. Replacing it wholesale
+      // (the previous behaviour) meant a caller setting
+      // `{ currencyCode: 'UGX' }` would wipe `receiptFooter`,
+      // `taxRate`, and every other key.
+      const existing =
+        businessUnit.settings && typeof businessUnit.settings === 'object'
+          ? (businessUnit.settings as Record<string, unknown>)
+          : {};
+
+      const merged = { ...existing, ...settings };
 
       await this.prisma.businessUnit.update({
         where: { id: businessUnit.id },
         data: {
-          // @ts-ignore - settings column exists in schema
-          settings: settings,
+          settings: merged as any,
         },
       });
 
@@ -3891,13 +3839,22 @@ export class CheckoutService extends BaseService {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         include: {
-          businessUnits: { where: { isActive: true }, take: 1 },
+          businessUnits: {
+            where: { isActive: true },
+            take: 1,
+            include: {
+              businessUnit: { select: { id: true } },
+            },
+          },
         },
       });
 
+      const businessUnit = (user?.businessUnits?.[0] as any)
+        ?.businessUnit as { id: string } | undefined;
+
       const where: any = {};
-      if (user?.businessUnits?.[0]?.id) {
-        where.businessUnitId = user.businessUnits[0].id;
+      if (businessUnit?.id) {
+        where.businessUnitId = businessUnit.id;
       }
       if (startDate || endDate) {
         where.saleDate = {};
@@ -3943,16 +3900,6 @@ export class CheckoutService extends BaseService {
 // ============================================
 // SINGLETON EXPORT
 // ============================================
-//
-// Shared instance for callers (like `paymentService.ts`) that
-// resolve it lazily to avoid a top-level circular import. The
-// class remains the default export for callers that prefer to
-// instantiate their own.
-//
-// Resolved via:
-//   const { checkoutService } = await import('./checkoutService.js');
-// from `paymentService.completeCheckoutFromGateway` and
-// `paymentService.failCheckoutFromGateway`.
 
 export const checkoutService = new CheckoutService();
 

@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(public)\payment\success\page.tsx
+// packages/web/app/(public)/payment/success/page.tsx
 
 'use client';
 
@@ -30,13 +30,14 @@ import {
   FileText,
   Star,
   Lock,
-  Globe,
   Smartphone,
   Banknote,
   Wallet,
   Building,
   Gift,
   CreditCard,
+  Globe,
+  type LucideIcon,
 } from 'lucide-react';
 import { useThemeStore } from '../../../stores/themeStore';
 import { paymentService } from '../../../../services/paymentService';
@@ -90,16 +91,52 @@ interface PaymentDetails {
 // ============================================
 
 /**
+ * Provider codes the backend writes to `metadata.provider` or to
+ * the legacy top-level `provider` field. Used to decide whether
+ * `gatewayId` is safe to consult — in practice it's a
+ * PaymentGateway row FK, not a provider code.
+ *
+ * ⚠ PAYSTACK has been removed from this project.
+ */
+const KNOWN_PROVIDER_CODES = new Set<string>([
+  'STRIPE',
+  'PAYPAL',
+  'FLUTTERWAVE',
+  'SQUARE',
+  'MPESA',
+  'MTN',
+  'AIRTEL',
+  'TIGO',
+  'VODAFONE',
+  'CASH',
+  'BANK_TRANSFER',
+  'GIFT_CARD',
+  'LOYALTY_POINTS',
+  'MOBILE_MONEY',
+  'CHECK',
+]);
+
+/**
  * Resolve the provider from a payment. Reads the legacy top-level
- * field first, then `metadata.provider`, then `gatewayId`.
+ * field first, then `metadata.provider`, then `gatewayId` (only
+ * when `gatewayId` is a recognised code).
  */
 function resolveProvider(raw: any): string | undefined {
   if (!raw) return undefined;
-  if (raw.provider) return raw.provider;
+
   const meta = raw.metadata ?? {};
   const metaProvider =
     typeof meta.provider === 'string' ? meta.provider : undefined;
-  return metaProvider || raw.gatewayId || undefined;
+  const legacy = raw.provider as string | undefined;
+  const gateway = raw.gatewayId as string | undefined;
+
+  if (legacy && KNOWN_PROVIDER_CODES.has(legacy)) return legacy;
+  if (metaProvider && KNOWN_PROVIDER_CODES.has(metaProvider)) {
+    return metaProvider;
+  }
+  if (gateway && KNOWN_PROVIDER_CODES.has(gateway)) return gateway;
+
+  return metaProvider || legacy || undefined;
 }
 
 /**
@@ -133,7 +170,8 @@ function mapToPaymentDetails(raw: any, fallbackAmount = 0): PaymentDetails {
       paymentMethod: payment?.paymentMethod || 'CREDIT_CARD',
       status: raw.status || payment?.status || 'PENDING',
       reference: raw.receiptNumber || payment?.reference || raw.id,
-      processedAt: raw.saleDate || payment?.processedAt || new Date().toISOString(),
+      processedAt:
+        raw.saleDate || payment?.processedAt || new Date().toISOString(),
       provider: resolveProvider(payment),
       gatewayId: payment?.gatewayId,
       metadata: payment?.metadata,
@@ -194,7 +232,8 @@ function mapToPaymentDetails(raw: any, fallbackAmount = 0): PaymentDetails {
       : undefined,
     customer: raw.user
       ? {
-          name: `${raw.user.firstName ?? ''} ${raw.user.lastName ?? ''}`.trim(),
+          name:
+            `${raw.user.firstName ?? ''} ${raw.user.lastName ?? ''}`.trim(),
           email: raw.user.email || '',
           phone: raw.user.phone || raw.user.phoneNumber || '',
         }
@@ -214,51 +253,40 @@ function mapToPaymentDetails(raw: any, fallbackAmount = 0): PaymentDetails {
 // CONSTANTS
 // ============================================
 
+/**
+ * Local icon paths under `packages/web/public/`. Add one SVG per
+ * code to restore the images. Until then, the `<Image>` onError
+ * handler hides the broken image and the emoji from
+ * `PROVIDER_CONFIGS` renders.
+ *
+ * ⚠ No external CDN dependencies — every request stays on the
+ *   deployment's own origin.
+ */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
-const PAYMENT_METHOD_ICONS: Record<string, any> = {
+const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   CASH: Banknote,
   CREDIT_CARD: CreditCard,
   DEBIT_CARD: Wallet,
@@ -269,12 +297,31 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CHECK: FileText,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
+  MPESA: Smartphone,
   MTN: Smartphone,
   AIRTEL: Smartphone,
   TIGO: Smartphone,
   VODAFONE: Smartphone,
+};
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  CREDIT_CARD: 'Credit Card',
+  DEBIT_CARD: 'Debit Card',
+  MOBILE_MONEY: 'Mobile Money',
+  BANK_TRANSFER: 'Bank Transfer',
+  GIFT_CARD: 'Gift Card',
+  LOYALTY_POINTS: 'Loyalty Points',
+  CHECK: 'Check',
+  PAYPAL: 'PayPal',
+  FLUTTERWAVE: 'Flutterwave',
+  SQUARE: 'Square',
+  MPESA: 'M-Pesa',
+  MTN: 'MTN Mobile Money',
+  AIRTEL: 'Airtel Money',
+  TIGO: 'Tigo Pesa',
+  VODAFONE: 'Vodafone Cash',
 };
 
 const PROVIDER_CONFIGS: Record<
@@ -284,7 +331,6 @@ const PROVIDER_CONFIGS: Record<
   STRIPE: { icon: '💳', name: 'Stripe', color: 'blue' },
   PAYPAL: { icon: '💸', name: 'PayPal', color: 'blue' },
   FLUTTERWAVE: { icon: '🌊', name: 'Flutterwave', color: 'cyan' },
-  PAYSTACK: { icon: '🔷', name: 'Paystack', color: 'sky' },
   SQUARE: { icon: '⬜', name: 'Square', color: 'gray' },
   CASH: { icon: '💰', name: 'Cash', color: 'green' },
   MOBILE_MONEY: { icon: '📱', name: 'Mobile Money', color: 'orange' },
@@ -311,6 +357,10 @@ export default function PaymentSuccessPage() {
   // `saleId` — our own checkout flow's return path.
   // `session_id` / `payment_intent` — Stripe's hosted redirect.
   // `orderId` — orders flow (rare, kept for compatibility).
+  //
+  // ⚠ `session_id` is captured for future Stripe Checkout
+  //   handling but currently unused — the sale/order path is the
+  //   authoritative one.
   const saleIdParam = searchParams.get('saleId');
   const sessionIdParam = searchParams.get('session_id');
   const paymentIntentIdParam = searchParams.get('payment_intent');
@@ -325,6 +375,7 @@ export default function PaymentSuccessPage() {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
+  const pollStoppedRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -337,6 +388,81 @@ export default function PaymentSuccessPage() {
     return () => stopPolling();
   }, [stopPolling]);
 
+  // ── Polling for the webhook to land ──────────────────────────
+  //
+  // Declared before `fetchPaymentDetails` because the latter
+  // calls it. As `useCallback` values, both are `const` bindings
+  // that live in the temporal dead zone until their line runs —
+  // in the original, `fetchPaymentDetails` happened to be called
+  // only after the whole render function had finished, so the
+  // forward reference worked by timing. Ordering the definitions
+  // correctly makes it explicit.
+
+  const startPollingSale = useCallback(
+    (saleId: string) => {
+      stopPolling();
+      pollStoppedRef.current = false;
+
+      const startTime = Date.now();
+      const MAX_WAIT_MS = 2 * 60 * 1000; // 2 minutes
+
+      pollIntervalRef.current = setInterval(async () => {
+        if (pollStoppedRef.current) return;
+
+        try {
+          const sale = await checkoutService.getCheckoutById(saleId);
+          const status = (sale as any).status;
+
+          // Success signal 1: Sale flipped to COMPLETED.
+          // Success signal 2: a Payment on the Sale is PAID even
+          // if the Sale row hasn't been updated yet (partial
+          // webhook write). Treating the Payment as authoritative
+          // avoids a stuck polling loop on a successfully paid
+          // order.
+          const hasPaidPayment =
+            Array.isArray((sale as any).payments) &&
+            (sale as any).payments.some(
+              (p: any) => p?.status === 'PAID',
+            );
+
+          if (status === 'COMPLETED' || hasPaidPayment) {
+            pollStoppedRef.current = true;
+            stopPolling();
+            setPayment(mapToPaymentDetails(sale));
+            setConfirming(false);
+            toast.success('Payment confirmed');
+            return;
+          }
+
+          if (
+            status === 'CANCELLED' ||
+            status === 'VOID' ||
+            status === 'REFUNDED'
+          ) {
+            pollStoppedRef.current = true;
+            stopPolling();
+            setConfirming(false);
+            setError(
+              'Payment was not completed. Please try again or use a different method.',
+            );
+            return;
+          }
+        } catch (err) {
+          console.warn('Poll error:', err);
+        }
+
+        if (Date.now() - startTime > MAX_WAIT_MS) {
+          pollStoppedRef.current = true;
+          stopPolling();
+          setConfirming(false);
+          // Keep the payment visible but stop spinning — the
+          // webhook may still land later.
+        }
+      }, 2500);
+    },
+    [stopPolling],
+  );
+
   // ── Data loading ─────────────────────────────────────────────
 
   const fetchPaymentDetails = useCallback(async () => {
@@ -346,7 +472,7 @@ export default function PaymentSuccessPage() {
       // ── Path A: sale-first (our checkout flow) ─────────────
       if (saleIdParam) {
         const sale = await checkoutService.getCheckoutById(saleIdParam);
-        const details = mapToDetails(sale);
+        const details = mapToPaymentDetails(sale);
 
         setPayment(details);
 
@@ -364,7 +490,7 @@ export default function PaymentSuccessPage() {
         try {
           const order =
             await checkoutService.getCheckoutById(orderIdParam);
-          const details = mapToDetails(order);
+          const details = mapToPaymentDetails(order);
           setPayment(details);
           if (details.status !== 'COMPLETED') {
             setConfirming(true);
@@ -397,7 +523,7 @@ export default function PaymentSuccessPage() {
             ? response.data[0]
             : null;
           if (first) {
-            setPayment(mapPayment(first));
+            setPayment(mapToPaymentDetails(first));
             return;
           }
         } catch (err) {
@@ -417,59 +543,20 @@ export default function PaymentSuccessPage() {
     } finally {
       setLoading(false);
     }
-  }, [saleIdParam, orderIdParam, paymentIntentIdParam]);
+  }, [
+    saleIdParam,
+    orderIdParam,
+    paymentIntentIdParam,
+    startPollingSale,
+  ]);
 
+  // Triggered by a change in the URL params. The deps are the
+  // scalar string values, not the callback identity, so a
+  // re-render that doesn't change the params does not refetch.
   useEffect(() => {
     void fetchPaymentDetails();
-  }, [fetchPaymentDetails]);
-
-  // ── Polling for the webhook to land ──────────────────────────
-
-  const startPollingSale = useCallback(
-    (saleId: string) => {
-      stopPolling();
-      const startTime = Date.now();
-      const MAX_WAIT_MS = 2 * 60 * 1000; // 2 minutes
-
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const sale = await checkoutService.getCheckoutById(saleId);
-          const status = (sale as any).status;
-
-          if (status === 'COMPLETED') {
-            stopPolling();
-            setPayment(mapToDetails(sale));
-            setConfirming(false);
-            toast.success('Payment confirmed');
-            return;
-          }
-
-          if (
-            status === 'CANCELLED' ||
-            status === 'VOIDED' ||
-            status === 'REFUNDED'
-          ) {
-            stopPolling();
-            setConfirming(false);
-            setError(
-              'Payment was not completed. Please try again or use a different method.',
-            );
-            return;
-          }
-        } catch (err) {
-          console.warn('Poll error:', err);
-        }
-
-        if (Date.now() - startTime > MAX_WAIT_MS) {
-          stopPolling();
-          setConfirming(false);
-          // Keep the payment visible but stop spinning — the
-          // webhook may still land later.
-        }
-      }, 2500);
-    },
-    [stopPolling],
-  );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saleIdParam, orderIdParam, paymentIntentIdParam]);
 
   // ── Countdown to auto-redirect ───────────────────────────────
   //
@@ -478,19 +565,11 @@ export default function PaymentSuccessPage() {
   // confirmation.
 
   useEffect(() => {
-    if (
-      payment &&
-      payment.status === 'COMPLETED' &&
-      countdown > 0
-    ) {
+    if (payment && payment.status === 'COMPLETED' && countdown > 0) {
       const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
       return () => clearTimeout(timer);
     }
-    if (
-      payment &&
-      payment.status === 'COMPLETED' &&
-      countdown === 0
-    ) {
+    if (payment && payment.status === 'COMPLETED' && countdown === 0) {
       router.push('/dashboard');
     }
   }, [payment, countdown, router]);
@@ -500,9 +579,9 @@ export default function PaymentSuccessPage() {
   const getProviderImageUrl = useCallback(
     (providerCode: string): string => {
       if (!providerCode) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-        : PROVIDER_IMAGE_URLS[providerCode] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[providerCode];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[providerCode] || '';
     },
     [isDark],
   );
@@ -517,8 +596,18 @@ export default function PaymentSuccessPage() {
     );
   }, []);
 
-  const getPaymentMethodIcon = useCallback((method: string) => {
-    return PAYMENT_METHOD_ICONS[method] || CreditCard;
+  const getPaymentMethodIcon = useCallback(
+    (method: string): LucideIcon => {
+      return PAYMENT_METHOD_ICONS[method] || CreditCard;
+    },
+    [],
+  );
+
+  const getPaymentMethodLabel = useCallback((method: string): string => {
+    return (
+      PAYMENT_METHOD_LABELS[method] ||
+      method.toLowerCase().replace(/_/g, ' ')
+    );
   }, []);
 
   const handlePrintReceipt = useCallback(() => {
@@ -698,6 +787,7 @@ export default function PaymentSuccessPage() {
     payment.provider || payment.gatewayId || '',
   );
   const PaymentIcon = getPaymentMethodIcon(payment.paymentMethod);
+  const methodLabel = getPaymentMethodLabel(payment.paymentMethod);
 
   return (
     <div
@@ -784,13 +874,11 @@ export default function PaymentSuccessPage() {
                 <div className="flex items-center justify-center gap-2">
                   <PaymentIcon className="w-5 h-5" />
                   <p
-                    className={`text-lg font-semibold capitalize ${
+                    className={`text-lg font-semibold ${
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
-                    {payment.paymentMethod
-                      .toLowerCase()
-                      .replace(/_/g, ' ')}
+                    {methodLabel}
                   </p>
                 </div>
               </div>
@@ -1098,19 +1186,4 @@ export default function PaymentSuccessPage() {
       </div>
     </div>
   );
-}
-
-// ============================================
-// MODULE-LEVEL MAPPERS
-// ============================================
-//
-// Kept outside the component so they aren't recreated on every
-// render.
-
-function mapToDetails(raw: any): PaymentDetails {
-  return mapToPaymentDetails(raw);
-}
-
-function mapPayment(raw: any): PaymentDetails {
-  return mapToPaymentDetails(raw);
 }

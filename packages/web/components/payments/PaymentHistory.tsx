@@ -1,15 +1,18 @@
-// D:\Projects\Kalwanga\packages\web\components\payments\PaymentHistory.tsx
+// packages/web/components/payments/PaymentHistory.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import Image from 'next/image';
 import {
   CreditCard,
   Clock,
-  Eye,
-  Download,
-  Printer,
   Copy,
   CheckCircle,
   XCircle,
@@ -28,6 +31,7 @@ import {
   Smartphone,
   Landmark,
   Globe,
+  type LucideIcon,
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
 import { paymentService } from '../../services/paymentService';
@@ -107,12 +111,16 @@ interface Payment {
 // or to the legacy top-level `provider` field. Used by
 // `resolveProvider` to decide whether `gatewayId` is safe to
 // consult (it isn't — it's a PaymentGateway row FK, not a code).
+//
+// ⚠ PAYSTACK has been removed from this project. Historical rows
+//   that carry `metadata.provider: 'PAYSTACK'` will fail the
+//   `KNOWN_PROVIDER_CODES` lookup and fall through to the generic
+//   method label. Everything else about the row renders normally.
 
 const KNOWN_PROVIDER_CODES = new Set<string>([
   'STRIPE',
   'PAYPAL',
   'FLUTTERWAVE',
-  'PAYSTACK',
   'SQUARE',
   'MPESA',
   'MTN',
@@ -127,51 +135,40 @@ const KNOWN_PROVIDER_CODES = new Set<string>([
   'CHECK',
 ]);
 
+/**
+ * Local icon paths under `packages/web/public/`. Add one SVG per
+ * code to restore the images. Until then, the `onError` fallback
+ * hides the broken image and the method icon renders instead.
+ *
+ * ⚠ No external CDN dependencies — every request stays on the
+ *   deployment's own origin.
+ */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY:
-    'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY:
-    'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
-const PAYMENT_METHOD_ICONS: Record<string, any> = {
+const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   CASH: Banknote,
   CREDIT_CARD: CreditCard,
   DEBIT_CARD: Wallet,
@@ -182,7 +179,6 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CHECK: FileText,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
   MPESA: Smartphone,
   MTN: Smartphone,
@@ -202,7 +198,6 @@ const PAYMENT_METHOD_EMOJIS: Record<string, string> = {
   CHECK: '📝',
   PAYPAL: '💸',
   FLUTTERWAVE: '🌊',
-  PAYSTACK: '🔷',
   SQUARE: '⬜',
   MPESA: '📱',
   MTN: '📱',
@@ -220,7 +215,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   LOYALTY_POINTS: 'Loyalty Points',
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
-  PAYSTACK: 'Paystack',
   SQUARE: 'Square',
   MPESA: 'M-Pesa',
   MTN: 'MTN Mobile Money',
@@ -367,6 +361,10 @@ function toViewPayment(payment: ApiPayment): Payment {
       ? resolveMobileProvider(payment) || resolvedProvider
       : resolvedProvider;
 
+  const refundedRaw = (payment as any).refundedAmount;
+  const refundedAmount =
+    typeof refundedRaw === 'number' ? refundedRaw : undefined;
+
   return {
     id: payment.id,
     amount: payment.amount,
@@ -378,7 +376,7 @@ function toViewPayment(payment: ApiPayment): Payment {
     processedAt: payment.processedAt,
     provider,
     gatewayId: payment.gatewayId,
-    refundedAmount: (payment as any).refundedAmount,
+    refundedAmount,
     notes: payment.notes,
     metadata: payment.metadata,
     sale: payment.sale
@@ -440,9 +438,20 @@ export function PaymentHistory({
   );
   const [showReceiptModal, setShowReceiptModal] = useState(false);
 
+  /**
+   * Guards against overlapping loads. When two `loadPayments` calls
+   * are in flight (e.g. a user clicking Search twice quickly, or a
+   * Search while the mount effect is still resolving), only the
+   * most recent request's response is committed. The ref holds the
+   * id of the latest request; older responses are dropped.
+   */
+  const latestRequestIdRef = useRef(0);
+
   // ── Data loading ─────────────────────────────────────────────
 
   const loadPayments = useCallback(async () => {
+    const requestId = ++latestRequestIdRef.current;
+
     try {
       setLoading(true);
       const params: Record<string, unknown> = {
@@ -461,6 +470,10 @@ export function PaymentHistory({
 
       const response = await paymentService.getPayments(params);
 
+      // Drop a stale response — a newer request has already been
+      // issued and will commit its own result.
+      if (requestId !== latestRequestIdRef.current) return;
+
       const items: ApiPayment[] = Array.isArray(response.data)
         ? response.data
         : [];
@@ -476,17 +489,39 @@ export function PaymentHistory({
           limit: response.limit,
         } as const);
 
-      setPagination({
-        page: paginationData.page || 1,
-        total: paginationData.total || 0,
-        totalPages: paginationData.totalPages || 1,
-        limit: paginationData.limit || limit,
+      setPagination((prev) => {
+        const nextPage = paginationData.page || 1;
+        const nextTotal = paginationData.total || 0;
+        const nextTotalPages = paginationData.totalPages || 1;
+        const nextLimit = paginationData.limit || limit;
+
+        // Avoid a redundant state update that would retrigger
+        // the mount effect. If nothing changed, return the
+        // previous object so React bails out of the re-render.
+        if (
+          prev.page === nextPage &&
+          prev.total === nextTotal &&
+          prev.totalPages === nextTotalPages &&
+          prev.limit === nextLimit
+        ) {
+          return prev;
+        }
+
+        return {
+          page: nextPage,
+          total: nextTotal,
+          totalPages: nextTotalPages,
+          limit: nextLimit,
+        };
       });
     } catch (error) {
+      if (requestId !== latestRequestIdRef.current) return;
       console.error('Failed to load payment history:', error);
       toast.error('Failed to load payment history');
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [
     userId,
@@ -527,9 +562,16 @@ export function PaymentHistory({
   }, [loadPayments]);
 
   const handleSearch = useCallback(() => {
-    setPagination((prev) => ({ ...prev, page: 1 }));
-    void loadPayments();
-  }, [loadPayments]);
+    // Reset the page. The `useEffect` above will fire when
+    // `pagination.page` changes and issue exactly one fetch. If
+    // the page is already 1, we issue the fetch directly so the
+    // search doesn't silently no-op.
+    if (pagination.page !== 1) {
+      setPagination((prev) => ({ ...prev, page: 1 }));
+    } else {
+      void loadPayments();
+    }
+  }, [pagination.page, loadPayments]);
 
   const handleCopyReference = useCallback((reference: string) => {
     navigator.clipboard.writeText(reference);
@@ -562,9 +604,9 @@ export function PaymentHistory({
   const getProviderImageUrl = useCallback(
     (provider?: string): string => {
       if (!provider) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-        ? PROVIDER_DARK_IMAGE_URLS[provider]
-        : PROVIDER_IMAGE_URLS[provider] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[provider];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[provider] || '';
     },
     [isDark],
   );
@@ -585,10 +627,13 @@ export function PaymentHistory({
     );
   }, []);
 
-  const getPaymentIcon = useCallback((method: string) => {
-    const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
-    return <Icon className="w-4 h-4" />;
-  }, []);
+  const getPaymentIcon = useCallback(
+    (method: string): JSX.Element => {
+      const Icon = PAYMENT_METHOD_ICONS[method] || CreditCard;
+      return <Icon className="w-4 h-4" />;
+    },
+    [],
+  );
 
   /**
    * Human-readable label for the payment method. For MOBILE_MONEY
@@ -611,23 +656,26 @@ export function PaymentHistory({
     [],
   );
 
-  const getStatusIcon = useCallback((status: string) => {
-    switch (status) {
-      case 'PAID':
-        return <CheckCircle className="w-4 h-4" />;
-      case 'PENDING':
-        return <Clock className="w-4 h-4" />;
-      case 'FAILED':
-      case 'DECLINED':
-        return <XCircle className="w-4 h-4" />;
-      case 'REFUNDED':
-        return <ArrowDownRight className="w-4 h-4" />;
-      case 'DISPUTED':
-        return <AlertCircle className="w-4 h-4" />;
-      default:
-        return <AlertCircle className="w-4 h-4" />;
-    }
-  }, []);
+  const getStatusIcon = useCallback(
+    (status: string): JSX.Element => {
+      switch (status) {
+        case 'PAID':
+          return <CheckCircle className="w-4 h-4" />;
+        case 'PENDING':
+          return <Clock className="w-4 h-4" />;
+        case 'FAILED':
+        case 'DECLINED':
+          return <XCircle className="w-4 h-4" />;
+        case 'REFUNDED':
+          return <ArrowDownRight className="w-4 h-4" />;
+        case 'DISPUTED':
+          return <AlertCircle className="w-4 h-4" />;
+        default:
+          return <AlertCircle className="w-4 h-4" />;
+      }
+    },
+    [],
+  );
 
   // ── Derived ──────────────────────────────────────────────────
 
@@ -636,7 +684,9 @@ export function PaymentHistory({
       .map((p) => p.provider)
       .filter((v): v is string => !!v);
     const fromConstants = Object.keys(PROVIDER_NAMES);
-    return Array.from(new Set([...fromConstants, ...fromPage])).sort();
+    return Array.from(new Set([...fromConstants, ...fromPage])).sort(
+      (a, b) => a.localeCompare(b),
+    );
   }, [payments]);
 
   return (
@@ -785,7 +835,6 @@ export function PaymentHistory({
                   <option value="CHECK">Check</option>
                   <option value="PAYPAL">PayPal</option>
                   <option value="FLUTTERWAVE">Flutterwave</option>
-                  <option value="PAYSTACK">Paystack</option>
                   <option value="SQUARE">Square</option>
                 </select>
               </div>
@@ -1075,10 +1124,11 @@ export function PaymentHistory({
                 onClick={() =>
                   setPagination((prev) => ({
                     ...prev,
-                    page: prev.page - 1,
+                    page: Math.max(1, prev.page - 1),
                   }))
                 }
                 disabled={pagination.page === 1}
+                aria-disabled={pagination.page === 1}
                 className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                   isDark
                     ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
@@ -1091,10 +1141,13 @@ export function PaymentHistory({
                 onClick={() =>
                   setPagination((prev) => ({
                     ...prev,
-                    page: prev.page + 1,
+                    page: Math.min(prev.totalPages, prev.page + 1),
                   }))
                 }
                 disabled={pagination.page === pagination.totalPages}
+                aria-disabled={
+                  pagination.page === pagination.totalPages
+                }
                 className={`px-3 py-1 rounded-lg text-sm transition duration-250 disabled:opacity-50 focus-ring ${
                   isDark
                     ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
@@ -1112,7 +1165,15 @@ export function PaymentHistory({
       {showReceiptModal && selectedPayment && (
         <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto custom-scrollbar animate-fade-in">
           <div className="max-w-2xl w-full">
+            {/*
+              Keyed on the payment id so React remounts the receipt
+              when the user switches payments without closing the
+              modal. Resets any internal state (scroll position,
+              transient copy indicator) that would otherwise leak
+              between views.
+            */}
             <PaymentReceipt
+              key={selectedPayment.id}
               payment={{
                 id: selectedPayment.id,
                 reference:

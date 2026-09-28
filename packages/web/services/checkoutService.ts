@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\services\checkoutService.ts
+// packages/web/services/checkoutService.ts
 
 import { api } from './api';
 import type { Sale } from '../types/sale';
@@ -126,6 +126,17 @@ export interface OnlineCheckoutRequest {
   discount?: number;
   notes?: string;
   applyLoyaltyPoints?: boolean;
+  /**
+   * Business unit override.
+   *
+   * The backend resolves the currency (and company, for audit
+   * purposes) from this field when supplied, falling back to
+   * `cart.businessUnitId` otherwise. As of the latest backend
+   * controller rewrite, a caller-supplied value is *dropped* and
+   * the cart's BU wins — the field exists on the wire for forward
+   * compatibility and for admin tooling that needs to override the
+   * BU on a specific sale. Most callers should omit it.
+   */
   businessUnitId?: string;
 
   customerEmail?: string;
@@ -133,6 +144,26 @@ export interface OnlineCheckoutRequest {
   customerName?: string;
   customerAddress?: string;
 
+  /**
+   * Idempotency key.
+   *
+   * ⚠ Strongly recommended. The backend's idempotency short-circuit
+   *   only fires when this key is present. Omit it and every retry
+   *   creates a fresh Sale and a fresh Payment. On the online path
+   *   that means a client retry after a network drop can produce a
+   *   second PaymentIntent (Stripe) or STK push (M-Pesa).
+   *
+   * Prefer a UUID. The backend persists this on
+   * `Sale.idempotencyKey` (a `@unique` column). The web's
+   * `newIdempotencyKey()` from `cartService` produces a UUID and is
+   * the right thing to call here.
+   *
+   * ⚠ Do NOT reuse a key from a previous *successful* attempt on
+   *   the same cart. The backend will short-circuit and return the
+   *   original Sale, which is usually what you want — but if the
+   *   user is deliberately re-checking out after an edit, generate
+   *   a fresh key.
+   */
   idempotencyKey?: string;
 
   returnUrl?: string;
@@ -144,10 +175,18 @@ export interface OnlineCheckoutRequest {
   paymentMethodId?: string;
   /**
    * Gift card code for `paymentMethod === 'GIFT_CARD'`. The service
-   * also mirrors this onto `gatewayId` so backends that expect the
-   * code there resolve it correctly.
+   * also mirrors this onto `gatewayId` in the outgoing payload so
+   * backends that expect the code there resolve it correctly.
    */
   giftCardCode?: string;
+  /**
+   * Backend-compatible gift-card code key. Prefer `giftCardCode` —
+   * this field exists for callers that need to bypass the mirror
+   * (e.g. when both keys carry different values, which is not
+   * recommended). When both are set, the service sends both and the
+   * backend reads `giftCardCode ?? gatewayId`.
+   */
+  gatewayId?: string;
 
   /**
    * Mobile-money provider selector.
@@ -168,6 +207,11 @@ export interface OnlineCheckoutRequest {
 /**
  * Discriminated union describing what the frontend must do next
  * after `POST /checkout/online` returns.
+ *
+ * ⚠ A 409 `IDEMPOTENCY_CANCELLED` response does NOT contain a
+ *   `nextAction` — the request failed at the idempotency layer
+ *   before any gateway call. Detect it with `isIdempotencyConflict`
+ *   and prompt a retry, not by reading `nextAction`.
  */
 export type NextAction =
   | { type: 'CONFIRM_STRIPE'; clientSecret: string }
@@ -285,12 +329,12 @@ export { NotImplementedError };
 //     Showing the raw 409 body to the user is confusing; the UX
 //     should be a "please retry" prompt.
 //
-//   503 M-Pesa not configured
-//     The server is missing M-Pesa credentials. Not retryable from
-//     the client. The message is already user-friendly ("M-Pesa is
-//     not configured. Please contact support.") so it's fine to
-//     surface verbatim, but callers might want to disable the
-//     M-Pesa button.
+//   503 (any message)
+//     The server is missing credentials for the chosen provider.
+//     Not retryable from the client. The message is already
+//     user-friendly ("M-Pesa is not configured. Please contact
+//     support.") so it's fine to surface verbatim, but callers
+//     might want to disable the corresponding method button.
 
 /**
  * True if the thrown error is the "previous idempotency key
@@ -339,6 +383,12 @@ export const checkoutService = {
   /**
    * Create a new checkout from a cart.
    * POST /checkout
+   *
+   * ⚠ Prefer `processCheckout` — it forwards every optional field
+   *   (`cashRegisterId`, `idempotencyKey`, promotion fields, etc.)
+   *   that the backend accepts. This method sends `data` verbatim,
+   *   which works if `CheckoutData` already carries what you need
+   *   but will silently drop anything the type doesn't declare.
    */
   async createCheckout(
     data: CheckoutData,
@@ -349,6 +399,10 @@ export const checkoutService = {
   /**
    * Process an OFFLINE checkout (cash / bank transfer / check).
    * POST /checkout
+   *
+   * Card / PayPal / Flutterwave / Paystack / Square / Mobile Money
+   * are rejected by the backend with a 400 pointing at
+   * `POST /checkout/online`. Use `processOnlineCheckout` for those.
    */
   async processCheckout(
     data: CheckoutData,
@@ -405,6 +459,15 @@ export const checkoutService = {
    * Process an ONLINE checkout (card / PayPal / Flutterwave /
    * Paystack / Square / Mobile Money / M-Pesa / Gift card).
    * POST /checkout/online
+   *
+   * ⚠ `paidAmount` is NOT sent. The backend computes the total from
+   *   the cart, product prices, and loyalty redemption. Sending a
+   *   client-computed total is ignored on this path.
+   *
+   * ⚠ The backend's idempotency short-circuit only fires when
+   *   `idempotencyKey` is present. Prefer `newIdempotencyKey()`
+   *   from `cartService` and store it alongside the in-flight
+   *   attempt so retries reuse it.
    */
   async processOnlineCheckout(
     data: OnlineCheckoutRequest,
@@ -443,6 +506,11 @@ export const checkoutService = {
 
     // Gift card code: sent under both names so backends that read
     // `giftCardCode` and backends that read `gatewayId` both work.
+    // A caller-supplied `gatewayId` wins if present (documented
+    // escape hatch on the request type).
+    if (data.gatewayId !== undefined) {
+      payload.gatewayId = data.gatewayId;
+    }
     if (data.giftCardCode !== undefined) {
       payload.giftCardCode = data.giftCardCode;
       if (payload.gatewayId === undefined) {
@@ -471,20 +539,29 @@ export const checkoutService = {
 
   /**
    * Process checkout with integrated payment.
+   *
+   * ⚠ The backend only returns a `payment` on routes that create
+   *   one. If the response lacks a `payment`, this method throws
+   *   rather than fabricating a `Payment` object — the previous
+   *   behaviour returned a plain object literal that looked like a
+   *   `Payment` but had no `id`, `userId`, or `processedAt`, which
+   *   silently broke every consumer that read those fields.
+   *
+   *   Use `processOnlineCheckout` if you need the payment.
    */
   async processCheckoutWithPayment(
     data: CheckoutData,
   ): Promise<CheckoutWithPaymentResponse> {
     const checkout = await this.processCheckout(data);
 
-    const payment: Payment =
-      checkout.payment ??
-      ({
-        saleId: checkout.sale.id,
-        amount: checkout.receipt.total,
-        paymentMethod: checkout.receipt.paymentMethod,
-        status: 'PAID',
-      } as unknown as Payment);
+    const payment = checkout.payment as Payment | undefined;
+    if (!payment || !payment.id) {
+      throw new Error(
+        'processCheckoutWithPayment: backend did not return a Payment. ' +
+          'Use processOnlineCheckout() for gateway-backed checkouts, or ' +
+          'read checkout.receipt for the offline summary.',
+      );
+    }
 
     return { checkout, payment };
   },
@@ -573,6 +650,10 @@ export const checkoutService = {
     saleId: string,
     data?: VoidCheckoutRequest,
   ): Promise<Sale> {
+    // ⚠ The backend route reads `:id` — this method keeps the
+    //   `saleId` parameter name for backward compatibility with
+    //   existing callers, but the value goes into the URL's `:id`
+    //   segment regardless.
     return api.post<Sale>(`/checkout/${saleId}/void`, data ?? {});
   },
 
@@ -635,6 +716,15 @@ export const checkoutService = {
   // PAYMENT OPERATIONS (POST-CHECKOUT)
   // ============================================
 
+  /**
+   * Record an ADDITIONAL payment against an existing checkout
+   * (split / partial tender).
+   *
+   * ⚠ This is NOT the gateway-call entry point. The initial card /
+   *   PayPal / Flutterwave / Paystack / Mobile Money charge happens
+   *   on `POST /checkout/online`. Use this route only to record a
+   *   second tender against the same sale.
+   */
   async processPayment(
     id: string,
     data: ProcessCheckoutPaymentRequest,
@@ -669,7 +759,7 @@ export const checkoutService = {
     return api.get<CheckoutSummary>(`/checkout/${id}/summary`);
   },
 
-  /** @deprecated Renamed. */
+  /** @deprecated Renamed. Use `getCheckoutSummaryBySale`. */
   async getCheckoutSummary(id: string): Promise<CheckoutSummary> {
     return api.get<CheckoutSummary>(`/checkout/${id}/summary`);
   },
@@ -705,6 +795,16 @@ export const checkoutService = {
     return api.get<CheckoutSettingsResponse>('/checkout/settings');
   },
 
+  /**
+   * Update checkout settings.
+   *
+   * ⚠ The backend validates the body with a `.strict()` schema.
+   *   Unknown keys are rejected with a 400. `CheckoutSettingsUpdate`
+   *   MUST match the backend's accepted key set exactly. If you
+   *   add a field here and it's not on the backend schema, this
+   *   call will start failing where it previously succeeded (the
+   *   old backend controller didn't validate at all).
+   */
   async updateCheckoutSettings(
     settings: CheckoutSettingsUpdate,
   ): Promise<CheckoutSettingsResponse> {
@@ -718,6 +818,12 @@ export const checkoutService = {
   // EXPORT OPERATIONS
   // ============================================
 
+  /**
+   * Export checkouts (admin scope).
+   *
+   * `params` accepts either `dateFrom`/`dateTo` or
+   * `startDate`/`endDate` — the backend controller reads both.
+   */
   async exportCheckouts(
     params?: ExportCheckoutsQuery,
   ): Promise<Blob | CheckoutExportJsonResponse> {
@@ -734,6 +840,12 @@ export const checkoutService = {
     });
   },
 
+  /**
+   * Export checkout data (self-scoped).
+   *
+   * `params` accepts either `dateFrom`/`dateTo` or
+   * `startDate`/`endDate` — the backend controller reads both.
+   */
   async exportCheckoutData(
     params?: ExportCheckoutDataQuery,
   ): Promise<Blob | CheckoutExportJsonResponse> {
@@ -752,6 +864,14 @@ export const checkoutService = {
   // ============================================
   // UNIMPLEMENTED BACKEND ROUTES
   // ============================================
+  //
+  // These methods exist to document backend routes that the web
+  // service has historically referenced but that don't exist on the
+  // server. Calling them throws `NotImplementedError` immediately
+  // with a message that names the missing route. This is safer than
+  // a silent 404 — a compile-time `never` return type catches a
+  // mistaken call at build time, and a loud runtime error names the
+  // exact route a future contributor needs to add.
 
   /** @deprecated Backend has no `POST /checkout/validate`. */
   async validateCheckout(

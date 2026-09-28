@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\types\checkout.ts
+// packages/web/types/checkout.ts
 
 import type { Sale } from './sale';
 import type { Payment } from './payment';
@@ -10,6 +10,9 @@ import type { PaymentMethod } from '../services/saleService';
 
 /**
  * Discount category stored on `Sale.discountType`.
+ *
+ * Matches the 9-value enum the backend validates against
+ * (`DISCOUNT_TYPE_VALUES` in `shared/src/schemas/checkout.ts`).
  */
 export type DiscountType =
   | 'PERCENTAGE'
@@ -23,7 +26,8 @@ export type DiscountType =
   | 'TIERED';
 
 /**
- * Payment method identifier accepted by `POST /checkout`.
+ * Payment method identifier accepted by `POST /checkout` and
+ * `POST /checkout/online`.
  *
  * Mirrors `CANONICAL_PAYMENT_METHODS` from
  * `checkoutController.ts`. The service normalizes alias forms
@@ -56,6 +60,11 @@ export type CanonicalPaymentMethod =
 
 /**
  * Sale status returned on list responses and checkout receipts.
+ *
+ * Mirrors Prisma's `SaleStatus` enum. If a status is added to the
+ * schema, add it here too — the backend's `PUT /checkout/:id`
+ * accepts any value in the enum, and the web type must match or
+ * the admin UI can't reach the new state.
  */
 export type CheckoutSaleStatus =
   | 'PENDING'
@@ -69,8 +78,11 @@ export type CheckoutSaleStatus =
 
 /**
  * Payment status on a `Payment` row.
+ *
+ * Mirrors Prisma's `PaymentStatus` enum.
  */
 export type CheckoutPaymentStatus =
+  | 'UNPAID'
   | 'PENDING'
   | 'PAID'
   | 'FAILED'
@@ -80,17 +92,42 @@ export type CheckoutPaymentStatus =
   | 'AUTHORIZED'
   | 'DECLINED';
 
+/**
+ * Mobile-money sub-provider the frontend selects when
+ * `paymentMethod === 'MOBILE_MONEY'`. Sent to the backend as
+ * `mobileMoneyProvider` so it routes to the right gateway.
+ *
+ * When omitted, the backend defaults to `'MPESA'`.
+ */
+export type MobileMoneyProvider = 'MPESA' | 'MTN' | 'AIRTEL';
+
 // ============================================
 // REQUEST SHAPES
 // ============================================
 
 /**
  * Body accepted by `POST /checkout`.
+ *
+ * ⚠ `POST /checkout` is the OFFLINE path (cash / bank transfer /
+ *   check). Card / PayPal / Flutterwave / Paystack / Square /
+ *   Mobile Money must go through `POST /checkout/online` — the
+ *   backend rejects them here with a 400. The gateway-specific
+ *   fields on this type are declared for forward compatibility and
+ *   because the service's payload builder forwards them uniformly;
+ *   they are ignored on the offline path.
  */
 export interface CheckoutData {
   // ── Required ─────────────────────────────────────────────
   cartId: string;
-  paymentMethod: PaymentMethod;
+  /**
+   * Canonical payment method. The service normalizes aliases to
+   * Prisma enum values before writing.
+   *
+   * Widened from `PaymentMethod` to `CanonicalPaymentMethod |
+   * PaymentMethod` so callers can pass any value the backend
+   * accepts, not just the narrower `saleService` union.
+   */
+  paymentMethod: CanonicalPaymentMethod | PaymentMethod;
   paidAmount: number;
 
   // ── Customer ─────────────────────────────────────────────
@@ -112,6 +149,15 @@ export interface CheckoutData {
   applyLoyaltyPoints?: boolean;
 
   // ── Business unit ────────────────────────────────────────
+  /**
+   * Business-unit override.
+   *
+   * The backend resolves the currency and companyId from the
+   * cart's own BU. The controller accepts this field for forward
+   * compatibility but (as of the latest rewrite) drops it and
+   * uses `cart.businessUnitId`. Declared here so callers don't
+   * have to `as any` when they set it.
+   */
   businessUnitId?: string;
 
   // ── Idempotency ──────────────────────────────────────────
@@ -122,12 +168,17 @@ export interface CheckoutData {
   promotionCode?: string | null;
   promotionDiscount?: number;
 
-  // ── Gateway-specific (online checkout) ───────────────────
+  // ── Gateway-specific (forward-compat / online path) ──────
   /**
    * Square card nonce from the Square Web SDK. Required when
    * `paymentMethod === 'SQUARE'`. Ignored for every other method.
    */
   cardNonce?: string;
+  /**
+   * Stripe PaymentMethod id (pm_xxx) for server-side confirmation.
+   * Ignored on the offline path.
+   */
+  paymentMethodId?: string;
   /**
    * Gift card code for `paymentMethod === 'GIFT_CARD'`. The
    * backend's `GiftCardProviderHandler` reads it as `gatewayId`.
@@ -135,6 +186,23 @@ export interface CheckoutData {
    * backends that expect it there.
    */
   giftCardCode?: string;
+  /**
+   * Legacy gift-card code key. Prefer `giftCardCode` — the service
+   * mirrors it automatically. Declared here so a caller that has
+   * to send the raw backend-compatible key doesn't need a cast.
+   */
+  gatewayId?: string;
+  /**
+   * Mobile-money provider selector. Only meaningful when
+   * `paymentMethod === 'MOBILE_MONEY'`.
+   */
+  mobileMoneyProvider?: MobileMoneyProvider;
+
+  // ── Gateway redirect URLs ────────────────────────────────
+  /** Redirect target after a successful gateway flow. */
+  returnUrl?: string;
+  /** Redirect target after a cancelled gateway flow. */
+  cancelUrl?: string;
 
   // ── Client-only hint ─────────────────────────────────────
   savePaymentMethod?: boolean;
@@ -142,6 +210,10 @@ export interface CheckoutData {
 
 /**
  * Subset accepted by `POST /checkout/:id/items`.
+ *
+ * ⚠ `unitPrice` is deliberately NOT accepted — the backend looks
+ *   it up from `Product.unitPrice` / `ProductVariant.price`.
+ *   Accepting it from the client was a fraud vector.
  */
 export interface AddCheckoutItemRequest {
   productId: string;
@@ -151,6 +223,9 @@ export interface AddCheckoutItemRequest {
 
 /**
  * Subset accepted by `PUT /checkout/:id/items/:itemId`.
+ *
+ * The backend also accepts a bare integer body for backwards
+ * compatibility; this wrapper shape is the canonical form.
  */
 export interface UpdateCheckoutItemRequest {
   quantity: number;
@@ -158,9 +233,15 @@ export interface UpdateCheckoutItemRequest {
 
 /**
  * Body accepted by `POST /checkout/:id/pay`.
+ *
+ * ⚠ This is NOT the gateway-call entry point. It records an
+ *   ADDITIONAL payment against an existing checkout (split /
+ *   partial tender). The initial charge happens on
+ *   `POST /checkout/online`.
  */
 export interface ProcessCheckoutPaymentRequest {
-  paymentMethod: PaymentMethod;
+  paymentMethod: CanonicalPaymentMethod | PaymentMethod;
+  /** Must be strictly positive — zero-amount splits are rejected. */
   amount: number;
   paymentDetails?: Record<string, unknown>;
 }
@@ -187,7 +268,10 @@ export interface CancelCheckoutRequest {
 }
 
 /**
- * Body accepted by `POST /checkout/:saleId/void`.
+ * Body accepted by `POST /checkout/:id/void`.
+ *
+ * Distinct from cancel — void reverses inventory, loyalty, and
+ * payments; cancel only marks the Sale `CANCELLED`.
  */
 export interface VoidCheckoutRequest {
   reason?: string;
@@ -195,20 +279,15 @@ export interface VoidCheckoutRequest {
 
 /**
  * Body accepted by `PUT /checkout/:id`.
+ *
+ * ⚠ The status enums mirror Prisma exactly. The previous shape
+ *   allowed `'VOIDED'` (which doesn't exist) and rejected
+ *   legitimate values like `'VOID'`, `'REFUNDED'`, `'ON_HOLD'`.
+ *   An admin couldn't reach those states via this endpoint.
  */
 export interface UpdateCheckoutRequest {
-  status?:
-    | 'PENDING'
-    | 'PROCESSING'
-    | 'COMPLETED'
-    | 'CANCELLED'
-    | 'VOIDED';
-  paymentStatus?:
-    | 'PENDING'
-    | 'PAID'
-    | 'FAILED'
-    | 'REFUNDED'
-    | 'PARTIAL';
+  status?: CheckoutSaleStatus;
+  paymentStatus?: CheckoutPaymentStatus;
   notes?: string;
 }
 
@@ -218,9 +297,14 @@ export interface UpdateCheckoutRequest {
 export interface GetCheckoutsQuery {
   page?: number;
   limit?: number;
-  status?: string;
-  paymentStatus?: string;
+  status?: CheckoutSaleStatus | string;
+  paymentStatus?: CheckoutPaymentStatus | string;
   customerId?: string;
+  /**
+   * Business-unit scope. The backend forwards this to the service's
+   * where-clause; omitting it returns every BU the caller can see.
+   */
+  businessUnitId?: string;
   dateFrom?: string;
   dateTo?: string;
   search?: string;
@@ -234,8 +318,13 @@ export interface GetCheckoutsQuery {
 export interface GetCheckoutHistoryQuery {
   page?: number;
   limit?: number;
-  status?: string;
+  status?: CheckoutSaleStatus | string;
   customerId?: string;
+  /**
+   * Business-unit scope. The backend forwards this to the service's
+   * where-clause; omitting it returns every BU the caller can see.
+   */
+  businessUnitId?: string;
   startDate?: string;
   endDate?: string;
   search?: string;
@@ -243,6 +332,10 @@ export interface GetCheckoutHistoryQuery {
 
 /**
  * Query accepted by `GET /checkout/customer/:customerId/history`.
+ *
+ * The route is role-gated (Manager+ on the backend router) and the
+ * controller additionally scopes by the caller's company when
+ * `req.user.companyId` is populated.
  */
 export interface GetCustomerCheckoutHistoryQuery {
   page?: number;
@@ -260,22 +353,58 @@ export interface GetCheckoutStatsQuery {
 
 /**
  * Query accepted by `GET /checkout/export/all`.
+ *
+ * ⚠ The backend controller reads either `dateFrom`/`dateTo` OR
+ *   `startDate`/`endDate` from the query. Both pairs are declared
+ *   here so callers can use whichever naming matches the rest of
+ *   their code without a cast.
+ *
+ * ⚠ `format` is CSV or JSON only. The backend does not implement
+ *   an Excel generator — sending `format: 'excel'` would fall
+ *   through to the CSV branch and produce a `.csv` payload with
+ *   an `.xlsx` filename, which Excel then refuses to open. Excel
+ *   will be re-added to this union when the backend implements
+ *   the generator.
  */
 export interface ExportCheckoutsQuery {
   format?: 'csv' | 'json';
   dateFrom?: string;
   dateTo?: string;
+  startDate?: string;
+  endDate?: string;
   businessUnitId?: string;
+  /**
+   * Optional status filter. Applied server-side by the export
+   * handler.
+   *
+   * **Omit the field** (do not send `'all'`) to export every
+   * status — the backend schema rejects `'all'` as an unknown
+   * enum value and returns a 400. Callers should send
+   * `status: undefined` for the "no filter" case, which is what
+   * the checkout history page does.
+   */
+  status?: CheckoutSaleStatus | string;
 }
 
 /**
  * Query accepted by `GET /checkout/export`.
+ *
+ * ⚠ Accepts both date-param naming pairs — see
+ *   `ExportCheckoutsQuery`.
+ *
+ * ⚠ `format` is CSV or JSON only, same as the admin-scoped export.
  */
 export interface ExportCheckoutDataQuery {
   format?: 'csv' | 'json';
   startDate?: string;
   endDate?: string;
-  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  /**
+   * Optional status filter. Applied server-side. Omit for "no
+   * filter" — see `ExportCheckoutsQuery.status`.
+   */
+  status?: CheckoutSaleStatus | string;
 }
 
 // ============================================
@@ -289,10 +418,29 @@ export interface CheckoutPagination {
   limit: number;
 }
 
+/**
+ * List response envelope.
+ *
+ * ⚠ `withLegacyListAccessors` (in `services/checkoutService.ts`)
+ *   installs non-enumerable getters for `total`, `page`,
+ *   `totalPages`, and `limit` on the runtime object. They're
+ *   declared here as optional so consumers can read either
+ *   `response.pagination.total` or `response.total` without a
+ *   type error, and so the deprecation is documented at the type
+ *   level.
+ */
 export interface CheckoutListResponse<T> {
   success: true;
   data: T[];
   pagination: CheckoutPagination;
+  /** @deprecated Read `pagination.total`. */
+  total?: number;
+  /** @deprecated Read `pagination.page`. */
+  page?: number;
+  /** @deprecated Read `pagination.totalPages`. */
+  totalPages?: number;
+  /** @deprecated Read `pagination.limit`. */
+  limit?: number;
 }
 
 export interface CheckoutSingleResponse<T> {
@@ -319,6 +467,14 @@ export interface CheckoutReceipt {
   promotionDiscount?: number;
   loyaltyPointsUsed?: number;
   loyaltyDiscount?: number;
+
+  /**
+   * Resolved currency for the sale (ISO 4217). Populated by the
+   * backend's currency resolver — from the business unit's
+   * `currency` column, falling back to `DEFAULT_CURRENCY` and
+   * then the registry default.
+   */
+  currency?: string | null;
 }
 
 export interface CheckoutReceiptItem {
@@ -353,6 +509,18 @@ export interface CheckoutSummary {
   loyaltyPointsRedeemable: number;
   maxLoyaltyDiscount: number;
   customerId?: string;
+
+  /**
+   * Resolved currency for the cart's business unit (ISO 4217).
+   * Populated by `checkoutService.getCheckoutSummary` from the
+   * same resolution chain as `CheckoutReceipt.currency`.
+   */
+  currency?: string;
+  /**
+   * Display symbol for `currency`, from the currency registry.
+   * Falls back to the ISO code when the registry has no symbol.
+   */
+  currencySymbol?: string;
 }
 
 export interface CheckoutSummaryItem {
@@ -363,6 +531,24 @@ export interface CheckoutSummaryItem {
   total: number;
 }
 
+/**
+ * Dashboard statistics shape.
+ *
+ * ⚠ This type describes a shape the backend has never actually
+ *   returned. The backend's `checkoutService.getCheckoutStats`
+ *   returns `{ totalSales, totalRevenue, totalTax, totalDiscount,
+ *   averageOrderValue, topProducts, salesByPaymentMethod,
+ *   salesByDate, recentSales }`. Whoever consumes this type is
+ *   reading fields that will be `undefined` at runtime.
+ *
+ *   Do NOT trust this interface without confirming against
+ *   `checkoutService.getCheckoutStats` in the backend. Fixing the
+ *   divergence requires a coordinated change to every consumer and
+ *   is out of scope for this file's rewrite.
+ *
+ * @deprecated Shape does not match the backend response. Verify
+ *   before using.
+ */
 export interface CheckoutStats {
   summary: {
     totalRevenue: number;
@@ -414,13 +600,30 @@ export interface PaymentMethodOption {
   description?: string;
 }
 
+/**
+ * Checkout settings stored on `BusinessUnit.settings` as a JSON
+ * blob.
+ *
+ * ⚠ `currencyCode` and `currencySymbol` are derived by the backend
+ *   from the currency registry on every read — they are not
+ *   persistent values. When `updateCheckoutSettings` merges a
+ *   caller-supplied patch into the existing settings, the merged
+ *   object is what lands in the DB, so passing a currency here
+ *   *will* override the registry-derived default on subsequent
+ *   reads. Only set them if you intend to pin the display currency
+ *   for this BU.
+ *
+ * ⚠ The backend's `updateCheckoutSettings` validates the patch
+ *   against a strict schema. Every field on `CheckoutSettings`
+ *   is accepted; unknown keys are rejected with a 400.
+ */
 export interface CheckoutSettings {
   allowPartialPayment: boolean;
   requireCustomer: boolean;
   requireSignature: boolean;
   maxDiscount: number;
   taxInclusive: boolean;
-  defaultPaymentMethod: PaymentMethod;
+  defaultPaymentMethod: CanonicalPaymentMethod | PaymentMethod;
   receiptFooter: string;
   loyaltyPointsEnabled: boolean;
   pointsPerDollar: number;
@@ -455,6 +658,7 @@ export interface CheckoutSettingsResponse {
 export interface CheckoutExportJsonResponse {
   success: true;
   data: Sale[];
+  /** Total number of rows the export produced. */
   total: number;
 }
 
@@ -464,10 +668,12 @@ export interface CheckoutExportJsonResponse {
 
 /**
  * @deprecated The backend does not expose `POST /checkout/validate`.
+ *   Preserved for backwards compatibility with callers that still
+ *   reference the type.
  */
 export interface ValidateCheckoutRequest {
   cartId: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: CanonicalPaymentMethod | PaymentMethod;
   paidAmount: number;
 }
 
@@ -482,6 +688,8 @@ export interface ValidateCheckoutResponse {
 
 /**
  * @deprecated The backend does not expose `POST /checkout/calculate`.
+ *   Use `checkoutService.getCheckoutSummary(cartId)` instead — it
+ *   computes the same totals server-side without a dedicated route.
  */
 export interface CalculateTotalsRequest {
   items: Array<{

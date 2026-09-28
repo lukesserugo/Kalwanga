@@ -1,8 +1,14 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\checkout\stats\page.tsx
+// packages/web/app/(dashboard)/admin/checkout/stats/page.tsx
 
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import {
   BarChart3,
@@ -27,7 +33,10 @@ import {
   type CheckoutStats,
   type GetCheckoutStatsQuery,
 } from '../../../../../services/checkoutService';
-import { formatCurrency, formatDate } from '../../../../../utils/formatters';
+import {
+  formatCurrency,
+  formatDate,
+} from '../../../../../utils/formatters';
 import { toast } from '../../../../../utils/toast-manager';
 
 // ============================================
@@ -48,6 +57,12 @@ type DateRangeOption =
  * The backend `GET /checkout/stats/summary` accepts `dateFrom` and
  * `dateTo` — there is no `range` parameter. Sending one was silently
  * ignored and every request returned all-time stats.
+ *
+ * For every named range, `dateTo` is normalised to the END of the
+ * current day (23:59:59.999 local). The start is normalised to the
+ * START of the target day. This gives consistent boundaries across
+ * ranges — a "Last 30 Days" request at 14:37 covers through end of
+ * today, not just up to 14:37.
  */
 function resolveRange(
   range: DateRangeOption,
@@ -58,9 +73,13 @@ function resolveRange(
 
   if (range === 'custom') {
     if (!customStart || !customEnd) return { dateFrom: null, dateTo: null };
+    const start = new Date(customStart);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(customEnd);
+    end.setHours(23, 59, 59, 999);
     return {
-      dateFrom: new Date(customStart).toISOString(),
-      dateTo: new Date(customEnd).toISOString(),
+      dateFrom: start.toISOString(),
+      dateTo: end.toISOString(),
     };
   }
 
@@ -74,15 +93,23 @@ function resolveRange(
       break;
     case 'week':
       start.setDate(start.getDate() - 7);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       break;
     case 'month':
       start.setMonth(start.getMonth() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       break;
     case 'quarter':
       start.setMonth(start.getMonth() - 3);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       break;
     case 'year':
       start.setFullYear(start.getFullYear() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
       break;
   }
 
@@ -181,7 +208,13 @@ export default function AdminCheckoutStatsPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permissionLoading, canViewStats, dateRange, customStartDate, customEndDate]);
+  }, [
+    permissionLoading,
+    canViewStats,
+    dateRange,
+    customStartDate,
+    customEndDate,
+  ]);
 
   const handleRefresh = useCallback(() => {
     void loadStats('refresh');
@@ -200,9 +233,9 @@ export default function AdminCheckoutStatsPage() {
         return;
       }
 
-      // The stats endpoint does not have its own export; we export the
-      // underlying rows via `exportCheckouts` and let the caller inspect
-      // the summary separately.
+      // The stats endpoint does not have its own export; we export
+      // the underlying rows via `exportCheckouts` and let the caller
+      // inspect the summary separately.
       const result = await checkoutService.exportCheckouts({
         format: 'csv',
         dateFrom,
@@ -278,7 +311,7 @@ export default function AdminCheckoutStatsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view checkout statistics.
+          You don&apos;t have permission to view checkout statistics.
         </p>
         <button
           type="button"
@@ -350,7 +383,9 @@ export default function AdminCheckoutStatsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <select
             value={dateRange}
-            onChange={(e) => setDateRange(e.target.value as DateRangeOption)}
+            onChange={(e) =>
+              setDateRange(e.target.value as DateRangeOption)
+            }
             className="px-4 py-2 rounded-lg border bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="today">Today</option>
@@ -577,10 +612,10 @@ export default function AdminCheckoutStatsPage() {
                       index === 0
                         ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400'
                         : index === 1
-                        ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
-                        : index === 2
-                        ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
-                        : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+                          ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                          : index === 2
+                            ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                            : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
                     }`}
                   >
                     {index + 1}

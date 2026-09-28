@@ -1,3 +1,5 @@
+// packages/web/app/(dashboard)/admin/payments/page.tsx
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -193,50 +195,38 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   SQUARE: CreditCard,
 };
 
-// Working provider logo URLs. `FLUTTERWAVE` was pointing at a
-// non-existent `.svg`; the `.png` below is the one that actually
-// loads (matches every other component in this app).
+/**
+ * Local icon paths under `packages/web/public/`. Add one SVG per
+ * code to restore the images. Until then, the `<Image>` onError
+ * handler hides the broken image and the emoji from
+ * `PROVIDER_CONFIGS` renders.
+ *
+ * ⚠ No external CDN dependencies — every request stays on the
+ *   deployment's own origin.
+ */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PROVIDER_CONFIGS: Record<
   string,
@@ -341,8 +331,10 @@ const PROVIDER_NAMES: Record<string, string> = {
   VODAFONE: 'Vodafone',
 };
 
-// The backend auto-seeds these on first call, so this list is only a
-// fallback for the very first paint (or when the API is unreachable).
+/**
+ * The backend auto-seeds these on first call, so this list is only a
+ * fallback for the very first paint (or when the API is unreachable).
+ */
 const DEFAULT_PROVIDERS: PaymentProviderStatus[] = [
   {
     id: 'default_cash',
@@ -736,8 +728,6 @@ export default function AdminPaymentsPage() {
         params.businessUnitId = filters.businessUnitId;
       if (search) params.search = search;
 
-      // Custom date range overrides the preset range. Only one of
-      // the two is ever sent, so the backend sees a single source.
       if (filters.startDate || filters.endDate) {
         if (filters.startDate) params.startDate = filters.startDate;
         if (filters.endDate) params.endDate = filters.endDate;
@@ -749,8 +739,6 @@ export default function AdminPaymentsPage() {
 
       const response = await paymentService.getPayments(params);
 
-      // Prefer the canonical `pagination` shape, fall back to the
-      // legacy flattened fields.
       const items: Payment[] = Array.isArray(response.data)
         ? (response.data as unknown as Payment[])
         : [];
@@ -765,8 +753,6 @@ export default function AdminPaymentsPage() {
           limit: response.limit,
         } as const);
 
-      // Functional update so we never clobber a concurrent page
-      // change with a stale snapshot.
       setPagination((prev) => ({
         ...prev,
         page: paginationData.page || prev.page,
@@ -872,9 +858,6 @@ export default function AdminPaymentsPage() {
     }
   }, []);
 
-  // Load on mount and whenever a scalar filter changes. Individual
-  // dependencies (not the `filters` object) so typing in the search
-  // box doesn't trigger a refetch until Enter or Apply.
   useEffect(() => {
     if (!canViewPayments) return;
     void loadPayments();
@@ -937,9 +920,6 @@ export default function AdminPaymentsPage() {
         },
       );
 
-      // Use the backend's echoed amount if present, otherwise the
-      // local value. They should be equal, but the backend is the
-      // source of truth.
       const refunded =
         (result as any)?.refundedAmount ?? refundAmount;
       toast.success(
@@ -982,7 +962,6 @@ export default function AdminPaymentsPage() {
           return;
         }
 
-        // Optimistic flip.
         setProviders((prev) =>
           prev.map((p) =>
             p.id === providerId ? { ...p, isActive: !currentStatus } : p,
@@ -1002,7 +981,6 @@ export default function AdminPaymentsPage() {
           );
           await loadProviders();
         } else {
-          // Roll back.
           setProviders((prev) =>
             prev.map((p) =>
               p.id === providerId ? { ...p, isActive: currentStatus } : p,
@@ -1158,9 +1136,9 @@ export default function AdminPaymentsPage() {
   const getProviderImageUrl = useCallback(
     (provider?: string): string => {
       if (!provider) return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[provider]
-        ? PROVIDER_DARK_IMAGE_URLS[provider]
-        : PROVIDER_IMAGE_URLS[provider] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[provider];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[provider] || '';
     },
     [isDark],
   );
@@ -1359,8 +1337,8 @@ export default function AdminPaymentsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view payments. Please contact your
-          administrator.
+          You don&apos;t have permission to view payments. Please contact
+          your administrator.
         </p>
         <button
           onClick={() => router.push('/dashboard')}
@@ -2816,6 +2794,7 @@ export default function AdminPaymentsPage() {
         <div className="fixed inset-0 z-modal flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto animate-fade-in">
           <div className="max-w-2xl w-full">
             <PaymentReceipt
+              key={selectedPayment.id}
               payment={{
                 id: selectedPayment.id,
                 reference:

@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(public)\checkout\page.tsx
+// packages/web/app/(public)/checkout/page.tsx
 
 'use client';
 
@@ -286,8 +286,14 @@ export default function CheckoutPage() {
     [cart?.total],
   );
 
+  /**
+   * Mobile-money methods. `MPESA` is a mobile-money *provider*
+   * (handled by `mobileProvider`), not a top-level payment method
+   * on this page — the selector always emits `MOBILE_MONEY` for
+   * the mobile branch.
+   */
   const isMobileMethod = useMemo(
-    () => paymentMethod === 'MOBILE_MONEY' || paymentMethod === 'MPESA',
+    () => paymentMethod === 'MOBILE_MONEY',
     [paymentMethod],
   );
 
@@ -297,6 +303,16 @@ export default function CheckoutPage() {
       paymentMethod === 'DEBIT_CARD' ||
       paymentMethod === 'SQUARE',
     [paymentMethod],
+  );
+
+  /**
+   * Whether the checkout summary reports any redeemable loyalty
+   * points. Fed into `applyLoyaltyPoints` on the online-checkout
+   * payload so the backend applies the discount server-side.
+   */
+  const shouldApplyLoyalty = useMemo(
+    () => (summary?.loyaltyPointsRedeemable ?? 0) > 0,
+    [summary?.loyaltyPointsRedeemable],
   );
 
   const buildReturnUrl = useCallback(
@@ -409,6 +425,27 @@ export default function CheckoutPage() {
     }
   }, [cart?.id, cart?.items.length, loadSummary]);
 
+  // Reset promotion-applied state when the cart identity changes.
+  // Otherwise the "Applied" label persists across a cart mutation
+  // even though the code may no longer be valid.
+  useEffect(() => {
+    setPromotionApplied(false);
+    setPromotionCode(cart?.promotionCode ?? '');
+    setPromotionError(null);
+  }, [cart?.id, cart?.promotionCode]);
+
+  // Warn (once) when the cart lacks a business unit. The backend
+  // resolves the payment currency from that id; without it, the
+  // platform default applies.
+  useEffect(() => {
+    if (!cart) return;
+    if (cart.businessUnitId) return;
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[checkout] Cart is missing businessUnitId. The backend will fall back to DEFAULT_CURRENCY.',
+    );
+  }, [cart]);
+
   // ============================================
   // AUTO-OPEN CUSTOMER FORM
   // ============================================
@@ -480,7 +517,21 @@ export default function CheckoutPage() {
           const sale = await checkoutService.getCheckoutById(saleId);
           if (!isMountedRef.current) return;
 
-          if (sale.status === 'COMPLETED') {
+          // Success signal 1: the Sale row flipped to COMPLETED.
+          // Success signal 2: a Payment on the Sale is PAID even
+          // if the Sale row hasn't been updated yet. The backend
+          // writes both in a transaction, but a partial write (or
+          // a webhook that updated the Payment and then crashed)
+          // is possible. Treating the Payment as authoritative
+          // avoids a stuck polling loop on a successfully paid
+          // order.
+          const hasPaidPayment =
+            Array.isArray((sale as any).payments) &&
+            (sale as any).payments.some(
+              (p: any) => p?.status === 'PAID',
+            );
+
+          if (sale.status === 'COMPLETED' || hasPaidPayment) {
             stopPolling();
             setAwaitingConfirmation(false);
 
@@ -533,6 +584,18 @@ export default function CheckoutPage() {
   // ============================================
   // REDIRECT RETURN-LEG
   // ============================================
+  //
+  // Runs whenever the URL search params change. Handles the case
+  // where the user returns from PayPal, Flutterwave, or any other
+  // redirect-based provider with a `token` / `reference` /
+  // `tx_ref` / `paymentId` / `saleId` in the URL, or when a
+  // stashed `pending_checkout_sale_id` is present in session
+  // storage from before the redirect.
+  //
+  // Keyed on `searchParams.toString()` so a re-render with the
+  // same URL doesn't re-run it, but a real navigation does.
+
+  const searchParamsKey = searchParams.toString();
 
   useEffect(() => {
     const returnToken =
@@ -580,7 +643,7 @@ export default function CheckoutPage() {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParamsKey]);
 
   // ============================================
   // HANDLERS
@@ -677,7 +740,7 @@ export default function CheckoutPage() {
           cartId: cart.id,
           customerId: cart.customerId || undefined,
           paymentMethod,
-          applyLoyaltyPoints: false,
+          applyLoyaltyPoints: shouldApplyLoyalty,
           businessUnitId: cart.businessUnitId,
           customerEmail: customerEmail.trim() || undefined,
           customerPhone: customerPhone.trim() || undefined,
@@ -721,7 +784,7 @@ export default function CheckoutPage() {
         cartId: cart.id,
         customerId: cart.customerId || undefined,
         paymentMethod,
-        applyLoyaltyPoints: false,
+        applyLoyaltyPoints: shouldApplyLoyalty,
         businessUnitId: cart.businessUnitId,
         customerEmail: customerEmail.trim() || undefined,
         customerPhone: customerPhone.trim() || undefined,
@@ -732,6 +795,8 @@ export default function CheckoutPage() {
         cancelUrl: buildCancelUrl(),
         promotionCode: cart.promotionCode ?? undefined,
         promotionDiscount: cart.promotionDiscount ?? undefined,
+        mobileMoneyProvider:
+          paymentMethod === 'MOBILE_MONEY' ? mobileProvider : undefined,
       });
 
       if (!isMountedRef.current) return;
@@ -836,7 +901,7 @@ export default function CheckoutPage() {
     customerAddress,
     isAuthenticated,
     isCardMethod,
-    isMobileMethod,
+    shouldApplyLoyalty,
     mobileProvider,
     startPollingSale,
     finalTotal,
@@ -1397,7 +1462,6 @@ export default function CheckoutPage() {
                 >
                   <PaymentForm
                     amount={finalTotal}
-                    currency="USD"
                     paymentMethod={paymentMethod}
                     provider="STRIPE"
                     customerId={cart.customerId}

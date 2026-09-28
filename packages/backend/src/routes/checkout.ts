@@ -1,250 +1,127 @@
-// D:\Projects\Kalwanga\packages\backend\src\routes\checkout.ts
+// packages/backend/src/routes/checkout.ts
 
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
-import { UserRole } from '../generated/prisma/index.js';
+import {
+  UserRole,
+  SaleStatus,
+  PaymentStatus,
+} from '../generated/prisma/index.js';
 import checkoutController from '../controllers/checkoutController.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { z } from 'zod';
 
+// ============================================
+// SHARED SCHEMAS
+// ============================================
+//
+// Every request schema lives in the shared package so the web app,
+// the mobile app, and this router validate against the exact same
+// shape. The route file no longer re-declares any of them — the
+// previous local copies drifted (e.g. a `z.string().uuid()` on
+// `idempotencyKey` that would have rejected the web service's
+// `pos_<cuid>` keys, and a `'VOIDED'` enum value that doesn't
+// exist in Prisma).
+//
+// Imported here:
+//   createCheckoutSchema       offline create body
+//   onlineCheckoutSchema       online create body
+//   getCheckoutsSchema         list query params
+//   addCheckoutItemSchema      add-item body
+//   updateCheckoutItemSchema   update-quantity body
+//   applyDiscountSchema        discount-code body
+//   mobileMoneyProviderSchema  MPESA | MTN | AIRTEL | undefined
+//   DISCOUNT_TYPE_VALUES       9-value discount enum
+//   paymentMethodSchema        canonical method string
+
+import {
+  createCheckoutSchema,
+  onlineCheckoutSchema,
+  getCheckoutsSchema,
+  addCheckoutItemSchema,
+  updateCheckoutItemSchema,
+  applyDiscountSchema,
+  mobileMoneyProviderSchema,
+  DISCOUNT_TYPE_VALUES,
+  paymentMethodSchema,
+} from '../../../shared/src/schemas/checkout.js';
+
 const router = Router();
 
 // ============================================
-// CANONICAL PAYMENT METHODS
+// LOCAL SCHEMAS
 // ============================================
 //
-// Mirrors `CANONICAL_PAYMENT_METHODS` in
-// `../controllers/checkoutController.ts` and
-// `../services/checkoutService.ts`. The three must stay in sync.
-
-const CANONICAL_PAYMENT_METHODS = [
-  'CASH',
-  'CARD',
-  'CREDIT_CARD',
-  'DEBIT_CARD',
-  'MOBILE_MONEY',
-  'MOBILE',
-  'MPESA',
-  'BANK_TRANSFER',
-  'BANK',
-  'GIFT_CARD',
-  'GIFT',
-  'LOYALTY_POINTS',
-  'LOYALTY',
-  'WALLET',
-  'SPLIT',
-  'MIXED',
-  'OTHER',
-  'PAYPAL',
-  'FLUTTERWAVE',
-  'PAYSTACK',
-  'SQUARE',
-  'CHECK',
-] as const;
-
-const CANONICAL_PAYMENT_METHODS_SET = new Set<string>(
-  CANONICAL_PAYMENT_METHODS,
-);
-
-const paymentMethodSchema = z
-  .string()
-  .min(1, 'Payment method is required')
-  .transform((v) => v.trim().toUpperCase())
-  .refine((v) => CANONICAL_PAYMENT_METHODS_SET.has(v), {
-    message: `Unsupported payment method. Accepted: ${CANONICAL_PAYMENT_METHODS.join(
-      ', ',
-    )}`,
-  });
-
-// ============================================
-// DISCOUNT TYPE
-// ============================================
-
-const DISCOUNT_TYPE_VALUES = [
-  'PERCENTAGE',
-  'FIXED',
-  'LOYALTY',
-  'MANUAL',
-  'BUY_X_GET_Y',
-  'FREE_SHIPPING',
-  'BOGO',
-  'BUNDLE',
-  'TIERED',
-] as const;
-
-// ============================================
-// VALIDATION SCHEMAS
-// ============================================
-//
-// ⚠ Each of these schemas MUST stay in lock-step with its counterpart
-// in `../controllers/checkoutController.ts` and
-// `../services/checkoutService.ts`.
+// Only schemas that are genuinely route-local (i.e. not shared with
+// another consumer) live here. They build on the shared
+// `paymentMethodSchema` and `DISCOUNT_TYPE_VALUES` so the canonical
+// value lists stay in one place.
 
 /**
- * Create-checkout body schema (offline / POS).
+ * Body for `PUT /checkout/:id`.
  *
- * ⚠ The route-level schema is deliberately NOT applied by
- * `validateRequest` on the two create endpoints. The controller runs
- * its own `.parse()` and the two schemas must match exactly. Running
- * `validateRequest` here would double-parse and produce a transformed
- * body that the controller then fails to recognize.
- *
- * Kept here so the schema lives next to the route for reference and
- * so a future contributor can see the canonical shape.
+ * ⚠ The status enums use `z.nativeEnum` against the Prisma
+ *   `SaleStatus` / `PaymentStatus` enums. Hand-written string
+ *   unions drift — the previous version allowed `'VOIDED'`, which
+ *   does not exist in `SaleStatus`, and rejected legitimate values
+ *   like `'VOID'` and `'REFUNDED'`, so an admin couldn't reach
+ *   those statuses via this endpoint at all.
  */
-const createCheckoutSchema = z.object({
-  cartId: z.string().min(1, 'Cart ID is required'),
-  customerId: z.string().optional(),
-  paymentMethod: paymentMethodSchema,
-  paidAmount: z
-    .number()
-    .nonnegative('Paid amount must be zero or greater'),
-  discount: z.number().min(0, 'Discount cannot be negative').optional(),
-  notes: z.string().optional(),
-  cashRegisterId: z.string().optional(),
-  cashRegisterSessionId: z.string().optional(),
-  applyLoyaltyPoints: z.boolean().default(false),
-  businessUnitId: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().optional(),
-  customerName: z.string().optional(),
-  customerAddress: z.string().optional(),
-  idempotencyKey: z.string().uuid().optional(),
-
-  // Gateway-specific (used by the online path, harmless on the
-  // offline path — the service ignores what it doesn't need).
-  returnUrl: z.string().url().optional(),
-  cancelUrl: z.string().url().optional(),
-  cardNonce: z.string().optional(),
-  paymentMethodId: z.string().optional(),
-
-  // Gift-card specific. The frontend sends the code under both
-  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
-  // name); the service reads either.
-  giftCardCode: z.string().optional(),
-  gatewayId: z.string().optional(),
-
-  // Promotion / loyalty passthrough
-  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
-  promotionCode: z.string().nullable().optional(),
-  promotionDiscount: z.number().min(0).optional(),
-});
+const updateCheckoutSchema = z
+  .object({
+    status: z.nativeEnum(SaleStatus).optional(),
+    paymentStatus: z.nativeEnum(PaymentStatus).optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .strict();
 
 /**
- * Online-checkout body schema (gateway-backed).
+ * Body for `POST /checkout/:id/pay`.
  *
- * Same canonical fields as `createCheckoutSchema` MINUS `paidAmount`
- * (the server computes it), PLUS the gateway-specific passthroughs:
- *   - returnUrl / cancelUrl   for redirect-based providers
- *   - cardNonce               for Square
- *   - paymentMethodId         for server-side Stripe confirmation
- *   - giftCardCode / gatewayId for Gift Card redemption
- *
- * The controller's `onlineCheckoutSchema` is the authoritative gate;
- * this copy exists to keep the two schemas side-by-side and to catch
- * drift in code review.
+ * `paymentMethod` uses the same canonical list as every other
+ * create-payment path. `amount` must be strictly positive (a 0-amount
+ * split payment makes no sense and would flip the Sale's status
+ * without moving money). `paymentDetails` is intentionally opaque.
  */
-const onlineCheckoutSchema = z.object({
-  cartId: z.string().min(1, 'Cart ID is required'),
-  customerId: z.string().optional(),
-  paymentMethod: paymentMethodSchema,
-  discount: z.number().min(0, 'Discount cannot be negative').optional(),
-  notes: z.string().optional(),
-  applyLoyaltyPoints: z.boolean().default(false),
-  businessUnitId: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().optional(),
-  customerName: z.string().optional(),
-  customerAddress: z.string().optional(),
-  idempotencyKey: z.string().uuid().optional(),
+const processPaymentSchema = z
+  .object({
+    paymentMethod: paymentMethodSchema,
+    amount: z.number().finite().positive(),
+    paymentDetails: z.record(z.string(), z.any()).optional(),
+  })
+  .strict();
 
-  // Gateway-specific
-  returnUrl: z.string().url().optional(),
-  cancelUrl: z.string().url().optional(),
-  cardNonce: z.string().optional(),
-  paymentMethodId: z.string().optional(),
+const cancelCheckoutSchema = z
+  .object({
+    reason: z.string().max(500).optional(),
+  })
+  .strict();
 
-  // Gift-card specific. The frontend sends the code under both
-  // `giftCardCode` (natural name) and `gatewayId` (backend-compatible
-  // name); the service reads either.
-  giftCardCode: z.string().optional(),
-  gatewayId: z.string().optional(),
+const voidCheckoutSchema = z
+  .object({
+    reason: z.string().max(500).optional(),
+  })
+  .strict();
 
-  // Promotion / loyalty passthrough
-  discountType: z.enum(DISCOUNT_TYPE_VALUES).nullable().optional(),
-  promotionCode: z.string().nullable().optional(),
-  promotionDiscount: z.number().min(0).optional(),
-});
+const emailReceiptSchema = z
+  .object({
+    email: z.string().email('Invalid email address').max(320).optional(),
+  })
+  .strict();
 
-const getCheckoutsSchema = z.object({
-  page: z.string().optional().default('1'),
-  limit: z.string().optional().default('20'),
-  status: z.string().optional(),
-  paymentStatus: z.string().optional(),
-  customerId: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-  search: z.string().optional(),
-  sortBy: z.string().optional().default('saleDate'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-});
-
-const updateCheckoutSchema = z.object({
-  status: z
-    .enum(['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'VOIDED'])
-    .optional(),
-  paymentStatus: z
-    .enum(['PENDING', 'PAID', 'FAILED', 'REFUNDED', 'PARTIAL'])
-    .optional(),
-  notes: z.string().optional(),
-});
-
-const processPaymentSchema = z.object({
-  paymentMethod: paymentMethodSchema,
-  amount: z.number().nonnegative('Amount must be zero or greater'),
-  paymentDetails: z.record(z.string(), z.any()).optional(),
-});
-
-const cancelCheckoutSchema = z.object({
-  reason: z.string().optional(),
-});
-
-const voidCheckoutSchema = z.object({
-  reason: z.string().optional(),
-});
-
-/**
- * Add-item body schema.
- *
- * ⚠ `unitPrice` is intentionally NOT accepted. The server looks up
- * the authoritative price from `Product.unitPrice` / `ProductVariant.price`.
- * Accepting it from the client was a fraud vector. Kept identical to
- * the controller's `addItemSchema`.
- */
-const addItemSchema = z.object({
-  productId: z.string().min(1, 'Product ID is required'),
-  variantId: z.string().optional(),
-  quantity: z.number().int().positive('Quantity must be positive'),
-});
-
-const updateItemSchema = z.object({
-  quantity: z.number().int().positive(),
-});
-
-const discountSchema = z.object({
-  code: z.string().min(1, 'Discount code is required'),
-});
-
-const emailReceiptSchema = z.object({
-  email: z.string().email('Invalid email address').optional(),
-});
-
-const exportCheckoutsSchema = z.object({
-  format: z.enum(['csv', 'json']).optional().default('csv'),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-  businessUnitId: z.string().optional(),
-});
+const exportCheckoutsSchema = z
+  .object({
+    format: z.enum(['csv', 'json', 'excel']).optional().default('csv'),
+    // Accept both date-param naming conventions; the controller
+    // reads either from the query string, so the schema is a
+    // passthrough for either shape.
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    businessUnitId: z.string().optional(),
+  })
+  .strict();
 
 // ============================================
 // CHECKOUT ROUTES
@@ -258,6 +135,15 @@ const exportCheckoutsSchema = z.object({
 // `/customer/...`, `/receipt/...`) MUST be registered BEFORE the
 // `/:id` wildcard, otherwise `/:id` will swallow the literal segment
 // as if it were an ID and the more specific handler will never run.
+//
+// This file follows a stricter convention than Express requires:
+//   • All literal-prefix routes first.
+//   • Then all `/:id/<subpath>` routes (more specific).
+//   • Then the bare `/:id` routes (least specific).
+//
+// The `/:id/<subpath>` group is registered before `/:id` even though
+// Express would match them correctly in either order, because any
+// future `/:id/<newsubpath>` addition must not be shadowed by `/:id`.
 
 // ============================================
 // CREATE
@@ -285,8 +171,8 @@ const exportCheckoutsSchema = z.object({
  *   `validateRequest` here because the middleware's Zod parse
  *   produces a transformed object (paymentMethod uppercased,
  *   applyLoyaltyPoints defaulted) and the controller then re-parses
- *   that transformed shape with the raw schema — a double-parse that
- *   has been the source of the "Required (undefined)" 400s.
+ *   that transformed shape — a double-parse that has historically
+ *   produced "Required (undefined)" 400s.
  *
  * @auth Required (any authenticated user — this is the public web
  *       checkout)
@@ -301,20 +187,16 @@ router.post(
  * POST /checkout
  * Create a new checkout from cart (offline / POS / cash).
  *
- * ⚠ Validation is performed by the controller's own `checkoutSchema`
- *   parse. We deliberately do NOT run `validateRequest` here — see
- *   the note on the `/online` route above.
+ * ⚠ Validation is performed by the controller's own
+ *   `createCheckoutSchema` parse. We deliberately do NOT run
+ *   `validateRequest` here — see the note on `/online` above.
  *
  * @auth Required
  */
-router.post(
-  '/',
-  requireAuth,
-  checkoutController.createCheckout,
-);
+router.post('/', requireAuth, checkoutController.createCheckout);
 
 // ============================================
-// LIST / READ
+// LIST / READ — LITERAL PREFIXES
 // ============================================
 
 /**
@@ -345,6 +227,14 @@ router.get(
 /**
  * GET /checkout/history
  * Get checkout history with filters.
+ *
+ * ⚠ Not role-gated at the router. The controller forwards the
+ *   `businessUnitId` query param to the service (which scopes the
+ *   where-clause) — callers that omit it get every BU they can see.
+ *   If your `req.user` carries a `companyId`, the service-level
+ *   scope is sufficient. If it doesn't, add `requireRole([...])`
+ *   here to prevent cross-tenant reads.
+ *
  * @auth Required
  */
 router.get(
@@ -388,18 +278,31 @@ router.put(
 
 /**
  * GET /checkout/export
- * Export checkout data.
+ * Export checkout data (self-scoped by the controller).
+ *
+ * ⚠ Validated against the same schema as `/export/all` so the two
+ *   export endpoints don't drift. Previously this route had no
+ *   validation at all while `/export/all` did, which meant
+ *   `/export?format=excel` got through while `/export/all?format=excel`
+ *   was a 400.
+ *
  * @auth Required
  */
 router.get(
   '/export',
   requireAuth,
+  validateRequest(exportCheckoutsSchema),
   checkoutController.exportCheckoutData,
 );
 
 /**
  * GET /checkout/export/all
  * Export checkouts.
+ *
+ * ⚠ Registered AFTER `/export` so Express doesn't shadow `/export`
+ *   with this more specific route. Express matches literal segments
+ *   before wildcards, but the ordering also documents intent.
+ *
  * @auth Required (Admin/SuperAdmin only)
  */
 router.get(
@@ -413,11 +316,22 @@ router.get(
 /**
  * GET /checkout/customer/:customerId/history
  * Get customer checkout history.
- * @auth Required
+ *
+ * ⚠ Role-gated at the router (Manager+) so a Viewer or Employee
+ *   can't enumerate customerIds and read purchase history. The
+ *   controller also performs a company-scope check when
+ *   `req.user.companyId` is populated.
+ *
+ * @auth Required — Manager+
  */
 router.get(
   '/customer/:customerId/history',
   requireAuth,
+  requireRole([
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+  ]),
   checkoutController.getCustomerCheckoutHistory,
 );
 
@@ -437,9 +351,7 @@ router.get(
  * Get a cart-scoped checkout summary (subtotal, tax, discount,
  * total, loyalty info) for the given cart.
  *
- * This route MUST appear before the `/:id` wildcard. Express matches
- * in registration order, and `/:id` would happily accept the literal
- * segment `summary` as an ID, breaking this endpoint.
+ * This route MUST appear before the `/:id` wildcard.
  *
  * @auth Required
  */
@@ -450,22 +362,12 @@ router.get(
 );
 
 // ============================================
-// PARAMETERIZED ROUTES
+// `/:id/<subpath>` ROUTES
 // ============================================
 //
-// ⚠ Everything below this line uses a `/:id` or `/:saleId` wildcard.
-//   Never register a literal-prefix route after this point.
-
-/**
- * GET /checkout/:id
- * Get checkout by ID.
- * @auth Required
- */
-router.get(
-  '/:id',
-  requireAuth,
-  checkoutController.getCheckoutById,
-);
+// Every route in this block has at least one path segment after the
+// `:id`. Registered before the bare `/:id` routes so a future
+// subpath addition can't be shadowed.
 
 /**
  * GET /checkout/:id/summary
@@ -505,19 +407,6 @@ router.get(
 );
 
 /**
- * PUT /checkout/:id
- * Update checkout.
- * @auth Required (Admin/SuperAdmin only)
- */
-router.put(
-  '/:id',
-  requireAuth,
-  requireRole([UserRole.ADMIN, UserRole.SUPER_ADMIN]),
-  validateRequest(updateCheckoutSchema),
-  checkoutController.updateCheckout,
-);
-
-/**
  * PUT /checkout/:id/items/:itemId
  * Update checkout item quantity.
  * @auth Required
@@ -525,7 +414,7 @@ router.put(
 router.put(
   '/:id/items/:itemId',
   requireAuth,
-  validateRequest(updateItemSchema),
+  validateRequest(updateCheckoutItemSchema),
   checkoutController.updateCheckoutItem,
 );
 
@@ -538,11 +427,21 @@ router.put(
  *   `POST /checkout/online`. Use this route only to record a second
  *   tender against the same sale.
  *
- * @auth Required
+ * ⚠ Role-gated to Cashier+ — this writes a `Payment` row and can
+ *   flip the Sale to `COMPLETED`, so it must not be reachable by
+ *   any authenticated caller.
+ *
+ * @auth Required — Cashier+
  */
 router.post(
   '/:id/pay',
   requireAuth,
+  requireRole([
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.CASHIER,
+  ]),
   validateRequest(processPaymentSchema),
   checkoutController.processPayment,
 );
@@ -550,17 +449,31 @@ router.post(
 /**
  * POST /checkout/:id/complete
  * Complete checkout.
- * @auth Required
+ *
+ * ⚠ Role-gated to Manager+ — this force-completes a sale regardless
+ *   of whether the payment is settled.
+ *
+ * @auth Required — Manager+
  */
 router.post(
   '/:id/complete',
   requireAuth,
+  requireRole([
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+  ]),
   checkoutController.completeCheckout,
 );
 
 /**
  * POST /checkout/:id/cancel
  * Cancel checkout.
+ *
+ * Unlike `POST /:id/void`, cancelling does NOT reverse inventory,
+ * loyalty, or payments — it only marks the Sale `CANCELLED`. Use
+ * `void` when the sale had already been fulfilled.
+ *
  * @auth Required
  */
 router.post(
@@ -574,15 +487,16 @@ router.post(
  * POST /checkout/:id/items
  * Add item to checkout.
  *
- * ⚠ `unitPrice` is NOT accepted from the client. The service looks up
- * the authoritative price from the database.
+ * ⚠ `unitPrice` is NOT accepted from the client. The service looks
+ *   up the authoritative price from the database. Accepting it was
+ *   a fraud vector.
  *
  * @auth Required
  */
 router.post(
   '/:id/items',
   requireAuth,
-  validateRequest(addItemSchema),
+  validateRequest(addCheckoutItemSchema),
   checkoutController.addCheckoutItem,
 );
 
@@ -594,7 +508,7 @@ router.post(
 router.post(
   '/:id/discount',
   requireAuth,
-  validateRequest(discountSchema),
+  validateRequest(applyDiscountSchema),
   checkoutController.applyDiscount,
 );
 
@@ -611,12 +525,21 @@ router.post(
 );
 
 /**
- * POST /checkout/:saleId/void
+ * POST /checkout/:id/void
  * Void checkout (reverse sale).
+ *
+ * Reverses inventory, loyalty, and payments. Distinct from
+ * `POST /:id/cancel`, which only marks the Sale `CANCELLED`.
+ *
+ * ⚠ The controller reads `req.params.id`. If you must keep
+ *   `:saleId` for backwards compatibility with an external caller,
+ *   rename this segment and update `checkoutController.voidCheckout`
+ *   to read `req.params.saleId` — do not change both partially.
+ *
  * @auth Required (Admin/SuperAdmin only)
  */
 router.post(
-  '/:saleId/void',
+  '/:id/void',
   requireAuth,
   requireRole([UserRole.ADMIN, UserRole.SUPER_ADMIN]),
   validateRequest(voidCheckoutSchema),
@@ -643,6 +566,39 @@ router.delete(
   '/:id/discount',
   requireAuth,
   checkoutController.removeDiscount,
+);
+
+// ============================================
+// BARE `/:id` ROUTES
+// ============================================
+//
+// ⚠ These are the least specific routes. Nothing below this line
+//   may have a literal-prefix first segment (e.g. `/foo/:id`) or a
+//   `/:id/<subpath>` shape — anything that does must be registered
+//   above, or `/:id` will shadow it.
+
+/**
+ * GET /checkout/:id
+ * Get checkout by ID.
+ * @auth Required
+ */
+router.get(
+  '/:id',
+  requireAuth,
+  checkoutController.getCheckoutById,
+);
+
+/**
+ * PUT /checkout/:id
+ * Update checkout.
+ * @auth Required (Admin/SuperAdmin only)
+ */
+router.put(
+  '/:id',
+  requireAuth,
+  requireRole([UserRole.ADMIN, UserRole.SUPER_ADMIN]),
+  validateRequest(updateCheckoutSchema),
+  checkoutController.updateCheckout,
 );
 
 /**

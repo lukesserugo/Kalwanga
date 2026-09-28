@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\components\payment\PaymentReceipt.tsx
+// packages/web/components/payment/PaymentReceipt.tsx
 
 'use client';
 
@@ -23,12 +23,10 @@ import {
   Gift,
   Star,
   Landmark,
+  type LucideIcon,
 } from 'lucide-react';
 import { useThemeStore } from '../../app/stores/themeStore';
-import {
-  formatCurrency,
-  formatDateTime,
-} from '../../utils/formatters';
+import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { toast } from '../../utils/toast-manager';
 
 // ============================================
@@ -92,12 +90,15 @@ interface PaymentReceiptProps {
  * or to the legacy top-level `provider` field. Used to decide
  * whether `gatewayId` is safe to consult — in practice it's a
  * PaymentGateway row FK, not a provider code.
+ *
+ * ⚠ PAYSTACK has been removed from this project. Historical
+ *   receipts with `metadata.provider: 'PAYSTACK'` will fail the
+ *   lookup and fall through to the generic method label.
  */
 const KNOWN_PROVIDER_CODES = new Set<string>([
   'STRIPE',
   'PAYPAL',
   'FLUTTERWAVE',
-  'PAYSTACK',
   'SQUARE',
   'MPESA',
   'MTN',
@@ -112,51 +113,41 @@ const KNOWN_PROVIDER_CODES = new Set<string>([
   'CHECK',
 ]);
 
+/**
+ * Local icon paths under `packages/web/public/`. Add one SVG per
+ * code to restore the images. Until then, the `<Image>` onError
+ * handler hides the broken image and the provider name renders as
+ * plain text.
+ *
+ * ⚠ No external CDN dependencies — every request stays on the
+ *   deployment's own origin.
+ */
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY:
-    'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MPESA: '/icons/payments/mpesa.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  PAYSTACK: 'https://paystack.com/assets/images/logo-white.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MPESA: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  MTN: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  AIRTEL: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  TIGO: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  VODAFONE: 'https://cdn-icons-png.flaticon.com/512/825/825507.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY:
-    'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
-const PAYMENT_METHOD_ICONS: Record<string, any> = {
+const PAYMENT_METHOD_ICONS: Record<string, LucideIcon> = {
   CASH: Banknote,
   CREDIT_CARD: CreditCard,
   DEBIT_CARD: Wallet,
@@ -167,7 +158,6 @@ const PAYMENT_METHOD_ICONS: Record<string, any> = {
   CHECK: FileText,
   PAYPAL: Globe,
   FLUTTERWAVE: Globe,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
   MPESA: Smartphone,
   MTN: Smartphone,
@@ -187,7 +177,6 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CHECK: 'Check',
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
-  PAYSTACK: 'Paystack',
   SQUARE: 'Square',
   MPESA: 'M-Pesa',
   MTN: 'MTN Mobile Money',
@@ -205,7 +194,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   LOYALTY_POINTS: 'Loyalty Points',
   PAYPAL: 'PayPal',
   FLUTTERWAVE: 'Flutterwave',
-  PAYSTACK: 'Paystack',
   SQUARE: 'Square',
   MPESA: 'M-Pesa',
   MTN: 'MTN Mobile Money',
@@ -241,7 +229,7 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 // ============================================
 
 /**
- * Resolve the provider name from the receipt. Priority:
+ * Resolve the provider code from the receipt. Priority:
  *   1. Top-level `provider` — if it's a known code.
  *   2. `metadata.provider` — the canonical location.
  *   3. `gatewayId` — ONLY if it's a known code.
@@ -270,19 +258,23 @@ function resolveProvider(
  * backend writes different keys depending on which gateway handled
  * the payment:
  *
- *   M-Pesa      → metadata.checkoutRequestId
+ *   M-Pesa       → metadata.checkoutRequestId
+ *                  metadata.mpesaResult.CheckoutRequestID
  *   MTN / Airtel → metadata.mobileMoneyResult.transactionId
- *   Stripe      → metadata.gatewayResponse.id
- *   PayPal      → metadata.gatewayResponse.id
- *   Flutterwave → metadata.gatewayResponse.txRef
- *   Paystack    → metadata.gatewayResponse.reference
- *   Square      → metadata.gatewayResponse.payment.id
+ *                  metadata.transactionId
+ *   Stripe       → metadata.gatewayResponse.id
+ *                  metadata.paymentIntent.id
+ *   PayPal       → metadata.gatewayResponse.id
+ *   Flutterwave  → metadata.gatewayResponse.txRef
+ *   Square       → metadata.gatewayResponse.payment.id
  */
 function resolveProviderReference(
   payment: PaymentReceiptData,
 ): string | undefined {
   const meta = payment.metadata ?? {};
 
+  // Direct top-level keys — the common path for mobile money and
+  // anything that records `transactionId` on the Payment itself.
   const direct =
     (typeof meta.checkoutRequestId === 'string'
       ? meta.checkoutRequestId
@@ -293,6 +285,18 @@ function resolveProviderReference(
 
   if (direct) return direct;
 
+  // M-Pesa callback payload.
+  const mpesaResult = meta.mpesaResult as
+    | { CheckoutRequestID?: unknown }
+    | undefined;
+  if (
+    mpesaResult &&
+    typeof mpesaResult.CheckoutRequestID === 'string'
+  ) {
+    return mpesaResult.CheckoutRequestID;
+  }
+
+  // MTN / Airtel callback payload.
   const moneyResult = meta.mobileMoneyResult as
     | { transactionId?: unknown }
     | undefined;
@@ -303,16 +307,31 @@ function resolveProviderReference(
     return moneyResult.transactionId;
   }
 
+  // Stripe PaymentIntent object stored raw.
+  const paymentIntent = meta.paymentIntent as
+    | { id?: unknown }
+    | undefined;
+  if (paymentIntent && typeof paymentIntent.id === 'string') {
+    return paymentIntent.id;
+  }
+
+  // Generic gateway response — try each key in priority order.
   const gateway = meta.gatewayResponse as
     | Record<string, unknown>
     | undefined;
   if (gateway) {
-    for (const key of [
-      'id',
-      'reference',
-      'txRef',
-      'transactionId',
-    ]) {
+    // Square nests the payment under `gatewayResponse.payment.id`.
+    const squarePayment = gateway.payment as
+      | { id?: unknown }
+      | undefined;
+    if (
+      squarePayment &&
+      typeof squarePayment.id === 'string'
+    ) {
+      return squarePayment.id;
+    }
+
+    for (const key of ['id', 'reference', 'txRef', 'transactionId']) {
       const value = gateway[key];
       if (typeof value === 'string') return value;
     }
@@ -343,9 +362,9 @@ export function PaymentReceipt({
 
   const providerImageUrl = useMemo(() => {
     if (!providerCode) return '';
-    return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-      ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-      : PROVIDER_IMAGE_URLS[providerCode] || '';
+    const dark = PROVIDER_DARK_IMAGE_URLS[providerCode];
+    if (isDark && dark) return dark;
+    return PROVIDER_IMAGE_URLS[providerCode] || '';
   }, [providerCode, isDark]);
 
   const providerName = useMemo(
@@ -408,7 +427,9 @@ export function PaymentReceipt({
     toast.success('Receipt copied to clipboard');
     setTimeout(() => setCopied(false), 3000);
   }, [
-    payment,
+    payment.amount,
+    payment.processedAt,
+    payment.status,
     receiptLabel,
     methodLabel,
     providerName,
@@ -426,6 +447,7 @@ export function PaymentReceipt({
       currency: payment.currency,
       paymentMethod: payment.paymentMethod,
       provider: providerCode,
+      providerName: providerName || null,
       providerReference: providerReference || null,
       status: payment.status,
       date: payment.processedAt,
@@ -448,7 +470,13 @@ export function PaymentReceipt({
     URL.revokeObjectURL(url);
 
     toast.success('Receipt downloaded');
-  }, [payment, providerCode, providerReference, receiptLabel]);
+  }, [
+    payment,
+    providerCode,
+    providerName,
+    providerReference,
+    receiptLabel,
+  ]);
 
   // ── Render ───────────────────────────────────────────────────
 

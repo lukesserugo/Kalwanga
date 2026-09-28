@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\components\payment\PaymentMethodSelector.tsx
+// packages/web/components/payment/PaymentMethodSelector.tsx
 
 'use client';
 
@@ -8,15 +8,12 @@ import {
   CreditCard,
   Banknote,
   Wallet,
-  Building,
-  QrCode,
   Gift,
   Star,
   CheckCircle,
   ChevronDown,
   ChevronUp,
   Info,
-  AlertCircle,
   Smartphone,
   Landmark,
   Shield,
@@ -47,7 +44,22 @@ export interface PaymentMethod {
   description: string;
   enabled: boolean;
   requiresDetails?: boolean;
-  provider?: PaymentProvider;
+  /**
+   * Provider identifier.
+   *
+   * ⚠ Typed as `PaymentProvider | string` because two conventions
+   *   are in circulation in this codebase:
+   *
+   *     • `PaymentProvider.STRIPE` — the lowercase enum value
+   *       from `services/paymentService.ts`.
+   *     • `'STRIPE'` — the uppercase code the backend uses in
+   *       `PaymentProviderEnum` and in `metadata.provider`.
+   *
+   *   `getProviderConfig` normalizes both to uppercase before
+   *   lookup, so either form resolves. A caller that has one and
+   *   needs the other doesn't have to cast.
+   */
+  provider?: PaymentProvider | string;
   providerName?: string;
   providerImageUrl?: string;
   providerDarkImageUrl?: string;
@@ -79,50 +91,39 @@ interface PaymentMethodSelectorProps {
 }
 
 // ============================================
-// CONSTANTS - EXACT PROVIDER IMAGE URLs
+// PROVIDER IMAGES
 // ============================================
+//
+// Local asset paths under `packages/web/public/`. Add one SVG per
+// code to restore the images. Until then, the `<Image>` onError
+// handler creates an emoji fallback from `PROVIDER_CONFIGS`.
+//
+// ⚠ No external CDN dependencies — every request stays on the
+//   deployment's own origin.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PROVIDER_CONFIGS: Record<
   string,
@@ -302,6 +303,21 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
 ];
 
 // ============================================
+// DISABLE-REASON METADATA
+// ============================================
+//
+// Centralizes the mapping from a disable reason to the short
+// badge label. Adding a new disable reason in `getDisabledReason`
+// means adding one entry here.
+
+const DISABLE_BADGE_LABELS: Record<string, string> = {
+  'Coming soon': 'Soon',
+  'Not available': 'Off',
+  'Provider unavailable': 'Offline',
+  'Not configured — ask an admin to enable it': 'Setup',
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -320,13 +336,10 @@ export function PaymentMethodSelector({
   // ── Derived lists ────────────────────────────────────────────
 
   /**
-   * Methods that are selectable right now. A method is unselectable
-   * when:
-   *   - `enabled` is false
-   *   - `comingSoon` is true
-   *   - `isHealthy` is explicitly false
-   *   - `configured` is explicitly false AND the caller opted in to
-   *     configuration-gating via `respectConfiguration`
+   * Methods with `enabled === true`. This is the pool that the
+   * grid iterates over. A method that's enabled but unhealthy or
+   * unconfigured still counts toward the total — the disable
+   * state is rendered per-tile, not filtered here.
    */
   const enabledMethods = useMemo(
     () => availableMethods.filter((m) => m.enabled),
@@ -355,9 +368,18 @@ export function PaymentMethodSelector({
     [isDark],
   );
 
+  /**
+   * Resolve the `PROVIDER_CONFIGS` entry for a method's provider.
+   *
+   * ⚠ The `provider` field may arrive as either the lowercase
+   *   `PaymentProvider` enum value (`'stripe'`) or the uppercase
+   *   backend code (`'STRIPE'`). Normalize to uppercase before
+   *   lookup so both forms resolve.
+   */
   const getProviderConfig = useCallback((providerCode?: string) => {
     if (!providerCode) return null;
-    return PROVIDER_CONFIGS[providerCode] || null;
+    const key = providerCode.toUpperCase();
+    return PROVIDER_CONFIGS[key] || null;
   }, []);
 
   const getMethodCategory = useCallback(
@@ -398,7 +420,8 @@ export function PaymentMethodSelector({
 
   /**
    * Compute why a tile is unselectable, or `null` if it's fine.
-   * Used to drive the tooltip and disabled styling.
+   * Used to drive the tooltip, the disabled styling, and the
+   * short badge label.
    */
   const getDisabledReason = useCallback(
     (method: PaymentMethod): string | null => {
@@ -513,6 +536,9 @@ export function PaymentMethodSelector({
               const isDisabled = disabledReason !== null;
               const providerConfig = getProviderConfig(method.provider);
               const imageUrl = getProviderImageUrl(method);
+              const badgeLabel = disabledReason
+                ? DISABLE_BADGE_LABELS[disabledReason] ?? 'Off'
+                : null;
 
               return (
                 <button
@@ -551,20 +577,28 @@ export function PaymentMethodSelector({
                           height={36}
                           className="rounded object-contain"
                           onError={(e) => {
-                            (
-                              e.target as HTMLImageElement
-                            ).style.display = 'none';
-                            const parent = (
-                              e.target as HTMLImageElement
-                            ).parentElement;
-                            if (parent) {
-                              const fallback =
-                                document.createElement('span');
-                              fallback.className = 'text-2xl';
-                              fallback.textContent =
-                                providerConfig?.icon || '💳';
-                              parent.appendChild(fallback);
+                            const img = e.target as HTMLImageElement;
+                            img.style.display = 'none';
+                            const parent = img.parentElement;
+                            if (!parent) return;
+
+                            // Only append the fallback once. On a
+                            // re-render (theme toggle changes the
+                            // image src), the handler runs again
+                            // — without this guard a second span
+                            // would accumulate in the DOM.
+                            if (
+                              parent.querySelector('[data-fallback]')
+                            ) {
+                              return;
                             }
+                            const fallback =
+                              document.createElement('span');
+                            fallback.setAttribute('data-fallback', '');
+                            fallback.className = 'text-2xl';
+                            fallback.textContent =
+                              providerConfig?.icon || '💳';
+                            parent.appendChild(fallback);
                           }}
                         />
                       ) : (
@@ -604,17 +638,11 @@ export function PaymentMethodSelector({
                       </span>
                     )}
 
-                    {/* New: non-"coming soon" disable reasons get
-                        their own badge so users see why the tile is
-                        greyed out. */}
                     {!method.comingSoon &&
-                      disabledReason !== null && (
+                      disabledReason !== null &&
+                      badgeLabel !== null && (
                         <span className="absolute top-2 right-2 text-2xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded-md">
-                          {disabledReason === 'Provider unavailable'
-                            ? 'Offline'
-                            : disabledReason === 'Not configured — ask an admin to enable it'
-                              ? 'Setup'
-                              : 'Off'}
+                          {badgeLabel}
                         </span>
                       )}
 

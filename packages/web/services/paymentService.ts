@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\services\paymentService.ts
+// packages/web/services/paymentService.ts
 
 import { api } from './api';
 import {
@@ -60,6 +60,28 @@ export type MobileMoneyProvider = 'MTN' | 'AIRTEL' | 'MPESA';
 export interface ProviderPaymentRequest extends ProcessPaymentRequest {
   provider?: PaymentProvider;
   cardNonce?: string; // For Square
+  /**
+   * Business unit the payment belongs to. The backend uses this
+   * to resolve the currency when `currency` is omitted — it reads
+   * `businessUnit.currency`, falling through to
+   * `process.env.DEFAULT_CURRENCY` and then the registry default.
+   *
+   * Without this, the backend can only apply the platform default,
+   * which is wrong for any deployment that isn't the one the
+   * default was chosen for.
+   */
+  businessUnitId?: string;
+  /**
+   * Caller-supplied idempotency key. The backend's
+   * `Payment.idempotencyKey` column is `@unique`; two concurrent
+   * requests with the same key produce one Payment, not two.
+   *
+   * If omitted, the backend derives a deterministic key from the
+   * payment's salient fields. Pass one explicitly when you have a
+   * stronger source (a UUID, a client-generated key, the checkout
+   * page's key).
+   */
+  idempotencyKey?: string;
   metadata?: {
     provider?: string;
     phoneNumber?: string;
@@ -261,6 +283,18 @@ export interface CreatePaymentIntentRequest {
   description?: string;
   metadata?: Record<string, string>;
   customerId?: string;
+  /**
+   * Forwarded to Stripe as the `Idempotency-Key` request option.
+   * Without it, a client-side retry (network drop, timeout)
+   * creates a second PaymentIntent and double-charges the
+   * customer.
+   *
+   * Mirrors `CreatePaymentIntentRequest` in
+   * `packages/web/types/payment.ts` and the backend's
+   * `createPaymentIntentSchema`, both of which already declare
+   * this field.
+   */
+  idempotencyKey?: string;
 }
 
 export interface CreatePaymentIntentResponse {
@@ -300,6 +334,16 @@ export interface MpesaSTKPushRequest {
   customerId?: string;
   businessUnitId?: string;
   idempotencyKey?: string;
+  /**
+   * Optional. M-Pesa is currency-locked to the country of the
+   * shortcode (KE → KES, TZ → TZS, …). The backend's
+   * `mpesaSTKPushSchema` does not declare this field, and
+   * `mobileMoneyService` overrides whatever the caller sends with
+   * the country config. Declared here so a caller can pass it
+   * without a TS2353 excess-property error; the backend will
+   * ignore it.
+   */
+  currency?: string;
 }
 
 export interface MpesaSTKPushResponse {
@@ -490,7 +534,28 @@ export interface ProcessOrderPaymentInput {
   customerId?: string;
   cashRegisterId?: string;
   cashRegisterSessionId?: string;
+  /**
+   * Optional. When omitted, the backend resolves the currency from
+   * the business unit (or, failing that, the platform default).
+   *
+   * Do NOT default this to `'USD'` on the client — that is exactly
+   * the bug the backend's `resolveCurrency` was written to fix.
+   * A Ugandan deployment charging a Ugandan customer must default
+   * to UGX, or MTN/Airtel reject the request outright.
+   */
   currency?: string;
+  /**
+   * Business unit the sale belongs to. Forwarded to the backend so
+   * currency resolution can read `businessUnit.currency`.
+   */
+  businessUnitId?: string;
+  /**
+   * Stable idempotency key. If omitted, the service uses
+   * `pos_${saleId}` — a deterministic, timestamp-free key so a
+   * retry of the same sale returns the original Payment row
+   * instead of double-charging.
+   */
+  idempotencyKey?: string;
   description?: string;
   metadata?: Record<string, any>;
   tipAmount?: number;
@@ -510,6 +575,12 @@ export interface InitiateMpesaSTKPushInput {
   customerId?: string;
   businessUnitId?: string;
   idempotencyKey?: string;
+  /**
+   * Optional. M-Pesa ignores this — the shortcode country is
+   * authoritative. Declared so callers can pass it without a
+   * TS2353 excess-property error. See `MpesaSTKPushRequest`.
+   */
+  currency?: string;
 }
 
 // ============================================
@@ -665,6 +736,10 @@ export const paymentService = {
       provider: data.provider,
       phoneNumber: data.phoneNumber,
       amount: data.amount,
+      // `currency` is forwarded only when the caller supplied one.
+      // MTN/Airtel derive it from their country config, so a
+      // mismatched value here is logged and discarded by the
+      // backend, never sent to the provider.
       currency: data.currency,
       reference: data.reference,
       description: data.description,
@@ -1227,7 +1302,17 @@ export const paymentService = {
       customerId,
       cashRegisterId,
       cashRegisterSessionId,
-      currency = 'USD',
+      // ── CHANGED ────────────────────────────────────────────
+      // Was `currency = 'USD'`. That literal was the client half
+      // of the same bug the backend just fixed: a Ugandan
+      // deployment charging a Ugandan customer would send USD,
+      // MTN/Airtel would reject it, and the operator would have
+      // no idea why. Now we forward only what the caller
+      // supplied and let the backend's `resolveCurrency` apply
+      // the business-unit → env → registry-default walk.
+      currency,
+      businessUnitId,
+      idempotencyKey,
       description,
       metadata,
       tipAmount,
@@ -1246,11 +1331,38 @@ export const paymentService = {
       amount,
       paymentMethod,
       saleId,
-      currency,
       description: description ?? `Payment for sale ${saleId}`,
       metadata: enrichedMetadata,
-      idempotencyKey: `pos_${saleId}_${Date.now()}`,
     };
+
+    // Only include `currency` when the caller supplied one.
+    // Sending `undefined` would be a no-op, but omitting the key
+    // entirely is clearer in logs and matches the backend's
+    // "caller didn't say" branch.
+    if (currency) payload.currency = currency;
+
+    // Forward the business unit so the backend can resolve the
+    // currency from `businessUnit.currency` when `currency` is
+    // absent.
+    if (businessUnitId) payload.businessUnitId = businessUnitId;
+
+    // Idempotency key precedence:
+    //   1. Caller-supplied (strongest — a UUID, a client key).
+    //   2. `pos_${saleId}` — deterministic and timestamp-free, so
+    //      a retry of the same sale hits the backend's unique
+    //      constraint and returns the original Payment row.
+    //   3. Omitted — the backend derives one from the payment's
+    //      salient fields.
+    //
+    // The old code minted `pos_${saleId}_${Date.now()}`, which
+    // defeated the whole mechanism: every retry produced a new
+    // key and a new Payment, double-charging the customer on
+    // card and mobile-money paths.
+    if (idempotencyKey) {
+      payload.idempotencyKey = idempotencyKey;
+    } else if (saleId) {
+      payload.idempotencyKey = `pos_${saleId}`;
+    }
 
     if (customerId) payload.customerId = customerId;
     if (cashRegisterId) payload.cashRegisterId = cashRegisterId;

@@ -12,27 +12,13 @@ import {
   FileText,
   FileJson,
   Loader2,
-  Calendar,
-  Filter,
-  RefreshCw,
   CheckCircle,
-  AlertCircle,
   Lock,
-  Clock,
-  Users,
-  DollarSign,
   CreditCard,
-  Printer,
-  Shield,
-  Zap,
-  Sparkles,
-  BarChart3,
-  PieChart,
   Globe,
   Smartphone,
   Banknote,
   Wallet,
-  Building,
   Gift,
   Star,
   Landmark,
@@ -42,7 +28,6 @@ import { PermissionResource } from '../../../../../types/enums';
 import { paymentService } from '../../../../../services/paymentService';
 import { toast } from '../../../../../utils/toast-manager';
 import { useThemeStore } from '../../../../stores/themeStore';
-import { formatCurrency } from '../../../../../utils/formatters';
 
 // ============================================
 // TYPES
@@ -58,6 +43,7 @@ interface ExportPaymentRow {
   paymentMethod: string;
   status: string;
   processedAt: string;
+  /** Present on some legacy rows; new rows carry it in `metadata`. */
   provider?: string;
   gatewayId?: string;
   transactionId?: string;
@@ -67,6 +53,8 @@ interface ExportPaymentRow {
   businessUnitId?: string;
   notes?: string;
   metadata?: Record<string, unknown>;
+  refundedAt?: string;
+  refundReason?: string;
   user?: {
     firstName?: string;
     lastName?: string;
@@ -95,7 +83,8 @@ interface ExportPaymentRow {
 
 /**
  * Resolve the provider name from a payment row. Reads the legacy
- * top-level field first, then `metadata.provider`, then `gatewayId`.
+ * top-level field first, then `metadata.provider` (where the backend
+ * actually writes it), then `gatewayId`.
  */
 function resolveProvider(payment: ExportPaymentRow): string {
   if (payment.provider) return payment.provider;
@@ -175,7 +164,7 @@ function buildCsv(
       payment.reference || payment.id,
       payment.processedAt,
       payment.amount.toFixed(2),
-      payment.currency || 'USD',
+      payment.currency || 'UGX',
       payment.paymentMethod,
       payment.status,
       resolveProvider(payment),
@@ -187,13 +176,17 @@ function buildCsv(
     if (options.includeRefunds) {
       const isRefunded =
         payment.status === 'REFUNDED' ||
-        typeof (payment as any).refundedAt === 'string';
+        typeof payment.refundedAt === 'string';
       row.push(isRefunded ? 'Yes' : 'No');
-      row.push((payment as any).refundReason || '');
+      row.push(payment.refundReason || '');
     }
 
     if (options.includeCustomer) {
-      row.push(customerName, payment.user?.email || '', payment.user?.phone || '');
+      row.push(
+        customerName,
+        payment.user?.email || '',
+        payment.user?.phone || '',
+      );
     }
 
     if (options.includeBusinessUnit) {
@@ -209,6 +202,15 @@ function buildCsv(
   }
 
   return lines.join('\r\n');
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
@@ -250,12 +252,14 @@ function buildPrintHtml(
         );
       }
       if (options.includeBusinessUnit) {
-        cells.push(`<td>${escapeHtml(payment.businessUnit?.name || '')}</td>`);
+        cells.push(
+          `<td>${escapeHtml(payment.businessUnit?.name || '')}</td>`,
+        );
       }
       if (options.includeRefunds) {
         const isRefunded =
           payment.status === 'REFUNDED' ||
-          typeof (payment as any).refundedAt === 'string';
+          typeof payment.refundedAt === 'string';
         cells.push(`<td>${isRefunded ? 'Yes' : 'No'}</td>`);
       }
 
@@ -309,15 +313,6 @@ function buildPrintHtml(
 </html>`;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 /**
  * Trigger a browser download for a Blob.
  */
@@ -345,6 +340,45 @@ function openPrintDocument(html: string): void {
   // The blob URL is revoked after a delay to give the new tab time
   // to load. Revoking immediately breaks the print view.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * Provider logo with a graceful emoji fallback. Kept as a component
+ * (and keyed by provider at the call site) so a provider change
+ * always mounts a fresh instance — the previous inline `onError`
+ * DOM mutation persisted the `display: none` across provider
+ * switches.
+ */
+function ProviderLogo({
+  provider,
+  size = 20,
+  isDark,
+}: {
+  provider: string;
+  size?: number;
+  isDark: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  const url =
+    provider &&
+    (isDark
+      ? PROVIDER_DARK_IMAGE_URLS[provider]
+      : PROVIDER_IMAGE_URLS[provider]);
+
+  if (!url || failed) return null;
+
+  return (
+    <Image
+      src={url}
+      alt=""
+      width={size}
+      height={size}
+      className="rounded object-contain"
+      onError={() => setFailed(true)}
+      unoptimized
+    />
+  );
 }
 
 // ============================================
@@ -395,17 +429,17 @@ const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
 
 const PAYMENT_METHOD_OPTIONS = [
   { value: 'all', label: 'All Methods' },
-  { value: 'CASH', label: 'Cash', icon: Banknote },
-  { value: 'CREDIT_CARD', label: 'Credit Card', icon: CreditCard },
-  { value: 'DEBIT_CARD', label: 'Debit Card', icon: Wallet },
-  { value: 'MOBILE_MONEY', label: 'Mobile Money', icon: Smartphone },
-  { value: 'BANK_TRANSFER', label: 'Bank Transfer', icon: Landmark },
-  { value: 'GIFT_CARD', label: 'Gift Card', icon: Gift },
-  { value: 'LOYALTY_POINTS', label: 'Loyalty Points', icon: Star },
-  { value: 'CHECK', label: 'Check', icon: FileText },
-  { value: 'PAYPAL', label: 'PayPal', icon: Globe },
-  { value: 'FLUTTERWAVE', label: 'Flutterwave', icon: Globe },
-  { value: 'SQUARE', label: 'Square', icon: CreditCard },
+  { value: 'CASH', label: 'Cash' },
+  { value: 'CREDIT_CARD', label: 'Credit Card' },
+  { value: 'DEBIT_CARD', label: 'Debit Card' },
+  { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { value: 'BANK_TRANSFER', label: 'Bank Transfer' },
+  { value: 'GIFT_CARD', label: 'Gift Card' },
+  { value: 'LOYALTY_POINTS', label: 'Loyalty Points' },
+  { value: 'CHECK', label: 'Check' },
+  { value: 'PAYPAL', label: 'PayPal' },
+  { value: 'FLUTTERWAVE', label: 'Flutterwave' },
+  { value: 'SQUARE', label: 'Square' },
 ];
 
 const PROVIDER_OPTIONS = [
@@ -442,7 +476,10 @@ const STATUS_OPTIONS = [
 const FORMAT_OPTIONS = [
   { value: 'csv' as const, label: 'CSV', icon: FileText },
   { value: 'json' as const, label: 'JSON', icon: FileJson },
-  { value: 'excel' as const, label: 'Excel', icon: FileSpreadsheet },
+  // Honest label: the "Excel" format downloads a `.csv`, which
+  // Excel opens natively. A real `.xlsx` requires the `xlsx`
+  // library — see the `case 'excel':` comment below.
+  { value: 'excel' as const, label: 'Excel (CSV)', icon: FileSpreadsheet },
   { value: 'pdf' as const, label: 'PDF', icon: FileText },
 ];
 
@@ -493,9 +530,25 @@ export default function AdminPaymentExportPage() {
 
       const response = await paymentService.getPayments(params);
 
-      const rows: ExportPaymentRow[] = Array.isArray(response.data)
+      let rows: ExportPaymentRow[] = Array.isArray(response.data)
         ? (response.data as unknown as ExportPaymentRow[])
         : [];
+
+      // Client-side safety net. The backend's `provider` filter
+      // maps to `Payment.gatewayId` (a cuid), not the provider
+      // enum name, so passing `provider: 'STRIPE'` today returns
+      // zero rows. Filter the returned set locally so the file
+      // still matches what the user asked for. If the backend
+      // later starts honouring the param, this is a no-op.
+      if (status !== 'all') {
+        rows = rows.filter((r) => r.status === status);
+      }
+      if (paymentMethod !== 'all') {
+        rows = rows.filter((r) => r.paymentMethod === paymentMethod);
+      }
+      if (provider !== 'all') {
+        rows = rows.filter((r) => resolveProvider(r) === provider);
+      }
 
       if (rows.length === 0) {
         toast.warning('No payments match your filters');
@@ -521,11 +574,23 @@ export default function AdminPaymentExportPage() {
         }
 
         case 'excel': {
-          // Excel opens CSVs natively. Naming the file `.xlsx` would
-          // be misleading — a real .xlsx is a ZIP archive — so we
-          // download a real `.csv` and let Excel open it. If you
-          // need true XLSX output, add a library like `xlsx` and
-          // call `XLSX.writeFile` here.
+          // Excel opens CSVs natively. A real `.xlsx` is a ZIP
+          // archive and requires a library. Two options:
+          //
+          //   (a) Keep this as-is: download a `.csv` that Excel
+          //       opens natively. The button is labelled
+          //       "Excel (CSV)" so the user isn't misled.
+          //   (b) Install `xlsx` (`npm i xlsx`) and replace this
+          //       block with:
+          //
+          //         const XLSX = await import('xlsx');
+          //         const ws = XLSX.utils.json_to_sheet(rows);
+          //         const wb = XLSX.utils.book_new();
+          //         XLSX.utils.book_append_sheet(wb, ws, 'Payments');
+          //         XLSX.writeFile(wb, `${baseName}.xlsx`);
+          //
+          // Do NOT rename a `.csv` to `.xlsx` — Excel will warn
+          // about the extension/content mismatch on open.
           const csv = buildCsv(rows, {
             includeRefunds,
             includeCustomer,
@@ -604,16 +669,6 @@ export default function AdminPaymentExportPage() {
 
   // ── Lookups ──────────────────────────────────────────────────
 
-  const getProviderImageUrl = useCallback(
-    (providerCode: string): string => {
-      if (!providerCode || providerCode === 'all') return '';
-      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-        : PROVIDER_IMAGE_URLS[providerCode] || '';
-    },
-    [isDark],
-  );
-
   const getFormatIcon = useCallback(() => {
     const opt = FORMAT_OPTIONS.find((f) => f.value === format);
     const Icon = opt?.icon || FileText;
@@ -639,6 +694,18 @@ export default function AdminPaymentExportPage() {
     );
   }, [paymentMethod]);
 
+  /**
+   * Human-readable date-range label for the summary card. Handles
+   * the four combinations (neither, start-only, end-only, both)
+   * so the card never shows the odd "All - All".
+   */
+  const dateRangeLabel = useMemo(() => {
+    if (dateFrom && dateTo) return `${dateFrom} → ${dateTo}`;
+    if (dateFrom) return `From ${dateFrom}`;
+    if (dateTo) return `Until ${dateTo}`;
+    return 'All time';
+  }, [dateFrom, dateTo]);
+
   // ── Render gates ─────────────────────────────────────────────
 
   if (permissionLoading) {
@@ -659,7 +726,7 @@ export default function AdminPaymentExportPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">
-          You don't have permission to export payment data.
+          You don&apos;t have permission to export payment data.
         </p>
         <button
           onClick={() => router.push('/admin/payments')}
@@ -957,7 +1024,9 @@ export default function AdminPaymentExportPage() {
                     } flex items-center gap-2`}
                   >
                     {getFormatIcon()}
-                    {format.toUpperCase()}
+                    {format === 'excel'
+                      ? 'Excel (CSV)'
+                      : format.toUpperCase()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -973,7 +1042,7 @@ export default function AdminPaymentExportPage() {
                       isDark ? 'text-white' : 'text-gray-900'
                     }`}
                   >
-                    {dateFrom || 'All'} - {dateTo || 'All'}
+                    {dateRangeLabel}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1021,20 +1090,13 @@ export default function AdminPaymentExportPage() {
                       isDark ? 'text-white' : 'text-gray-900'
                     } flex items-center gap-2`}
                   >
-                    {provider !== 'all' &&
-                    getProviderImageUrl(provider) ? (
-                      <Image
-                        src={getProviderImageUrl(provider)}
-                        alt={providerLabel}
-                        width={20}
-                        height={20}
-                        className="rounded object-contain"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display =
-                            'none';
-                        }}
+                    {provider !== 'all' && (
+                      <ProviderLogo
+                        key={provider}
+                        provider={provider}
+                        isDark={isDark}
                       />
-                    ) : null}
+                    )}
                     {providerLabel}
                   </span>
                 </div>

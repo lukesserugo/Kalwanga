@@ -374,11 +374,18 @@ export function ProductCard({
       }
       if (addingToCart) return;
 
+      /**
+       * ⚠ Declared OUTSIDE the try so the catch block can read it.
+       *   Previously `cleanProductId` lived inside the try, and the
+       *   catch's `cart:update-failed` dispatch referenced a binding
+       *   that had gone out of scope (TS2304). Hoisted here so both
+       *   blocks see the same value.
+       */
+      const cleanProductId = String(productId).trim();
+      const variantId = selectedVariantId || undefined;
+
       setAddingToCart(true);
       try {
-        const cleanProductId = String(productId).trim();
-        const variantId = selectedVariantId || undefined;
-
         if (onAddToCart) {
           await onAddToCart(cleanProductId, variantId, 1);
         } else {
@@ -418,7 +425,10 @@ export function ProductCard({
 
           window.dispatchEvent(
             new CustomEvent('cart:update-failed', {
-              detail: { productId: cleanProductId, reason: 'OUT_OF_STOCK' },
+              detail: {
+                productId: cleanProductId,
+                reason: 'OUT_OF_STOCK',
+              },
             })
           );
           return;
@@ -522,7 +532,9 @@ export function ProductCard({
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Invalid product data
         </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">Product ID is missing</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">
+          Product ID is missing
+        </p>
       </div>
     );
   }
@@ -635,7 +647,9 @@ export function ProductCard({
                       )}
                       {v.name}
                       <span className="text-secondary-400">•</span>
-                      <span className="tabular-nums">{formatCurrency(v.price)}</span>
+                      <span className="tabular-nums">
+                        {formatCurrency(v.price)}
+                      </span>
                     </button>
                   ))}
                   {totalVariantCount > 3 && (

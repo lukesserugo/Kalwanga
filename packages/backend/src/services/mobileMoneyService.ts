@@ -4,6 +4,7 @@ import axios, { AxiosInstance } from 'axios';
 import { logger } from '../lib/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
 import * as crypto from 'crypto';
+import { currencyService } from './currencyService.js';
 
 // ============================================
 // INTERFACES
@@ -17,7 +18,7 @@ interface MTNConfig {
   baseUrl: string;
   callbackUrl: string;
   merchantCode: string;
-  country: 'UG' | 'RW' | 'NG' | 'GH' | 'CM' | 'CI' | 'ZM';
+  country: string;
   currency: string;
   apiSecret: string;
 }
@@ -25,7 +26,7 @@ interface MTNConfig {
 interface AirtelConfig {
   clientId: string;
   clientSecret: string;
-  country: 'TZ' | 'KE' | 'UG' | 'GH' | 'NG' | 'RW' | 'ZM';
+  country: string;
   baseUrl: string;
   callbackUrl: string;
   merchantCode: string;
@@ -37,7 +38,18 @@ interface AirtelConfig {
 interface MobileMoneyPaymentRequest {
   phoneNumber: string;
   amount: number;
-  currency: string;
+  /**
+   * Optional. MTN and Airtel derive their currency from their own
+   * country config (`MTN_COUNTRY`, `AIRTEL_COUNTRY`). A caller
+   * cannot force a currency here — the value is logged and
+   * discarded when it disagrees with the country-derived one.
+   *
+   * Declared optional so callers can omit it (or pass `undefined`
+   * explicitly) without a TS2322. This is the intended usage from
+   * `checkoutService.invokeGateway`, which passes `undefined`
+   * deliberately to signal "let the country config decide".
+   */
+  currency?: string;
   reference: string;
   description?: string;
   callbackUrl?: string;
@@ -63,28 +75,6 @@ interface MobileMoneyTransactionStatus {
   provider: string;
 }
 
-interface MobileMoneyRefundRequest {
-  /**
-   * The original transaction reference the refund is against.
-   * Used to derive the payout reference if `reference` is not supplied.
-   */
-  originalReference: string;
-  /**
-   * Amount to refund. If omitted, the provider attempts a full refund
-   * (Disbursement API requires an explicit amount, so for mobile money
-   * this is effectively required — we throw if it's missing).
-   */
-  amount?: number;
-  currency?: string;
-  reason?: string;
-  /**
-   * Idempotency key for the refund itself. If omitted a fresh one
-   * is generated. Callers SHOULD pass a stable value (e.g. the
-   * `Refund.id` from the DB) so retries don't double-pay.
-   */
-  reference?: string;
-}
-
 interface MobileMoneyRefundResponse {
   id: string;
   status: 'succeeded' | 'pending' | 'failed';
@@ -95,54 +85,12 @@ interface MobileMoneyRefundResponse {
   data?: any;
 }
 
-// ============================================
-// COUNTRY CONFIGURATIONS
-// ============================================
-
-const COUNTRY_CONFIGS: Record<
-  string,
-  { currency: string; countryCode: string; phonePrefix: string; isZeroDecimal: boolean }
-> = {
-  // MTN Countries
-  UG: { currency: 'UGX', countryCode: '256', phonePrefix: '256', isZeroDecimal: true },
-  RW: { currency: 'RWF', countryCode: '250', phonePrefix: '250', isZeroDecimal: true },
-  NG: { currency: 'NGN', countryCode: '234', phonePrefix: '234', isZeroDecimal: false },
-  GH: { currency: 'GHS', countryCode: '233', phonePrefix: '233', isZeroDecimal: false },
-  CM: { currency: 'XAF', countryCode: '237', phonePrefix: '237', isZeroDecimal: true },
-  CI: { currency: 'XOF', countryCode: '225', phonePrefix: '225', isZeroDecimal: true },
-  ZM: { currency: 'ZMW', countryCode: '260', phonePrefix: '260', isZeroDecimal: false },
-  // Airtel Countries
-  TZ: { currency: 'TZS', countryCode: '255', phonePrefix: '255', isZeroDecimal: true },
-  KE: { currency: 'KES', countryCode: '254', phonePrefix: '254', isZeroDecimal: false },
-  ZA: { currency: 'ZAR', countryCode: '27', phonePrefix: '27', isZeroDecimal: false },
-};
-
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 // ============================================
 // SHARED HELPERS
 // ============================================
 
-/**
- * Validate that an amount is legal for the given currency.
- * Zero-decimal currencies (UGX, RWF, XAF, XOF, TZS) must be integers.
- */
-function assertValidAmount(amount: number, currency: string, zeroDecimal: boolean): void {
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new AppError('Amount must be a positive number', 400);
-  }
-  if (zeroDecimal && !Number.isInteger(amount)) {
-    throw new AppError(
-      `Amount for ${currency} must be an integer (no decimals in zero-decimal currencies)`,
-      400,
-    );
-  }
-}
-
-/**
- * Constant-time string comparison. Returns false on length mismatch
- * without leaking length through timing.
- */
 function safeEqualString(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const ba = Buffer.from(a);
@@ -151,10 +99,6 @@ function safeEqualString(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ba, bb);
 }
 
-/**
- * Extract a short, safe summary of an axios error for logging. Never
- * logs Authorization headers or full request bodies.
- */
 function summarizeAxiosError(error: any): string {
   if (error?.response) {
     const status = error.response.status;
@@ -170,45 +114,140 @@ function summarizeAxiosError(error: any): string {
   return error?.message || 'unknown error';
 }
 
+function stringifyBody(body: unknown, maxLen = 500): string {
+  if (body === undefined) return '<undefined>';
+  if (body === null) return '<null>';
+  if (typeof body === 'string') return body === '' ? '<empty string>' : body;
+  try {
+    const json = JSON.stringify(body);
+    return json.length > maxLen ? json.slice(0, maxLen) + '…' : json;
+  } catch {
+    return String(body);
+  }
+}
+
+// ============================================
+// LAZY ENV READERS
+// ============================================
+//
+// Currency and country are derived from the registry via
+// `currencyService`, driven by `MTN_COUNTRY` / `AIRTEL_COUNTRY`.
+// No hardcoded COUNTRY_CONFIGS table anywhere — the registry is
+// the single source of truth.
+
+function readMtnConfig(): MTNConfig {
+  const country = (process.env.MTN_COUNTRY || 'UG').toUpperCase();
+  // Resolve the currency from the country via the registry.
+  // Throws if the country isn't supported by the registry — a
+  // boot-time misconfiguration surfaces immediately rather than
+  // at first checkout.
+  const currency = currencyService.resolveForCountry(country);
+
+  return {
+    apiUserId: process.env.MTN_API_USER_ID || '',
+    apiKey: process.env.MTN_API_KEY || '',
+    subscriptionKey: process.env.MTN_SUBSCRIPTION_KEY || '',
+    environment:
+      (process.env.MTN_ENVIRONMENT as 'sandbox' | 'production') || 'sandbox',
+    baseUrl: process.env.MTN_BASE_URL || 'https://sandbox.momodeveloper.mtn.com',
+    callbackUrl:
+      process.env.MTN_CALLBACK_URL ||
+      'http://localhost:3001/api/mobile-money/mtn/callback',
+    merchantCode: process.env.MTN_MERCHANT_CODE || '',
+    country,
+    currency,
+    apiSecret: process.env.MTN_API_SECRET || '',
+  };
+}
+
+function readAirtelConfig(): AirtelConfig {
+  const country = (process.env.AIRTEL_COUNTRY || 'UG').toUpperCase();
+  const currency = currencyService.resolveForCountry(country);
+
+  return {
+    clientId: process.env.AIRTEL_CLIENT_ID || '',
+    clientSecret: process.env.AIRTEL_CLIENT_SECRET || '',
+    country,
+    baseUrl: process.env.AIRTEL_BASE_URL || 'https://openapi.airtel.africa',
+    callbackUrl:
+      process.env.AIRTEL_CALLBACK_URL ||
+      'http://localhost:3001/api/mobile-money/airtel/callback',
+    merchantCode: process.env.AIRTEL_MERCHANT_CODE || '',
+    currency,
+    apiKey: process.env.AIRTEL_API_KEY || '',
+    apiSecret: process.env.AIRTEL_API_SECRET || '',
+  };
+}
+
+// ============================================
+// ENV PRESENCE LOGGING (unchanged behaviour)
+// ============================================
+
+function logMtnEnvPresence(): void {
+  const names = [
+    'MTN_API_USER_ID',
+    'MTN_API_KEY',
+    'MTN_API_SECRET',
+    'MTN_SUBSCRIPTION_KEY',
+    'MTN_ENVIRONMENT',
+    'MTN_BASE_URL',
+    'MTN_CALLBACK_URL',
+    'MTN_COUNTRY',
+    'MTN_MERCHANT_CODE',
+  ] as const;
+
+  const snapshot = Object.fromEntries(
+    names.map((n) => [
+      n,
+      process.env[n]
+        ? `${String(process.env[n]).slice(0, 6)}…(${String(process.env[n]).length})`
+        : '(empty)',
+    ]),
+  );
+
+  logger.info('[MTN env check]', snapshot);
+}
+
+function logAirtelEnvPresence(): void {
+  const names = [
+    'AIRTEL_CLIENT_ID',
+    'AIRTEL_CLIENT_SECRET',
+    'AIRTEL_API_KEY',
+    'AIRTEL_API_SECRET',
+    'AIRTEL_BASE_URL',
+    'AIRTEL_CALLBACK_URL',
+    'AIRTEL_COUNTRY',
+    'AIRTEL_MERCHANT_CODE',
+  ] as const;
+
+  const snapshot = Object.fromEntries(
+    names.map((n) => [
+      n,
+      process.env[n]
+        ? `${String(process.env[n]).slice(0, 6)}…(${String(process.env[n]).length})`
+        : '(empty)',
+    ]),
+  );
+
+  logger.info('[Airtel env check]', snapshot);
+}
+
 // ============================================
 // MTN MOBILE MONEY SERVICE
 // ============================================
 
 export class MTNMobileMoneyService {
   private static instance: MTNMobileMoneyService;
-  private config: MTNConfig;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
-  private isInitialized: boolean = false;
   private http: AxiosInstance;
+  private loggedEnvOnce = false;
 
   private constructor() {
-    const country = (process.env.MTN_COUNTRY as MTNConfig['country']) || 'UG';
-    const countryConfig = COUNTRY_CONFIGS[country] || COUNTRY_CONFIGS.UG;
-
-    this.config = {
-      apiUserId: process.env.MTN_API_USER_ID || '',
-      apiKey: process.env.MTN_API_KEY || '',
-      subscriptionKey: process.env.MTN_SUBSCRIPTION_KEY || '',
-      environment:
-        (process.env.MTN_ENVIRONMENT as 'sandbox' | 'production') || 'sandbox',
-      baseUrl: process.env.MTN_BASE_URL || 'https://sandbox.momodeveloper.mtn.com',
-      callbackUrl:
-        process.env.MTN_CALLBACK_URL ||
-        'http://localhost:3001/api/mobile-money/mtn/callback',
-      merchantCode: process.env.MTN_MERCHANT_CODE || '',
-      country,
-      currency: countryConfig.currency,
-      apiSecret: process.env.MTN_API_SECRET || '',
-    };
-
     this.http = axios.create({
       timeout: DEFAULT_REQUEST_TIMEOUT_MS,
-      // Never let axios throw on 4xx — we want to inspect them.
       validateStatus: () => true,
     });
-
-    this.validateConfig();
   }
 
   public static getInstance(): MTNMobileMoneyService {
@@ -218,33 +257,46 @@ export class MTNMobileMoneyService {
     return MTNMobileMoneyService.instance;
   }
 
-  private validateConfig(): void {
-    const required: (keyof MTNConfig)[] = ['apiUserId', 'apiKey', 'subscriptionKey'];
-    const missing = required.filter((key) => !this.config[key]);
+  private get config(): MTNConfig {
+    return readMtnConfig();
+  }
 
-    if (missing.length > 0) {
-      logger.warn(`⚠️ Missing MTN configuration: ${missing.join(', ')}`);
-      this.isInitialized = false;
-    } else {
-      this.isInitialized = true;
-      logger.info('✅ MTN Mobile Money configured successfully');
-      logger.info(
-        `   Country: ${this.config.country}, Currency: ${this.config.currency}`,
-      );
-      logger.info(`   Environment: ${this.config.environment}`);
-    }
+  private missingRequiredKeys(): (keyof MTNConfig)[] {
+    const cfg = this.config;
+    const required: (keyof MTNConfig)[] = [
+      'apiUserId',
+      'apiKey',
+      'subscriptionKey',
+    ];
+    return required.filter((key) => {
+      const v = cfg[key];
+      return v === undefined || v === null || String(v).trim() === '';
+    });
   }
 
   isConfigured(): boolean {
-    return this.isInitialized;
+    return this.missingRequiredKeys().length === 0;
+  }
+
+  logConfigurationState(): void {
+    if (!this.loggedEnvOnce) {
+      logMtnEnvPresence();
+      this.loggedEnvOnce = true;
+    }
+
+    const missing = this.missingRequiredKeys();
+    if (missing.length > 0) {
+      logger.warn(`⚠️ Missing MTN configuration: ${missing.join(', ')}`);
+    } else {
+      const cfg = this.config;
+      logger.info('✅ MTN Mobile Money configured successfully');
+      logger.info(`   Country: ${cfg.country}, Currency: ${cfg.currency}`);
+      logger.info(`   Environment: ${cfg.environment}`);
+    }
   }
 
   private getBaseUrl(): string {
     return this.config.baseUrl;
-  }
-
-  private getCountryConfig() {
-    return COUNTRY_CONFIGS[this.config.country] || COUNTRY_CONFIGS.UG;
   }
 
   private formatPhoneNumber(phone: string): string {
@@ -252,18 +304,16 @@ export class MTNMobileMoneyService {
       throw new AppError('Phone number is required', 400);
     }
     let cleaned = phone.replace(/\D/g, '');
-    const { countryCode } = this.getCountryConfig();
+    const cfg = this.config;
+    const prefix = currencyService.phonePrefix(cfg.currency) ?? '';
 
-    if (cleaned.startsWith('0')) {
-      cleaned = cleaned.substring(1);
+    if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+    if (prefix && cleaned.startsWith(prefix)) {
+      cleaned = cleaned.substring(prefix.length);
     }
-    if (cleaned.startsWith(countryCode)) {
-      cleaned = cleaned.substring(countryCode.length);
-    }
-    cleaned = countryCode + cleaned;
+    cleaned = prefix + cleaned;
 
-    // MTN expects MSISDN in E.164 without the leading '+'.
-    if (cleaned.length < 11 || cleaned.length > 15) {
+    if (cleaned.length < 10 || cleaned.length > 15) {
       throw new AppError(`Invalid MSISDN: ${phone}`, 400);
     }
     return cleaned;
@@ -274,8 +324,9 @@ export class MTNMobileMoneyService {
       return this.accessToken;
     }
 
+    const cfg = this.config;
     const auth = Buffer.from(
-      `${this.config.apiUserId}:${this.config.apiKey}`,
+      `${cfg.apiUserId}:${cfg.apiKey}`,
     ).toString('base64');
 
     const response = await this.http.post(
@@ -284,7 +335,7 @@ export class MTNMobileMoneyService {
       {
         headers: {
           Authorization: `Basic ${auth}`,
-          'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
+          'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
           'Content-Type': 'application/json',
         },
       },
@@ -292,8 +343,11 @@ export class MTNMobileMoneyService {
 
     if (response.status !== 200 || !response.data?.access_token) {
       logger.error(
-        `Failed to get MTN access token: HTTP ${response.status}`,
+        `Failed to get MTN access token: HTTP ${response.status} — ${summarizeAxiosError(
+          { response },
+        )}`,
       );
+      logger.error(`[MTN] raw token response body: ${stringifyBody(response.data)}`);
       throw new AppError('Failed to authenticate with MTN Mobile Money', 502);
     }
 
@@ -312,18 +366,31 @@ export class MTNMobileMoneyService {
     request: MobileMoneyPaymentRequest,
   ): Promise<MobileMoneyPaymentResponse> {
     if (!this.isConfigured()) {
-      throw new AppError('MTN Mobile Money is not configured.', 503);
+      const missing = this.missingRequiredKeys();
+      throw new AppError(
+        `MTN Mobile Money is not configured (missing: ${missing.join(', ')}).`,
+        503,
+      );
     }
 
-    const countryConfig = this.getCountryConfig();
-    const currency = request.currency || this.config.currency;
-    assertValidAmount(request.amount, currency, countryConfig.isZeroDecimal);
+    const cfg = this.config;
+
+    // The country determines the currency. Any caller-supplied
+    // currency is logged and discarded when it disagrees.
+    const currency = cfg.currency;
+    if (
+      request.currency &&
+      request.currency.toUpperCase() !== currency.toUpperCase()
+    ) {
+      logger.warn(
+        `[MTN] Caller passed currency=${request.currency} but country=${cfg.country} requires ${currency}. Overriding.`,
+      );
+    }
+
+    currencyService.assertValidAmount(request.amount, currency);
 
     const phoneNumber = this.formatPhoneNumber(request.phoneNumber);
-    const reference =
-      request.reference ||
-      crypto.randomUUID(); // MTN requires UUID for X-Reference-Id
-
+    const reference = request.reference || crypto.randomUUID();
     const token = await this.getAccessToken();
 
     const requestBody = {
@@ -348,15 +415,14 @@ export class MTNMobileMoneyService {
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
+          'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
           'X-Reference-Id': reference,
-          'X-Target-Environment': this.config.environment,
+          'X-Target-Environment': cfg.environment,
           'Content-Type': 'application/json',
         },
       },
     );
 
-    // MTN returns 202 Accepted with an empty body on success.
     if (response.status !== 202) {
       logger.error(
         `❌ MTN payment failed: HTTP ${response.status} — ${summarizeAxiosError(
@@ -380,7 +446,17 @@ export class MTNMobileMoneyService {
 
   private mapMtnError(status: number, body: any): AppError {
     const detail =
-      body?.message || body?.error || body?.error_description || 'MTN error';
+      body?.message ||
+      body?.error_description ||
+      body?.error ||
+      body?.code ||
+      (typeof body === 'string' && body ? body : undefined) ||
+      (body ? JSON.stringify(body).slice(0, 200) : undefined) ||
+      'MTN error';
+
+    logger.error(`[MTN] HTTP ${status} on requesttopay: ${detail}`);
+    logger.error(`[MTN] raw response body: ${stringifyBody(body)}`);
+
     if (status === 400) return new AppError(`Invalid MTN request: ${detail}`, 400);
     if (status === 401) return new AppError('MTN authentication failed', 401);
     if (status === 403) return new AppError('MTN subscription key unauthorized', 403);
@@ -392,7 +468,7 @@ export class MTNMobileMoneyService {
   }
 
   // ============================================
-  // STATUS
+  // STATUS / CALLBACK / BALANCE / VALIDATE
   // ============================================
 
   async checkTransactionStatus(
@@ -405,6 +481,7 @@ export class MTNMobileMoneyService {
       throw new AppError('Reference is required', 400);
     }
 
+    const cfg = this.config;
     const token = await this.getAccessToken();
 
     const response = await this.http.get(
@@ -412,14 +489,13 @@ export class MTNMobileMoneyService {
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
-          'X-Target-Environment': this.config.environment,
+          'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
+          'X-Target-Environment': cfg.environment,
         },
       },
     );
 
     if (response.status === 404) {
-      // Not found — likely still being processed, or wrong reference.
       return {
         status: 'PENDING',
         reference,
@@ -447,10 +523,8 @@ export class MTNMobileMoneyService {
       TIMEOUT: 'FAILED',
       ONGOING: 'PROCESSING',
     };
-    const mappedStatus = statusMap[raw || ''] || 'PENDING';
-
     return {
-      status: mappedStatus,
+      status: statusMap[raw || ''] || 'PENDING',
       reference,
       isSuccess: raw === 'SUCCESSFUL',
       amount: response.data?.amount ? parseFloat(response.data.amount) : undefined,
@@ -460,23 +534,9 @@ export class MTNMobileMoneyService {
     };
   }
 
-  // ============================================
-  // CALLBACK PARSING
-  // ============================================
-
-  /**
-   * Parse an MTN callback body into a normalised envelope.
-   *
-   * ⚠ The result of this method is NOT authoritative. Callers MUST
-   *   re-verify by calling `checkTransactionStatus()` before flipping
-   *   the Payment row. MTN does not sign callbacks; the only thing
-   *   this can safely do is tell you "something happened for
-   *   reference X".
-   */
   handleCallback(body: any): MobileMoneyTransactionStatus {
     try {
       logger.info('📩 MTN callback received');
-
       if (!body || typeof body !== 'object') {
         throw new AppError('Invalid MTN callback payload', 400);
       }
@@ -487,7 +547,6 @@ export class MTNMobileMoneyService {
         body.transactionId ||
         body['xReferenceId'] ||
         body['X-Reference-Id'];
-
       if (!reference) {
         throw new AppError('MTN callback missing reference', 400);
       }
@@ -495,8 +554,6 @@ export class MTNMobileMoneyService {
       const rawStatus = (body.status || body.financialTransactionId
         ? body.status
         : body.status) as string | undefined;
-
-      // MTN callback payloads use SUCCESSFUL / FAILED.
       let mapped: 'SUCCESS' | 'FAILED' | 'PENDING' = 'PENDING';
       if (rawStatus === 'SUCCESSFUL') mapped = 'SUCCESS';
       else if (rawStatus === 'FAILED' || rawStatus === 'REJECTED') mapped = 'FAILED';
@@ -532,36 +589,26 @@ export class MTNMobileMoneyService {
     }
   }
 
-  // ============================================
-  // ACCOUNT INFO
-  // ============================================
-
   async getAccountBalance(): Promise<any> {
     if (!this.isConfigured()) {
       throw new AppError('MTN Mobile Money is not configured.', 503);
     }
-
+    const cfg = this.config;
     const token = await this.getAccessToken();
     const response = await this.http.get(
       `${this.getBaseUrl()}/collection/v1_0/account/balance`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
-          'X-Target-Environment': this.config.environment,
+          'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
+          'X-Target-Environment': cfg.environment,
         },
       },
     );
 
     if (response.status !== 200) {
-      logger.error(
-        `❌ Failed to get MTN balance: HTTP ${response.status} — ${summarizeAxiosError(
-          { response },
-        )}`,
-      );
       throw this.mapMtnError(response.status, response.data);
     }
-
     logger.info('📊 MTN balance retrieved');
     return response.data;
   }
@@ -570,8 +617,8 @@ export class MTNMobileMoneyService {
     if (!this.isConfigured()) {
       throw new AppError('MTN Mobile Money is not configured.', 503);
     }
-
     try {
+      const cfg = this.config;
       const token = await this.getAccessToken();
       const formattedPhone = this.formatPhoneNumber(phoneNumber);
 
@@ -580,8 +627,8 @@ export class MTNMobileMoneyService {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
-            'X-Target-Environment': this.config.environment,
+            'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
+            'X-Target-Environment': cfg.environment,
           },
         },
       );
@@ -604,10 +651,7 @@ export class MTNMobileMoneyService {
         data: response.data,
       };
     } catch (error: any) {
-      logger.error(
-        '❌ Account holder validation failed:',
-        summarizeAxiosError(error),
-      );
+      logger.error('❌ Account holder validation failed:', summarizeAxiosError(error));
       return {
         phoneNumber,
         status: 'UNKNOWN',
@@ -618,7 +662,7 @@ export class MTNMobileMoneyService {
   }
 
   // ============================================
-  // DISBURSEMENT (B2C) — used for transfers AND refunds
+  // DISBURSEMENT (B2C)
   // ============================================
 
   async initiateTransfer(params: {
@@ -632,9 +676,19 @@ export class MTNMobileMoneyService {
       throw new AppError('MTN Mobile Money is not configured.', 503);
     }
 
-    const countryConfig = this.getCountryConfig();
-    const currency = params.currency || this.config.currency;
-    assertValidAmount(params.amount, currency, countryConfig.isZeroDecimal);
+    const cfg = this.config;
+    const currency = cfg.currency;
+
+    if (
+      params.currency &&
+      params.currency.toUpperCase() !== currency.toUpperCase()
+    ) {
+      logger.warn(
+        `[MTN] Transfer caller passed currency=${params.currency} but country=${cfg.country} requires ${currency}. Overriding.`,
+      );
+    }
+
+    currencyService.assertValidAmount(params.amount, currency);
 
     const phoneNumber = this.formatPhoneNumber(params.phoneNumber);
     const reference = params.reference || crypto.randomUUID();
@@ -644,10 +698,7 @@ export class MTNMobileMoneyService {
       amount: params.amount.toString(),
       currency,
       externalId: reference,
-      payee: {
-        partyIdType: 'MSISDN',
-        partyId: phoneNumber,
-      },
+      payee: { partyIdType: 'MSISDN', partyId: phoneNumber },
       payerMessage: params.reason || 'Transfer from business',
       payeeNote: params.reason || 'Transfer from business',
     };
@@ -662,25 +713,19 @@ export class MTNMobileMoneyService {
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
+          'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
           'X-Reference-Id': reference,
-          'X-Target-Environment': this.config.environment,
+          'X-Target-Environment': cfg.environment,
           'Content-Type': 'application/json',
         },
       },
     );
 
     if (response.status !== 202) {
-      logger.error(
-        `❌ MTN transfer failed: HTTP ${response.status} — ${summarizeAxiosError(
-          { response },
-        )}`,
-      );
       throw this.mapMtnError(response.status, response.data);
     }
 
     logger.info(`✅ MTN transfer initiated: ${reference}`);
-
     return {
       transactionId: reference,
       status: 'PENDING',
@@ -690,15 +735,6 @@ export class MTNMobileMoneyService {
     };
   }
 
-  /**
-   * Refund a previously collected payment by pushing money back to the
-   * payer via the Disbursement API.
-   *
-   * MTN's Collection API has no refund endpoint, so a refund is
-   * modelled as an outbound transfer to the original payer's MSISDN.
-   * The caller MUST supply the original payer's phone number — this
-   * method does not have access to the DB to look it up.
-   */
   async refundPayment(params: {
     phoneNumber: string;
     amount: number;
@@ -709,11 +745,8 @@ export class MTNMobileMoneyService {
     if (!this.isConfigured()) {
       throw new AppError('MTN Mobile Money is not configured.', 503);
     }
-
-    const countryConfig = this.getCountryConfig();
-    const currency = params.currency || this.config.currency;
-    assertValidAmount(params.amount, currency, countryConfig.isZeroDecimal);
-
+    const currency = this.config.currency;
+    currencyService.assertValidAmount(params.amount, currency);
     const reference = params.reference || crypto.randomUUID();
 
     const transferResult = await this.initiateTransfer({
@@ -726,9 +759,6 @@ export class MTNMobileMoneyService {
 
     return {
       id: transferResult.transactionId,
-      // Disbursement is async on MTN's side; final status comes from
-      // polling checkTransferStatus — we return 'pending' here and
-      // let the caller reconcile.
       status: 'pending',
       amount: params.amount,
       currency,
@@ -738,36 +768,26 @@ export class MTNMobileMoneyService {
     };
   }
 
-  /**
-   * Poll a disbursement transfer. Mirrors checkTransactionStatus but
-   * hits the disbursement endpoint.
-   */
   async checkTransferStatus(reference: string): Promise<MobileMoneyTransactionStatus> {
     if (!this.isConfigured()) {
       throw new AppError('MTN Mobile Money is not configured.', 503);
     }
-
+    const cfg = this.config;
     const token = await this.getAccessToken();
     const response = await this.http.get(
       `${this.getBaseUrl()}/disbursement/v1_0/transfer/${reference}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Ocp-Apim-Subscription-Key': this.config.subscriptionKey,
-          'X-Target-Environment': this.config.environment,
+          'Ocp-Apim-Subscription-Key': cfg.subscriptionKey,
+          'X-Target-Environment': cfg.environment,
         },
       },
     );
 
     if (response.status === 404) {
-      return {
-        status: 'PENDING',
-        reference,
-        isSuccess: false,
-        provider: 'MTN',
-      };
+      return { status: 'PENDING', reference, isSuccess: false, provider: 'MTN' };
     }
-
     if (response.status !== 200) {
       throw this.mapMtnError(response.status, response.data);
     }
@@ -796,39 +816,22 @@ export class MTNMobileMoneyService {
 // ============================================
 // AIRTEL MOBILE MONEY SERVICE
 // ============================================
+//
+// Same structure as MTN — currency is derived from
+// `AIRTEL_COUNTRY` via the registry.
 
 export class AirtelMobileMoneyService {
   private static instance: AirtelMobileMoneyService;
-  private config: AirtelConfig;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
-  private isInitialized: boolean = false;
   private http: AxiosInstance;
+  private loggedEnvOnce = false;
 
   private constructor() {
-    const country = (process.env.AIRTEL_COUNTRY as AirtelConfig['country']) || 'UG';
-    const countryConfig = COUNTRY_CONFIGS[country] || COUNTRY_CONFIGS.UG;
-
-    this.config = {
-      clientId: process.env.AIRTEL_CLIENT_ID || '',
-      clientSecret: process.env.AIRTEL_CLIENT_SECRET || '',
-      country,
-      baseUrl: process.env.AIRTEL_BASE_URL || 'https://openapi.airtel.africa',
-      callbackUrl:
-        process.env.AIRTEL_CALLBACK_URL ||
-        'http://localhost:3001/api/mobile-money/airtel/callback',
-      merchantCode: process.env.AIRTEL_MERCHANT_CODE || '',
-      currency: countryConfig.currency,
-      apiKey: process.env.AIRTEL_API_KEY || '',
-      apiSecret: process.env.AIRTEL_API_SECRET || '',
-    };
-
     this.http = axios.create({
       timeout: DEFAULT_REQUEST_TIMEOUT_MS,
       validateStatus: () => true,
     });
-
-    this.validateConfig();
   }
 
   public static getInstance(): AirtelMobileMoneyService {
@@ -838,48 +841,55 @@ export class AirtelMobileMoneyService {
     return AirtelMobileMoneyService.instance;
   }
 
-  private validateConfig(): void {
-    const required: (keyof AirtelConfig)[] = ['clientId', 'clientSecret'];
-    const missing = required.filter((key) => !this.config[key]);
+  private get config(): AirtelConfig {
+    return readAirtelConfig();
+  }
 
-    if (missing.length > 0) {
-      logger.warn(`⚠️ Missing Airtel configuration: ${missing.join(', ')}`);
-      this.isInitialized = false;
-    } else {
-      this.isInitialized = true;
-      logger.info('✅ Airtel Mobile Money configured successfully');
-      logger.info(
-        `   Country: ${this.config.country}, Currency: ${this.config.currency}`,
-      );
-    }
+  private missingRequiredKeys(): (keyof AirtelConfig)[] {
+    const cfg = this.config;
+    const required: (keyof AirtelConfig)[] = ['clientId', 'clientSecret'];
+    return required.filter((key) => {
+      const v = cfg[key];
+      return v === undefined || v === null || String(v).trim() === '';
+    });
   }
 
   isConfigured(): boolean {
-    return this.isInitialized;
+    return this.missingRequiredKeys().length === 0;
+  }
+
+  logConfigurationState(): void {
+    if (!this.loggedEnvOnce) {
+      logAirtelEnvPresence();
+      this.loggedEnvOnce = true;
+    }
+
+    const missing = this.missingRequiredKeys();
+    if (missing.length > 0) {
+      logger.warn(`⚠️ Missing Airtel configuration: ${missing.join(', ')}`);
+    } else {
+      const cfg = this.config;
+      logger.info('✅ Airtel Mobile Money configured successfully');
+      logger.info(`   Country: ${cfg.country}, Currency: ${cfg.currency}`);
+    }
   }
 
   private getBaseUrl(): string {
     return this.config.baseUrl;
   }
 
-  private getCountryConfig() {
-    return COUNTRY_CONFIGS[this.config.country] || COUNTRY_CONFIGS.UG;
-  }
-
   private formatPhoneNumber(phone: string): string {
-    if (!phone) {
-      throw new AppError('Phone number is required', 400);
-    }
+    if (!phone) throw new AppError('Phone number is required', 400);
     let cleaned = phone.replace(/\D/g, '');
-    const { countryCode } = this.getCountryConfig();
+    const prefix = currencyService.phonePrefix(this.config.currency) ?? '';
 
     if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
-    if (cleaned.startsWith(countryCode)) {
-      cleaned = cleaned.substring(countryCode.length);
+    if (prefix && cleaned.startsWith(prefix)) {
+      cleaned = cleaned.substring(prefix.length);
     }
-    cleaned = countryCode + cleaned;
+    cleaned = prefix + cleaned;
 
-    if (cleaned.length < 11 || cleaned.length > 15) {
+    if (cleaned.length < 10 || cleaned.length > 15) {
       throw new AppError(`Invalid MSISDN: ${phone}`, 400);
     }
     return cleaned;
@@ -890,20 +900,20 @@ export class AirtelMobileMoneyService {
       return this.accessToken;
     }
 
+    const cfg = this.config;
     const response = await this.http.post(
       `${this.getBaseUrl()}/auth/oauth2/token`,
       {
-        client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
+        client_id: cfg.clientId,
+        client_secret: cfg.clientSecret,
         grant_type: 'client_credentials',
       },
       { headers: { 'Content-Type': 'application/json' } },
     );
 
     if (response.status !== 200 || !response.data?.access_token) {
-      logger.error(
-        `Failed to get Airtel access token: HTTP ${response.status}`,
-      );
+      logger.error(`Failed to get Airtel access token: HTTP ${response.status}`);
+      logger.error(`[Airtel] raw token response body: ${stringifyBody(response.data)}`);
       throw new AppError('Failed to authenticate with Airtel Mobile Money', 502);
     }
 
@@ -913,20 +923,30 @@ export class AirtelMobileMoneyService {
     return this.accessToken;
   }
 
-  // ============================================
-  // PAYMENT (COLLECTION)
-  // ============================================
-
   async initiatePayment(
     request: MobileMoneyPaymentRequest,
   ): Promise<MobileMoneyPaymentResponse> {
     if (!this.isConfigured()) {
-      throw new AppError('Airtel Mobile Money is not configured.', 503);
+      const missing = this.missingRequiredKeys();
+      throw new AppError(
+        `Airtel Mobile Money is not configured (missing: ${missing.join(', ')}).`,
+        503,
+      );
     }
 
-    const countryConfig = this.getCountryConfig();
-    const currency = request.currency || this.config.currency;
-    assertValidAmount(request.amount, currency, countryConfig.isZeroDecimal);
+    const cfg = this.config;
+    const currency = cfg.currency;
+
+    if (
+      request.currency &&
+      request.currency.toUpperCase() !== currency.toUpperCase()
+    ) {
+      logger.warn(
+        `[Airtel] Caller passed currency=${request.currency} but country=${cfg.country} requires ${currency}. Overriding.`,
+      );
+    }
+
+    currencyService.assertValidAmount(request.amount, currency);
 
     const phoneNumber = this.formatPhoneNumber(request.phoneNumber);
     const reference = request.reference || crypto.randomUUID();
@@ -942,9 +962,9 @@ export class AirtelMobileMoneyService {
       payer: {
         type: 'MSISDN',
         msisdn: phoneNumber,
-        country: this.config.country,
+        country: cfg.country,
       },
-      callback_url: request.callbackUrl || this.config.callbackUrl,
+      callback_url: request.callbackUrl || cfg.callbackUrl,
     };
 
     logger.info(
@@ -958,13 +978,17 @@ export class AirtelMobileMoneyService {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Country': this.config.country,
+          'X-Country': cfg.country,
           'X-Currency': currency,
         },
       },
     );
 
-    if (response.status !== 200 && response.status !== 201 && response.status !== 202) {
+    if (
+      response.status !== 200 &&
+      response.status !== 201 &&
+      response.status !== 202
+    ) {
       logger.error(
         `❌ Airtel payment failed: HTTP ${response.status} — ${summarizeAxiosError(
           { response },
@@ -973,17 +997,11 @@ export class AirtelMobileMoneyService {
       throw this.mapAirtelError(response.status, response.data);
     }
 
-    const apiStatus = response.data?.status?.code || response.data?.status;
-    const mapped: 'PENDING' | 'SUCCESS' | 'FAILED' =
-      apiStatus === '200' || apiStatus === 'SUCCESS'
-        ? 'PENDING' // Airtel returns 200 on accept but the payment is still pending user confirmation
-        : 'PENDING';
-
     logger.info(`✅ Airtel payment initiated: ${reference}`);
 
     return {
       transactionId: response.data?.data?.transaction?.id || reference,
-      status: mapped,
+      status: 'PENDING',
       reference,
       message: response.data?.status?.message || 'Payment initiated successfully',
       data: response.data,
@@ -996,7 +1014,15 @@ export class AirtelMobileMoneyService {
       body?.status?.message ||
       body?.message ||
       body?.error_description ||
+      body?.error ||
+      body?.code ||
+      (typeof body === 'string' && body ? body : undefined) ||
+      (body ? JSON.stringify(body).slice(0, 200) : undefined) ||
       'Airtel error';
+
+    logger.error(`[Airtel] HTTP ${status}: ${detail}`);
+    logger.error(`[Airtel] raw response body: ${stringifyBody(body)}`);
+
     if (status === 400) return new AppError(`Invalid Airtel request: ${detail}`, 400);
     if (status === 401) return new AppError('Airtel authentication failed', 401);
     if (status === 403) return new AppError('Airtel credentials unauthorized', 403);
@@ -1006,61 +1032,43 @@ export class AirtelMobileMoneyService {
     return new AppError(`Airtel error: ${detail}`, 500);
   }
 
-  // ============================================
-  // STATUS
-  // ============================================
-
   async checkTransactionStatus(
     reference: string,
   ): Promise<MobileMoneyTransactionStatus> {
     if (!this.isConfigured()) {
       throw new AppError('Airtel Mobile Money is not configured.', 503);
     }
-    if (!reference) {
-      throw new AppError('Reference is required', 400);
-    }
+    if (!reference) throw new AppError('Reference is required', 400);
 
+    const cfg = this.config;
     const token = await this.getAccessToken();
     const response = await this.http.get(
       `${this.getBaseUrl()}/standard/v1/payments/${reference}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-Country': this.config.country,
-          'X-Currency': this.config.currency,
+          'X-Country': cfg.country,
+          'X-Currency': cfg.currency,
         },
       },
     );
 
     if (response.status === 404) {
-      return {
-        status: 'PENDING',
-        reference,
-        isSuccess: false,
-        provider: 'AIRTEL',
-      };
+      return { status: 'PENDING', reference, isSuccess: false, provider: 'AIRTEL' };
     }
-
     if (response.status !== 200) {
-      logger.error(
-        `❌ Airtel status check failed: HTTP ${response.status} — ${summarizeAxiosError(
-          { response },
-        )}`,
-      );
       throw this.mapAirtelError(response.status, response.data);
     }
 
-    // Airtel's canonical response nests transaction details under `data.transaction`.
     const tx = response.data?.data?.transaction || {};
     const raw = (tx.status || response.data?.status?.code || '').toString().toUpperCase();
-
     const statusMap: Record<string, string> = {
       SUCCESS: 'SUCCESS',
-      TS: 'SUCCESS', // legacy code
+      TS: 'SUCCESS',
       PENDING: 'PENDING',
-      TIP: 'PENDING', // "transaction in progress"
+      TIP: 'PENDING',
       FAILED: 'FAILED',
-      TF: 'FAILED', // legacy code
+      TF: 'FAILED',
       AMBIGUOUS: 'PENDING',
       CANCELLED: 'FAILED',
       CANCELED: 'FAILED',
@@ -1078,25 +1086,14 @@ export class AirtelMobileMoneyService {
     };
   }
 
-  // ============================================
-  // CALLBACK PARSING
-  // ============================================
-
-  /**
-   * Parse an Airtel callback body. Same caveat as MTN: the result is
-   * NOT authoritative. Callers must re-verify via `checkTransactionStatus`.
-   */
   handleCallback(body: any): MobileMoneyTransactionStatus {
     try {
       logger.info('📩 Airtel callback received');
-
       if (!body || typeof body !== 'object') {
         throw new AppError('Invalid Airtel callback payload', 400);
       }
-
       const tx = body.transaction || body.data?.transaction || {};
       const reference = tx.id || body.reference || body.transactionId;
-
       if (!reference) {
         throw new AppError('Airtel callback missing reference', 400);
       }
@@ -1109,9 +1106,7 @@ export class AirtelMobileMoneyService {
         rawStatus === 'TF' ||
         rawStatus === 'CANCELLED' ||
         rawStatus === 'CANCELED'
-      ) {
-        mapped = 'FAILED';
-      }
+      ) mapped = 'FAILED';
 
       return {
         status: mapped,
@@ -1140,10 +1135,6 @@ export class AirtelMobileMoneyService {
     }
   }
 
-  // ============================================
-  // DISBURSEMENT (B2C) — used for transfers AND refunds
-  // ============================================
-
   async initiateTransfer(params: {
     phoneNumber: string;
     amount: number;
@@ -1154,27 +1145,22 @@ export class AirtelMobileMoneyService {
     if (!this.isConfigured()) {
       throw new AppError('Airtel Mobile Money is not configured.', 503);
     }
-
-    const countryConfig = this.getCountryConfig();
-    const currency = params.currency || this.config.currency;
-    assertValidAmount(params.amount, currency, countryConfig.isZeroDecimal);
+    const cfg = this.config;
+    const currency = cfg.currency;
+    currencyService.assertValidAmount(params.amount, currency);
 
     const phoneNumber = this.formatPhoneNumber(params.phoneNumber);
     const reference = params.reference || crypto.randomUUID();
     const token = await this.getAccessToken();
 
     const requestBody = {
-      payee: {
-        type: 'MSISDN',
-        msisdn: phoneNumber,
-        country: this.config.country,
-      },
+      payee: { type: 'MSISDN', msisdn: phoneNumber, country: cfg.country },
       reference,
       currency,
       amount: params.amount,
       pin: process.env.AIRTEL_DISBURSEMENT_PIN || '',
       description: params.reason || 'Transfer from business',
-      callback_url: this.config.callbackUrl,
+      callback_url: cfg.callbackUrl,
     };
 
     logger.info(
@@ -1188,23 +1174,21 @@ export class AirtelMobileMoneyService {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Country': this.config.country,
+          'X-Country': cfg.country,
           'X-Currency': currency,
         },
       },
     );
 
-    if (response.status !== 200 && response.status !== 201 && response.status !== 202) {
-      logger.error(
-        `❌ Airtel transfer failed: HTTP ${response.status} — ${summarizeAxiosError(
-          { response },
-        )}`,
-      );
+    if (
+      response.status !== 200 &&
+      response.status !== 201 &&
+      response.status !== 202
+    ) {
       throw this.mapAirtelError(response.status, response.data);
     }
 
     logger.info(`✅ Airtel transfer initiated: ${reference}`);
-
     return {
       transactionId: response.data?.data?.transaction?.id || reference,
       status: 'PENDING',
@@ -1224,11 +1208,8 @@ export class AirtelMobileMoneyService {
     if (!this.isConfigured()) {
       throw new AppError('Airtel Mobile Money is not configured.', 503);
     }
-
-    const countryConfig = this.getCountryConfig();
-    const currency = params.currency || this.config.currency;
-    assertValidAmount(params.amount, currency, countryConfig.isZeroDecimal);
-
+    const currency = this.config.currency;
+    currencyService.assertValidAmount(params.amount, currency);
     const reference = params.reference || crypto.randomUUID();
 
     const transferResult = await this.initiateTransfer({
@@ -1254,15 +1235,15 @@ export class AirtelMobileMoneyService {
     if (!this.isConfigured()) {
       throw new AppError('Airtel Mobile Money is not configured.', 503);
     }
-
+    const cfg = this.config;
     const token = await this.getAccessToken();
     const response = await this.http.get(
       `${this.getBaseUrl()}/standard/v1/disbursements/${reference}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-Country': this.config.country,
-          'X-Currency': this.config.currency,
+          'X-Country': cfg.country,
+          'X-Currency': cfg.currency,
         },
       },
     );
@@ -1308,12 +1289,12 @@ export class MobileMoneyService {
   constructor() {
     this.mtnService = MTNMobileMoneyService.getInstance();
     this.airtelService = AirtelMobileMoneyService.getInstance();
+    this.mtnService.logConfigurationState();
+    this.airtelService.logConfigurationState();
 
     logger.info('📱 Mobile Money Service initialized');
     logger.info(`   MTN: ${this.mtnService.isConfigured() ? '✅' : '❌'} Configured`);
-    logger.info(
-      `   Airtel: ${this.airtelService.isConfigured() ? '✅' : '❌'} Configured`,
-    );
+    logger.info(`   Airtel: ${this.airtelService.isConfigured() ? '✅' : '❌'} Configured`);
   }
 
   isConfigured(): boolean {
@@ -1325,6 +1306,12 @@ export class MobileMoneyService {
     if (this.mtnService.isConfigured()) providers.push('MTN');
     if (this.airtelService.isConfigured()) providers.push('AIRTEL');
     return providers;
+  }
+
+  isProviderConfigured(provider: 'MTN' | 'AIRTEL'): boolean {
+    if (provider === 'MTN') return this.mtnService.isConfigured();
+    if (provider === 'AIRTEL') return this.airtelService.isConfigured();
+    return false;
   }
 
   async initiatePayment(
@@ -1420,11 +1407,6 @@ export class MobileMoneyService {
     throw new AppError(`Unsupported mobile money provider: ${provider}`, 400);
   }
 
-  /**
-   * Refund via the provider's Disbursement API. Returns 'pending' for
-   * the initial response — the caller is expected to reconcile via
-   * `checkRefundStatus()` once the provider settles.
-   */
   async refundPayment(
     provider: 'MTN' | 'AIRTEL',
     params: {
@@ -1450,9 +1432,6 @@ export class MobileMoneyService {
     throw new AppError(`Unsupported mobile money provider: ${provider}`, 400);
   }
 
-  /**
-   * Poll a refund/transfer that was initiated via refundPayment.
-   */
   async checkRefundStatus(
     provider: 'MTN' | 'AIRTEL',
     reference: string,
