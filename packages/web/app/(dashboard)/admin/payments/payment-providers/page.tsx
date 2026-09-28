@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\payment-providers\page.tsx
+// packages/web/app/(dashboard)/admin/payment-providers/page.tsx
 
 'use client';
 
@@ -60,7 +60,6 @@ import {
   Info,
   HelpCircle,
   Globe,
-  Shield as ShieldIcon,
   Lock,
   Unlock,
 } from 'lucide-react';
@@ -223,50 +222,42 @@ function toViewProvider(raw: Partial<PaymentProviderStatus>): PaymentProvider {
 }
 
 // ============================================
-// CONSTANTS - EXACT PROVIDER IMAGE URLs
+// CONSTANTS
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. Historical rows
+//   with `provider === 'PAYSTACK'` fall through to the generic
+//   defaults (`CreditCard` icon, default gradient, raw code as
+//   display name).
+//
+// Icon URLs are local paths under `packages/web/public/`. Add one
+// SVG per code to restore the images. Until then, the `<Image>`
+// onError handler hides the broken image and the emoji from
+// `config.icon` renders.
 
 const PROVIDER_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
+  STRIPE: '/icons/payments/stripe.svg',
+  PAYPAL: '/icons/payments/paypal.svg',
+  FLUTTERWAVE: '/icons/payments/flutterwave.svg',
+  SQUARE: '/icons/payments/square.svg',
+  MTN: '/icons/payments/mtn.svg',
+  AIRTEL: '/icons/payments/airtel.svg',
+  TIGO: '/icons/payments/tigo.svg',
+  VODAFONE: '/icons/payments/vodafone.svg',
+  CASH: '/icons/payments/cash.svg',
+  MOBILE_MONEY: '/icons/payments/mobile-money.svg',
+  BANK_TRANSFER: '/icons/payments/bank-transfer.svg',
+  GIFT_CARD: '/icons/payments/gift-card.svg',
+  LOYALTY_POINTS: '/icons/payments/loyalty-points.svg',
 };
 
-const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {
-  STRIPE: 'https://stripe.com/img/v3/home/social.png',
-  PAYPAL:
-    'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg',
-  FLUTTERWAVE: 'https://flutterwave.com/images/logo/flyer.png',
-  SQUARE: 'https://squareup.com/icons/square_logo.svg',
-  MTN: 'https://www.mtn.co.ug/wp-content/uploads/2023/05/mtn-logo.png',
-  AIRTEL:
-    'https://www.airtel.in/static-assets/new-home/img/airtel-red-logo.svg',
-  TIGO: 'https://www.tigo.com.tz/sites/default/files/tigo-logo.png',
-  VODAFONE:
-    'https://www.vodafone.com/content/dam/vodcom/Images/Logo/vodafone_logo_red.png',
-  CASH: 'https://cdn-icons-png.flaticon.com/512/2331/2331970.png',
-  MOBILE_MONEY: 'https://cdn-icons-png.flaticon.com/512/545/545245.png',
-  BANK_TRANSFER:
-    'https://cdn-icons-png.flaticon.com/512/2845/2845813.png',
-  GIFT_CARD: 'https://cdn-icons-png.flaticon.com/512/3144/3144456.png',
-  LOYALTY_POINTS:
-    'https://cdn-icons-png.flaticon.com/512/1828/1828665.png',
-};
+/**
+ * @deprecated The dark-mode image map is intentionally empty. If
+ *   you later add dark-mode-specific logos, add them here — the
+ *   lookup helper falls through to `PROVIDER_IMAGE_URLS` for any
+ *   code not present in this map.
+ */
+const PROVIDER_DARK_IMAGE_URLS: Record<string, string> = {};
 
 const PROVIDER_ICONS: Record<string, any> = {
   CASH: Banknote,
@@ -386,14 +377,8 @@ export default function PaymentProvidersPage() {
   //
   // `paymentService.getPaymentProviders()` returns
   // `{ success: boolean, data: PaymentProviderStatus[] }`.
-  // The old code assumed `response.data` was the top-level array and
-  // would throw if the backend wrapped the payload or returned
-  // anything other than an array. The new code handles:
-  //
-  //   1. `{ success, data: [...] }`     — canonical ApiResponse
-  //   2. `[...]`                        — bare array (older backends)
-  //   3. `{ success: false, ... }`      — error envelope
-  //   4. Anything else                  — treated as empty
+  // Older service versions returned a bare array. The unwrap
+  // handles both, plus the error envelope case.
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -401,19 +386,12 @@ export default function PaymentProvidersPage() {
 
       const response = await paymentService.getPaymentProviders();
 
-      // Unwrap whichever shape the service returned.
       let rawList: any[] = [];
 
       if (Array.isArray(response)) {
-        // Older service versions returned a bare array.
         rawList = response;
       } else if (response && typeof response === 'object') {
         if (Array.isArray((response as any).data)) {
-          rawList = (response as any).data;
-        } else if (
-          (response as any).success === false &&
-          Array.isArray((response as any).data)
-        ) {
           rawList = (response as any).data;
         }
       }
@@ -743,9 +721,9 @@ export default function PaymentProvidersPage() {
 
   const getProviderImageUrl = useCallback(
     (providerCode: string): string => {
-      return isDark && PROVIDER_DARK_IMAGE_URLS[providerCode]
-        ? PROVIDER_DARK_IMAGE_URLS[providerCode]
-        : PROVIDER_IMAGE_URLS[providerCode] || '';
+      const dark = PROVIDER_DARK_IMAGE_URLS[providerCode];
+      if (isDark && dark) return dark;
+      return PROVIDER_IMAGE_URLS[providerCode] || '';
     },
     [isDark],
   );
@@ -774,7 +752,7 @@ export default function PaymentProvidersPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2">
-          You don't have permission to manage payment providers.
+          You don&apos;t have permission to manage payment providers.
         </p>
         <button
           onClick={() => router.push('/admin/dashboard')}

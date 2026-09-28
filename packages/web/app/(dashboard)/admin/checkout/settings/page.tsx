@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\checkout\settings\page.tsx
+// packages/web/app/(dashboard)/admin/checkout/settings/page.tsx
 
 'use client';
 
@@ -10,7 +10,7 @@ import {
   RefreshCw,
   Loader2,
   Lock,
-  X,
+  AlertCircle,
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../../types/enums';
@@ -25,6 +25,14 @@ import { toast } from '../../../../../utils/toast-manager';
 // ============================================
 // DEFAULTS
 // ============================================
+//
+// ⚠ `currencyCode` and `currencySymbol` are intentionally EMPTY.
+//   The backend's `getCheckoutSettings` derives them from the
+//   business unit's currency via `currencyService.resolveForBusiness`
+//   (BU → DEFAULT_CURRENCY → registry default — UGX on this
+//   deployment). Hardcoding `'USD'` / `'$'` here made the initial
+//   render show the wrong currency until the backend response
+//   landed. Leave them empty; the backend fills them in.
 
 const DEFAULT_SETTINGS: CheckoutSettings = {
   allowPartialPayment: true,
@@ -50,8 +58,8 @@ const DEFAULT_SETTINGS: CheckoutSettings = {
   taxRate: 8,
   notifyOnAbandonedCart: true,
   abandonedCartHours: 2,
-  currencyCode: 'USD',
-  currencySymbol: '$',
+  currencyCode: '',
+  currencySymbol: '',
   showStockBadge: true,
   showVariantImages: true,
 };
@@ -238,7 +246,10 @@ export default function CheckoutSettingsPage() {
           onChange={(e) => {
             const parsed = parseFloat(e.target.value);
             const num = Number.isFinite(parsed) ? parsed : 0;
-            updateSetting(key, (min !== undefined && num < min ? min : num) as any);
+            updateSetting(
+              key,
+              (min !== undefined && num < min ? min : num) as any,
+            );
           }}
           disabled={!canManageCheckout}
           className="w-32 px-3 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 tabular-nums"
@@ -318,7 +329,7 @@ export default function CheckoutSettingsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to manage checkout settings.
+          You don&apos;t have permission to manage checkout settings.
         </p>
         <button
           type="button"

@@ -1,8 +1,14 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\checkout\page.tsx
+// packages/web/app/(dashboard)/admin/checkout/page.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -31,7 +37,6 @@ import {
   User,
   Copy,
   X,
-  Star,
 } from 'lucide-react';
 import { usePermission } from '../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../types/enums';
@@ -151,9 +156,15 @@ export default function AdminCheckoutPage() {
     }
   }, [
     canViewCheckouts,
-    filters,
     pagination.page,
     pagination.limit,
+    filters.search,
+    filters.status,
+    filters.paymentStatus,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.sortBy,
+    filters.sortOrder,
   ]);
 
   const loadStats = useCallback(async () => {
@@ -305,7 +316,7 @@ export default function AdminCheckoutPage() {
     }
   }, [selectedCheckout, loadCheckouts, loadStats]);
 
-  const getStatusColor = (status: string): string => {
+  const getStatusColor = useCallback((status: string): string => {
     switch (status) {
       case 'COMPLETED':
         return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300';
@@ -320,9 +331,9 @@ export default function AdminCheckoutPage() {
       default:
         return 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
     }
-  };
+  }, []);
 
-  const getPaymentStatusColor = (status: string): string => {
+  const getPaymentStatusColor = useCallback((status: string): string => {
     switch (status) {
       case 'PAID':
         return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300';
@@ -335,7 +346,7 @@ export default function AdminCheckoutPage() {
       default:
         return 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
     }
-  };
+  }, []);
 
   // Summary figures. Prefer the authoritative stats endpoint.
   const summary = useMemo(() => {
@@ -377,7 +388,7 @@ export default function AdminCheckoutPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view checkouts. Please contact
+          You don&apos;t have permission to view checkouts. Please contact
           your administrator.
         </p>
         <button
@@ -682,7 +693,9 @@ export default function AdminCheckoutPage() {
                       ? `${checkout.customer.firstName} ${checkout.customer.lastName}`.trim()
                       : 'Guest';
                     const paymentMethod =
-                      (checkout as any).payments?.[0]?.paymentMethod ?? 'N/A';
+                      (checkout as any).paymentMethod ??
+                      (checkout as any).payments?.[0]?.paymentMethod ??
+                      'N/A';
                     return (
                       <tr
                         key={checkout.id}
@@ -813,7 +826,7 @@ export default function AdminCheckoutPage() {
                   onClick={() =>
                     setPagination((prev) => ({
                       ...prev,
-                      page: prev.page - 1,
+                      page: Math.max(1, prev.page - 1),
                     }))
                   }
                   disabled={pagination.page === 1}
@@ -827,7 +840,7 @@ export default function AdminCheckoutPage() {
                   onClick={() =>
                     setPagination((prev) => ({
                       ...prev,
-                      page: prev.page + 1,
+                      page: Math.min(prev.totalPages, prev.page + 1),
                     }))
                   }
                   disabled={pagination.page === pagination.totalPages}

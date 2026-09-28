@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\checkout\payment-methods\page.tsx
+// packages/web/app/(dashboard)/admin/checkout/payment-methods/page.tsx
 
 'use client';
 
@@ -32,6 +32,10 @@ import { toast } from '../../../../../utils/toast-manager';
 // ============================================
 // ICON MAP
 // ============================================
+//
+// ⚠ PAYSTACK has been removed from this project. A historical
+//   method with `code === 'PAYSTACK'` falls through to the
+//   `CreditCard` default in `getIconForCode`.
 
 const PAYMENT_METHOD_ICONS: Record<
   string,
@@ -53,7 +57,6 @@ const PAYMENT_METHOD_ICONS: Record<
   WALLET: Wallet,
   PAYPAL: CreditCard,
   FLUTTERWAVE: CreditCard,
-  PAYSTACK: CreditCard,
   SQUARE: CreditCard,
   CHECK: Banknote,
 };
@@ -144,7 +147,7 @@ export default function PaymentMethodsPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to manage payment methods.
+          You don&apos;t have permission to manage payment methods.
         </p>
         <button
           type="button"

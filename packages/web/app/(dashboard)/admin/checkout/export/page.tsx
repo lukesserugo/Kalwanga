@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\app\(dashboard)\admin\checkout\export\page.tsx
+// packages/web/app/(dashboard)/admin/checkout/export/page.tsx
 
 'use client';
 
@@ -53,6 +53,26 @@ const FORMAT_OPTIONS: FormatOption[] = [
     icon: FileJson,
   },
 ];
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Local-date stamp for the export filename.
+ *
+ * `new Date().toISOString()` returns the UTC date, so a user in
+ * Uganda exporting at 01:00 local on the 16th would get a filename
+ * stamped "15". Using the local `getFullYear / getMonth / getDate`
+ * makes the filename match the user's own calendar.
+ */
+function localDateStamp(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -112,9 +132,7 @@ export default function CheckoutExportPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `checkout_export_${new Date()
-        .toISOString()
-        .split('T')[0]}.${format}`;
+      link.download = `checkout_export_${localDateStamp()}.${format}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -179,7 +197,7 @@ export default function CheckoutExportPage() {
           Access Restricted
         </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to export checkout data.
+          You don&apos;t have permission to export checkout data.
         </p>
         <button
           type="button"
@@ -358,7 +376,7 @@ export default function CheckoutExportPage() {
               </div>
               <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                 Leave both fields empty to export every checkout the
-                backend will return (capped at the server's export
+                backend will return (capped at the server&apos;s export
                 limit).
               </p>
             </section>
@@ -380,9 +398,7 @@ export default function CheckoutExportPage() {
                 <SummaryRow label="To" value={dateTo || '—'} />
                 <SummaryRow
                   label="Filename"
-                  value={`checkout_export_${new Date()
-                    .toISOString()
-                    .split('T')[0]}.${format}`}
+                  value={`checkout_export_${localDateStamp()}.${format}`}
                   mono
                 />
               </div>
