@@ -28,7 +28,7 @@ import {
   Phone,
   MapPin,
 } from 'lucide-react';
-import { useThemeStore } from '../stores/themeStore';
+import { useThemeStore } from '../../stores/themeStore';
 
 // ============================================
 // TABLE OF CONTENTS
@@ -383,7 +383,10 @@ export default function TermsPage() {
                 icon={Shield}
                 isDark={isDark}
               >
-                <p>You agree to use the Service only for lawful purposes and in accordance with these Terms. You agree not to:</p>
+                <p>
+                  You agree to use the Service only for lawful purposes and
+                  in accordance with these Terms. You agree not to:
+                </p>
                 <ul className="space-y-1.5 list-none pl-0">
                   {[
                     'Violate any applicable laws or regulations.',
@@ -468,9 +471,9 @@ export default function TermsPage() {
               >
                 <p>
                   All fees are exclusive of applicable taxes, which are your
-                  responsibility. You agree to pay any sales, use, value-added,
-                  or similar taxes imposed on your use of the Service,
-                  excluding taxes on our net income.
+                  responsibility. You agree to pay any sales, use,
+                  value-added, or similar taxes imposed on your use of the
+                  Service, excluding taxes on our net income.
                 </p>
                 <p>
                   If we are required to collect taxes, we will add them to
@@ -508,15 +511,16 @@ export default function TermsPage() {
                 isDark={isDark}
               >
                 <p>
-                  You retain ownership of all data you enter into the Service,
-                  including product catalogs, sales records, and Customer
-                  Data. You grant us a limited license to process that data
-                  solely to provide the Service.
+                  You retain ownership of all data you enter into the
+                  Service, including product catalogs, sales records, and
+                  Customer Data. You grant us a limited license to process
+                  that data solely to provide the Service.
                 </p>
                 <p>
                   You are responsible for complying with all applicable data
-                  protection laws, including obtaining any necessary consents
-                  from your customers before entering their information.
+                  protection laws, including obtaining any necessary
+                  consents from your customers before entering their
+                  information.
                 </p>
                 <p>
                   We will handle Customer Data in accordance with our{' '}
@@ -750,9 +754,7 @@ export default function TermsPage() {
                 isDark={isDark}
                 isLast
               >
-                <p>
-                  Questions about these Terms? Contact our legal team:
-                </p>
+                <p>Questions about these Terms? Contact our legal team:</p>
                 <div className="not-prose grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                   <ContactCard
                     icon={Mail}

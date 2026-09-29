@@ -138,8 +138,6 @@ import {
   exportAbandonedSchema,
   exportAnalyticsSchema,
   exportHistorySchema,
-  recoverCartSchema,
-  sendReminderSchema,
   splitCartSchema,
   transferCartSchema,
   updateCartItemQuantitySchema,
@@ -390,8 +388,6 @@ export const validate = {
 
   // Abandoned Cart
   abandonedCartsQuery: abandonedCartsQuerySchema,
-  recoverCart: recoverCartSchema,
-  sendReminder: sendReminderSchema,
 
   // Search
   searchParams: searchParamsSchema,

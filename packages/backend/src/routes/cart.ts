@@ -1,6 +1,7 @@
-// D:\Projects\Kalwanga\packages\backend\src\routes\cart.ts
+// packages/backend/src/routes/cart.ts
 
 import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { cartController } from '../controllers/cartController.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { UserRole } from '../generated/prisma/index.js';
@@ -18,6 +19,42 @@ const router = Router();
 // ============================================
 
 router.use(requireAuth);
+
+// ============================================
+// ID-SHAPE GUARD
+// ============================================
+//
+// Route-level guard for the `:id` param. Rejects obviously malformed
+// ids (empty, containing whitespace, absurdly long) with a clean 400
+// before the request reaches Prisma. The controller still validates
+// ownership and existence; this is only a shape check.
+//
+// Kept as a local middleware rather than pulling in the shared
+// validateRequest, because validateRequest expects a Zod schema for
+// the whole request (body / query / params) and cart ids are a
+// narrow, single-field concern.
+
+function validateCartIdParam(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const id = req.params?.id;
+  if (
+    typeof id !== 'string' ||
+    id.length === 0 ||
+    id.length > 128 ||
+    /\s/.test(id)
+  ) {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid cart ID',
+      errors: [{ field: 'id', message: 'Invalid cart ID' }],
+    });
+    return;
+  }
+  next();
+}
 
 // ============================================
 // CART STATIC ROUTES (MUST COME BEFORE /:id)
@@ -177,17 +214,25 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // ============================================
-// CART DYNAMIC ROUTES (WITH :id PARAM)
+// CANONICAL READ / WRITE
 // ============================================
+//
+// `GET /cart` and `DELETE /cart` are registered here, before the
+// dynamic `/:id` route, so the entire file follows the
+// static-before-dynamic rule without exception.
 
 router.get('/', cartController.getCart);
+router.delete('/', cartController.clearCart);
+
+// ============================================
+// CART DYNAMIC ROUTES (WITH :id PARAM)
+// ============================================
 
 router.get(
   '/:id',
   requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]),
+  validateCartIdParam,
   cartController.getCartById,
 );
-
-router.delete('/', cartController.clearCart);
 
 export default router;

@@ -256,18 +256,31 @@ export default function AdminCartHistoryPage() {
         const response = await cartService.getAbandonedCarts(params);
         if (!isMountedRef.current) return;
 
-        const rawCarts: CartHistoryItem[] = Array.isArray(response)
-          ? response
-          : response?.carts ?? [];
+        // Unwrap `{ data: { carts, ... } }` envelopes if present.
+        // Without this, `response.total` reads from the wrong level
+        // and the paginator silently shows "1 of 1".
+        const root: any = response ?? {};
+        const payload: any =
+          root.data &&
+          typeof root.data === 'object' &&
+          !Array.isArray(root.data)
+            ? root.data
+            : root;
+
+        const rawCarts: CartHistoryItem[] = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload.carts)
+          ? payload.carts
+          : [];
 
         const filtered = applyClientFilters(rawCarts, filters);
 
         setCarts(filtered);
         setPagination({
-          total: response?.total ?? rawCarts.length,
-          page: response?.page ?? pagination.page,
-          totalPages: response?.totalPages ?? 1,
-          limit: response?.limit ?? pagination.limit,
+          total: payload.total ?? rawCarts.length,
+          page: payload.page ?? pagination.page,
+          totalPages: payload.totalPages ?? 1,
+          limit: payload.limit ?? pagination.limit,
         });
       } catch (err: any) {
         if (!isMountedRef.current) return;
@@ -583,7 +596,8 @@ export default function AdminCartHistoryPage() {
             Summary figures below reflect the <strong>current page</strong>{' '}
             only. Filters for <em>search</em>, <em>user ID</em>, and{' '}
             <em>max value</em> are applied client-side because the backend
-            endpoint does not yet support them.
+            endpoint does not yet support them — they narrow the rows
+            already on the page, not the full result set.
           </p>
         </div>
 

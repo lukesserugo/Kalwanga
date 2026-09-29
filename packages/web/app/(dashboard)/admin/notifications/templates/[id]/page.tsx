@@ -25,11 +25,99 @@ import type {
 } from '../../../../../../types/notification';
 import { NOTIFICATION_TYPES } from '../../../../../../types/notification';
 import { toast } from '../../../../../../utils/toast-manager';
+import { api } from '../../../../../../services/api';
 
-const EMPTY_TEMPLATE: Omit<
+// ============================================
+// LOCAL TEMPLATE HELPERS
+// ============================================
+//
+// The backend exposes these routes on `notificationController`:
+//
+//   GET    /notifications/templates           → { success, data: NotificationTemplate[] }
+//   GET    /notifications/templates/:id       → { success, data: NotificationTemplate }
+//   POST   /notifications/templates           → { success, data: NotificationTemplate }
+//   PUT    /notifications/templates/:id       → { success, data: NotificationTemplate }
+//   DELETE /notifications/templates/:id       → { success, message }
+//
+// Only some are present on the frontend `notificationService`. The
+// missing ones (`getTemplates`, `getTemplateById`, `createTemplate`,
+// `updateTemplate`) are declared locally here, matching the same
+// pattern used on the templates list page.
+
+async function fetchTemplateById(
+  id: string,
+): Promise<NotificationTemplate> {
+  const response = await api.get<any>(`/notifications/templates/${id}`);
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  const template =
+    body && typeof body === 'object' && 'data' in body
+      ? (body as any).data
+      : body;
+
+  if (!template || typeof template !== 'object' || !('id' in template)) {
+    throw new Error('Template lookup returned an invalid response');
+  }
+  return template as NotificationTemplate;
+}
+
+async function createTemplateRemote(
+  data: Omit<NotificationTemplate, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<NotificationTemplate> {
+  const response = await api.post<any>('/notifications/templates', data);
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  const template =
+    body && typeof body === 'object' && 'data' in body
+      ? (body as any).data
+      : body;
+
+  if (!template || typeof template !== 'object' || !('id' in template)) {
+    throw new Error('Template creation returned an invalid response');
+  }
+  return template as NotificationTemplate;
+}
+
+async function updateTemplateRemote(
+  id: string,
+  data: Partial<NotificationTemplate>,
+): Promise<NotificationTemplate> {
+  const response = await api.put<any>(
+    `/notifications/templates/${id}`,
+    data,
+  );
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  const template =
+    body && typeof body === 'object' && 'data' in body
+      ? (body as any).data
+      : body;
+
+  if (!template || typeof template !== 'object' || !('id' in template)) {
+    throw new Error('Template update returned an invalid response');
+  }
+  return template as NotificationTemplate;
+}
+
+// ============================================
+// PAGE
+// ============================================
+
+type EditableTemplate = Omit<
   NotificationTemplate,
   'id' | 'createdAt' | 'updatedAt'
-> = {
+>;
+
+const EMPTY_TEMPLATE: EditableTemplate = {
   name: '',
   subject: '',
   body: '',
@@ -41,9 +129,10 @@ const EMPTY_TEMPLATE: Omit<
 export default function TemplateEditorPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const isNew = params.id === 'new';
+  const templateId = params?.id ?? '';
+  const isNew = templateId === 'new';
 
-  const [template, setTemplate] = useState(EMPTY_TEMPLATE);
+  const [template, setTemplate] = useState<EditableTemplate>(EMPTY_TEMPLATE);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +157,8 @@ export default function TemplateEditorPage() {
     }
     try {
       setLoading(true);
-      const data = await notificationService.getTemplateById(params.id);
+      setError(null);
+      const data = await fetchTemplateById(templateId);
       if (!isMountedRef.current) return;
       setTemplate({
         name: data.name,
@@ -80,16 +170,24 @@ export default function TemplateEditorPage() {
       });
     } catch (err: any) {
       if (!isMountedRef.current) return;
-      setError(err?.response?.data?.message || 'Failed to load template');
+      setError(
+        err?.response?.data?.message || 'Failed to load template',
+      );
     } finally {
       if (isMountedRef.current) setLoading(false);
     }
-  }, [isNew, params.id]);
+  }, [isNew, templateId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  /**
+   * Detected variables are the union of `{{name}}` tokens found in
+   * the current subject and body. This is what gets sent to the
+   * backend as `variables` on save — the backend treats it as
+   * advisory metadata.
+   */
   const detectedVariables = useMemo(() => {
     const regex = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
     const found = new Set<string>();
@@ -128,15 +226,17 @@ export default function TemplateEditorPage() {
 
     try {
       setSaving(true);
-      // Sync `variables` with detected ones.
-      const payload = { ...template, variables: detectedVariables };
+      const payload: EditableTemplate = {
+        ...template,
+        variables: detectedVariables,
+      };
 
       if (isNew) {
-        const created = await notificationService.createTemplate(payload);
+        const created = await createTemplateRemote(payload);
         toast.success('Template created');
         router.push(`/admin/notifications/templates/${created.id}`);
       } else {
-        await notificationService.updateTemplate(params.id, payload);
+        await updateTemplateRemote(templateId, payload);
         toast.success('Template saved');
       }
     } catch (err: any) {
@@ -146,7 +246,7 @@ export default function TemplateEditorPage() {
     } finally {
       if (isMountedRef.current) setSaving(false);
     }
-  }, [template, detectedVariables, isNew, params.id, router]);
+  }, [template, detectedVariables, isNew, templateId, router]);
 
   const addVariable = useCallback(() => {
     const v = newVariable.trim();
@@ -161,7 +261,7 @@ export default function TemplateEditorPage() {
   const removeVariable = useCallback((v: string) => {
     setTemplate((prev) => ({
       ...prev,
-      variables: prev.variables.filter((x) => x !== v),
+      variables: prev.variables.filter((x: string) => x !== v),
     }));
   }, []);
 
@@ -250,7 +350,11 @@ export default function TemplateEditorPage() {
         </div>
       </div>
 
-      <div className={`grid gap-5 ${showPreview ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+      <div
+        className={`grid gap-5 ${
+          showPreview ? 'lg:grid-cols-2' : 'grid-cols-1'
+        }`}
+      >
         <div className="space-y-5">
           <section className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm p-5">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">
@@ -280,7 +384,7 @@ export default function TemplateEditorPage() {
                   }
                   className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:border-orange-400 focus:ring-2 focus:ring-orange-500/30 outline-none"
                 >
-                  {NOTIFICATION_TYPES.map((t) => (
+                  {NOTIFICATION_TYPES.map((t: NotificationType) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
@@ -317,7 +421,10 @@ export default function TemplateEditorPage() {
                   type="text"
                   value={template.subject}
                   onChange={(e) =>
-                    setTemplate((p) => ({ ...p, subject: e.target.value }))
+                    setTemplate((p) => ({
+                      ...p,
+                      subject: e.target.value,
+                    }))
                   }
                   placeholder="e.g. Low stock alert: {{productName}}"
                   className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-white focus:border-orange-400 focus:ring-2 focus:ring-orange-500/30 outline-none font-mono"
@@ -352,7 +459,7 @@ export default function TemplateEditorPage() {
                   Detected
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {detectedVariables.map((v) => (
+                  {detectedVariables.map((v: string) => (
                     <span
                       key={v}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-orange-50 dark:bg-orange-950/30 text-[11px] font-mono text-orange-700 dark:text-orange-300"
@@ -370,7 +477,7 @@ export default function TemplateEditorPage() {
                   Registered
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {template.variables.map((v) => (
+                  {template.variables.map((v: string) => (
                     <span
                       key={v}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 text-[11px] font-mono text-gray-700 dark:text-gray-300"
@@ -380,6 +487,7 @@ export default function TemplateEditorPage() {
                         type="button"
                         onClick={() => removeVariable(v)}
                         className="text-gray-400 hover:text-red-500 transition-colors"
+                        aria-label={`Remove variable ${v}`}
                       >
                         <X className="w-2.5 h-2.5" />
                       </button>
@@ -432,12 +540,12 @@ export default function TemplateEditorPage() {
 
               {detectedVariables.length === 0 ? (
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Add a {'{{variable}}'} to the subject or body to see preview
-                  options.
+                  Add a {'{{variable}}'} to the subject or body to see
+                  preview options.
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {detectedVariables.map((v) => (
+                  {detectedVariables.map((v: string) => (
                     <Field key={v} label={v}>
                       <input
                         type="text"
@@ -482,6 +590,10 @@ export default function TemplateEditorPage() {
     </div>
   );
 }
+
+// ============================================
+// FIELD WRAPPER
+// ============================================
 
 function Field({
   label,

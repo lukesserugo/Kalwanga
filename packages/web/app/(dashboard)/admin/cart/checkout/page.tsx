@@ -45,7 +45,6 @@ import {
   newIdempotencyKey,
   type Cart,
 } from '../../../../../services/cartService';
-import { checkoutService } from '../../../../../services/checkoutService';
 import { formatCurrency } from '../../../../../utils/formatters';
 
 // ============================================
@@ -195,10 +194,17 @@ export default function AdminCartCheckoutPage() {
   );
 
   /**
-   * One idempotency key per page visit. Retries reuse it so a network
-   * flake or a double-click never produces two sales.
+   * One idempotency key per checkout attempt. Retries reuse it so a
+   * network flake or a double-click never produces two sales.
    */
   const idempotencyKeyRef = useRef<string | null>(null);
+
+  /**
+   * Tracks whether a "new sale" has been requested. When true, the
+   * `cartId` effect below will not override the fetch with the URL
+   * param — it will use the caller's own active cart instead.
+   */
+  const forceOwnCartRef = useRef(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -244,7 +250,10 @@ export default function AdminCartCheckoutPage() {
       // used. If they passed a cartId but lack cross-cart read access,
       // we also fall back to their own cart (the backend would 403
       // anyway).
-      const useExplicitCart = Boolean(cartId) && canReadArbitraryCart;
+      const useExplicitCart =
+        Boolean(cartId) &&
+        canReadArbitraryCart &&
+        !forceOwnCartRef.current;
       const cartData = useExplicitCart
         ? await cartService.getCartById(cartId as string)
         : await cartService.getCart();
@@ -333,7 +342,9 @@ export default function AdminCartCheckoutPage() {
         );
         if (cancelled || !isMountedRef.current) return;
 
-        const payload = unwrapApiResponse<CashRegisterSession[] | CashRegisterSession>(response);
+        const payload = unwrapApiResponse<
+          CashRegisterSession[] | CashRegisterSession
+        >(response);
         const sessions = Array.isArray(payload)
           ? payload
           : payload
@@ -491,7 +502,7 @@ export default function AdminCartCheckoutPage() {
         // NOTE: `tipAmount` is intentionally not sent — the backend
         // `checkoutSchema` does not declare it and no downstream service
         // reads it. Tips are outside the current checkout contract.
-        const result = await checkoutService.processCheckout({
+        const result = await cartService.checkoutCart({
           cartId: cart.id,
           customerId: customerId || undefined,
           paymentMethod: paymentMethod as any,
@@ -582,8 +593,17 @@ export default function AdminCartCheckoutPage() {
    * the next `fetchCart` call resolves the admin's own active cart,
    * and we rotate the idempotency key so a subsequent checkout is a
    * distinct submission.
+   *
+   * ⚠ The previous implementation relied on `setTimeout(…, 0)` to
+   *   let `router.replace` flush. That's a race — the navigation is
+   *   async and can take longer than one tick. We now set a ref that
+   *   forces the next `fetchCart` to ignore `cartId`, and trigger the
+   *   fetch directly. The URL is updated for cosmetic consistency, but
+   *   the ref is what actually controls which cart we load.
    */
   const handleNewSale = useCallback(() => {
+    forceOwnCartRef.current = true;
+
     setSuccess(false);
     setCheckoutResult(null);
     setPaymentMethod('CASH');
@@ -596,13 +616,8 @@ export default function AdminCartCheckoutPage() {
     setCashRegisterSessionId('');
     idempotencyKeyRef.current = null;
 
-    // Drop the `cartId` query param and re-fetch.
     router.replace('/admin/cart/checkout');
-    // `router.replace` is async; trigger a fetch against the (now
-    // param-less) URL after a tick so `searchParams` has updated.
-    setTimeout(() => {
-      void fetchCart();
-    }, 0);
+    void fetchCart();
   }, [router, fetchCart]);
 
   // ============================================

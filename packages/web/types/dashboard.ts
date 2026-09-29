@@ -1,144 +1,110 @@
-// D:\Projects\Kalwanga\packages\web\types\dashboard.ts
+// packages/web/types/dashboard.ts
+import type { Sale } from './sale';
+import type { Inventory } from './inventory';
 
-// Import required types from other files
-import { Sale } from './sale';
-import { Inventory } from './inventory';
-
-// Define Notification locally since it's not exported from index
+/**
+ * Prisma `Notification` row as returned by `/dashboard/realtime`.
+ *
+ * ⚠ The `type` field is a free-form string in the DB, not a union.
+ *   Narrow it with a guard before rendering a specific icon.
+ */
 export interface Notification {
   id: string;
-  title: string;
+  title?: string;
   message: string;
-  type: 'info' | 'success' | 'warning' | 'error' | string;
+  type: string;
   isRead: boolean;
   createdAt: string;
   link?: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
+}
+
+export interface DashboardSalesPeriod {
+  total: number;
+  count: number;
+}
+
+export interface DashboardTopProduct {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  revenue: number;
 }
 
 export interface DashboardStats {
   sales: {
-    today: { total: number; count: number; trend?: number };
-    week: { total: number; count: number; trend?: number };
-    month: { total: number; count: number; trend?: number };
+    today: DashboardSalesPeriod;
+    week: DashboardSalesPeriod;
+    month: DashboardSalesPeriod;
+    year: DashboardSalesPeriod;
   };
   inventory: {
     totalItems: number;
     totalValue: number;
     lowStock: number;
     outOfStock: number;
+    reorderNeeded: number;
   };
-  customers: { 
+  customers: {
     total: number;
-    new?: number;
-    trend?: number;
+    active: number;
+    /** Backend field name is `newThisMonth`. */
+    newThisMonth: number;
   };
-  suppliers: { total: number };
-  registers: { open: number };
-  orders: { pending: number };
-}
-
-export interface SalesStats {
-  totalRevenue: number;
-  totalSales: number;
-  averageTicket: number;
-  todayRevenue: number;
-  todaySales: number;
-  weekRevenue?: number;
-  weekSales?: number;
-  monthRevenue?: number;
-  monthSales?: number;
-  yearRevenue?: number;
-  yearSales?: number;
-}
-
-export interface CustomerStats {
-  totalCustomers: number;
-  newCustomers: number;
-  returningCustomers: number;
-  retentionRate: number;
-  averageLoyaltyPoints: number;
-  topSpenders: Array<{
-    id: string;
-    name: string;
-    email: string;
-    totalSpent: number;
-    loyaltyPoints: number;
-    lastPurchase: string | null;
-  }>;
-  customerSegments: {
-    highValue: number;
-    mediumValue: number;
-    lowValue: number;
+  suppliers: {
+    total: number;
+    active: number;
   };
+  registers: {
+    open: number;
+    total: number;
+    totalCash: number;
+  };
+  orders: {
+    pending: number;
+    completed: number;
+    cancelled: number;
+  };
+  recentActivity: Sale[];
+  topProducts: DashboardTopProduct[];
+  salesTrend: Array<{ date: string; total: number; count: number }>;
 }
 
-export interface InventoryStats {
-  totalItems: number;
-  totalValue: number;
-  lowStockCount: number;
-  outOfStockCount: number;
-  turnoverRate: number;
-  averageStockValue: number;
-  categories: Array<{
-    id: string;
-    name: string;
-    productCount: number;
-    totalValue: number;
-  }>;
+export interface RealtimeAlert {
+  type: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  message: string;
+  count: number;
 }
 
 export interface RealtimeData {
   recentSales: Sale[];
   lowStockInventory: Inventory[];
   notifications: Notification[];
-  topProducts: Array<{
-    id: string;
-    name: string;
-    sku: string;
-    sales: number;
-    revenue: number;
-  }>;
+  openRegisters: unknown[];
+  pendingOrders: unknown[];
+  alerts: RealtimeAlert[];
 }
 
-export interface SalesTrend {
+export interface TrendPoint {
   date: string;
-  total: number;
-  count: number;
-  averageTicket: number;
+  value: number;
 }
 
-export interface TopProduct {
-  productId: string;
-  productName: string;
-  sku: string;
-  quantity: number;
-  revenue: number;
-  averagePrice: number;
-}
-
-export interface CustomerInsight {
-  totalCustomers: number;
-  newCustomersLast30Days: number;
-  returningCustomersLast30Days: number;
-  retentionRate: number;
-  topSpenders: Array<{
-    id: string;
-    name: string;
-    email: string;
-    totalSpent: number;
-    loyaltyPoints: number;
-    lastPurchase: string | null;
-  }>;
+export interface TrendsResult {
+  range: string;
+  sales: TrendPoint[];
+  orders: TrendPoint[];
 }
 
 export interface ActivityItem {
   id: string;
-  type: 'sale' | 'inventory' | 'customer' | 'order' | 'payment' | 'alert' | 'notification';
+  type: 'SALE' | 'ORDER' | 'LOW_STOCK' | 'SYSTEM';
   title: string;
   description: string;
-  timestamp: string;
-  isRead: boolean;
-  link?: string;
-  icon?: string;
+  amount: number;
+  status: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
 }

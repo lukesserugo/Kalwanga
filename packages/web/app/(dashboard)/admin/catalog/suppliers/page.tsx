@@ -14,8 +14,26 @@ import {
 } from 'lucide-react';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { supplierService } from '../../../../../services/supplierService';
+import type {
+  CreateSupplierInput,
+  UpdateSupplierInput,
+} from '../../../../../services/supplierService';
 import { toast } from '../../../../../utils/toast-manager';
 import { PermissionResource } from '../../../../../types/enums';
+
+// ============================================
+// LOCAL SUPPLIER SHAPE (UI view model)
+// ============================================
+//
+// The service-level `Supplier` type is the canonical wire shape. This
+// local interface is the UI's view model — same fields plus the
+// optional stats the list rendering reads (`productCount`,
+// `totalSpent`, `lastOrderDate`), which the backend enriches on
+// `getAllSuppliers`.
+//
+// ⚠ Keep this in sync with what the page actually renders. Do NOT
+//   drop a field from here just because the service-level type
+//   doesn't declare it — the page reads it in the card/table views.
 
 interface Supplier {
   id: string;
@@ -36,23 +54,139 @@ interface Supplier {
   updatedAt: string;
 }
 
+// ============================================
+// HELPER — resolve companyId + userId
+// ============================================
+//
+// `CreateSupplierInput` requires BOTH `companyId` and `userId` as
+// non-placeholder strings. The previous version of this page passed
+// `companyId: 'default'` and `userId: 'default'`, which the service
+// layer rejects with a `SupplierValidationError` before the request
+// even leaves the browser.
+//
+// This helper pulls the real values from `localStorage` (populated by
+// the auth/session layer) and throws a `SupplierValidationError`-shaped
+// error if either is missing. The caller catches and surfaces the
+// message via `toast.error`.
+
+interface SessionIdentity {
+  companyId: string;
+  userId: string;
+}
+
+const PLACEHOLDER_IDS = new Set([
+  '',
+  'default',
+  'default-company',
+  'default-company-id',
+  'default-user',
+  'default-user-id',
+  'undefined',
+  'null',
+]);
+
+function isRealId(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  return !PLACEHOLDER_IDS.has(trimmed.toLowerCase());
+}
+
+/**
+ * Read the current session's identity from localStorage.
+ *
+ * Tries several common shapes:
+ *   - `{ companyId, userId }`
+ *   - `{ company: { id }, user: { id } }`
+ *   - `{ user: { id, companyId, company: { id } } }`
+ *   - Clerk-style: `{ user: { id: 'user_...', clerkId, companyId } }`
+ *
+ * Returns `null` when neither a real `companyId` nor a real `userId`
+ * can be resolved. The caller turns that into a user-facing error.
+ *
+ * ⚠ This is a best-effort read. The authoritative source is the
+ *   backend session; the frontend only needs enough to satisfy the
+ *   service-layer guards so the request can reach the server, which
+ *   then re-validates against the DB.
+ */
+function readSessionIdentity(): SessionIdentity | null {
+  if (typeof window === 'undefined') return null;
+
+  let parsed: any = null;
+  try {
+    const raw = localStorage.getItem('user');
+    if (raw) parsed = JSON.parse(raw);
+  } catch {
+    /* ignore — fall through */
+  }
+
+  // Shape A: { companyId, userId }
+  let companyId: unknown = parsed?.companyId;
+  let userId: unknown = parsed?.userId ?? parsed?.id;
+
+  // Shape B: { company: { id }, user: { id } }
+  if (!isRealId(companyId) && parsed?.company?.id) {
+    companyId = parsed.company.id;
+  }
+  if (!isRealId(userId) && parsed?.user?.id) {
+    userId = parsed.user.id;
+  }
+
+  // Shape C: { user: { id, companyId, company: { id } } }
+  const nested = parsed?.user;
+  if (!isRealId(companyId) && nested?.companyId) {
+    companyId = nested.companyId;
+  }
+  if (!isRealId(companyId) && nested?.company?.id) {
+    companyId = nested.company.id;
+  }
+  if (!isRealId(userId) && nested?.id) {
+    userId = nested.id;
+  }
+  if (!isRealId(userId) && nested?.clerkId) {
+    userId = nested.clerkId;
+  }
+
+  // Last-ditch: dedicated storage keys.
+  if (!isRealId(companyId)) {
+    const stored = localStorage.getItem('companyId');
+    if (isRealId(stored)) companyId = stored;
+  }
+  if (!isRealId(userId)) {
+    const stored = localStorage.getItem('userId');
+    if (isRealId(stored)) userId = stored;
+  }
+
+  if (!isRealId(companyId) || !isRealId(userId)) return null;
+
+  return {
+    companyId: companyId.trim(),
+    userId: userId.trim(),
+  };
+}
+
+// ============================================
+// COMPONENT
+// ============================================
+
 export default function DashboardSuppliersPage() {
   const router = useRouter();
-  const { 
-    canView, 
-    canManage, 
+  const {
+    canView,
+    canManage,
     canEdit,
     canDelete,
     canCreate,
-    isLoading: permissionLoading
+    isLoading: permissionLoading,
   } = usePermission();
-  
+
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+
   const [formData, setFormData] = useState({
     name: '',
     contactPerson: '',
@@ -63,6 +197,7 @@ export default function DashboardSuppliersPage() {
     notes: '',
     isActive: true,
   });
+
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -74,11 +209,19 @@ export default function DashboardSuppliersPage() {
   const [sortBy, setSortBy] = useState<'name' | 'rating' | 'createdAt'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  const canViewSuppliers = canView(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
+  const canViewSuppliers =
+    canView(PermissionResource.SUPPLIER) ||
+    canManage(PermissionResource.SUPPLIER);
   const canManageSuppliers = canManage(PermissionResource.SUPPLIER);
-  const canEditSuppliers = canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
-  const canDeleteSuppliers = canDelete(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
-  const canCreateSuppliers = canCreate(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
+  const canEditSuppliers =
+    canEdit(PermissionResource.SUPPLIER) ||
+    canManage(PermissionResource.SUPPLIER);
+  const canDeleteSuppliers =
+    canDelete(PermissionResource.SUPPLIER) ||
+    canManage(PermissionResource.SUPPLIER);
+  const canCreateSuppliers =
+    canCreate(PermissionResource.SUPPLIER) ||
+    canManage(PermissionResource.SUPPLIER);
 
   useEffect(() => {
     setIsClient(true);
@@ -90,6 +233,7 @@ export default function DashboardSuppliersPage() {
     } else if (isClient && !canViewSuppliers) {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, canViewSuppliers]);
 
   const loadSuppliers = async (showLoading = true) => {
@@ -97,16 +241,16 @@ export default function DashboardSuppliersPage() {
       if (showLoading) setLoading(true);
       setError(null);
       const result = await supplierService.getAllSuppliers({ limit: 100 });
-      
+
       let suppliersData: any[] = [];
       if (result && typeof result === 'object') {
-        if ('data' in result && Array.isArray(result.data)) {
-          suppliersData = result.data;
+        if ('data' in result && Array.isArray((result as any).data)) {
+          suppliersData = (result as any).data;
         } else if (Array.isArray(result)) {
-          suppliersData = result;
+          suppliersData = result as any[];
         }
       }
-      
+
       const mappedSuppliers: Supplier[] = suppliersData.map((item: any) => ({
         id: item.id || '',
         name: item.name || '',
@@ -147,7 +291,7 @@ export default function DashboardSuppliersPage() {
       toast.error('Please fill in all required fields');
       return;
     }
-    
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
       toast.error('Please enter a valid email address');
@@ -163,67 +307,95 @@ export default function DashboardSuppliersPage() {
     setSubmitting(true);
     try {
       if (editingSupplier) {
-        const updateData: Record<string, any> = {
+        // ── UPDATE ────────────────────────────────────────────────
+        // `UpdateSupplierInput` has no `companyId` / `userId` — the
+        // backend resolves those from the supplier row. Only send
+        // fields the caller may legitimately change.
+        const updateData: UpdateSupplierInput = {
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
           isActive: formData.isActive,
         };
-        
-        if (formData.address && formData.address.trim() !== '') {
+
+        if (formData.address.trim() !== '') {
           updateData.address = formData.address;
         }
-        if (formData.contactPerson && formData.contactPerson.trim() !== '') {
+        if (formData.contactPerson.trim() !== '') {
           updateData.contactPerson = formData.contactPerson;
         }
-        if (formData.taxId && formData.taxId.trim() !== '') {
+        if (formData.taxId.trim() !== '') {
           updateData.taxId = formData.taxId;
         }
-        if (formData.notes && formData.notes.trim() !== '') {
+        if (formData.notes.trim() !== '') {
           updateData.notes = formData.notes;
         }
         if (rating > 0) {
           updateData.rating = rating;
         }
-        
+
         await supplierService.updateSupplier(editingSupplier.id, updateData);
         toast.success('Supplier updated successfully');
       } else {
-        const createData: Record<string, any> = {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
+        // ── CREATE ────────────────────────────────────────────────
+        // `CreateSupplierInput` REQUIRES `name`, `companyId`, and
+        // `userId`. The previous version sent literal `'default'`
+        // strings, which the service-layer guard rejects. Resolve
+        // the real session identity here; if either is missing,
+        // abort with a clear message rather than firing a request
+        // the service will reject anyway.
+        const identity = readSessionIdentity();
+        if (!identity) {
+          toast.error(
+            'Your session is missing a company or user ID. Please log in again.',
+          );
+          setSubmitting(false);
+          return;
+        }
+
+        const createData: CreateSupplierInput = {
+          name: formData.name.trim(),
+          companyId: identity.companyId,
+          userId: identity.userId,
           isActive: formData.isActive,
-          companyId: 'default',
-          userId: 'default',
         };
-        
-        if (formData.address && formData.address.trim() !== '') {
-          createData.address = formData.address;
+
+        if (formData.email.trim() !== '') {
+          createData.email = formData.email.trim();
         }
-        if (formData.contactPerson && formData.contactPerson.trim() !== '') {
-          createData.contactPerson = formData.contactPerson;
+        if (formData.phone.trim() !== '') {
+          createData.phone = formData.phone.trim();
         }
-        if (formData.taxId && formData.taxId.trim() !== '') {
-          createData.taxId = formData.taxId;
+        if (formData.address.trim() !== '') {
+          createData.address = formData.address.trim();
         }
-        if (formData.notes && formData.notes.trim() !== '') {
-          createData.notes = formData.notes;
+        if (formData.contactPerson.trim() !== '') {
+          createData.contactPerson = formData.contactPerson.trim();
+        }
+        if (formData.taxId.trim() !== '') {
+          createData.taxId = formData.taxId.trim();
+        }
+        if (formData.notes.trim() !== '') {
+          createData.notes = formData.notes.trim();
         }
         if (rating > 0) {
           createData.rating = rating;
         }
-        
+
         await supplierService.createSupplier(createData);
         toast.success('Supplier created successfully');
       }
+
       setShowAddModal(false);
       setEditingSupplier(null);
       resetForm();
       await loadSuppliers(false);
     } catch (error: any) {
       console.error('Failed to save supplier:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to save supplier';
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to save supplier';
       toast.error(errorMessage);
     } finally {
       setSubmitting(false);
@@ -255,7 +427,10 @@ export default function DashboardSuppliersPage() {
       await loadSuppliers(false);
     } catch (error: any) {
       console.error('Failed to delete supplier:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to delete supplier';
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to delete supplier';
       toast.error(errorMessage);
     }
   };
@@ -264,18 +439,25 @@ export default function DashboardSuppliersPage() {
     const fullStars = Math.floor(rating);
     const hasHalfStar = rating % 1 >= 0.5;
     const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-    
+
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
           <Star key={`full-${i}`} className="w-3 h-3 text-brand-400 fill-brand-400" />
         ))}
-        {hasHalfStar && <StarHalf className="w-3 h-3 text-brand-400 fill-brand-400" />}
+        {hasHalfStar && (
+          <StarHalf className="w-3 h-3 text-brand-400 fill-brand-400" />
+        )}
         {[...Array(emptyStars)].map((_, i) => (
-          <Star key={`empty-${i}`} className="w-3 h-3 text-gray-300 dark:text-gray-600" />
+          <Star
+            key={`empty-${i}`}
+            className="w-3 h-3 text-gray-300 dark:text-gray-600"
+          />
         ))}
         {rating > 0 && (
-          <span className="text-xs text-gray-500 ml-1 tabular-nums">{rating.toFixed(1)}</span>
+          <span className="text-xs text-gray-500 ml-1 tabular-nums">
+            {rating.toFixed(1)}
+          </span>
         )}
       </div>
     );
@@ -311,10 +493,12 @@ export default function DashboardSuppliersPage() {
   };
 
   const filteredSuppliers = useMemo(() => {
-    let filtered = suppliers.filter(s =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.contactPerson && s.contactPerson.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      s.email.toLowerCase().includes(searchQuery.toLowerCase())
+    let filtered = suppliers.filter(
+      (s) =>
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.contactPerson &&
+          s.contactPerson.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        s.email.toLowerCase().includes(searchQuery.toLowerCase()),
     );
 
     filtered.sort((a, b) => {
@@ -327,7 +511,8 @@ export default function DashboardSuppliersPage() {
           comparison = (a.rating || 0) - (b.rating || 0);
           break;
         case 'createdAt':
-          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          comparison =
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
           break;
         default:
           comparison = 0;
@@ -352,9 +537,12 @@ export default function DashboardSuppliersPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view suppliers. Please contact your administrator.
+          You don't have permission to view suppliers. Please contact your
+          administrator.
         </p>
         <button
           onClick={() => router.push('/admin/catalog')}
@@ -385,7 +573,11 @@ export default function DashboardSuppliersPage() {
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
             aria-label="Toggle view mode"
           >
-            {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
+            {viewMode === 'grid' ? (
+              <List className="w-4 h-4" />
+            ) : (
+              <Grid className="w-4 h-4" />
+            )}
           </button>
           <button
             onClick={handleRefresh}
@@ -393,7 +585,9 @@ export default function DashboardSuppliersPage() {
             className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors disabled:opacity-50 focus-ring"
             aria-label="Refresh suppliers"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+            />
           </button>
           {canCreateSuppliers && (
             <button
@@ -415,7 +609,9 @@ export default function DashboardSuppliersPage() {
       {error && (
         <div className="bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800 rounded-lg p-4 flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-brand-accent-500 flex-shrink-0" />
-          <span className="text-brand-accent-700 dark:text-brand-accent-300">{error}</span>
+          <span className="text-brand-accent-700 dark:text-brand-accent-300">
+            {error}
+          </span>
           <button
             onClick={() => loadSuppliers(false)}
             className="ml-auto px-3 py-1 bg-brand-accent-100 dark:bg-brand-accent-800/30 text-brand-accent-700 dark:text-brand-accent-300 rounded-lg hover:bg-brand-accent-200 dark:hover:bg-brand-accent-800/50 transition-colors text-sm focus-ring"
@@ -441,7 +637,9 @@ export default function DashboardSuppliersPage() {
           <div className="flex items-center gap-2">
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'name' | 'rating' | 'createdAt')}
+              onChange={(e) =>
+                setSortBy(e.target.value as 'name' | 'rating' | 'createdAt')
+              }
               className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 transition-colors"
             >
               <option value="name">Sort by Name</option>
@@ -449,9 +647,13 @@ export default function DashboardSuppliersPage() {
               <option value="createdAt">Sort by Date</option>
             </select>
             <button
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              onClick={() =>
+                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+              }
               className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-600 transition-colors focus-ring"
-              aria-label={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
+              aria-label={`Sort ${
+                sortOrder === 'asc' ? 'descending' : 'ascending'
+              }`}
             >
               {sortOrder === 'asc' ? '↑' : '↓'}
             </button>
@@ -463,9 +665,13 @@ export default function DashboardSuppliersPage() {
       {filteredSuppliers.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
           <Truck className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No suppliers found</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            No suppliers found
+          </h3>
           <p className="text-gray-500 dark:text-gray-400 mt-2">
-            {searchQuery ? 'Try adjusting your search' : 'Add your first supplier to get started'}
+            {searchQuery
+              ? 'Try adjusting your search'
+              : 'Add your first supplier to get started'}
           </p>
           {canCreateSuppliers && !searchQuery && (
             <button
@@ -497,7 +703,9 @@ export default function DashboardSuppliersPage() {
                     <Truck className="w-5 h-5 text-brand-500" />
                   </div>
                   <div className="min-w-0">
-                    <h4 className="font-medium text-gray-900 dark:text-white truncate">{supplier.name}</h4>
+                    <h4 className="font-medium text-gray-900 dark:text-white truncate">
+                      {supplier.name}
+                    </h4>
                     {supplier.contactPerson && (
                       <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                         <User className="w-3 h-3" />
@@ -559,7 +767,9 @@ export default function DashboardSuppliersPage() {
                 {supplier.address && (
                   <div className="flex items-start gap-2 text-gray-600 dark:text-gray-400">
                     <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                    <span className="text-xs truncate">{supplier.address}</span>
+                    <span className="text-xs truncate">
+                      {supplier.address}
+                    </span>
                   </div>
                 )}
               </div>
@@ -575,11 +785,13 @@ export default function DashboardSuppliersPage() {
                       {supplier.productCount}
                     </span>
                   )}
-                  <span className={`px-2 py-0.5 rounded-full ${
-                    supplier.isActive
-                      ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
-                      : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
-                  }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full ${
+                      supplier.isActive
+                        ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
+                        : 'bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400'
+                    }`}
+                  >
                     {supplier.isActive ? 'Active' : 'Inactive'}
                   </span>
                 </div>
@@ -593,34 +805,63 @@ export default function DashboardSuppliersPage() {
             <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Supplier</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Contact</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Rating</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Supplier
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Contact
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Phone
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Rating
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {filteredSuppliers.map((supplier) => (
-                  <tr key={supplier.id} className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors">
+                  <tr
+                    key={supplier.id}
+                    className="hover:bg-brand-50/50 dark:hover:bg-brand-950/10 transition-colors"
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <Truck className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium text-gray-900 dark:text-white">{supplier.name}</span>
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {supplier.name}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{supplier.contactPerson || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{supplier.email}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{supplier.phone}</td>
-                    <td className="px-4 py-3">{renderStars(supplier.rating || 0)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                      {supplier.contactPerson || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                      {supplier.email}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">
+                      {supplier.phone}
+                    </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        supplier.isActive
-                          ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
-                          : 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300'
-                      }`}>
+                      {renderStars(supplier.rating || 0)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          supplier.isActive
+                            ? 'bg-success-100 text-success-700 dark:bg-success-950/30 dark:text-success-300'
+                            : 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-950/30 dark:text-brand-accent-300'
+                        }`}
+                      >
                         {supplier.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
@@ -678,7 +919,13 @@ export default function DashboardSuppliersPage() {
       <AnimatePresence>
         {showAddModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setShowAddModal(false); setEditingSupplier(null); }} />
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => {
+                setShowAddModal(false);
+                setEditingSupplier(null);
+              }}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -686,7 +933,10 @@ export default function DashboardSuppliersPage() {
               className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 custom-scrollbar"
             >
               <button
-                onClick={() => { setShowAddModal(false); setEditingSupplier(null); }}
+                onClick={() => {
+                  setShowAddModal(false);
+                  setEditingSupplier(null);
+                }}
                 className="absolute top-4 right-4 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
               >
                 <X className="w-5 h-5" />
@@ -697,12 +947,15 @@ export default function DashboardSuppliersPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Supplier Name <span className="text-brand-accent-500">*</span>
+                    Supplier Name{' '}
+                    <span className="text-brand-accent-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter supplier name"
                   />
@@ -714,7 +967,9 @@ export default function DashboardSuppliersPage() {
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, email: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter email"
                   />
@@ -726,7 +981,9 @@ export default function DashboardSuppliersPage() {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, phone: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter phone number"
                   />
@@ -738,7 +995,12 @@ export default function DashboardSuppliersPage() {
                   <input
                     type="text"
                     value={formData.contactPerson}
-                    onChange={(e) => setFormData({ ...formData, contactPerson: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        contactPerson: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter contact person"
                   />
@@ -750,7 +1012,9 @@ export default function DashboardSuppliersPage() {
                   <input
                     type="text"
                     value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, address: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter address"
                   />
@@ -762,7 +1026,9 @@ export default function DashboardSuppliersPage() {
                   <input
                     type="text"
                     value={formData.taxId}
-                    onChange={(e) => setFormData({ ...formData, taxId: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, taxId: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors"
                     placeholder="Enter tax ID"
                   />
@@ -773,7 +1039,9 @@ export default function DashboardSuppliersPage() {
                   </label>
                   <textarea
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, notes: e.target.value })
+                    }
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 dark:bg-gray-700 dark:text-white transition-colors resize-y"
                     placeholder="Additional notes about the supplier"
@@ -790,16 +1058,26 @@ export default function DashboardSuppliersPage() {
                     <input
                       type="checkbox"
                       checked={formData.isActive}
-                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          isActive: e.target.checked,
+                        })
+                      }
                       className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      Active
+                    </span>
                   </label>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <button
-                  onClick={() => { setShowAddModal(false); setEditingSupplier(null); }}
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setEditingSupplier(null);
+                  }}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-brand-50 dark:hover:bg-gray-700 hover:border-brand-300 dark:hover:border-brand-700 transition-colors focus-ring"
                 >
                   Cancel
@@ -809,7 +1087,11 @@ export default function DashboardSuppliersPage() {
                   disabled={submitting}
                   className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-brand focus-ring"
                 >
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {submitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
                   {editingSupplier ? 'Update' : 'Create'}
                 </button>
               </div>
@@ -822,7 +1104,10 @@ export default function DashboardSuppliersPage() {
       <AnimatePresence>
         {showDeleteModal && supplierToDelete && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowDeleteModal(false)}
+            />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -840,17 +1125,27 @@ export default function DashboardSuppliersPage() {
                   <AlertCircle className="w-6 h-6 text-brand-accent-600 dark:text-brand-accent-400" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Delete Supplier</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">This action cannot be undone</p>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Delete Supplier
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
                 </div>
               </div>
               <p className="text-gray-600 dark:text-gray-300 mb-6">
-                Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{supplierToDelete.name}</strong>?
-                {supplierToDelete.productCount && supplierToDelete.productCount > 0 && (
-                  <span className="block mt-2 text-brand-accent-600">
-                    ⚠️ This supplier has {supplierToDelete.productCount} associated products.
-                  </span>
-                )}
+                Are you sure you want to delete{' '}
+                <strong className="text-gray-900 dark:text-white">
+                  {supplierToDelete.name}
+                </strong>
+                ?
+                {supplierToDelete.productCount &&
+                  supplierToDelete.productCount > 0 && (
+                    <span className="block mt-2 text-brand-accent-600">
+                      ⚠️ This supplier has {supplierToDelete.productCount}{' '}
+                      associated products.
+                    </span>
+                  )}
               </p>
               <div className="flex justify-end gap-3">
                 <button

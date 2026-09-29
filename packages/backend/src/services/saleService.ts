@@ -6,6 +6,7 @@ import { Prisma } from '../generated/prisma/index.js';
 import type { DiscountType } from '../generated/prisma/index.js';
 import { realtimeService } from './realtimeService.js';
 import { notificationService } from './notificationService.js';
+import { currencyService } from './currencyService.js';
 import { logger } from '../lib/logger.js';
 import * as crypto from 'crypto';
 
@@ -409,6 +410,17 @@ export class SaleService extends BaseService {
 
   /**
    * Create payment for sale
+   *
+   * ⚠ Phase 2: `Payment.currency` is a REQUIRED column with no schema
+   *   default. This method writes a resolved currency explicitly.
+   *   Resolution order:
+   *
+   *     1. Caller's explicit `paymentData.currency` when supplied.
+   *     2. The owning business unit's own `currency` column.
+   *     3. `currencyService.resolveForBusiness(null)` → env → registry.
+   *
+   *   The resolved value is also mirrored into `metadata.currency`
+   *   for audit continuity, but the column is authoritative.
    */
   private async createSalePayment(
     tx: any,
@@ -417,14 +429,32 @@ export class SaleService extends BaseService {
     paymentData: {
       paymentMethod: string;
       paidAmount: number;
+      currency?: string;
+      businessUnitId?: string;
       cashRegisterId?: string;
       cashRegisterSessionId?: string;
       reference?: string;
     }
   ): Promise<any> {
+    // ── Phase 2: resolve and write currency explicitly ────────
+    let resolvedCurrency = paymentData.currency;
+    if (!resolvedCurrency && paymentData.businessUnitId) {
+      const bu = await tx.businessUnit.findUnique({
+        where: { id: paymentData.businessUnitId },
+        select: { currency: true },
+      });
+      resolvedCurrency = currencyService.resolveForBusiness(
+        bu?.currency ?? null,
+      );
+    }
+    if (!resolvedCurrency) {
+      resolvedCurrency = currencyService.resolveForBusiness(null);
+    }
+
     return await tx.payment.create({
       data: {
         amount: paymentData.paidAmount,
+        currency: resolvedCurrency,
         paymentMethod: paymentData.paymentMethod as any,
         status: 'PAID',
         saleId: saleId,
@@ -433,6 +463,10 @@ export class SaleService extends BaseService {
         cashRegisterSessionId: paymentData.cashRegisterSessionId,
         processedAt: new Date(),
         reference: paymentData.reference || `PAY-${Date.now()}`,
+        metadata: {
+          // Descriptive mirror — the column is authoritative.
+          currency: resolvedCurrency,
+        },
       },
     });
   }
@@ -1285,6 +1319,7 @@ export class SaleService extends BaseService {
           await this.createSalePayment(tx, sale.id, userId, {
             paymentMethod: data.paymentMethod,
             paidAmount: paidAmount,
+            businessUnitId: data.businessUnitId,
             cashRegisterId,
             cashRegisterSessionId,
             reference: `PAY-${receiptNumber}`,
@@ -1539,6 +1574,7 @@ export class SaleService extends BaseService {
           await this.createSalePayment(tx, sale.id, userId, {
             paymentMethod: paymentData.paymentMethod,
             paidAmount: paidAmount,
+            businessUnitId: cart.businessUnitId,
             cashRegisterId,
             cashRegisterSessionId,
             reference: `PAY-${receiptNumber}`,
@@ -3048,6 +3084,17 @@ export class SaleService extends BaseService {
 
   /**
    * Get sales settings
+   *
+   * ⚠ Phase 2: `SalesSettings.currencySymbol` no longer exists (Phase 1
+   *   removed the column). The symbol returned here is DERIVED at read
+   *   time from `currencyCode` via `currencyService.tryGetCurrency`.
+   *   When the registry has no entry for the code, the ISO code itself
+   *   is used as the display value.
+   *
+   *   The fallback branch (no company row) uses the same derivation,
+   *   keyed on the hardcoded `'USD'` default. That default is a
+   *   fallback for a fresh install — a deployment with a real Company
+   *   row always reads its own `currencyCode`.
    */
   async getSalesSettings(companyId?: string) {
     try {
@@ -3072,6 +3119,14 @@ export class SaleService extends BaseService {
       }
 
       if (settings) {
+        // ── Phase 2: derive the symbol from the code ────────────
+        // The stored `currencyCode` is the authority. The symbol
+        // is looked up in the registry so it can never drift from
+        // the code.
+        const currencyCode = settings.currencyCode;
+        const currencyMeta = currencyService.tryGetCurrency(currencyCode);
+        const currencySymbol = currencyMeta?.symbol ?? currencyCode;
+
         return {
           taxRate: settings.taxRate,
           discountEnabled: settings.discountEnabled,
@@ -3082,12 +3137,19 @@ export class SaleService extends BaseService {
           emailReceipts: settings.emailReceipts,
           receiptFooter: settings.receiptFooter,
           defaultPaymentMethod: settings.defaultPaymentMethod,
-          currencySymbol: settings.currencySymbol,
-          currencyCode: settings.currencyCode,
+          currencyCode,
+          // ⚠ Derived, not stored. Do NOT persist this value.
+          currencySymbol,
           invoicePrefix: settings.invoicePrefix,
           receiptPrefix: settings.receiptPrefix,
         };
       }
+
+      // ── Fallback (no settings row) ──────────────────────────
+      // Same derivation, keyed on the hardcoded default code.
+      const fallbackCode = 'USD';
+      const fallbackMeta = currencyService.tryGetCurrency(fallbackCode);
+      const fallbackSymbol = fallbackMeta?.symbol ?? fallbackCode;
 
       return {
         taxRate: 8,
@@ -3099,8 +3161,8 @@ export class SaleService extends BaseService {
         emailReceipts: true,
         receiptFooter: 'Thank you for your business!',
         defaultPaymentMethod: 'CASH',
-        currencySymbol: '$',
-        currencyCode: 'USD',
+        currencyCode: fallbackCode,
+        currencySymbol: fallbackSymbol,
         invoicePrefix: 'INV-',
         receiptPrefix: 'RCP-',
       };
@@ -3111,6 +3173,13 @@ export class SaleService extends BaseService {
 
   /**
    * Update sales settings
+   *
+   * ⚠ Phase 2: `currencySymbol` is NOT written to the row. Phase 1
+   *   removed the column from `SalesSettings`; the display symbol is
+   *   derived at read time from `currencyCode`. The caller's
+   *   `settings.currencySymbol` (if present) is dropped silently —
+   *   that is the intended contract. Only `currencyCode` is
+   *   persisted.
    */
   async updateSalesSettings(settings: any, companyId?: string) {
     try {
@@ -3133,6 +3202,10 @@ export class SaleService extends BaseService {
         where: { companyId: company.id },
       });
 
+      // ── Phase 2: do NOT forward `currencySymbol` ────────────
+      // The column was removed in Phase 1. Only `currencyCode` is
+      // persisted. If the caller still sends a symbol, it is dropped
+      // here — the read path derives it from the code.
       const data = {
         taxRate: settings.taxRate,
         discountEnabled: settings.discountEnabled,
@@ -3143,8 +3216,8 @@ export class SaleService extends BaseService {
         emailReceipts: settings.emailReceipts,
         receiptFooter: settings.receiptFooter,
         defaultPaymentMethod: settings.defaultPaymentMethod,
-        currencySymbol: settings.currencySymbol,
         currencyCode: settings.currencyCode,
+        // ⚠ `currencySymbol` intentionally absent — see the JSDoc.
         invoicePrefix: settings.invoicePrefix,
         receiptPrefix: settings.receiptPrefix,
         updatedAt: new Date(),

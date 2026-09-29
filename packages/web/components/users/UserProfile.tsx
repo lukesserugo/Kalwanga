@@ -1,32 +1,18 @@
 // D:\Projects\Kalwanga\packages\web\components\users\UserProfile.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../hooks/useAuth';
 import { userService } from '../../services/userService';
 import { toast } from 'react-hot-toast';
-import { 
-  User, Mail, Phone, Shield, Key, Lock, Unlock,
-  Camera, Upload, X, Check, Save, Loader2, AlertCircle,
-  CheckCircle, XCircle, Eye, EyeOff, Settings, Bell,
-  Globe, Smartphone, Monitor, Tablet, MapPin, Building,
-  Calendar, Clock, Briefcase, Users, FileText, Image,
-  Trash2, Edit, RefreshCw, LogOut, LogIn, KeyRound,
-  Fingerprint, ShieldCheck, ShieldAlert, ShieldX,
-  MessageSquare, Mail as MailIcon, PhoneCall, Send,
-  Download, UploadCloud, Copy, Info, AlertTriangle,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  MoreVertical, Star, Heart, ThumbsUp, Share2, Bookmark,
-  CreditCard, DollarSign, Percent, Tag, Store,
-  ClipboardList, Truck, Boxes, Layers, FolderTree,
-  Database, Server, Cloud, Wifi, Bluetooth, Battery,
-  Sun, Moon, Wind, Droplet, Flame, Leaf, TreePine,
-  Mountain, Waves, Compass, Map, Navigation, Route,
-  Target, Crosshair, Gauge,
-  UserPlus, UserCheck, UserX, BadgeCheck, Ban, RotateCcw,
-  History, Zap, Sparkles, Award, Crown, Medal, Trophy,
-  Star as StarIcon, Heart as HeartIcon, ThumbsUp as ThumbsUpIcon
+import {
+  User, Mail, Phone, Shield, Key, Lock,
+  Camera, X, Check, Save, Loader2, AlertCircle,
+  CheckCircle, XCircle, Eye, EyeOff, Bell,
+  Smartphone, Monitor, Calendar, Clock,
+  Fingerprint, ShieldCheck,
+  MessageSquare,
 } from 'lucide-react';
 import { PERMISSIONS } from '../../types/permissions';
 import { UserRole } from '../../types/enums';
@@ -117,7 +103,7 @@ interface LoginHistory {
   method: 'password' | '2fa' | 'sso';
 }
 
-export function UserProfile({ 
+export function UserProfile({
   userId,
   onUpdate,
   onCancel,
@@ -128,8 +114,7 @@ export function UserProfile({
 }: UserProfileProps) {
   const router = useRouter();
   const { user: currentUser, can, isSuperAdmin, isAdmin } = useAuth();
-  
-  // State management
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,17 +152,8 @@ export function UserProfile({
     securityAlerts: true,
     weeklyDigest: true,
     monthlyReport: false,
-    quietHours: {
-      enabled: false,
-      start: '22:00',
-      end: '07:00',
-    },
-    notificationChannels: {
-      email: true,
-      push: true,
-      sms: false,
-      inApp: true,
-    },
+    quietHours: { enabled: false, start: '22:00', end: '07:00' },
+    notificationChannels: { email: true, push: true, sms: false, inApp: true },
     categories: {
       account: true,
       billing: true,
@@ -199,9 +175,7 @@ export function UserProfile({
   const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [twoFactorQRCode, setTwoFactorQRCode] = useState('');
-  const [showSessions, setShowSessions] = useState(false);
   const [showLoginHistory, setShowLoginHistory] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [showPassword, setShowPassword] = useState({
@@ -209,40 +183,39 @@ export function UserProfile({
     new: false,
     confirm: false,
   });
-  
-  // Refs
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const originalProfileData = useRef<ProfileData>(profileData);
-  const originalSecuritySettings = useRef<SecuritySettings>(securitySettings);
-  const originalNotificationPreferences = useRef<NotificationPreferences>(notificationPreferences);
 
-  const isEditable = editable && (isSuperAdmin || isAdmin || can(PERMISSIONS.USER_EDIT) || userId === currentUser?.id);
+  const isEditable =
+    editable &&
+    (isSuperAdmin || isAdmin || can(PERMISSIONS.USER_EDIT) || userId === currentUser?.id);
 
-  // Load user data
+  // -------- LOAD --------
   const loadUserData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const userData = await userService.getUserById(userId || currentUser?.id || '');
-      
-      setProfileData({
+
+      const next: ProfileData = {
         firstName: userData.firstName,
         lastName: userData.lastName,
         email: userData.email,
-        phoneNumber: userData.phoneNumber || '',
-        avatar: userData.avatar || '',
-        companyId: userData.companyId || '',
-        role: userData.role,
+        phoneNumber: userData.phoneNumber ?? '',
+        avatar: userData.avatar ?? '',
+        companyId: userData.companyId ?? '',
+        role: userData.role as UserRole,
         isActive: userData.isActive,
-        lastLoginAt: userData.lastLoginAt || '',
+        lastLoginAt: userData.lastLoginAt ?? '',
         createdAt: userData.createdAt,
         updatedAt: userData.updatedAt,
-      });
-      
+      };
+
+      setProfileData(next);
       setAvatarPreview(userData.avatar || '');
-      
-      // Load security settings (mock data for now)
+
       setSecuritySettings({
         twoFactorEnabled: false,
         twoFactorMethod: 'none',
@@ -253,39 +226,7 @@ export function UserProfile({
         sessionTimeout: 30,
         allowedDevices: ['desktop', 'mobile'],
       });
-      
-      // Load notification preferences (mock data for now)
-      setNotificationPreferences({
-        emailNotifications: true,
-        pushNotifications: true,
-        smsNotifications: false,
-        marketingEmails: false,
-        productUpdates: true,
-        securityAlerts: true,
-        weeklyDigest: true,
-        monthlyReport: false,
-        quietHours: {
-          enabled: false,
-          start: '22:00',
-          end: '07:00',
-        },
-        notificationChannels: {
-          email: true,
-          push: true,
-          sms: false,
-          inApp: true,
-        },
-        categories: {
-          account: true,
-          billing: true,
-          security: true,
-          updates: true,
-          marketing: false,
-          social: false,
-        },
-      });
-      
-      // Load active sessions (mock data)
+
       setActiveSessions([
         {
           id: 'session_1',
@@ -308,8 +249,7 @@ export function UserProfile({
           current: false,
         },
       ]);
-      
-      // Load login history (mock data)
+
       setLoginHistory([
         {
           id: 'login_1',
@@ -330,22 +270,8 @@ export function UserProfile({
           method: '2fa',
         },
       ]);
-      
-      // Store original data for change detection
-      originalProfileData.current = {
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        email: userData.email,
-        phoneNumber: userData.phoneNumber || '',
-        avatar: userData.avatar || '',
-        companyId: userData.companyId || '',
-        role: userData.role,
-        isActive: userData.isActive,
-        lastLoginAt: userData.lastLoginAt || '',
-        createdAt: userData.createdAt,
-        updatedAt: userData.updatedAt,
-      };
-      
+
+      originalProfileData.current = next;
     } catch (error: any) {
       console.error('Failed to load user data:', error);
       setError(error?.message || 'Failed to load user data');
@@ -355,48 +281,46 @@ export function UserProfile({
     }
   }, [userId, currentUser?.id]);
 
-  // Initial load
   useEffect(() => {
     loadUserData();
   }, [loadUserData]);
 
-  // Check for changes
+  // -------- CHANGE TRACKING --------
   useEffect(() => {
-    const profileChanged = 
+    const profileChanged =
       profileData.firstName !== originalProfileData.current.firstName ||
       profileData.lastName !== originalProfileData.current.lastName ||
       profileData.email !== originalProfileData.current.email ||
       profileData.phoneNumber !== originalProfileData.current.phoneNumber ||
       profileData.avatar !== originalProfileData.current.avatar;
-    
+
     setHasChanges(profileChanged);
   }, [profileData]);
 
-  // Handle profile field change
-  const handleProfileChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setProfileData(prev => ({ ...prev, [name]: value }));
-  }, []);
+  // -------- HANDLERS --------
+  const handleProfileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const { name, value } = e.target;
+      setProfileData(prev => ({ ...prev, [name]: value }));
+    },
+    []
+  );
 
-  // Handle avatar upload
   const handleAvatarUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    // Validate file type
+
     if (!file.type.startsWith('image/')) {
       toast.error('Please upload an image file');
       return;
     }
-    
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error('Image size should be less than 5MB');
       return;
     }
-    
+
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = event => {
       const result = event.target?.result as string;
       setAvatarPreview(result);
       setProfileData(prev => ({ ...prev, avatar: result }));
@@ -404,18 +328,11 @@ export function UserProfile({
     reader.readAsDataURL(file);
   }, []);
 
-  // Handle avatar removal
-  const handleAvatarRemove = useCallback(() => {
-    setAvatarPreview('');
-    setProfileData(prev => ({ ...prev, avatar: '' }));
-  }, []);
-
-  // Handle save profile
   const handleSaveProfile = useCallback(async () => {
     try {
       setSaving(true);
       setError(null);
-      
+
       const updateData = {
         firstName: profileData.firstName,
         lastName: profileData.lastName,
@@ -423,28 +340,39 @@ export function UserProfile({
         phoneNumber: profileData.phoneNumber,
         avatar: profileData.avatar,
       };
-      
-      const updatedUser = await userService.updateUser(userId || currentUser?.id || '', updateData);
-      
+
+      const updatedUser = await userService.updateUser(
+        userId || currentUser?.id || '',
+        updateData as any
+      );
+
+      // Map canonical User back into ProfileData, normalizing nulls.
       setProfileData(prev => ({
         ...prev,
-        ...updatedUser,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email,
+        phoneNumber: updatedUser.phoneNumber ?? '',
+        avatar: updatedUser.avatar ?? '',
+        companyId: updatedUser.companyId ?? '',
+        role: updatedUser.role as UserRole,
+        isActive: updatedUser.isActive,
+        lastLoginAt: updatedUser.lastLoginAt ?? '',
+        createdAt: updatedUser.createdAt,
+        updatedAt: updatedUser.updatedAt,
       }));
-      
+
       originalProfileData.current = {
         ...originalProfileData.current,
         ...updateData,
       };
-      
+
       setHasChanges(false);
-      setIsEditing(false);
       setSuccessMessage('Profile updated successfully');
       toast.success('Profile updated successfully');
-      
-      if (onUpdate) {
-        onUpdate(updatedUser);
-      }
-      
+
+      onUpdate?.(updatedUser);
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to update profile:', error);
@@ -455,44 +383,38 @@ export function UserProfile({
     }
   }, [profileData, userId, currentUser?.id, onUpdate]);
 
-  // ✅ FIXED: Handle password change using updateUser with password field
-  // If the service doesn't accept password, we'll use a workaround
   const handlePasswordChange = useCallback(async () => {
     try {
       setSaving(true);
       setError(null);
-      
-      // Validate password
+
       if (passwordData.newPassword !== passwordData.confirmPassword) {
         setError('Passwords do not match');
         toast.error('Passwords do not match');
         return;
       }
-      
+
       if (passwordData.newPassword.length < 8) {
         setError('Password must be at least 8 characters');
         toast.error('Password must be at least 8 characters');
         return;
       }
-      
-      // ✅ FIXED: Try to use updateUser with password field
-      // Using 'as any' to bypass TypeScript checking since the service might support it
+
       await userService.updateUser(userId || currentUser?.id || '', {
         password: passwordData.newPassword,
         currentPassword: passwordData.currentPassword,
       } as any);
-      
+
       setShowPasswordModal(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setSuccessMessage('Password changed successfully');
       toast.success('Password changed successfully');
-      
-      // Update security settings
+
       setSecuritySettings(prev => ({
         ...prev,
         passwordLastChanged: new Date().toISOString(),
       }));
-      
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       console.error('Failed to change password:', error);
@@ -503,15 +425,13 @@ export function UserProfile({
     }
   }, [passwordData, userId, currentUser?.id]);
 
-  // Handle two-factor authentication toggle
   const handleTwoFactorToggle = useCallback(async () => {
     if (!securitySettings.twoFactorEnabled) {
-      // Enable 2FA - show modal
       setShowTwoFactorModal(true);
-      // Generate mock QR code
-      setTwoFactorQRCode('https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=otpauth://totp/Example:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example');
+      setTwoFactorQRCode(
+        'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=otpauth://totp/Example:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example'
+      );
     } else {
-      // Disable 2FA
       if (confirm('Are you sure you want to disable two-factor authentication?')) {
         setSecuritySettings(prev => ({
           ...prev,
@@ -523,34 +443,21 @@ export function UserProfile({
     }
   }, [securitySettings.twoFactorEnabled]);
 
-  // Handle two-factor verification
   const handleTwoFactorVerify = useCallback(() => {
     if (twoFactorCode.length < 6) {
       toast.error('Please enter a valid 6-digit code');
       return;
     }
-    
-    // Verify code (mock)
     setSecuritySettings(prev => ({
       ...prev,
       twoFactorEnabled: true,
       twoFactorMethod: 'app',
     }));
-    
     setShowTwoFactorModal(false);
     setTwoFactorCode('');
     toast.success('Two-factor authentication enabled');
   }, [twoFactorCode]);
 
-  // Handle notification preference change
-  const handleNotificationChange = useCallback((key: string, value: boolean) => {
-    setNotificationPreferences(prev => ({
-      ...prev,
-      [key]: value,
-    }));
-  }, []);
-
-  // Handle notification channel change
   const handleNotificationChannelChange = useCallback((channel: string, value: boolean) => {
     setNotificationPreferences(prev => ({
       ...prev,
@@ -561,7 +468,6 @@ export function UserProfile({
     }));
   }, []);
 
-  // Handle notification category change
   const handleNotificationCategoryChange = useCallback((category: string, value: boolean) => {
     setNotificationPreferences(prev => ({
       ...prev,
@@ -572,16 +478,12 @@ export function UserProfile({
     }));
   }, []);
 
-  // Handle save notification preferences
   const handleSaveNotifications = useCallback(() => {
-    // Save notification preferences (mock)
-    originalNotificationPreferences.current = { ...notificationPreferences };
     setSuccessMessage('Notification preferences saved');
     toast.success('Notification preferences saved');
     setTimeout(() => setSuccessMessage(null), 3000);
-  }, [notificationPreferences]);
+  }, []);
 
-  // Handle session revocation
   const handleRevokeSession = useCallback((sessionId: string) => {
     if (confirm('Are you sure you want to revoke this session?')) {
       setActiveSessions(prev => prev.filter(s => s.id !== sessionId));
@@ -589,7 +491,6 @@ export function UserProfile({
     }
   }, []);
 
-  // Handle revoke all sessions
   const handleRevokeAllSessions = useCallback(() => {
     if (confirm('Are you sure you want to revoke all other sessions?')) {
       setActiveSessions(prev => prev.filter(s => s.current));
@@ -597,7 +498,6 @@ export function UserProfile({
     }
   }, []);
 
-  // Calculate password strength
   const calculatePasswordStrength = useCallback((password: string): number => {
     let strength = 0;
     if (password.length >= 8) strength++;
@@ -607,12 +507,10 @@ export function UserProfile({
     return strength;
   }, []);
 
-  // Update password strength when new password changes
   useEffect(() => {
     setPasswordStrength(calculatePasswordStrength(passwordData.newPassword));
   }, [passwordData.newPassword, calculatePasswordStrength]);
 
-  // Get password strength label
   const getPasswordStrengthLabel = useCallback((strength: number): string => {
     if (strength === 0) return 'Very Weak';
     if (strength === 1) return 'Weak';
@@ -621,7 +519,6 @@ export function UserProfile({
     return 'Strong';
   }, []);
 
-  // Get password strength color
   const getPasswordStrengthColor = useCallback((strength: number): string => {
     if (strength <= 1) return 'bg-red-500';
     if (strength === 2) return 'bg-yellow-500';
@@ -629,7 +526,6 @@ export function UserProfile({
     return 'bg-green-500';
   }, []);
 
-  // Format date
   const formatDate = useCallback((date: string): string => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('en-US', {
@@ -639,34 +535,23 @@ export function UserProfile({
     });
   }, []);
 
-  // Format time
-  const formatTime = useCallback((date: string): string => {
-    if (!date) return 'N/A';
-    return new Date(date).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }, []);
-
-  // Get time ago
   const getTimeAgo = useCallback((date: string): string => {
     const diff = Date.now() - new Date(date).getTime();
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
-    
+
     if (days > 0) return `${days}d ago`;
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
     return 'Just now';
   }, []);
 
-  // Get initials
   const getInitials = useCallback((firstName: string, lastName: string): string => {
     return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
   }, []);
 
-  // Loading state
+  // -------- RENDER --------
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -681,7 +566,6 @@ export function UserProfile({
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          {/* Avatar */}
           <div className="relative">
             {avatarPreview ? (
               <img
@@ -711,18 +595,20 @@ export function UserProfile({
               className="hidden"
             />
           </div>
-          
+
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
               {profileData.firstName} {profileData.lastName}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">{profileData.email}</p>
             <div className="flex items-center gap-2 mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                profileData.isActive 
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-              }`}>
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                  profileData.isActive
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                }`}
+              >
                 {profileData.isActive ? 'Active' : 'Inactive'}
               </span>
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
@@ -731,7 +617,7 @@ export function UserProfile({
             </div>
           </div>
         </div>
-        
+
         {isEditable && hasChanges && (
           <div className="flex items-center gap-2">
             <button
@@ -739,7 +625,6 @@ export function UserProfile({
                 setProfileData(originalProfileData.current);
                 setAvatarPreview(originalProfileData.current.avatar);
                 setHasChanges(false);
-                setIsEditing(false);
               }}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
@@ -750,22 +635,20 @@ export function UserProfile({
               disabled={saving}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
             >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Save Changes
             </button>
           </div>
         )}
       </div>
 
-      {/* Success Message */}
+      {/* Success / error banners */}
       {successMessage && (
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex items-center gap-2">
           <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-          <span className="text-green-700 dark:text-green-300 text-sm flex-1">{successMessage}</span>
+          <span className="text-green-700 dark:text-green-300 text-sm flex-1">
+            {successMessage}
+          </span>
           <button
             onClick={() => setSuccessMessage(null)}
             className="p-1 hover:bg-green-100 dark:hover:bg-green-800 rounded transition-colors"
@@ -776,7 +659,6 @@ export function UserProfile({
         </div>
       )}
 
-      {/* Error Message */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
@@ -816,9 +698,9 @@ export function UserProfile({
         </nav>
       </div>
 
-      {/* Tab Content */}
+      {/* Tab content */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-        {/* Profile Tab */}
+        {/* Profile tab */}
         {activeTab === 'profile' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -894,7 +776,9 @@ export function UserProfile({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Member Since</p>
-                <p className="font-medium text-gray-900 dark:text-white">{formatDate(profileData.createdAt)}</p>
+                <p className="font-medium text-gray-900 dark:text-white">
+                  {formatDate(profileData.createdAt)}
+                </p>
               </div>
               <div>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Last Login</p>
@@ -906,10 +790,9 @@ export function UserProfile({
           </div>
         )}
 
-        {/* Security Tab */}
+        {/* Security tab */}
         {activeTab === 'security' && showSecuritySettings && (
           <div className="space-y-6">
-            {/* Password Section */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Password</h3>
@@ -939,10 +822,11 @@ export function UserProfile({
               </div>
             </div>
 
-            {/* Two-Factor Authentication */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Two-Factor Authentication</h3>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                  Two-Factor Authentication
+                </h3>
                 <button
                   onClick={handleTwoFactorToggle}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -973,12 +857,13 @@ export function UserProfile({
               </div>
             </div>
 
-            {/* Login Alerts */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Login Alerts</h3>
                 <button
-                  onClick={() => setSecuritySettings(prev => ({ ...prev, loginAlerts: !prev.loginAlerts }))}
+                  onClick={() =>
+                    setSecuritySettings(prev => ({ ...prev, loginAlerts: !prev.loginAlerts }))
+                  }
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                     securitySettings.loginAlerts ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
                   }`}
@@ -995,12 +880,18 @@ export function UserProfile({
               </p>
             </div>
 
-            {/* Session Timeout */}
             <div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Session Timeout</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                Session Timeout
+              </h3>
               <select
                 value={securitySettings.sessionTimeout}
-                onChange={(e) => setSecuritySettings(prev => ({ ...prev, sessionTimeout: Number(e.target.value) }))}
+                onChange={e =>
+                  setSecuritySettings(prev => ({
+                    ...prev,
+                    sessionTimeout: Number(e.target.value),
+                  }))
+                }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value={15}>15 minutes</option>
@@ -1013,44 +904,57 @@ export function UserProfile({
           </div>
         )}
 
-        {/* Notifications Tab */}
+        {/* Notifications tab */}
         {activeTab === 'notifications' && showNotificationPreferences && (
           <div className="space-y-6">
             <div className="space-y-4">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Notification Channels</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Notification Channels
+              </h3>
               {[
                 { key: 'email', label: 'Email', icon: <Mail className="w-4 h-4" /> },
                 { key: 'push', label: 'Push', icon: <Smartphone className="w-4 h-4" /> },
                 { key: 'sms', label: 'SMS', icon: <MessageSquare className="w-4 h-4" /> },
                 { key: 'inApp', label: 'In-App', icon: <Bell className="w-4 h-4" /> },
-              ].map(channel => (
-                <div key={channel.key} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    {channel.icon}
-                    <span className="text-sm text-gray-900 dark:text-white">{channel.label}</span>
-                  </div>
-                  <button
-                    onClick={() => handleNotificationChannelChange(channel.key, !notificationPreferences.notificationChannels[channel.key as keyof typeof notificationPreferences.notificationChannels])}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notificationPreferences.notificationChannels[channel.key as keyof typeof notificationPreferences.notificationChannels]
-                        ? 'bg-green-600'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
+              ].map(channel => {
+                const value =
+                  notificationPreferences.notificationChannels[
+                    channel.key as keyof typeof notificationPreferences.notificationChannels
+                  ];
+                return (
+                  <div
+                    key={channel.key}
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
                   >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notificationPreferences.notificationChannels[channel.key as keyof typeof notificationPreferences.notificationChannels]
-                          ? 'translate-x-6'
-                          : 'translate-x-1'
+                    <div className="flex items-center gap-3">
+                      {channel.icon}
+                      <span className="text-sm text-gray-900 dark:text-white">
+                        {channel.label}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() =>
+                        handleNotificationChannelChange(channel.key, !value)
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        value ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
                       }`}
-                    />
-                  </button>
-                </div>
-              ))}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          value ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Notification Categories</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Notification Categories
+              </h3>
               {[
                 { key: 'account', label: 'Account', description: 'Account-related notifications' },
                 { key: 'billing', label: 'Billing', description: 'Billing and payment notifications' },
@@ -1058,30 +962,39 @@ export function UserProfile({
                 { key: 'updates', label: 'Updates', description: 'Product updates and features' },
                 { key: 'marketing', label: 'Marketing', description: 'Marketing and promotional emails' },
                 { key: 'social', label: 'Social', description: 'Social interactions and mentions' },
-              ].map(category => (
-                <div key={category.key} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{category.label}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{category.description}</p>
-                  </div>
-                  <button
-                    onClick={() => handleNotificationCategoryChange(category.key, !notificationPreferences.categories[category.key as keyof typeof notificationPreferences.categories])}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      notificationPreferences.categories[category.key as keyof typeof notificationPreferences.categories]
-                        ? 'bg-green-600'
-                        : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
+              ].map(category => {
+                const value =
+                  notificationPreferences.categories[
+                    category.key as keyof typeof notificationPreferences.categories
+                  ];
+                return (
+                  <div
+                    key={category.key}
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
                   >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        notificationPreferences.categories[category.key as keyof typeof notificationPreferences.categories]
-                          ? 'translate-x-6'
-                          : 'translate-x-1'
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {category.label}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {category.description}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleNotificationCategoryChange(category.key, !value)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        value ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
                       }`}
-                    />
-                  </button>
-                </div>
-              ))}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          value ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="flex justify-end">
@@ -1096,11 +1009,13 @@ export function UserProfile({
           </div>
         )}
 
-        {/* Sessions Tab */}
+        {/* Sessions tab */}
         {activeTab === 'sessions' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Active Sessions</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Active Sessions
+              </h3>
               <button
                 onClick={handleRevokeAllSessions}
                 className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 dark:text-red-400"
@@ -1108,10 +1023,13 @@ export function UserProfile({
                 Revoke All Other Sessions
               </button>
             </div>
-            
+
             <div className="space-y-3">
               {activeSessions.map(session => (
-                <div key={session.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div
+                  key={session.id}
+                  className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                >
                   <div className="flex items-center gap-3">
                     {session.device === 'Desktop' ? (
                       <Monitor className="w-6 h-6 text-blue-500" />
@@ -1122,7 +1040,9 @@ export function UserProfile({
                       <p className="font-medium text-gray-900 dark:text-white">
                         {session.device} - {session.browser}
                         {session.current && (
-                          <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Current</span>
+                          <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                            Current
+                          </span>
                         )}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1146,7 +1066,9 @@ export function UserProfile({
             </div>
 
             <div className="flex items-center justify-between mt-6">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Login History</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                Login History
+              </h3>
               <button
                 onClick={() => setShowLoginHistory(!showLoginHistory)}
                 className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
@@ -1158,7 +1080,10 @@ export function UserProfile({
             {showLoginHistory && (
               <div className="space-y-2">
                 {loginHistory.map(login => (
-                  <div key={login.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div
+                    key={login.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                  >
                     <div className="flex items-center gap-3">
                       {login.status === 'success' ? (
                         <CheckCircle className="w-5 h-5 text-green-500" />
@@ -1185,11 +1110,14 @@ export function UserProfile({
         )}
       </div>
 
-      {/* Password Change Modal */}
+      {/* Password change modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowPasswordModal(false)} />
+            <div
+              className="fixed inset-0 bg-black/50"
+              onClick={() => setShowPasswordModal(false)}
+            />
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowPasswordModal(false)}
@@ -1198,13 +1126,15 @@ export function UserProfile({
               >
                 <XCircle className="w-6 h-6 text-gray-500 dark:text-gray-400" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                   <Key className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Change Password</h3>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Change Password
+                  </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Update your password</p>
                 </div>
               </div>
@@ -1219,14 +1149,22 @@ export function UserProfile({
                     <input
                       type={showPassword.current ? 'text' : 'password'}
                       value={passwordData.currentPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      onChange={e =>
+                        setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))
+                      }
                       className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                     <button
-                      onClick={() => setShowPassword(prev => ({ ...prev, current: !prev.current }))}
+                      onClick={() =>
+                        setShowPassword(prev => ({ ...prev, current: !prev.current }))
+                      }
                       className="absolute right-3 top-1/2 transform -translate-y-1/2"
                     >
-                      {showPassword.current ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                      {showPassword.current ? (
+                        <EyeOff className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1240,14 +1178,20 @@ export function UserProfile({
                     <input
                       type={showPassword.new ? 'text' : 'password'}
                       value={passwordData.newPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                      onChange={e =>
+                        setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))
+                      }
                       className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                     <button
                       onClick={() => setShowPassword(prev => ({ ...prev, new: !prev.new }))}
                       className="absolute right-3 top-1/2 transform -translate-y-1/2"
                     >
-                      {showPassword.new ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                      {showPassword.new ? (
+                        <EyeOff className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      )}
                     </button>
                   </div>
                   {passwordData.newPassword && (
@@ -1255,7 +1199,9 @@ export function UserProfile({
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                           <div
-                            className={`h-full ${getPasswordStrengthColor(passwordStrength)} transition-all`}
+                            className={`h-full ${getPasswordStrengthColor(
+                              passwordStrength
+                            )} transition-all`}
                             style={{ width: `${(passwordStrength / 4) * 100}%` }}
                           />
                         </div>
@@ -1276,19 +1222,30 @@ export function UserProfile({
                     <input
                       type={showPassword.confirm ? 'text' : 'password'}
                       value={passwordData.confirmPassword}
-                      onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      onChange={e =>
+                        setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))
+                      }
                       className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                     <button
-                      onClick={() => setShowPassword(prev => ({ ...prev, confirm: !prev.confirm }))}
+                      onClick={() =>
+                        setShowPassword(prev => ({ ...prev, confirm: !prev.confirm }))
+                      }
                       className="absolute right-3 top-1/2 transform -translate-y-1/2"
                     >
-                      {showPassword.confirm ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                      {showPassword.confirm ? (
+                        <EyeOff className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      )}
                     </button>
                   </div>
-                  {passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword && (
-                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">Passwords do not match</p>
-                  )}
+                  {passwordData.confirmPassword &&
+                    passwordData.newPassword !== passwordData.confirmPassword && (
+                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                        Passwords do not match
+                      </p>
+                    )}
                 </div>
 
                 <div className="flex gap-3">
@@ -1300,7 +1257,12 @@ export function UserProfile({
                   </button>
                   <button
                     onClick={handlePasswordChange}
-                    disabled={saving || !passwordData.currentPassword || !passwordData.newPassword || passwordData.newPassword !== passwordData.confirmPassword}
+                    disabled={
+                      saving ||
+                      !passwordData.currentPassword ||
+                      !passwordData.newPassword ||
+                      passwordData.newPassword !== passwordData.confirmPassword
+                    }
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {saving ? (
@@ -1317,11 +1279,14 @@ export function UserProfile({
         </div>
       )}
 
-      {/* Two-Factor Authentication Modal */}
+      {/* Two-factor modal */}
       {showTwoFactorModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen p-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowTwoFactorModal(false)} />
+            <div
+              className="fixed inset-0 bg-black/50"
+              onClick={() => setShowTwoFactorModal(false)}
+            />
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
               <button
                 onClick={() => setShowTwoFactorModal(false)}
@@ -1330,14 +1295,18 @@ export function UserProfile({
               >
                 <XCircle className="w-6 h-6 text-gray-500 dark:text-gray-400" />
               </button>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
                   <Fingerprint className="w-6 h-6 text-purple-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Enable Two-Factor Authentication</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Scan the QR code with your authenticator app</p>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Enable Two-Factor Authentication
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Scan the QR code with your authenticator app
+                  </p>
                 </div>
               </div>
 
@@ -1359,7 +1328,9 @@ export function UserProfile({
                 <input
                   type="text"
                   value={twoFactorCode}
-                  onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={e =>
+                    setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                  }
                   placeholder="000000"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-center text-2xl tracking-widest"
                 />

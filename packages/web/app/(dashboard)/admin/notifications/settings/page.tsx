@@ -29,14 +29,64 @@ import {
   Sun,
 } from 'lucide-react';
 
-import { notificationService } from '../../../../../services/notificationService';
-import type {
-  NotificationPreferences,
-  NotificationPreferencesUpdate,
-  EmailFrequency,
-} from '../../../../../types/notification';
-import { ALERT_TYPE_METADATA } from '../../../../../types/notification';
+import {
+  notificationService,
+  type NotificationPreferences,
+} from '../../../../../services/notificationService';
 import { toast } from '../../../../../utils/toast-manager';
+
+// ============================================
+// TYPES
+// ============================================
+//
+// The backend is the single source of truth. `NotificationPreferences`
+// from the service has every field optional; we define a local,
+// fully-resolved `ResolvedPreferences` type after normalization so the
+// JSX never has to guard against `undefined`.
+//
+// IMPORTANT: `quietHoursStart` / `quietHoursEnd` on the service type
+// are `string | undefined`. The "quiet hours disabled" state is
+// represented in the UI by an empty string, NOT by `null`, because the
+// backend's `updatePreferencesSchema` (and the wire shape) treats
+// `undefined` as "leave unchanged" and we always want to send an
+// explicit value. We keep the wire shape `string | undefined` and
+// translate to/from "empty string means disabled" at the boundary.
+
+type EmailFrequency = NonNullable<NotificationPreferences['emailFrequency']>;
+
+interface ResolvedPreferences {
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  pushEnabled: boolean;
+  inAppEnabled: boolean;
+  lowStockAlerts: boolean;
+  saleAlerts: boolean;
+  purchaseOrderAlerts: boolean;
+  shiftAlerts: boolean;
+  systemAlerts: boolean;
+  promotionalAlerts: boolean;
+  reminderAlerts: boolean;
+  receiptAlerts: boolean;
+  emailFrequency: EmailFrequency;
+  /** Empty string means disabled. Never `null`/`undefined` once resolved. */
+  quietHoursStart: string;
+  /** Empty string means disabled. Never `null`/`undefined` once resolved. */
+  quietHoursEnd: string;
+}
+
+type AlertKey =
+  | 'lowStockAlerts'
+  | 'saleAlerts'
+  | 'purchaseOrderAlerts'
+  | 'shiftAlerts'
+  | 'systemAlerts'
+  | 'promotionalAlerts'
+  | 'reminderAlerts'
+  | 'receiptAlerts';
+
+// ============================================
+// CONSTANTS
+// ============================================
 
 const ICON_MAP: Record<
   string,
@@ -51,6 +101,67 @@ const ICON_MAP: Record<
   bell: Bell,
   receipt: Receipt,
 };
+
+/**
+ * Alert-type metadata — the canonical list the backend's
+ * `shouldSendNotification` reads against. Every `key` here is a real
+ * boolean field on `NotificationPreferences`.
+ */
+const ALERT_TYPES: Array<{
+  key: AlertKey;
+  label: string;
+  description: string;
+  iconKey: keyof typeof ICON_MAP;
+}> = [
+  {
+    key: 'lowStockAlerts',
+    label: 'Low Stock',
+    description: 'Get notified when inventory drops below the reorder point',
+    iconKey: 'package',
+  },
+  {
+    key: 'saleAlerts',
+    label: 'Sales',
+    description: 'Every completed sale across your business unit',
+    iconKey: 'shopping-cart',
+  },
+  {
+    key: 'purchaseOrderAlerts',
+    label: 'Purchase Orders',
+    description: 'New POs, approvals, and received shipments',
+    iconKey: 'clipboard-list',
+  },
+  {
+    key: 'shiftAlerts',
+    label: 'Shifts',
+    description: 'Shift starts, ends, and cash discrepancies',
+    iconKey: 'clock',
+  },
+  {
+    key: 'systemAlerts',
+    label: 'System',
+    description: 'Maintenance, updates, and important announcements',
+    iconKey: 'settings',
+  },
+  {
+    key: 'promotionalAlerts',
+    label: 'Promotions',
+    description: 'Marketing and product announcements',
+    iconKey: 'sparkles',
+  },
+  {
+    key: 'reminderAlerts',
+    label: 'Reminders',
+    description: 'Tasks, follow-ups, and scheduled reminders',
+    iconKey: 'bell',
+  },
+  {
+    key: 'receiptAlerts',
+    label: 'Receipts',
+    description: 'When receipts are generated or emailed',
+    iconKey: 'receipt',
+  },
+];
 
 const EMAIL_FREQUENCY_OPTIONS: Array<{
   value: EmailFrequency;
@@ -79,7 +190,7 @@ const EMAIL_FREQUENCY_OPTIONS: Array<{
   },
 ];
 
-const DEFAULT_PREFERENCES: NotificationPreferences = {
+const DEFAULT_PREFERENCES: ResolvedPreferences = {
   emailEnabled: true,
   smsEnabled: false,
   pushEnabled: true,
@@ -97,11 +208,71 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   quietHoursEnd: '07:00',
 };
 
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Merge the backend's partial response with local defaults so every
+ * field the UI reads is defined.
+ *
+ * `quietHoursStart` / `quietHoursEnd` translate as follows:
+ *   - `undefined` (backend omitted)   → default value
+ *   - `null`      (legacy)            → '' (disabled)
+ *   - `''`        (disabled)          → ''
+ *   - string value                    → that value
+ */
+function resolvePreferences(raw: NotificationPreferences | null): ResolvedPreferences {
+  const src = raw ?? {};
+
+  const coerceTime = (
+    value: string | null | undefined,
+    fallback: string,
+  ): string => {
+    if (value === undefined) return fallback;
+    if (value === null) return '';
+    return value;
+  };
+
+  return {
+    emailEnabled: src.emailEnabled ?? DEFAULT_PREFERENCES.emailEnabled,
+    smsEnabled: src.smsEnabled ?? DEFAULT_PREFERENCES.smsEnabled,
+    pushEnabled: src.pushEnabled ?? DEFAULT_PREFERENCES.pushEnabled,
+    inAppEnabled: src.inAppEnabled ?? DEFAULT_PREFERENCES.inAppEnabled,
+    lowStockAlerts:
+      src.lowStockAlerts ?? DEFAULT_PREFERENCES.lowStockAlerts,
+    saleAlerts: src.saleAlerts ?? DEFAULT_PREFERENCES.saleAlerts,
+    purchaseOrderAlerts:
+      src.purchaseOrderAlerts ?? DEFAULT_PREFERENCES.purchaseOrderAlerts,
+    shiftAlerts: src.shiftAlerts ?? DEFAULT_PREFERENCES.shiftAlerts,
+    systemAlerts: src.systemAlerts ?? DEFAULT_PREFERENCES.systemAlerts,
+    promotionalAlerts:
+      src.promotionalAlerts ?? DEFAULT_PREFERENCES.promotionalAlerts,
+    reminderAlerts:
+      src.reminderAlerts ?? DEFAULT_PREFERENCES.reminderAlerts,
+    receiptAlerts: src.receiptAlerts ?? DEFAULT_PREFERENCES.receiptAlerts,
+    emailFrequency:
+      src.emailFrequency ?? DEFAULT_PREFERENCES.emailFrequency,
+    quietHoursStart: coerceTime(
+      src.quietHoursStart,
+      DEFAULT_PREFERENCES.quietHoursStart,
+    ),
+    quietHoursEnd: coerceTime(
+      src.quietHoursEnd,
+      DEFAULT_PREFERENCES.quietHoursEnd,
+    ),
+  };
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
 export default function NotificationSettingsPage() {
-  const [preferences, setPreferences] =
-    useState<NotificationPreferences | null>(null);
-  const [original, setOriginal] =
-    useState<NotificationPreferences | null>(null);
+  const [preferences, setPreferences] = useState<ResolvedPreferences | null>(
+    null,
+  );
+  const [original, setOriginal] = useState<ResolvedPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -121,9 +292,9 @@ export default function NotificationSettingsPage() {
       setError(null);
       const data = await notificationService.getPreferences();
       if (!isMountedRef.current) return;
-      const normalized = { ...DEFAULT_PREFERENCES, ...data };
-      setPreferences(normalized);
-      setOriginal(normalized);
+      const resolved = resolvePreferences(data);
+      setPreferences(resolved);
+      setOriginal(resolved);
     } catch (err: any) {
       if (!isMountedRef.current) return;
       const message =
@@ -144,14 +315,14 @@ export default function NotificationSettingsPage() {
     return JSON.stringify(preferences) !== JSON.stringify(original);
   }, [preferences, original]);
 
-  const quietHoursEnabled = Boolean(
-    preferences?.quietHoursStart && preferences?.quietHoursEnd,
-  );
+  const quietHoursEnabled =
+    Boolean(preferences?.quietHoursStart) &&
+    Boolean(preferences?.quietHoursEnd);
 
   const update = useCallback(
-    <K extends keyof NotificationPreferences>(
+    <K extends keyof ResolvedPreferences>(
       key: K,
-      value: NotificationPreferences[K],
+      value: ResolvedPreferences[K],
     ) => {
       setPreferences((prev) => (prev ? { ...prev, [key]: value } : prev));
     },
@@ -164,37 +335,62 @@ export default function NotificationSettingsPage() {
         update('quietHoursStart', '22:00');
         update('quietHoursEnd', '07:00');
       } else {
-        update('quietHoursStart', null);
-        update('quietHoursEnd', null);
+        update('quietHoursStart', '');
+        update('quietHoursEnd', '');
       }
     },
     [update],
   );
 
+  /**
+   * Save changes.
+   *
+   * We send the entire preferences object. The backend's controller
+   * accepts both partial and full payloads and merges them into the
+   * stored preferences; sending the full object removes any
+   * dependence on the backend remembering prior values.
+   *
+   * `quietHoursStart` / `quietHoursEnd` are translated from "empty
+   * string = disabled" back to `undefined` on the wire. The backend's
+   * Zod schema treats `undefined` as "leave unchanged"; but because
+   * we're sending the whole object every time, we still need to send
+   * a value that disables quiet hours. The backend maps an empty
+   * string through `updatePreferencesSchema` → the service's
+   * `isQuietHours` guard treats falsy start/end as disabled.
+   */
   const handleSave = useCallback(async () => {
     if (!preferences) return;
     if (!hasChanges) return;
 
     try {
       setSaving(true);
-      const diff: NotificationPreferencesUpdate = {};
-      if (original) {
-        (
-          Object.keys(preferences) as Array<keyof NotificationPreferences>
-        ).forEach((key) => {
-          if (preferences[key] !== original[key]) {
-            (diff as Record<string, unknown>)[key] = preferences[key];
-          }
-        });
-      } else {
-        Object.assign(diff, preferences);
-      }
 
-      const updated = await notificationService.updatePreferences(diff);
+      const payload: Partial<NotificationPreferences> = {
+        emailEnabled: preferences.emailEnabled,
+        smsEnabled: preferences.smsEnabled,
+        pushEnabled: preferences.pushEnabled,
+        inAppEnabled: preferences.inAppEnabled,
+        lowStockAlerts: preferences.lowStockAlerts,
+        saleAlerts: preferences.saleAlerts,
+        purchaseOrderAlerts: preferences.purchaseOrderAlerts,
+        shiftAlerts: preferences.shiftAlerts,
+        systemAlerts: preferences.systemAlerts,
+        promotionalAlerts: preferences.promotionalAlerts,
+        reminderAlerts: preferences.reminderAlerts,
+        receiptAlerts: preferences.receiptAlerts,
+        emailFrequency: preferences.emailFrequency,
+        // Empty string encodes "disabled" — send `undefined` so the
+        // wire shape stays `string | undefined`.
+        quietHoursStart: preferences.quietHoursStart || undefined,
+        quietHoursEnd: preferences.quietHoursEnd || undefined,
+      };
+
+      const updated = await notificationService.updatePreferences(payload);
       if (!isMountedRef.current) return;
-      const normalized = { ...DEFAULT_PREFERENCES, ...updated };
-      setPreferences(normalized);
-      setOriginal(normalized);
+
+      const resolved = resolvePreferences(updated);
+      setPreferences(resolved);
+      setOriginal(resolved);
       toast.success('Preferences saved');
     } catch (err: any) {
       toast.error(
@@ -203,7 +399,7 @@ export default function NotificationSettingsPage() {
     } finally {
       if (isMountedRef.current) setSaving(false);
     }
-  }, [preferences, original, hasChanges]);
+  }, [preferences, hasChanges]);
 
   const handleReset = useCallback(async () => {
     if (
@@ -218,9 +414,9 @@ export default function NotificationSettingsPage() {
       setResetting(true);
       const data = await notificationService.resetPreferences();
       if (!isMountedRef.current) return;
-      const normalized = { ...DEFAULT_PREFERENCES, ...data };
-      setPreferences(normalized);
-      setOriginal(normalized);
+      const resolved = resolvePreferences(data);
+      setPreferences(resolved);
+      setOriginal(resolved);
       toast.success('Preferences reset to defaults');
     } catch (err: any) {
       toast.error(
@@ -236,6 +432,10 @@ export default function NotificationSettingsPage() {
     setPreferences(original);
     toast.info('Changes discarded');
   }, [original]);
+
+  // ============================================
+  // LOADING / ERROR GATES
+  // ============================================
 
   if (loading) {
     return (
@@ -273,6 +473,10 @@ export default function NotificationSettingsPage() {
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 pb-32">
@@ -376,14 +580,11 @@ export default function NotificationSettingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
-              {ALERT_TYPE_METADATA.map((meta) => {
+              {ALERT_TYPES.map((meta) => {
                 const Icon = ICON_MAP[meta.iconKey] ?? Bell;
-                const enabledInApp = Boolean(preferences[meta.key]);
-                const enabledEmail =
-                  Boolean(preferences[meta.key]) &&
-                  preferences.emailEnabled;
-                const enabledPush =
-                  Boolean(preferences[meta.key]) && preferences.pushEnabled;
+                const enabled = preferences[meta.key];
+                const enabledEmail = enabled && preferences.emailEnabled;
+                const enabledPush = enabled && preferences.pushEnabled;
 
                 return (
                   <tr key={meta.key} className="group">
@@ -404,8 +605,8 @@ export default function NotificationSettingsPage() {
                     </td>
                     <td className="text-center px-3">
                       <Toggle
-                        checked={enabledInApp}
-                        onChange={(v) => update(meta.key, v as never)}
+                        checked={enabled}
+                        onChange={(v) => update(meta.key, v)}
                         aria-label={`${meta.label} in-app notifications`}
                       />
                     </td>
@@ -413,7 +614,7 @@ export default function NotificationSettingsPage() {
                       <Toggle
                         checked={enabledEmail}
                         disabled={!preferences.emailEnabled}
-                        onChange={(v) => update(meta.key, v as never)}
+                        onChange={(v) => update(meta.key, v)}
                         aria-label={`${meta.label} email notifications`}
                       />
                     </td>
@@ -421,7 +622,7 @@ export default function NotificationSettingsPage() {
                       <Toggle
                         checked={enabledPush}
                         disabled={!preferences.pushEnabled}
-                        onChange={(v) => update(meta.key, v as never)}
+                        onChange={(v) => update(meta.key, v)}
                         aria-label={`${meta.label} push notifications`}
                       />
                     </td>
@@ -521,13 +722,13 @@ export default function NotificationSettingsPage() {
               <TimeField
                 label="Start"
                 icon={Moon}
-                value={preferences.quietHoursStart ?? '22:00'}
+                value={preferences.quietHoursStart || '22:00'}
                 onChange={(v) => update('quietHoursStart', v)}
               />
               <TimeField
                 label="End"
                 icon={Sun}
-                value={preferences.quietHoursEnd ?? '07:00'}
+                value={preferences.quietHoursEnd || '07:00'}
                 onChange={(v) => update('quietHoursEnd', v)}
               />
             </motion.div>
@@ -571,6 +772,10 @@ export default function NotificationSettingsPage() {
     </div>
   );
 }
+
+// ============================================
+// SUB-COMPONENTS
+// ============================================
 
 function Section({
   title,

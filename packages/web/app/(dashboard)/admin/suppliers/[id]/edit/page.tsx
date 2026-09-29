@@ -7,16 +7,32 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Truck, Save, Loader2, Lock,
-  Mail, Phone, MapPin, User, Building,
-  AlertCircle, CheckCircle, XCircle, HelpCircle,
-  Globe, CreditCard, FileText, Save as SaveIcon,
-  ChevronDown, ChevronUp, Info, Plus, Minus,
-  DollarSign, Shield, Star, StarHalf
+  ArrowLeft,
+  Truck,
+  Loader2,
+  Lock,
+  Mail,
+  Phone,
+  MapPin,
+  Building,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Globe,
+  Save as SaveIcon,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  DollarSign,
+  Shield,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../../hooks/usePermission';
-import { supplierService } from '../../../../../../services/supplierService';
+import {
+  supplierService,
+  type UpdateSupplierInput,
+} from '../../../../../../services/supplierService';
 import { toast } from '../../../../../../utils/toast-manager';
 import { PermissionResource } from '../../../../../../types/enums';
 
@@ -85,6 +101,63 @@ const DELIVERY_TERMS_OPTIONS = [
 ];
 
 // ============================================
+// HELPERS
+// ============================================
+
+/**
+ * SENTINEL_IDS the backend treats as "resolve this for me from
+ * req.user". We must never send them as literal values.
+ */
+const SENTINEL_IDS = new Set([
+  'default',
+  'default-company',
+  'default-company-id',
+  'default-business-unit',
+  'undefined',
+  'null',
+  '',
+]);
+
+function sanitizeId(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (SENTINEL_IDS.has(trimmed.toLowerCase())) return undefined;
+  return trimmed;
+}
+
+/**
+ * Convert a form field value to the payload shape `UpdateSupplierInput`
+ * expects.
+ *
+ * The service's `UpdateSupplierInput` declares every optional string
+ * as `string | undefined` — NOT `string | null`. The backend's
+ * `updateSupplierSchema` treats an omitted key as "leave unchanged"
+ * and an empty string as "clear the field". So:
+ *
+ *   - empty / whitespace-only form value → `undefined`  (omit from payload)
+ *   - non-empty value                     → the trimmed string
+ *
+ * Returning `undefined` here means the field is omitted from the
+ * payload by `cleanObject` inside the service, so the backend
+ * leaves the existing value in place.
+ */
+function toOptionalString(value: string | null | undefined): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Same conversion for numeric fields. `undefined` means "omit";
+ * `0` is a legitimate value and is preserved.
+ */
+function toOptionalNumber(value: number | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  return Number.isFinite(value) ? value : undefined;
+}
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -103,7 +176,9 @@ export default function EditSupplierPage() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+  const [expandedSections, setExpandedSections] = useState<
+    Record<string, boolean>
+  >({
     basic: true,
     contact: true,
     business: true,
@@ -126,10 +201,16 @@ export default function EditSupplierPage() {
     rating: 0,
   });
 
-  const companyId = useMemo(() => user?.companyId || 'default', [user]);
-  const canEditSupplier = useMemo(() =>
-    canEdit(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER),
-    [canEdit, canManage]
+  // The backend resolves `companyId` from `req.user.companyId` when
+  // we don't send one. Sending a literal `'default'` breaks the FK
+  // lookup. Only pass a real id.
+  const companyId = useMemo(() => sanitizeId(user?.companyId), [user]);
+
+  const canEditSupplier = useMemo(
+    () =>
+      canEdit(PermissionResource.SUPPLIER) ||
+      canManage(PermissionResource.SUPPLIER),
+    [canEdit, canManage],
   );
 
   useEffect(() => {
@@ -140,6 +221,7 @@ export default function EditSupplierPage() {
     if (isClient && id) {
       loadSupplier();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isClient]);
 
   // ============================================
@@ -150,6 +232,8 @@ export default function EditSupplierPage() {
     try {
       setLoadingData(true);
       setError(null);
+
+      // Pass `companyId` only when it is a real id.
       const data = await supplierService.getSupplierById(id, companyId);
 
       setFormData({
@@ -159,13 +243,13 @@ export default function EditSupplierPage() {
         phone: data.phone || '',
         address: data.address || '',
         taxId: data.taxId || '',
-        paymentTerms: (data as any).paymentTerms || '',
-        deliveryTerms: (data as any).deliveryTerms || '',
+        paymentTerms: data.paymentTerms || '',
+        deliveryTerms: data.deliveryTerms || '',
         notes: data.notes || '',
         isActive: data.isActive !== undefined ? data.isActive : true,
-        website: (data as any).website || '',
-        creditLimit: (data as any).creditLimit || 0,
-        rating: (data as any).rating || 0,
+        website: data.website || '',
+        creditLimit: data.creditLimit || 0,
+        rating: data.rating || 0,
       });
     } catch (error: any) {
       console.error('Failed to load supplier:', error);
@@ -184,51 +268,65 @@ export default function EditSupplierPage() {
   // VALIDATION
   // ============================================
 
-  const validateField = useCallback((name: keyof FormData, value: any): string => {
-    switch (name) {
-      case 'name':
-        if (!value || !value.trim()) return 'Supplier name is required';
-        if (value.trim().length < 2) return 'Supplier name must be at least 2 characters';
-        if (value.trim().length > 100) return 'Supplier name must be less than 100 characters';
-        return '';
-      case 'email':
-        if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          return 'Please enter a valid email address';
-        }
-        return '';
-      case 'phone':
-        if (value && !/^[\+\d\s\-\(\)]{7,20}$/.test(value)) {
-          return 'Please enter a valid phone number';
-        }
-        return '';
-      case 'taxId':
-        if (value && value.length > 50) return 'Tax ID must be less than 50 characters';
-        return '';
-      case 'website':
-        if (value && !/^https?:\/\/[^\s]+$/.test(value) && !/^[^\s]+\.[^\s]+$/.test(value)) {
-          return 'Please enter a valid website URL';
-        }
-        return '';
-      case 'creditLimit':
-        if (value && value < 0) return 'Credit limit cannot be negative';
-        if (value && value > 999999999) return 'Credit limit is too large';
-        return '';
-      case 'rating':
-        if (value && (value < 0 || value > 5)) return 'Rating must be between 0 and 5';
-        return '';
-      case 'contactPerson':
-        if (value && value.length > 100) return 'Contact person name must be less than 100 characters';
-        return '';
-      case 'address':
-        if (value && value.length > 200) return 'Address must be less than 200 characters';
-        return '';
-      case 'notes':
-        if (value && value.length > 1000) return 'Notes must be less than 1000 characters';
-        return '';
-      default:
-        return '';
-    }
-  }, []);
+  const validateField = useCallback(
+    (name: keyof FormData, value: any): string => {
+      switch (name) {
+        case 'name':
+          if (!value || !value.trim()) return 'Supplier name is required';
+          if (value.trim().length < 2)
+            return 'Supplier name must be at least 2 characters';
+          if (value.trim().length > 100)
+            return 'Supplier name must be less than 100 characters';
+          return '';
+        case 'email':
+          if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+            return 'Please enter a valid email address';
+          }
+          return '';
+        case 'phone':
+          if (value && !/^[\+\d\s\-\(\)]{7,20}$/.test(value)) {
+            return 'Please enter a valid phone number';
+          }
+          return '';
+        case 'taxId':
+          if (value && value.length > 50)
+            return 'Tax ID must be less than 50 characters';
+          return '';
+        case 'website':
+          if (
+            value &&
+            !/^https?:\/\/[^\s]+$/.test(value) &&
+            !/^[^\s]+\.[^\s]+$/.test(value)
+          ) {
+            return 'Please enter a valid website URL';
+          }
+          return '';
+        case 'creditLimit':
+          if (value && value < 0) return 'Credit limit cannot be negative';
+          if (value && value > 999999999) return 'Credit limit is too large';
+          return '';
+        case 'rating':
+          if (value && (value < 0 || value > 5))
+            return 'Rating must be between 0 and 5';
+          return '';
+        case 'contactPerson':
+          if (value && value.length > 100)
+            return 'Contact person name must be less than 100 characters';
+          return '';
+        case 'address':
+          if (value && value.length > 200)
+            return 'Address must be less than 200 characters';
+          return '';
+        case 'notes':
+          if (value && value.length > 1000)
+            return 'Notes must be less than 1000 characters';
+          return '';
+        default:
+          return '';
+      }
+    },
+    [],
+  );
 
   const validateForm = useCallback((): boolean => {
     const newErrors: FormErrors = {};
@@ -284,7 +382,11 @@ export default function EditSupplierPage() {
   // HANDLERS
   // ============================================
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
     const { name, value, type } = e.target;
 
     let parsedValue: any = value;
@@ -295,28 +397,32 @@ export default function EditSupplierPage() {
       parsedValue = (e.target as HTMLInputElement).checked;
     }
 
-    setFormData(prev => ({ ...prev, [name]: parsedValue }));
+    setFormData((prev) => ({ ...prev, [name]: parsedValue }));
 
     if (errors[name as keyof FormErrors]) {
-      setErrors(prev => {
+      setErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[name as keyof FormErrors];
         return newErrors;
       });
     }
 
-    setTouched(prev => ({ ...prev, [name]: true }));
+    setTouched((prev) => ({ ...prev, [name]: true }));
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleBlur = (
+    e: React.FocusEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
+  ) => {
     const { name, value } = e.target;
-    setTouched(prev => ({ ...prev, [name]: true }));
+    setTouched((prev) => ({ ...prev, [name]: true }));
 
     const error = validateField(name as keyof FormData, value);
     if (error) {
-      setErrors(prev => ({ ...prev, [name]: error }));
+      setErrors((prev) => ({ ...prev, [name]: error }));
     } else {
-      setErrors(prev => {
+      setErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[name as keyof FormErrors];
         return newErrors;
@@ -325,7 +431,7 @@ export default function EditSupplierPage() {
   };
 
   const toggleSection = (section: string) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }));
@@ -338,7 +444,7 @@ export default function EditSupplierPage() {
     setErrors({});
 
     if (!validateForm()) {
-      const firstError = Object.values(errors).find(err => err);
+      const firstError = Object.values(errors).find((err) => err);
       if (firstError) {
         toast.error(firstError);
       } else {
@@ -349,19 +455,50 @@ export default function EditSupplierPage() {
 
     setLoading(true);
     try {
-      const data = {
+      // Build the payload to match `UpdateSupplierInput` exactly.
+      //
+      // `UpdateSupplierInput` types every optional field as
+      // `string | undefined` (not `| null`). We convert empty /
+      // whitespace-only form values to `undefined` so they are
+      // omitted by the service's `cleanObject` helper — the
+      // backend then leaves the existing value in place.
+      const data: UpdateSupplierInput = {
         name: formData.name.trim(),
-        contactPerson: formData.contactPerson.trim() || null,
-        email: formData.email.trim() || null,
-        phone: formData.phone.trim() || null,
-        address: formData.address.trim() || null,
-        taxId: formData.taxId.trim() || null,
-        paymentTerms: formData.paymentTerms.trim() || null,
-        deliveryTerms: formData.deliveryTerms.trim() || null,
-        notes: formData.notes.trim() || null,
-        website: formData.website.trim() || null,
-        creditLimit: formData.creditLimit || null,
-        rating: formData.rating || null,
+
+        ...(toOptionalString(formData.contactPerson) !== undefined && {
+          contactPerson: toOptionalString(formData.contactPerson),
+        }),
+        ...(toOptionalString(formData.email) !== undefined && {
+          email: toOptionalString(formData.email),
+        }),
+        ...(toOptionalString(formData.phone) !== undefined && {
+          phone: toOptionalString(formData.phone),
+        }),
+        ...(toOptionalString(formData.address) !== undefined && {
+          address: toOptionalString(formData.address),
+        }),
+        ...(toOptionalString(formData.taxId) !== undefined && {
+          taxId: toOptionalString(formData.taxId),
+        }),
+        ...(toOptionalString(formData.paymentTerms) !== undefined && {
+          paymentTerms: toOptionalString(formData.paymentTerms),
+        }),
+        ...(toOptionalString(formData.deliveryTerms) !== undefined && {
+          deliveryTerms: toOptionalString(formData.deliveryTerms),
+        }),
+        ...(toOptionalString(formData.notes) !== undefined && {
+          notes: toOptionalString(formData.notes),
+        }),
+        ...(toOptionalString(formData.website) !== undefined && {
+          website: toOptionalString(formData.website),
+        }),
+        ...(toOptionalNumber(formData.creditLimit) !== undefined && {
+          creditLimit: toOptionalNumber(formData.creditLimit),
+        }),
+        ...(toOptionalNumber(formData.rating) !== undefined && {
+          rating: toOptionalNumber(formData.rating),
+        }),
+
         isActive: formData.isActive,
       };
 
@@ -375,14 +512,17 @@ export default function EditSupplierPage() {
       }, 1500);
     } catch (error: any) {
       console.error('Failed to update supplier:', error);
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to update supplier';
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to update supplier';
 
       if (errorMessage.toLowerCase().includes('email')) {
-        setErrors(prev => ({ ...prev, email: errorMessage }));
+        setErrors((prev) => ({ ...prev, email: errorMessage }));
       } else if (errorMessage.toLowerCase().includes('name')) {
-        setErrors(prev => ({ ...prev, name: errorMessage }));
+        setErrors((prev) => ({ ...prev, name: errorMessage }));
       } else {
-        setErrors(prev => ({ ...prev, general: errorMessage }));
+        setErrors((prev) => ({ ...prev, general: errorMessage }));
         toast.error(errorMessage);
       }
     } finally {
@@ -394,7 +534,9 @@ export default function EditSupplierPage() {
   // HELPERS
   // ============================================
 
-  const getFieldError = (fieldName: keyof FormErrors): string | undefined => {
+  const getFieldError = (
+    fieldName: keyof FormErrors,
+  ): string | undefined => {
     if (submitAttempted || touched[fieldName]) {
       return errors[fieldName];
     }
@@ -402,7 +544,8 @@ export default function EditSupplierPage() {
   };
 
   const getInputClassName = (fieldName: keyof FormErrors): string => {
-    const baseClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+    const baseClass =
+      'w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 focus:outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed';
     const error = getFieldError(fieldName);
     if (error) return `${baseClass} border-danger-500 dark:border-danger-500`;
     return `${baseClass} border-gray-300 dark:border-gray-600`;
@@ -415,10 +558,17 @@ export default function EditSupplierPage() {
     return (
       <div className="flex items-center gap-0.5">
         {[...Array(fullStars)].map((_, i) => (
-          <span key={`full-${i}`} className="text-warning-400">★</span>
+          <span key={`full-${i}`} className="text-warning-400">
+            ★
+          </span>
         ))}
         {[...Array(emptyStars)].map((_, i) => (
-          <span key={`empty-${i}`} className="text-gray-300 dark:text-gray-600">★</span>
+          <span
+            key={`empty-${i}`}
+            className="text-gray-300 dark:text-gray-600"
+          >
+            ★
+          </span>
         ))}
       </div>
     );
@@ -434,9 +584,12 @@ export default function EditSupplierPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to edit suppliers. Please contact your administrator.
+          You don't have permission to edit suppliers. Please contact your
+          administrator.
         </p>
         <button
           onClick={() => router.push(`/admin/suppliers/${id}`)}
@@ -458,7 +611,9 @@ export default function EditSupplierPage() {
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading supplier...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading supplier...
+          </p>
         </div>
       </div>
     );
@@ -516,7 +671,7 @@ export default function EditSupplierPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {companyId && companyId !== 'default' && (
+            {companyId && (
               <span className="text-xs bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300 px-2 py-1 rounded-full flex items-center gap-1">
                 <Building className="w-3 h-3" />
                 BU: {companyId.slice(0, 8)}...
@@ -542,8 +697,12 @@ export default function EditSupplierPage() {
             >
               <CheckCircle className="w-5 h-5 text-success-600 dark:text-success-400 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-success-800 dark:text-success-200">Success!</p>
-                <p className="text-sm text-success-700 dark:text-success-300">Supplier updated successfully.</p>
+                <p className="text-sm font-medium text-success-800 dark:text-success-200">
+                  Success!
+                </p>
+                <p className="text-sm text-success-700 dark:text-success-300">
+                  Supplier updated successfully.
+                </p>
               </div>
             </motion.div>
           )}
@@ -554,16 +713,23 @@ export default function EditSupplierPage() {
           <div className="mb-6 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-danger-600 dark:text-danger-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-danger-800 dark:text-danger-200">Error</p>
-              <p className="text-sm text-danger-700 dark:text-danger-300">{errors.general}</p>
+              <p className="text-sm font-medium text-danger-800 dark:text-danger-200">
+                Error
+              </p>
+              <p className="text-sm text-danger-700 dark:text-danger-300">
+                {errors.general}
+              </p>
             </div>
             <button
-              onClick={() => setErrors(prev => {
-                const newErrors = { ...prev };
-                delete newErrors.general;
-                return newErrors;
-              })}
+              onClick={() =>
+                setErrors((prev) => {
+                  const newErrors = { ...prev };
+                  delete newErrors.general;
+                  return newErrors;
+                })
+              }
               className="text-danger-600 hover:text-danger-800 dark:text-danger-400 p-1 focus-ring"
+              aria-label="Dismiss error"
             >
               <X className="w-4 h-4" />
             </button>
@@ -575,12 +741,18 @@ export default function EditSupplierPage() {
           <Info className="w-5 h-5 text-brand-500 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-brand-700 dark:text-brand-300">
             <p className="font-medium">Required Fields</p>
-            <p className="mt-1">Fields marked with <span className="text-danger-500">*</span> are required. All other fields are optional.</p>
+            <p className="mt-1">
+              Fields marked with <span className="text-danger-500">*</span>{' '}
+              are required. All other fields are optional.
+            </p>
           </div>
         </div>
 
         {/* FORM */}
-        <form onSubmit={handleSubmit} className="card-brand p-4 sm:p-6 space-y-6 transition-colors duration-200">
+        <form
+          onSubmit={handleSubmit}
+          className="card-brand p-4 sm:p-6 space-y-6 transition-colors duration-200"
+        >
           {/* ============================================ */}
           {/* BASIC INFORMATION SECTION */}
           {/* ============================================ */}
@@ -614,7 +786,8 @@ export default function EditSupplierPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Supplier Name <span className="text-danger-500">*</span>
+                        Supplier Name{' '}
+                        <span className="text-danger-500">*</span>
                       </label>
                       <input
                         type="text"
@@ -685,7 +858,9 @@ export default function EditSupplierPage() {
                           {getFieldError('rating')}
                         </p>
                       )}
-                      <p className="mt-1 text-xs text-gray-400">Rate supplier from 0 to 5 stars</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Rate supplier from 0 to 5 stars
+                      </p>
                     </div>
                   </div>
                 </motion.div>
@@ -821,7 +996,9 @@ export default function EditSupplierPage() {
                           {getFieldError('website')}
                         </p>
                       )}
-                      <p className="mt-1 text-xs text-gray-400">Include https:// for external links</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Include https:// for external links
+                      </p>
                     </div>
                   </div>
                 </motion.div>
@@ -895,7 +1072,9 @@ export default function EditSupplierPage() {
                           value={formData.creditLimit}
                           onChange={handleChange}
                           onBlur={handleBlur}
-                          className={`${getInputClassName('creditLimit')} pl-10 tabular-nums`}
+                          className={`${getInputClassName(
+                            'creditLimit',
+                          )} pl-10 tabular-nums`}
                           placeholder="0.00"
                           disabled={loading || success}
                         />
@@ -920,8 +1099,10 @@ export default function EditSupplierPage() {
                         className={getInputClassName('paymentTerms')}
                         disabled={loading || success}
                       >
-                        {PAYMENT_TERMS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        {PAYMENT_TERMS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
                         ))}
                       </select>
                       {getFieldError('paymentTerms') && (
@@ -944,8 +1125,10 @@ export default function EditSupplierPage() {
                         className={getInputClassName('deliveryTerms')}
                         disabled={loading || success}
                       >
-                        {DELIVERY_TERMS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        {DELIVERY_TERMS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
                         ))}
                       </select>
                       {getFieldError('deliveryTerms') && (
@@ -1039,14 +1222,20 @@ export default function EditSupplierPage() {
                     <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${companyId && companyId !== 'default' ? 'bg-success-500' : 'bg-warning-500'}`} />
-                          {companyId && companyId !== 'default'
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              companyId ? 'bg-success-500' : 'bg-warning-500'
+                            }`}
+                          />
+                          {companyId
                             ? `Business Unit: ${companyId.slice(0, 8)}...`
                             : '⚠️ Using default business unit'}
                         </span>
                         <span className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
-                          {user?.id ? `User: ${user.id.slice(0, 8)}...` : '⚠️ No user ID'}
+                          {user?.id
+                            ? `User: ${user.id.slice(0, 8)}...`
+                            : '⚠️ No user ID'}
                         </span>
                       </div>
                     </div>
@@ -1097,12 +1286,30 @@ export default function EditSupplierPage() {
             </span>
             <div className="flex items-center gap-4 flex-wrap">
               <span className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${companyId && companyId !== 'default' ? 'bg-success-500' : 'bg-warning-500'}`} />
-                {companyId && companyId !== 'default' ? 'Business unit resolved' : '⚠️ Business unit required'}
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    companyId ? 'bg-success-500' : 'bg-warning-500'
+                  }`}
+                />
+                {companyId
+                  ? 'Business unit resolved'
+                  : '⚠️ Business unit required'}
               </span>
               <span className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${Object.keys(formData).filter(k => k !== 'isActive').some(k => formData[k as keyof FormData]) ? 'bg-brand-500' : 'bg-gray-400'}`} />
-                {Object.keys(formData).filter(k => k !== 'isActive').some(k => formData[k as keyof FormData]) ? 'Form filled' : 'Empty form'}
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    Object.keys(formData)
+                      .filter((k) => k !== 'isActive')
+                      .some((k) => formData[k as keyof FormData])
+                      ? 'bg-brand-500'
+                      : 'bg-gray-400'
+                  }`}
+                />
+                {Object.keys(formData)
+                  .filter((k) => k !== 'isActive')
+                  .some((k) => formData[k as keyof FormData])
+                  ? 'Form filled'
+                  : 'Empty form'}
               </span>
             </div>
           </div>
@@ -1111,7 +1318,3 @@ export default function EditSupplierPage() {
     </div>
   );
 }
-
-// Add missing import
-import { X } from 'lucide-react';
-

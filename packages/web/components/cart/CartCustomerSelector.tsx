@@ -44,13 +44,19 @@ const MIN_SEARCH_LENGTH = 2;
 /**
  * The `api` wrapper may or may not unwrap `response.data`. This helper
  * accepts either and returns the payload.
+ *
+ * Returns `null` when the response is missing or when the unwrapped
+ * value isn't an object / array — protects callers from casting a
+ * primitive into a `Customer` shape.
  */
 function unwrapApiResponse<T>(response: unknown): T | null {
   if (response == null) return null;
   if (typeof response === 'object' && 'data' in (response as any)) {
     const inner = (response as any).data;
     if (inner && typeof inner === 'object') return inner as T;
+    return null;
   }
+  if (typeof response !== 'object') return null;
   return response as T;
 }
 
@@ -230,7 +236,7 @@ export function CartCustomerSelector({
     setShowDropdown(false);
 
     onCustomerCleared?.();
-    toast.info(
+    toast.warning(
       'Customer removed from view. The server cart still references the previous customer until a new one is set.',
     );
   }, [disabled, isAssociating, onCustomerCleared]);
@@ -302,6 +308,7 @@ export function CartCustomerSelector({
               placeholder="Search by name, email, or phone…"
               disabled={disabled || isAssociating}
               autoComplete="off"
+              aria-busy={isSearching}
               className="w-full pl-9 pr-9 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50 transition-colors"
               aria-expanded={showDropdown}
               aria-controls="customer-search-results"
@@ -323,7 +330,7 @@ export function CartCustomerSelector({
                   type="button"
                   onClick={() => handleSelectCustomer(customer)}
                   disabled={isAssociating}
-                  className="w-full text-left px-4 py-2.5 hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors flex items-start gap-3 disabled:opacity-50 focus-ring"
+                  className="w-full text-left px-4 py-2.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-start gap-3 disabled:opacity-50 focus-ring"
                   role="option"
                 >
                   <div className="w-8 h-8 bg-brand-100 dark:bg-brand-900/40 rounded-full flex items-center justify-center flex-shrink-0">

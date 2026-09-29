@@ -34,14 +34,96 @@ import {
 } from '../../../../../utils/formatters';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { toast } from '../../../../../utils/toast-manager';
+import { api } from '../../../../../services/api';
+
+// ============================================
+// LOCAL SERVICE EXTENSIONS
+// ============================================
+//
+// The frontend `saleService` does not declare `getInvoices`,
+// `sendReceiptEmail`, or `exportSales`. The backend exposes:
+//
+//   GET  /sales/invoices                  → saleController.getInvoices
+//   POST /sales/:id/email-receipt         → saleController.sendReceiptEmail
+//   GET  /sales/export                    → saleController.exportSales
+//
+// We call them via the shared `api` client rather than mutating the
+// shared service.
+
+async function fetchInvoicesRemote(params: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ data: any[]; total?: number; totalPages?: number }> {
+  const response = await api.get<any>('/sales/invoices', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  const data = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.data)
+      ? body.data
+      : [];
+  const pagination = body?.pagination ?? response?.pagination ?? {};
+
+  return {
+    data,
+    total: typeof pagination.total === 'number' ? pagination.total : data.length,
+    totalPages:
+      typeof pagination.totalPages === 'number' ? pagination.totalPages : 1,
+  };
+}
+
+async function sendReceiptEmailRemote(
+  saleId: string,
+  email: string,
+): Promise<{ success: boolean; data?: any; message?: string }> {
+  if (!saleId) throw new Error('Sale ID is required');
+  if (!email) throw new Error('Email is required');
+  const response = await api.post<any>(`/sales/${saleId}/email-receipt`, {
+    email,
+  });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+  if (body && typeof body === 'object' && 'success' in body) {
+    return body as { success: boolean; data?: any; message?: string };
+  }
+  return { success: true, data: body };
+}
+
+async function exportSalesRemote(params: {
+  startDate?: string;
+  endDate?: string;
+  format?: 'json' | 'csv' | 'excel' | 'pdf';
+}): Promise<{ data: any[]; total?: number; format?: string }> {
+  const response = await api.get<any>('/sales/export', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      total: typeof body.total === 'number' ? body.total : body.data.length,
+      format: typeof body.format === 'string' ? body.format : params.format,
+    };
+  }
+  if (Array.isArray(body)) {
+    return { data: body, total: body.length, format: params.format };
+  }
+  return { data: [], total: 0, format: params.format };
+}
 
 // ============================================
 // INTERFACES
 // ============================================
-//
-// Invoice statuses are UPPERCASE to match the Prisma enum
-// `InvoiceStatus`: DRAFT | SENT | PAID | OVERDUE | CANCELLED | VOID |
-// PARTIALLY_PAID.
 
 type InvoiceStatus =
   | 'DRAFT'
@@ -123,21 +205,12 @@ interface InvoiceStats {
 }
 
 // ============================================
-// HELPERS — backend Sale → Invoice shape
+// HELPERS
 // ============================================
-//
-// The backend exposes invoices via:
-//     GET  /api/sales/invoices          (SaleController.getInvoices)
-//     PUT  /api/sales/:id               (SaleController.updateSale)
-//     POST /api/sales/:id/email-receipt (SaleController.sendReceiptEmail)
-//
-// There is no dedicated `/api/invoices/*` router. Every invoice in
-// the system is a `Sale` with a non-null `invoiceId`, joined to an
-// `Invoice` row. The list endpoint returns sales; the frontend
-// flattens `sale.invoice` + `sale.customer` into the shape this page
-// renders.
 
-function normalizeInvoiceStatus(raw: string | null | undefined): InvoiceStatus {
+function normalizeInvoiceStatus(
+  raw: string | null | undefined,
+): InvoiceStatus {
   const value = (raw || 'DRAFT').toUpperCase();
   switch (value) {
     case 'DRAFT':
@@ -154,7 +227,7 @@ function normalizeInvoiceStatus(raw: string | null | undefined): InvoiceStatus {
 }
 
 function normalizePaymentTerms(
-  raw: string | null | undefined
+  raw: string | null | undefined,
 ): InvoicePaymentTerms {
   const value = (raw || 'NET_30').toUpperCase();
   switch (value) {
@@ -194,8 +267,8 @@ function saleToInvoice(sale: any): Invoice | null {
     customerName: sale.customerName
       ? sale.customerName
       : customer.firstName
-      ? `${customer.firstName} ${customer.lastName}`.trim()
-      : 'Guest',
+        ? `${customer.firstName} ${customer.lastName}`.trim()
+        : 'Guest',
     customerEmail: customer.email || 'N/A',
     customerPhone: customer.phoneNumber,
     customerAddress: customer.address,
@@ -293,6 +366,182 @@ const titleCase = (value: string): string => {
 };
 
 // ============================================
+// STATS HELPER
+// ============================================
+
+function computeInvoiceStats(invoices: Invoice[]): InvoiceStats {
+  const totalAmount = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
+  const totalPaid = invoices.reduce((sum, i) => sum + (i.paidAmount || 0), 0);
+  const totalBalance = invoices.reduce(
+    (sum, i) => sum + (i.balanceDue || 0),
+    0,
+  );
+
+  return {
+    total: invoices.length,
+    draft: invoices.filter((i) => i.status === 'DRAFT').length,
+    sent: invoices.filter((i) => i.status === 'SENT').length,
+    paid: invoices.filter((i) => i.status === 'PAID').length,
+    overdue: invoices.filter((i) => i.status === 'OVERDUE').length,
+    cancelled: invoices.filter((i) => i.status === 'CANCELLED').length,
+    void: invoices.filter((i) => i.status === 'VOID').length,
+    totalAmount,
+    totalPaid,
+    totalBalance,
+    averageInvoice: invoices.length > 0 ? totalAmount / invoices.length : 0,
+  };
+}
+
+// ============================================
+// INVOICE HTML
+// ============================================
+
+function generateInvoiceHTML(invoice: Invoice): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Invoice ${invoice.invoiceNumber}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            padding: 40px;
+            max-width: 720px;
+            margin: 0 auto;
+            color: #1f2937;
+            font-size: 13px;
+            line-height: 1.5;
+          }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }
+          .header h1 { font-size: 28px; color: #111827; margin-bottom: 8px; }
+          .header .meta { text-align: right; font-size: 12px; color: #6b7280; }
+          .header .meta strong { color: #111827; font-size: 14px; display: block; margin-bottom: 4px; }
+          .parties { display: flex; gap: 40px; margin-bottom: 30px; }
+          .party { flex: 1; }
+          .party h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 8px; }
+          .party p { font-size: 13px; color: #374151; margin-bottom: 2px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; padding: 10px 8px; border-bottom: 1px solid #e5e7eb; }
+          th.right, td.right { text-align: right; }
+          td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
+          .totals { margin-left: auto; width: 280px; margin-top: 10px; }
+          .totals .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+          .totals .row.grand { font-size: 16px; font-weight: 700; color: #111827; border-top: 2px solid #e5e7eb; padding-top: 12px; margin-top: 6px; }
+          .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1>INVOICE</h1>
+            <p style="color: #6b7280; font-size: 12px;">${invoice.businessUnitName || 'Store'}</p>
+          </div>
+          <div class="meta">
+            <strong>${invoice.invoiceNumber}</strong>
+            Issued: ${formatDate(invoice.createdAt)}<br>
+            ${invoice.dueDate ? `Due: ${formatDate(invoice.dueDate)}<br>` : ''}
+            Status: ${titleCase(invoice.status)}
+          </div>
+        </div>
+
+        <div class="parties">
+          <div class="party">
+            <h3>Bill To</h3>
+            <p><strong>${invoice.customerName || 'Guest'}</strong></p>
+            <p>${invoice.customerEmail}</p>
+            ${invoice.customerPhone ? `<p>${invoice.customerPhone}</p>` : ''}
+            ${invoice.customerAddress ? `<p>${invoice.customerAddress}</p>` : ''}
+          </div>
+          <div class="party">
+            <h3>Details</h3>
+            <p>Receipt: #${invoice.receiptNumber}</p>
+            <p>Terms: ${getPaymentTermsLabel(invoice.paymentTerms)}</p>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>SKU</th>
+              <th class="right">Qty</th>
+              <th class="right">Unit Price</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${invoice.items
+              .map(
+                (item) => `
+              <tr>
+                <td>${item.productName}</td>
+                <td style="color: #9ca3af;">${item.sku}</td>
+                <td class="right">${item.quantity}</td>
+                <td class="right">$${item.unitPrice.toFixed(2)}</td>
+                <td class="right">$${item.total.toFixed(2)}</td>
+              </tr>
+            `,
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <div class="totals">
+          <div class="row"><span>Subtotal</span><span>$${invoice.subtotal.toFixed(2)}</span></div>
+          <div class="row"><span>Tax</span><span>$${invoice.tax.toFixed(2)}</span></div>
+          ${invoice.discount > 0 ? `<div class="row" style="color: #059669;"><span>Discount</span><span>-$${invoice.discount.toFixed(2)}</span></div>` : ''}
+          <div class="row grand"><span>Total</span><span>$${invoice.total.toFixed(2)}</span></div>
+          <div class="row"><span>Paid</span><span>$${invoice.paidAmount.toFixed(2)}</span></div>
+          <div class="row" style="font-weight: 600; color: #b45309;"><span>Balance Due</span><span>$${invoice.balanceDue.toFixed(2)}</span></div>
+        </div>
+
+        ${invoice.notes ? `<div style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 6px;"><strong style="font-size: 11px; text-transform: uppercase; color: #6b7280;">Notes</strong><p style="margin-top: 6px;">${invoice.notes}</p></div>` : ''}
+
+        <div class="footer">
+          <p>Thank you for your business.</p>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// ============================================
+// SUB-COMPONENTS
+// ============================================
+
+interface StatCardProps {
+  title: string;
+  value: number | string;
+  color: string;
+}
+
+function StatCard({ title, value, color }: StatCardProps) {
+  const colors: Record<string, string> = {
+    brand: 'text-brand-600 dark:text-brand-400',
+    'brand-accent': 'text-brand-accent-600 dark:text-brand-accent-400',
+    secondary: 'text-secondary-600 dark:text-secondary-400',
+    success: 'text-success-600 dark:text-success-400',
+    warning: 'text-warning-600 dark:text-warning-400',
+    danger: 'text-danger-600 dark:text-danger-400',
+    gray: 'text-gray-600 dark:text-gray-400',
+  };
+
+  return (
+    <div className="card-brand p-4">
+      <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
+      <p
+        className={`text-xl font-bold tabular-nums ${
+          colors[color] || 'text-gray-900 dark:text-white'
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -333,7 +582,7 @@ export default function InvoicesPage() {
 
   const userRole = ((authUser?.role as string) || 'EMPLOYEE').toUpperCase();
   const canManageInvoices = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(
-    userRole
+    userRole,
   );
   const canViewInvoices = [
     'SUPER_ADMIN',
@@ -376,16 +625,12 @@ export default function InvoicesPage() {
           endDate: filters.endDate
             ? new Date(`${filters.endDate}T23:59:59.999Z`).toISOString()
             : undefined,
-          sortBy: 'saleDate',
-          sortOrder: 'desc',
         };
 
-        // If a specific invoice status was chosen, pass it as the
-        // sale-status filter. There's no `invoiceStatus` param on
-        // the backend — invoice status is filtered client-side.
-        const salesPage = await saleService.getAllSales(params);
-
-        const rawSales: any[] = (salesPage as any).data || [];
+        const response = await fetchInvoicesRemote(params);
+        const rawSales: any[] = Array.isArray(response.data)
+          ? response.data
+          : [];
         const flattened: Invoice[] = rawSales
           .map(saleToInvoice)
           .filter((inv): inv is Invoice => inv !== null);
@@ -396,19 +641,29 @@ export default function InvoicesPage() {
             : flattened.filter((inv) => inv.status === filters.status);
 
         setInvoices(filtered);
-        setTotalInvoices((salesPage as any).total || filtered.length);
-        setTotalPages((salesPage as any).totalPages || 1);
+        setTotalInvoices(
+          typeof response.total === 'number'
+            ? response.total
+            : filtered.length,
+        );
+        setTotalPages(
+          typeof response.totalPages === 'number' ? response.totalPages : 1,
+        );
         setStats(computeInvoiceStats(filtered));
       } catch (error: any) {
         console.error('Error fetching invoices:', error);
-        toast.error(error?.message || 'Failed to load invoices');
+        toast.error(
+          error?.response?.data?.message ||
+            error?.message ||
+            'Failed to load invoices',
+        );
         setInvoices([]);
       } finally {
         setLoading(false);
         setIsRefreshing(false);
       }
     },
-    [authUser, filters]
+    [authUser, filters],
   );
 
   useEffect(() => {
@@ -429,7 +684,7 @@ export default function InvoicesPage() {
 
   const handleDateChange = (
     field: 'startDate' | 'endDate',
-    value: string
+    value: string,
   ) => {
     setFilters((prev) => ({ ...prev, [field]: value, page: 1 }));
   };
@@ -442,41 +697,36 @@ export default function InvoicesPage() {
   // ACTION HANDLERS
   // ============================================
 
-  /**
-   * "Send" invoice — emails the receipt/receipt-equivalent. The
-   * backend's email route lives on sales:
-   *     POST /api/sales/:id/email-receipt
-   */
   const handleSendInvoice = async () => {
     if (!selectedInvoice) return;
 
     try {
       setProcessing(true);
-      await saleService.sendReceiptEmail(
+      await sendReceiptEmailRemote(
         selectedInvoice.saleId,
-        selectedInvoice.customerEmail
+        selectedInvoice.customerEmail,
       );
       toast.success('Invoice sent successfully');
       setShowSendModal(false);
       fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to send invoice:', error);
-      toast.error(error?.message || 'Failed to send invoice');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to send invoice',
+      );
     } finally {
       setProcessing(false);
     }
   };
 
-  /**
-   * Mark invoice as paid — updates the sale status to PAID and
-   * annotates the notes with the payment method.
-   */
   const handleMarkAsPaid = async () => {
     if (!selectedInvoice) return;
 
     try {
       setProcessing(true);
-      const existing = '';
+      const existing = selectedInvoice.notes || '';
       const appended = existing
         ? `${existing}\nMarked as paid via ${paymentMethod}`
         : `Marked as paid via ${paymentMethod}`;
@@ -489,16 +739,16 @@ export default function InvoicesPage() {
       fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to mark invoice as paid:', error);
-      toast.error(error?.message || 'Failed to mark invoice as paid');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to mark invoice as paid',
+      );
     } finally {
       setProcessing(false);
     }
   };
 
-  /**
-   * Void invoice — sets the sale to VOID and appends the reason to
-   * notes so the historical record is preserved.
-   */
   const handleVoidInvoice = async () => {
     if (!selectedInvoice || !voidReason.trim()) return;
 
@@ -518,16 +768,16 @@ export default function InvoicesPage() {
       fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to void invoice:', error);
-      toast.error(error?.message || 'Failed to void invoice');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to void invoice',
+      );
     } finally {
       setProcessing(false);
     }
   };
 
-  /**
-   * Cancel invoice — sets the sale to CANCELLED and appends the
-   * reason to notes.
-   */
   const handleCancelInvoice = async () => {
     if (!selectedInvoice || !cancelReason.trim()) return;
 
@@ -547,27 +797,27 @@ export default function InvoicesPage() {
       fetchInvoices(true);
     } catch (error: any) {
       console.error('Failed to cancel invoice:', error);
-      toast.error(error?.message || 'Failed to cancel invoice');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to cancel invoice',
+      );
     } finally {
       setProcessing(false);
     }
   };
 
-  /**
-   * Export invoices — uses the sales export endpoint with the same
-   * date range. Produces a CSV of the sales that carry invoices.
-   */
   const handleExport = async () => {
     try {
       setExporting(true);
 
-      const result = await saleService.exportSales({
+      const result = await exportSalesRemote({
         startDate: filters.startDate,
         endDate: filters.endDate,
-        format: 'csv',
+        format: 'json',
       });
 
-      const rowsData: any[] = (result as any)?.data || [];
+      const rowsData: any[] = Array.isArray(result.data) ? result.data : [];
       if (rowsData.length === 0) {
         toast.error('No invoices to export');
         return;
@@ -627,15 +877,16 @@ export default function InvoicesPage() {
       toast.success('Invoices exported successfully');
     } catch (error: any) {
       console.error('Failed to export invoices:', error);
-      toast.error(error?.message || 'Failed to export invoices');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to export invoices',
+      );
     } finally {
       setExporting(false);
     }
   };
 
-  /**
-   * Print invoice — opens a print window with a printable invoice.
-   */
   const handlePrintInvoice = (invoice: Invoice) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -828,7 +1079,6 @@ export default function InvoicesPage() {
                     transition={{ delay: index * 0.05 }}
                     className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                   >
-                    {/* Header */}
                     <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-bold text-brand-600 dark:text-brand-400 tabular-nums">
@@ -846,7 +1096,7 @@ export default function InvoicesPage() {
                       <div className="flex items-center gap-3">
                         <span
                           className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            invoice.status
+                            invoice.status,
                           )} flex items-center gap-1`}
                         >
                           <StatusIcon status={invoice.status} />
@@ -858,7 +1108,6 @@ export default function InvoicesPage() {
                       </div>
                     </div>
 
-                    {/* Body */}
                     <div className="p-6">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-2">
@@ -935,7 +1184,6 @@ export default function InvoicesPage() {
               </AnimatePresence>
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex flex-wrap justify-center items-center gap-2 mt-6">
                 <button
@@ -1079,178 +1327,6 @@ export default function InvoicesPage() {
 }
 
 // ============================================
-// HELPERS
-// ============================================
-
-function computeInvoiceStats(invoices: Invoice[]): InvoiceStats {
-  const totalAmount = invoices.reduce((sum, i) => sum + (i.total || 0), 0);
-  const totalPaid = invoices.reduce((sum, i) => sum + (i.paidAmount || 0), 0);
-  const totalBalance = invoices.reduce(
-    (sum, i) => sum + (i.balanceDue || 0),
-    0
-  );
-
-  return {
-    total: invoices.length,
-    draft: invoices.filter((i) => i.status === 'DRAFT').length,
-    sent: invoices.filter((i) => i.status === 'SENT').length,
-    paid: invoices.filter((i) => i.status === 'PAID').length,
-    overdue: invoices.filter((i) => i.status === 'OVERDUE').length,
-    cancelled: invoices.filter((i) => i.status === 'CANCELLED').length,
-    void: invoices.filter((i) => i.status === 'VOID').length,
-    totalAmount,
-    totalPaid,
-    totalBalance,
-    averageInvoice: invoices.length > 0 ? totalAmount / invoices.length : 0,
-  };
-}
-
-function generateInvoiceHTML(invoice: Invoice): string {
-  return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Invoice ${invoice.invoiceNumber}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            padding: 40px;
-            max-width: 720px;
-            margin: 0 auto;
-            color: #1f2937;
-            font-size: 13px;
-            line-height: 1.5;
-          }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #e5e7eb; padding-bottom: 20px; margin-bottom: 30px; }
-          .header h1 { font-size: 28px; color: #111827; margin-bottom: 8px; }
-          .header .meta { text-align: right; font-size: 12px; color: #6b7280; }
-          .header .meta strong { color: #111827; font-size: 14px; display: block; margin-bottom: 4px; }
-          .parties { display: flex; gap: 40px; margin-bottom: 30px; }
-          .party { flex: 1; }
-          .party h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 8px; }
-          .party p { font-size: 13px; color: #374151; margin-bottom: 2px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; padding: 10px 8px; border-bottom: 1px solid #e5e7eb; }
-          th.right, td.right { text-align: right; }
-          td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; font-size: 13px; color: #374151; }
-          .totals { margin-left: auto; width: 280px; margin-top: 10px; }
-          .totals .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
-          .totals .row.grand { font-size: 16px; font-weight: 700; color: #111827; border-top: 2px solid #e5e7eb; padding-top: 12px; margin-top: 6px; }
-          .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af; text-align: center; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <h1>INVOICE</h1>
-            <p style="color: #6b7280; font-size: 12px;">${invoice.businessUnitName || 'Store'}</p>
-          </div>
-          <div class="meta">
-            <strong>${invoice.invoiceNumber}</strong>
-            Issued: ${formatDate(invoice.createdAt)}<br>
-            ${invoice.dueDate ? `Due: ${formatDate(invoice.dueDate)}<br>` : ''}
-            Status: ${titleCase(invoice.status)}
-          </div>
-        </div>
-
-        <div class="parties">
-          <div class="party">
-            <h3>Bill To</h3>
-            <p><strong>${invoice.customerName || 'Guest'}</strong></p>
-            <p>${invoice.customerEmail}</p>
-            ${invoice.customerPhone ? `<p>${invoice.customerPhone}</p>` : ''}
-            ${invoice.customerAddress ? `<p>${invoice.customerAddress}</p>` : ''}
-          </div>
-          <div class="party">
-            <h3>Details</h3>
-            <p>Receipt: #${invoice.receiptNumber}</p>
-            <p>Terms: ${getPaymentTermsLabel(invoice.paymentTerms)}</p>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>SKU</th>
-              <th class="right">Qty</th>
-              <th class="right">Unit Price</th>
-              <th class="right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${invoice.items
-              .map(
-                (item) => `
-              <tr>
-                <td>${item.productName}</td>
-                <td style="color: #9ca3af;">${item.sku}</td>
-                <td class="right">${item.quantity}</td>
-                <td class="right">$${item.unitPrice.toFixed(2)}</td>
-                <td class="right">$${item.total.toFixed(2)}</td>
-              </tr>
-            `
-              )
-              .join('')}
-          </tbody>
-        </table>
-
-        <div class="totals">
-          <div class="row"><span>Subtotal</span><span>$${invoice.subtotal.toFixed(2)}</span></div>
-          <div class="row"><span>Tax</span><span>$${invoice.tax.toFixed(2)}</span></div>
-          ${invoice.discount > 0 ? `<div class="row" style="color: #059669;"><span>Discount</span><span>-$${invoice.discount.toFixed(2)}</span></div>` : ''}
-          <div class="row grand"><span>Total</span><span>$${invoice.total.toFixed(2)}</span></div>
-          <div class="row"><span>Paid</span><span>$${invoice.paidAmount.toFixed(2)}</span></div>
-          <div class="row" style="font-weight: 600; color: #b45309;"><span>Balance Due</span><span>$${invoice.balanceDue.toFixed(2)}</span></div>
-        </div>
-
-        ${invoice.notes ? `<div style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 6px;"><strong style="font-size: 11px; text-transform: uppercase; color: #6b7280;">Notes</strong><p style="margin-top: 6px;">${invoice.notes}</p></div>` : ''}
-
-        <div class="footer">
-          <p>Thank you for your business.</p>
-        </div>
-      </body>
-    </html>
-  `;
-}
-
-// ============================================
-// SUB-COMPONENTS
-// ============================================
-
-interface StatCardProps {
-  title: string;
-  value: number | string;
-  color: string;
-}
-
-function StatCard({ title, value, color }: StatCardProps) {
-  const colors: Record<string, string> = {
-    brand: 'text-brand-600 dark:text-brand-400',
-    'brand-accent': 'text-brand-accent-600 dark:text-brand-accent-400',
-    secondary: 'text-secondary-600 dark:text-secondary-400',
-    success: 'text-success-600 dark:text-success-400',
-    warning: 'text-warning-600 dark:text-warning-400',
-    danger: 'text-danger-600 dark:text-danger-400',
-    gray: 'text-gray-600 dark:text-gray-400',
-  };
-
-  return (
-    <div className="card-brand p-4">
-      <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-      <p
-        className={`text-xl font-bold tabular-nums ${
-          colors[color] || 'text-gray-900 dark:text-white'
-        }`}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-// ============================================
 // DETAIL MODAL
 // ============================================
 
@@ -1303,11 +1379,10 @@ function DetailModal({
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Status and Total */}
           <div className="flex items-center justify-between">
             <span
               className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-                invoiceData.status
+                invoiceData.status,
               )} flex items-center gap-2`}
             >
               <StatusIcon status={invoiceData.status} />
@@ -1318,7 +1393,6 @@ function DetailModal({
             </span>
           </div>
 
-          {/* Business & Customer */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1346,7 +1420,6 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Details */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1382,7 +1455,6 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Items */}
           <div>
             <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
               Items
@@ -1413,7 +1485,6 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Totals */}
           <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
             <div className="space-y-2 max-w-xs ml-auto">
               <div className="flex justify-between text-sm">
@@ -1461,7 +1532,6 @@ function DetailModal({
             </div>
           </div>
 
-          {/* Notes */}
           {invoiceData.notes && (
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
@@ -1473,7 +1543,6 @@ function DetailModal({
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               onClick={onPrint}

@@ -59,6 +59,25 @@ export type CanonicalPaymentMethod =
   | 'CHECK';
 
 /**
+ * Any payment method this app accepts: either a canonical Prisma
+ * enum value or an alias the backend normalizes.
+ *
+ * ⚠ Use this type at any boundary that stores or forwards a
+ *   payment-method string — a form-state field, a context value, a
+ *   React setter, etc. It is wider than `CanonicalPaymentMethod`
+ *   (what ends up in the DB) and wider than `PaymentMethod` (the
+ *   narrow union the POS UI renders).
+ *
+ *   Storing a bare `string` anywhere a payment method lives is
+ *   what causes the "Type 'string' is not assignable to
+ *   `CanonicalPaymentMethod | PaymentMethod`" error at every call
+ *   site that forwards the value into a `CheckoutData`-shaped
+ *   payload. Using `AnyPaymentMethod` on the stored field fixes
+ *   the error at the source.
+ */
+export type AnyPaymentMethod = CanonicalPaymentMethod | PaymentMethod;
+
+/**
  * Sale status returned on list responses and checkout receipts.
  *
  * Mirrors Prisma's `SaleStatus` enum. If a status is added to the
@@ -122,12 +141,8 @@ export interface CheckoutData {
   /**
    * Canonical payment method. The service normalizes aliases to
    * Prisma enum values before writing.
-   *
-   * Widened from `PaymentMethod` to `CanonicalPaymentMethod |
-   * PaymentMethod` so callers can pass any value the backend
-   * accepts, not just the narrower `saleService` union.
    */
-  paymentMethod: CanonicalPaymentMethod | PaymentMethod;
+  paymentMethod: AnyPaymentMethod;
   paidAmount: number;
 
   // ── Customer ─────────────────────────────────────────────
@@ -240,7 +255,7 @@ export interface UpdateCheckoutItemRequest {
  *   `POST /checkout/online`.
  */
 export interface ProcessCheckoutPaymentRequest {
-  paymentMethod: CanonicalPaymentMethod | PaymentMethod;
+  paymentMethod: AnyPaymentMethod;
   /** Must be strictly positive — zero-amount splits are rejected. */
   amount: number;
   paymentDetails?: Record<string, unknown>;
@@ -499,6 +514,19 @@ export interface CheckoutWithPaymentResponse {
   payment: Payment;
 }
 
+/**
+ * Checkout summary as returned by `GET /checkout/summary/:cartId`.
+ *
+ * ⚠ `currencySymbol` was removed. Phase 1 dropped every persisted
+ *   symbol column from `CartSettings`, `CheckoutSettings`, and
+ *   `SalesSettings`; the backend's `getCheckoutSummary` now
+ *   computes the symbol at read time from `currencyCode` via the
+ *   registry. The `currencySymbol` field may still be emitted by
+ *   the backend for one more deploy cycle for backward
+ *   compatibility, but the web client should treat it as
+ *   best-effort and prefer deriving its own display symbol from
+ *   `currency`.
+ */
 export interface CheckoutSummary {
   items: CheckoutSummaryItem[];
   subtotal: number;
@@ -516,11 +544,6 @@ export interface CheckoutSummary {
    * same resolution chain as `CheckoutReceipt.currency`.
    */
   currency?: string;
-  /**
-   * Display symbol for `currency`, from the currency registry.
-   * Falls back to the ISO code when the registry has no symbol.
-   */
-  currencySymbol?: string;
 }
 
 export interface CheckoutSummaryItem {
@@ -604,18 +627,19 @@ export interface PaymentMethodOption {
  * Checkout settings stored on `BusinessUnit.settings` as a JSON
  * blob.
  *
- * ⚠ `currencyCode` and `currencySymbol` are derived by the backend
- *   from the currency registry on every read — they are not
- *   persistent values. When `updateCheckoutSettings` merges a
- *   caller-supplied patch into the existing settings, the merged
- *   object is what lands in the DB, so passing a currency here
- *   *will* override the registry-derived default on subsequent
- *   reads. Only set them if you intend to pin the display currency
- *   for this BU.
+ * ⚠ `currencyCode` is the only currency field that this interface
+ *   accepts. Phase 1 removed the persisted `currencySymbol`
+ *   column from the sibling tables and from
+ *   `BusinessUnit.settings`; the display symbol is now derived
+ *   from `currencyCode` via `lib/currencies.ts` on the read path.
  *
- * ⚠ The backend's `updateCheckoutSettings` validates the patch
- *   against a strict schema. Every field on `CheckoutSettings`
- *   is accepted; unknown keys are rejected with a 400.
+ * ⚠ `updateCheckoutSettings` on the backend validates the patch
+ *   against a strict schema. Every field on `CheckoutSettings` is
+ *   accepted except `currencySymbol` — passing it will 400 with
+ *   "Unknown settings field: currencySymbol". This is intentional:
+ *   the schema mismatch surfaces the Phase 4/5 cleanup as a real
+ *   error rather than silently accepting a field the backend will
+ *   discard.
  */
 export interface CheckoutSettings {
   allowPartialPayment: boolean;
@@ -623,7 +647,7 @@ export interface CheckoutSettings {
   requireSignature: boolean;
   maxDiscount: number;
   taxInclusive: boolean;
-  defaultPaymentMethod: CanonicalPaymentMethod | PaymentMethod;
+  defaultPaymentMethod: AnyPaymentMethod;
   receiptFooter: string;
   loyaltyPointsEnabled: boolean;
   pointsPerDollar: number;
@@ -642,7 +666,6 @@ export interface CheckoutSettings {
   notifyOnAbandonedCart: boolean;
   abandonedCartHours: number;
   currencyCode: string;
-  currencySymbol: string;
   showStockBadge: boolean;
   showVariantImages: boolean;
 }
@@ -673,7 +696,7 @@ export interface CheckoutExportJsonResponse {
  */
 export interface ValidateCheckoutRequest {
   cartId: string;
-  paymentMethod: CanonicalPaymentMethod | PaymentMethod;
+  paymentMethod: AnyPaymentMethod;
   paidAmount: number;
 }
 

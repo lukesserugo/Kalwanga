@@ -1,14 +1,22 @@
+// packages/web/app/(dashboard)/admin/reports/page.tsx
+
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FileText, RefreshCw, Download, Eye, Trash2,
-  BarChart3, Package, Users, ShoppingBag, DollarSign,
-  Loader2, Lock, Filter, Calendar, TrendingUp,
-  Search, Grid, List
+  FileText,
+  RefreshCw,
+  Trash2,
+  Loader2,
+  Lock,
+  Search,
 } from 'lucide-react';
 import { usePermission } from '../../../../hooks/usePermission';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -17,7 +25,98 @@ import { toast } from '../../../../utils/toast-manager';
 import { PermissionResource } from '../../../../types/enums';
 import { ReportForm } from '../../../../components/reports/ReportForm';
 import { ReportViewer } from '../../../../components/reports/ReportViewer';
-import { Report } from '../../../../types/report';
+import type { Report } from '../../../../types/report';
+
+// ============================================
+// HELPERS
+// ============================================
+//
+// The backend's `reportController.listReports` responds with:
+//
+//   { success, data: Report[], pagination: {...} }
+//
+// The frontend `reportService.listReports` returns whatever the `api`
+// client surfaces, which depends on how the client is configured:
+//
+//   • the array directly                       → [Report, ...]
+//   • `{ success, data, pagination }`          → wrapped envelope
+//   • `{ data: { success, data, pagination }}` → double-wrapped
+//   • `{ reports: [...] }`                     → alternate key
+//
+// This helper normalizes all four shapes into a flat `Report[]`.
+
+function extractReportArray(response: any): Report[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response as Report[];
+
+  if (typeof response === 'object') {
+    if (
+      response.data &&
+      typeof response.data === 'object' &&
+      !Array.isArray(response.data) &&
+      Array.isArray(response.data.data)
+    ) {
+      return response.data.data as Report[];
+    }
+    if (Array.isArray(response.data)) {
+      return response.data as Report[];
+    }
+    if (Array.isArray(response.reports)) {
+      return response.reports as Report[];
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Sentinel business-unit / company ids the backend treats as
+ * "resolve this for me from req.user". We must never send them as
+ * literal values.
+ */
+const SENTINEL_IDS = new Set([
+  'default',
+  'default-company',
+  'default-company-id',
+  'default-business-unit',
+  'undefined',
+  'null',
+  '',
+]);
+
+function sanitizeId(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (SENTINEL_IDS.has(trimmed.toLowerCase())) return undefined;
+  return trimmed;
+}
+
+/**
+ * Deduplicate an array of strings without relying on `Set` iteration
+ * semantics that require `--downlevelIteration` or `target: es2015+`.
+ *
+ * ⚠ `[...new Set(arr)]` fails with TS2802 when the project's `target`
+ *   is below `es2015` and `downlevelIteration` is off — the same class
+ *   of error we hit in `cart/analytics/page.tsx`. Using `Array.from`
+ *   works with any target because `Array.from` is a function call, not
+ *   a spread-into-array literal.
+ *
+ * Returns `string[]` and filters out falsy entries (`undefined` from
+ * reports whose `type` field is missing).
+ */
+function uniqueReportTypes(reports: Report[]): string[] {
+  const seen = new Set<string>();
+  for (const report of reports) {
+    const type = report.type;
+    if (type) seen.add(String(type));
+  }
+  return Array.from(seen);
+}
+
+// ============================================
+// PAGE
+// ============================================
 
 export default function ReportsPage() {
   const router = useRouter();
@@ -27,50 +126,67 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history'>(
+    'generate',
+  );
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<Report | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
 
-  const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || 'default';
-  const companyId = user?.companyId || 'default';
+  const canViewReports =
+    canView(PermissionResource.REPORT) ||
+    canManage(PermissionResource.REPORT);
 
-  const canViewReports = canView(PermissionResource.REPORT) || canManage(PermissionResource.REPORT);
+  // ────────────────────────────────────────────────────────────
+  // Resolve businessUnitId / companyId for ReportForm.
+  // ────────────────────────────────────────────────────────────
 
-  const loadReports = useCallback(async (showLoading = true) => {
-    if (!canViewReports) {
-      setLoading(false);
-      return;
-    }
+  const resolvedBusinessUnitId = useMemo(() => {
+    const fromUser =
+      (user as any)?.businessUnitId ||
+      (user as any)?.businessUnits?.[0]?.businessUnitId ||
+      (user as any)?.businessUnits?.[0]?.id;
 
-    try {
-      if (showLoading) setLoading(true);
+    return sanitizeId(fromUser) ?? '';
+  }, [user]);
 
-      const data = await reportService.listReports({ limit: 100 });
+  const resolvedCompanyId = useMemo(() => {
+    const fromUser = (user as any)?.companyId;
+    return sanitizeId(fromUser) ?? '';
+  }, [user]);
 
-      let reportsData: Report[] = [];
-      if (Array.isArray(data)) {
-        reportsData = data;
-      } else if (data && typeof data === 'object' && 'data' in data && Array.isArray(data.data)) {
-        reportsData = data.data;
-      } else if (data && typeof data === 'object' && 'reports' in data && Array.isArray(data.reports)) {
-        reportsData = data.reports;
+  // ────────────────────────────────────────────────────────────
+  // Data loading
+  // ────────────────────────────────────────────────────────────
+
+  const loadReports = useCallback(
+    async (showLoading = true) => {
+      if (!canViewReports) {
+        setLoading(false);
+        return;
       }
 
-      setReports(reportsData);
-    } catch (error) {
-      console.error('Failed to load reports:', error);
-      setReports([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [canViewReports]);
+      try {
+        if (showLoading) setLoading(true);
+
+        const response = await reportService.listReports({ limit: 100 });
+        const list = extractReportArray(response);
+        setReports(list);
+      } catch (error) {
+        console.error('Failed to load reports:', error);
+        setReports([]);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [canViewReports],
+  );
 
   useEffect(() => {
-    loadReports();
+    void loadReports();
   }, [loadReports]);
 
   const handleRefresh = async () => {
@@ -78,6 +194,10 @@ export default function ReportsPage() {
     await loadReports(false);
     toast.success('Reports refreshed');
   };
+
+  // ────────────────────────────────────────────────────────────
+  // Actions
+  // ────────────────────────────────────────────────────────────
 
   const handleDelete = async () => {
     if (!reportToDelete) return;
@@ -87,9 +207,14 @@ export default function ReportsPage() {
       toast.success('Report deleted');
       setShowDeleteModal(false);
       setReportToDelete(null);
-      loadReports(false);
-    } catch (error) {
-      toast.error('Failed to delete report');
+      await loadReports(false);
+    } catch (err: any) {
+      console.error('Failed to delete report:', err);
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to delete report',
+      );
     } finally {
       setDeleting(false);
     }
@@ -101,33 +226,60 @@ export default function ReportsPage() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${report.name}.${report.format}`);
+      link.setAttribute(
+        'download',
+        `${report.name || 'report'}.${report.format || 'json'}`,
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
       toast.success('Report downloaded');
-    } catch (error) {
-      toast.error('Failed to download report');
+    } catch (err: any) {
+      console.error('Failed to download report:', err);
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Failed to download report',
+      );
     }
   };
 
-  // Filter reports
-  const filteredReports = reports.filter(report => {
-    if (searchQuery) {
-      const search = searchQuery.toLowerCase();
-      if (!report.name?.toLowerCase().includes(search) &&
-          !report.type?.toLowerCase().includes(search)) {
+  // ────────────────────────────────────────────────────────────
+  // Derived
+  // ────────────────────────────────────────────────────────────
+
+  const filteredReports = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return reports.filter((report) => {
+      if (q) {
+        const name = (report.name || '').toLowerCase();
+        const type = (report.type || '').toLowerCase();
+        if (!name.includes(q) && !type.includes(q)) return false;
+      }
+      if (filterType !== 'all' && report.type !== filterType) {
         return false;
       }
-    }
-    if (filterType !== 'all' && report.type !== filterType) {
-      return false;
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [reports, searchQuery, filterType]);
 
-  const reportTypes = ['all', ...new Set(reports.map(r => r.type).filter(Boolean))];
+  /**
+   * All distinct report types present in the current data set,
+   * plus the synthetic `'all'` bucket the filter UI renders first.
+   *
+   * ⚠ `uniqueReportTypes` uses `Array.from(set)` rather than
+   *   `[...set]` so this compiles with any `target` / without
+   *   `--downlevelIteration`.
+   */
+  const reportTypes = useMemo<string[]>(
+    () => ['all', ...uniqueReportTypes(reports)],
+    [reports],
+  );
+
+  // ────────────────────────────────────────────────────────────
+  // Auth gate
+  // ────────────────────────────────────────────────────────────
 
   if (!canViewReports) {
     return (
@@ -135,11 +287,19 @@ export default function ReportsPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to view reports.</p>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          You don't have permission to view reports.
+        </p>
       </div>
     );
   }
+
+  // ────────────────────────────────────────────────────────────
+  // Render
+  // ────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 p-6 max-w-container mx-auto animate-fade-in">
@@ -162,7 +322,11 @@ export default function ReportsPage() {
             title="Refresh"
             aria-label="Refresh reports"
           >
-            <RefreshCw className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${
+                refreshing ? 'animate-spin' : ''
+              }`}
+            />
           </button>
         </div>
       </div>
@@ -187,13 +351,17 @@ export default function ReportsPage() {
               : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
           }`}
         >
-          Report History <span className="tabular-nums">({reports.length})</span>
+          Report History{' '}
+          <span className="tabular-nums">({reports.length})</span>
         </button>
       </div>
 
       {/* Content */}
       {activeTab === 'generate' ? (
-        <ReportForm businessUnitId={businessUnitId} companyId={companyId} />
+        <ReportForm
+          businessUnitId={resolvedBusinessUnitId}
+          companyId={resolvedCompanyId}
+        />
       ) : (
         <div className="space-y-4">
           {/* Search and Filter */}
@@ -216,12 +384,23 @@ export default function ReportsPage() {
                 onChange={(e) => setFilterType(e.target.value)}
                 className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 cursor-pointer transition duration-250"
               >
-                <option value="all" className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">All Types</option>
-                {reportTypes.filter(t => t !== 'all').map(type => (
-                  <option key={type} value={type} className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                    {type.toUpperCase()}
-                  </option>
-                ))}
+                <option
+                  value="all"
+                  className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  All Types
+                </option>
+                {reportTypes
+                  .filter((t) => t !== 'all')
+                  .map((type) => (
+                    <option
+                      key={type}
+                      value={type}
+                      className="bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      {String(type).toUpperCase()}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
@@ -235,7 +414,9 @@ export default function ReportsPage() {
             <div className="card-brand shadow-soft p-12 text-center">
               <FileText className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <p className="text-gray-500 dark:text-gray-400">
-                {searchQuery || filterType !== 'all' ? 'No reports match your filters' : 'No reports generated yet'}
+                {searchQuery || filterType !== 'all'
+                  ? 'No reports match your filters'
+                  : 'No reports generated yet'}
               </p>
             </div>
           ) : (
@@ -264,7 +445,10 @@ export default function ReportsPage() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-modal flex items-center justify-center p-4"
           >
-            <div className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm" onClick={() => setShowDeleteModal(false)} />
+            <div
+              className="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-sm"
+              onClick={() => setShowDeleteModal(false)}
+            />
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -273,9 +457,15 @@ export default function ReportsPage() {
             >
               <div className="text-center">
                 <div className="text-6xl mb-4">⚠️</div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete Report</h3>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                  Delete Report
+                </h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Are you sure you want to delete <strong className="text-gray-900 dark:text-white">{reportToDelete.name}</strong>?
+                  Are you sure you want to delete{' '}
+                  <strong className="text-gray-900 dark:text-white">
+                    {reportToDelete.name}
+                  </strong>
+                  ?
                 </p>
                 <div className="flex justify-center gap-3">
                   <button
@@ -290,7 +480,11 @@ export default function ReportsPage() {
                     disabled={deleting}
                     className="px-4 py-2 bg-danger-600 hover:bg-danger-700 text-white rounded-xl transition duration-250 flex items-center gap-2 disabled:opacity-50 focus-ring"
                   >
-                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {deleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
                     Delete
                   </button>
                 </div>

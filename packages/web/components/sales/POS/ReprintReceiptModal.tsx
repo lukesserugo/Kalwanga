@@ -1,132 +1,420 @@
+// packages/web/components/pos/ReprintReceiptModal.tsx
 'use client';
 
-import React, { useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   X,
   Printer,
   Search,
   Loader2,
-  Receipt,
+  Receipt as ReceiptIcon,
   Calendar,
   DollarSign,
   User,
   Check,
   AlertCircle,
   FileText,
-  Clock
+  Clock,
 } from 'lucide-react';
-import { useToast } from '../../../utils/toast-manager';
+
+import { saleService } from '../../../services/saleService';
+import type { Sale } from '../../../types/sale';
+import { toast } from '../../../utils/toast-manager';
 import { formatCurrency, formatDate } from '../../../utils/formatters';
 
-interface Receipt {
+// ============================================
+// TYPES
+// ============================================
+
+/**
+ * What this modal displays for each search result. Derived from the
+ * canonical `Sale` (or whatever `saleService.getSaleByReceiptNumber`
+ * and `saleService.getAllSales` return) via `normalizeReceiptRow`.
+ */
+interface ReceiptRow {
   id: string;
   receiptNumber: string;
   saleId: string;
   customerName: string;
   total: number;
   createdAt: string;
-  status: 'issued' | 'printed' | 'sent';
+  /** Derived from the sale status. */
+  status: 'issued' | 'printed' | 'sent' | 'voided';
 }
 
-interface ReprintReceiptModalProps {
+export interface ReprintReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onReprint: (receiptNumber: string) => void;
+  /**
+   * Called with the receipt number of the row the operator selected.
+   * The parent is responsible for fetching the sale, opening the
+   * print dialog, and marking the receipt as printed if applicable.
+   */
+  onReprint: (receiptNumber: string) => void | Promise<void>;
 }
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const MIN_QUERY_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+
+// ============================================
+// HELPERS
+// ============================================
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
+/**
+ * Map a sale row returned by the API into the row shape this modal
+ * renders. Handles the two shapes the search endpoint may return:
+ *
+ *   1. A single sale by receipt number (from
+ *      `saleService.getSaleByReceiptNumber`).
+ *   2. A paginated list of sales whose receipt numbers or customer
+ *      names match the query (from `saleService.getAllSales`).
+ *
+ * Both carry the same `Sale`-shaped fields; this function reads them
+ * defensively and returns `null` when the row lacks a receipt number.
+ */
+function normalizeReceiptRow(raw: unknown): ReceiptRow | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const r = raw as Record<string, unknown>;
+
+  const id = typeof r.id === 'string' ? r.id : null;
+  const receiptNumber =
+    typeof r.receiptNumber === 'string' && r.receiptNumber.length > 0
+      ? r.receiptNumber
+      : null;
+
+  if (!id || !receiptNumber) return null;
+
+  // Customer name — prefer a pre-formatted `customerName` if the
+  // backend computed one, else fall back to composing from the
+  // relation.
+  let customerName = 'Guest';
+  if (typeof r.customerName === 'string' && r.customerName.length > 0) {
+    customerName = r.customerName;
+  } else if (r.customer && typeof r.customer === 'object') {
+    const c = r.customer as Record<string, unknown>;
+    const first = typeof c.firstName === 'string' ? c.firstName : '';
+    const last = typeof c.lastName === 'string' ? c.lastName : '';
+    const composed = `${first} ${last}`.trim();
+    if (composed.length > 0) customerName = composed;
+  }
+
+  const total =
+    typeof r.total === 'number' && Number.isFinite(r.total) ? r.total : 0;
+
+  // The wire format carries ISO strings for `saleDate` and
+  // `createdAt`. Prefer `saleDate` (the business date) but fall back
+  // to `createdAt` when it's absent.
+  const dateValue =
+    typeof r.saleDate === 'string'
+      ? r.saleDate
+      : typeof r.createdAt === 'string'
+      ? r.createdAt
+      : null;
+  const createdAt = dateValue ?? new Date().toISOString();
+
+  // Status: the sale's `status` column drives the badge. Voided and
+  // refunded sales are not reprintable as the original receipt.
+  const rawStatus =
+    typeof r.status === 'string' ? r.status.toUpperCase() : '';
+  let status: ReceiptRow['status'] = 'issued';
+  if (rawStatus === 'VOID' || rawStatus === 'CANCELLED' || rawStatus === 'DELETED') {
+    status = 'voided';
+  }
+
+  // The `receipt` relation, if present, carries its own status:
+  // `printed` when a physical print has happened, `sent` when it was
+  // emailed. Prefer it over the sale status when available.
+  if (r.receipt && typeof r.receipt === 'object') {
+    const rec = r.receipt as Record<string, unknown>;
+    const recStatus =
+      typeof rec.status === 'string' ? rec.status.toUpperCase() : '';
+    if (recStatus === 'PRINTED') status = 'printed';
+    else if (recStatus === 'SENT' || recStatus === 'EMAILED') status = 'sent';
+  }
+
+  return {
+    id,
+    receiptNumber,
+    saleId: id,
+    customerName,
+    total,
+    createdAt,
+    status,
+  };
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function ReprintReceiptModal({
   isOpen,
   onClose,
   onReprint,
 }: ReprintReceiptModalProps) {
-  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
+  const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRow | null>(
+    null,
+  );
+  const [reprinting, setReprinting] = useState(false);
 
-  const handleSearch = async () => {
-    if (searchQuery.length < 2) {
-      showToast('Please enter at least 2 characters', 'warning');
+  const mountedRef = useRef(true);
+  const searchRequestIdRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ── Reset on open transition ─────────────────────────────
+  //
+  // State persists across open/close cycles unless we clear it.
+  // Resetting on the false → true transition gives the operator a
+  // fresh modal every time.
+
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+
+    if (isOpen && !wasOpen) {
+      setSearchQuery('');
+      setReceipts([]);
+      setSearching(false);
+      setSearchError(null);
+      setSelectedReceipt(null);
+      setReprinting(false);
+    }
+  }, [isOpen]);
+
+  // Focus the search input when the modal opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => clearTimeout(t);
+  }, [isOpen]);
+
+  // ── Search ───────────────────────────────────────────────
+  //
+  // Two paths:
+  //
+  //   1. Exact receipt-number match: call
+  //      `saleService.getSaleByReceiptNumber`. This is the common
+  //      reprint case (the customer hands over a receipt, the
+  //      operator scans or types the number).
+  //
+  //   2. Fallback: call `saleService.getAllSales` with `search` to
+  //      find sales whose receipt number, customer, or notes match
+  //      the query. Used when the operator is searching by name.
+
+  const searchReceipts = useCallback(async (query: string): Promise<void> => {
+    const trimmed = query.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) return;
+
+    const requestId = ++searchRequestIdRef.current;
+    setSearching(true);
+    setSearchError(null);
+
+    try {
+      // Exact receipt-number lookup first. If the query looks like a
+      // receipt number (starts with letters/digits and has no
+      // spaces), try it directly — this is the common case and it's
+      // cheaper than a list search.
+      const looksLikeReceiptNumber = !trimmed.includes(' ');
+
+      let rows: ReceiptRow[] = [];
+
+      if (looksLikeReceiptNumber) {
+        try {
+          const sale = await saleService.getSaleByReceiptNumber(trimmed);
+          const normalized = normalizeReceiptRow(sale);
+          if (normalized) rows = [normalized];
+        } catch (err) {
+          // 404 is expected when the query doesn't match a receipt
+          // number exactly — fall through to the list search.
+          const status = (err as any)?.response?.status;
+          if (status !== 404) {
+            throw err;
+          }
+        }
+      }
+
+      // If the exact lookup found nothing, search the sales list.
+      if (rows.length === 0) {
+        const result = await saleService.getAllSales({
+          search: trimmed,
+          page: 1,
+          limit: 20,
+          sortBy: 'saleDate',
+          sortOrder: 'desc',
+        });
+
+        const sales: Sale[] = Array.isArray(result?.data) ? result.data : [];
+        rows = sales
+          .map(normalizeReceiptRow)
+          .filter((x): x is ReceiptRow => x !== null);
+      }
+
+      if (requestId !== searchRequestIdRef.current) return;
+      if (!mountedRef.current) return;
+
+      setReceipts(rows);
+      setSearching(false);
+    } catch (error) {
+      if (requestId !== searchRequestIdRef.current) return;
+      if (!mountedRef.current) return;
+
+      const message = extractErrorMessage(error, 'Failed to search receipts');
+      console.error('[ReprintReceiptModal] search failed:', message);
+      setSearchError(message);
+      setReceipts([]);
+      setSearching(false);
+    }
+  }, []);
+
+  // Auto-search on input change with a debounce. Matches the
+  // pattern used by the other search modals.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) {
+      setReceipts([]);
+      setSearchError(null);
+      setSearching(false);
       return;
     }
 
-    setLoading(true);
+    const timer = setTimeout(() => {
+      void searchReceipts(trimmed);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, isOpen, searchReceipts]);
+
+  // ── Handlers ─────────────────────────────────────────────
+
+  const handleSelectReceipt = useCallback((receipt: ReceiptRow) => {
+    setSelectedReceipt(receipt);
+  }, []);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('');
+    setReceipts([]);
+    setSelectedReceipt(null);
+    searchInputRef.current?.focus();
+  }, []);
+
+  const handleReprint = useCallback(async () => {
+    if (!selectedReceipt) return;
+    if (selectedReceipt.status === 'voided') {
+      toast.error('This receipt belongs to a voided sale and cannot be reprinted');
+      return;
+    }
+    if (reprinting) return;
+
+    setReprinting(true);
     try {
-      // Mock data for demo
-      const mockReceipts: Receipt[] = [
-        {
-          id: '1',
-          receiptNumber: 'RCP-123456',
-          saleId: 'sale-1',
-          customerName: 'John Doe',
-          total: 125.50,
-          createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          status: 'issued',
-        },
-        {
-          id: '2',
-          receiptNumber: 'RCP-123457',
-          saleId: 'sale-2',
-          customerName: 'Jane Smith',
-          total: 89.99,
-          createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-          status: 'printed',
-        },
-        {
-          id: '3',
-          receiptNumber: 'RCP-123458',
-          saleId: 'sale-3',
-          customerName: 'Robert Johnson',
-          total: 234.75,
-          createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          status: 'sent',
-        },
-      ];
-
-      const filtered = mockReceipts.filter(
-        (r) =>
-          r.receiptNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          r.customerName.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setReceipts(filtered);
-    } catch (error) {
-      console.error('Failed to search receipts:', error);
-      showToast('Failed to search receipts', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleReprint = () => {
-    if (selectedReceipt) {
-      onReprint(selectedReceipt.receiptNumber);
-      setSelectedReceipt(null);
-      setSearchQuery('');
-      setReceipts([]);
+      await onReprint(selectedReceipt.receiptNumber);
+      if (!mountedRef.current) return;
       onClose();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = extractErrorMessage(
+        error,
+        'Failed to reprint receipt',
+      );
+      console.error('[ReprintReceiptModal] reprint failed:', message);
+      toast.error(message);
+    } finally {
+      if (mountedRef.current) setReprinting(false);
     }
-  };
+  }, [selectedReceipt, reprinting, onReprint, onClose]);
 
-  const getStatusBadge = (status: string) => {
-    const styles = {
-      issued: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
-      printed: 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300',
-      sent: 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300',
+  // ── Keyboard: Escape closes, Enter triggers reprint ──────
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (!reprinting) onClose();
+      }
     };
-    return styles[status as keyof typeof styles] || styles.issued;
-  };
+
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, reprinting, onClose]);
+
+  // ── Render ───────────────────────────────────────────────
 
   if (!isOpen) return null;
 
+  const trimmedQuery = searchQuery.trim();
+  const showEmptySearch = trimmedQuery.length < MIN_QUERY_LENGTH;
+  const showNoResults =
+    !showEmptySearch && !searching && receipts.length === 0 && !searchError;
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reprint-receipt-title"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl border border-gray-200 dark:border-gray-700"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <Printer className="w-5 h-5 text-gray-600" />
+            <h2
+              id="reprint-receipt-title"
+              className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2"
+            >
+              <Printer
+                className="w-5 h-5 text-gray-600"
+                aria-hidden="true"
+              />
               Reprint Receipt
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -134,100 +422,154 @@ export function ReprintReceiptModal({
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            disabled={reprinting}
+            aria-label="Close"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring disabled:opacity-50"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
           </button>
         </div>
 
         {/* Search */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search by receipt # or customer name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
-                autoFocus
-              />
-            </div>
-            <button
-              onClick={handleSearch}
-              disabled={loading || searchQuery.length < 2}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              Search
-            </button>
+          <div className="relative">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none"
+              aria-hidden="true"
+            />
+            <input
+              ref={searchInputRef}
+              type="search"
+              placeholder="Search by receipt # or customer name…"
+              aria-label="Search receipts"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
+              className="w-full pl-10 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none"
+              autoFocus
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                aria-label="Clear search"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus-ring rounded"
+              >
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Results */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">
+          {searching ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-              <span className="ml-2 text-gray-500 dark:text-gray-400">Searching...</span>
+              <Loader2
+                className="w-8 h-8 text-blue-500 animate-spin"
+                aria-hidden="true"
+              />
+              <span className="ml-2 text-gray-500 dark:text-gray-400">
+                Searching…
+              </span>
+            </div>
+          ) : searchError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 text-sm text-red-700 dark:text-red-300"
+            >
+              <AlertCircle
+                className="w-4 h-4 flex-shrink-0 mt-0.5"
+                aria-hidden="true"
+              />
+              <p className="flex-1">{searchError}</p>
             </div>
           ) : receipts.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-2" role="list">
               {receipts.map((receipt) => (
                 <ReceiptResultItem
                   key={receipt.id}
                   receipt={receipt}
                   isSelected={selectedReceipt?.id === receipt.id}
-                  onSelect={() => setSelectedReceipt(receipt)}
+                  onSelect={() => handleSelectReceipt(receipt)}
                 />
               ))}
             </div>
-          ) : searchQuery.length >= 2 && !loading ? (
+          ) : showNoResults ? (
             <div className="text-center py-12">
-              <Receipt className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-              <p className="text-gray-500 dark:text-gray-400">No receipts found</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500">Try a different search term</p>
+              <ReceiptIcon
+                className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2"
+                aria-hidden="true"
+              />
+              <p className="text-gray-500 dark:text-gray-400">
+                No receipts found
+              </p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                Try a different search term
+              </p>
             </div>
-          ) : (
+          ) : showEmptySearch ? (
             <div className="text-center py-12 text-gray-400 dark:text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>Enter a receipt number or customer name to search</p>
+              <FileText
+                className="w-12 h-12 mx-auto mb-2 opacity-50"
+                aria-hidden="true"
+              />
+              <p>
+                Enter a receipt number or customer name to search
+              </p>
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* Selected Receipt Actions */}
+        {/* Selected receipt actions */}
         {selectedReceipt && (
           <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-gray-900 dark:text-white">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="font-medium text-gray-900 dark:text-white truncate">
                   {selectedReceipt.receiptNumber}
                 </p>
-                <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <User className="w-3 h-3" />
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+                  <span className="flex items-center gap-1 truncate">
+                    <User
+                      className="w-3 h-3 flex-shrink-0"
+                      aria-hidden="true"
+                    />
                     {selectedReceipt.customerName}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <DollarSign className="w-3 h-3" />
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <DollarSign
+                      className="w-3 h-3 flex-shrink-0"
+                      aria-hidden="true"
+                    />
                     {formatCurrency(selectedReceipt.total)}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <Clock
+                      className="w-3 h-3 flex-shrink-0"
+                      aria-hidden="true"
+                    />
                     {formatDate(selectedReceipt.createdAt)}
                   </span>
                 </div>
               </div>
               <button
-                onClick={handleReprint}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                type="button"
+                onClick={() => void handleReprint()}
+                disabled={reprinting || selectedReceipt.status === 'voided'}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
               >
-                <Printer className="w-4 h-4" />
-                Reprint
+                {reprinting ? (
+                  <Loader2
+                    className="w-4 h-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Printer className="w-4 h-4" aria-hidden="true" />
+                )}
+                {reprinting ? 'Reprinting…' : 'Reprint'}
               </button>
             </div>
           </div>
@@ -242,54 +584,88 @@ export function ReprintReceiptModal({
 // ============================================
 
 interface ReceiptResultItemProps {
-  receipt: Receipt;
+  receipt: ReceiptRow;
   isSelected: boolean;
   onSelect: () => void;
 }
 
-function ReceiptResultItem({ receipt, isSelected, onSelect }: ReceiptResultItemProps) {
-  const getStatusBadge = (status: string) => {
-    const styles = {
-      issued: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300',
-      printed: 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300',
-      sent: 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300',
-    };
-    return styles[status as keyof typeof styles] || styles.issued;
-  };
+function getStatusBadgeClasses(status: ReceiptRow['status']): string {
+  switch (status) {
+    case 'printed':
+      return 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300';
+    case 'sent':
+      return 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300';
+    case 'voided':
+      return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
+    case 'issued':
+    default:
+      return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
+  }
+}
 
+function ReceiptResultItem({
+  receipt,
+  isSelected,
+  onSelect,
+}: ReceiptResultItemProps) {
   return (
-    <div
+    <button
+      type="button"
+      role="listitem"
       onClick={onSelect}
-      className={`p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-between ${
-        isSelected ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600' : ''
+      aria-pressed={isSelected}
+      className={`w-full p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors flex items-center justify-between text-left focus-ring ${
+        isSelected
+          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600'
+          : 'border-gray-200 dark:border-gray-700'
       }`}
     >
-      <div>
-        <div className="flex items-center gap-2">
-          <Receipt className="w-4 h-4 text-gray-500" />
-          <p className="font-medium text-gray-900 dark:text-white">{receipt.receiptNumber}</p>
-          <span className={`px-2 py-0.5 rounded-full text-xs ${getStatusBadge(receipt.status)}`}>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <ReceiptIcon
+            className="w-4 h-4 text-gray-500 flex-shrink-0"
+            aria-hidden="true"
+          />
+          <p className="font-medium text-gray-900 dark:text-white truncate">
+            {receipt.receiptNumber}
+          </p>
+          <span
+            className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeClasses(
+              receipt.status,
+            )}`}
+          >
             {receipt.status}
           </span>
         </div>
-        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-          <span className="flex items-center gap-1">
-            <User className="w-3 h-3" />
+        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <span className="flex items-center gap-1 truncate">
+            <User className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
             {receipt.customerName}
           </span>
-          <span className="flex items-center gap-1">
-            <DollarSign className="w-3 h-3" />
+          <span className="flex items-center gap-1 tabular-nums">
+            <DollarSign
+              className="w-3 h-3 flex-shrink-0"
+              aria-hidden="true"
+            />
             {formatCurrency(receipt.total)}
           </span>
-          <span className="flex items-center gap-1">
-            <Calendar className="w-3 h-3" />
+          <span className="flex items-center gap-1 tabular-nums">
+            <Calendar
+              className="w-3 h-3 flex-shrink-0"
+              aria-hidden="true"
+            />
             {formatDate(receipt.createdAt)}
           </span>
         </div>
       </div>
       {isSelected && (
-        <Check className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        <Check
+          className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 ml-3"
+          aria-hidden="true"
+        />
       )}
-    </div>
+    </button>
   );
 }
+
+export default ReprintReceiptModal;

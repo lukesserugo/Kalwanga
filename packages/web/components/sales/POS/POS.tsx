@@ -399,9 +399,6 @@ export function POS() {
   //   - Reused across every render while the attempt is in flight.
   //   - Cleared only on success (handleCheckoutComplete) or on an
   //     explicit abandon (handleCheckoutCancel).
-  //
-  // See the backend contract:
-  //   posController.getIdempotencyKey / saleService.findSaleByIdempotencyKey
 
   const pendingIdempotencyKeyRef = useRef<string | null>(null);
 
@@ -920,9 +917,6 @@ export function POS() {
    * override. The current backend has no per-item price-override
    * endpoint, so we translate the override into a cart-level discount
    * equal to the price delta × the requested quantity.
-   *
-   * When a per-item override endpoint lands, this should switch to
-   * calling it directly and drop the cart-level workaround.
    */
   const handlePriceOverride = useCallback(
     async (data: {
@@ -1064,8 +1058,7 @@ export function POS() {
    * Called by CheckoutModal after `checkoutService.processCheckout`
    * resolves. The modal owns the network call, method selection,
    * loyalty validation, and idempotency-key forwarding — this handler
-   * only reacts to the result: show the receipt, print it, reset the
-   * cart, clear the key so the NEXT sale gets a fresh one.
+   * only reacts to the result.
    */
   const handleCheckoutComplete = useCallback(
     async (result: any, _method: string, _details: any) => {
@@ -1088,13 +1081,6 @@ export function POS() {
     [clearIdempotencyKey]
   );
 
-  /**
-   * Called when the operator dismisses CheckoutModal without a
-   * successful checkout. When the modal is mid-flight, the modal
-   * itself guards against this — so by the time we're here, the
-   * operator has explicitly abandoned the attempt and the key can be
-   * cleared.
-   */
   const handleCheckoutCancel = useCallback(() => {
     clearIdempotencyKey();
     setShowCheckout(false);
@@ -1120,6 +1106,16 @@ export function POS() {
     }, 500);
   };
 
+  /**
+   * Build the receipt's HTML.
+   *
+   * ⚠ No hardcoded currency symbol or code here. The receipt HTML
+   *   goes through `formatCurrency` for every monetary amount, and
+   *   `formatCurrency` resolves the active currency via
+   *   `Intl.NumberFormat`. If the resolved currency changes (e.g. a
+   *   UGX deployment), the receipt renders with the correct symbol
+   *   without a code change here.
+   */
   const generateReceiptHTML = (sale: any): string => {
     const businessUnit = sale.businessUnit || {};
 
@@ -1142,17 +1138,17 @@ export function POS() {
       promotionDiscount > 0
         ? `<div class="row discount-line"><span>Promotion${
             promotionCode ? ` (${promotionCode})` : ''
-          }</span><span>-$${promotionDiscount.toFixed(2)}</span></div>`
+          }</span><span>-${formatCurrency(promotionDiscount)}</span></div>`
         : '';
 
     const loyaltyLine =
       loyaltyPointsUsed > 0
-        ? `<div class="row discount-line"><span>${loyaltyPointsUsed} loyalty points</span><span>-$${loyaltyDiscount.toFixed(2)}</span></div>`
+        ? `<div class="row discount-line"><span>${loyaltyPointsUsed} loyalty points</span><span>-${formatCurrency(loyaltyDiscount)}</span></div>`
         : '';
 
     const rawDiscountLine =
       sale.discount > 0 && promotionDiscount === 0 && loyaltyDiscount === 0
-        ? `<div class="row discount-line"><span>Discount</span><span>-$${sale.discount.toFixed(2)}</span></div>`
+        ? `<div class="row discount-line"><span>Discount</span><span>-${formatCurrency(sale.discount)}</span></div>`
         : '';
 
     return `
@@ -1212,26 +1208,26 @@ export function POS() {
               <div class="item">
                 <span class="name">${item.product?.name || 'Item'}</span>
                 <span class="qty">x${item.quantity}</span>
-                <span class="price">$${(item.total || 0).toFixed(2)}</span>
+                <span class="price">${formatCurrency(item.total || 0)}</span>
               </div>
               ${item.notes ? `<div style="font-size:10px;color:#666;padding-left:8px;">${item.notes}</div>` : ''}
             `).join('')}
           </div>
 
           <div class="totals">
-            <div class="row"><span>Subtotal</span><span>$${(sale.subtotal || 0).toFixed(2)}</span></div>
-            <div class="row"><span>Tax (${sale.taxRate || 0}%)</span><span>$${(sale.tax || 0).toFixed(2)}</span></div>
+            <div class="row"><span>Subtotal</span><span>${formatCurrency(sale.subtotal || 0)}</span></div>
+            <div class="row"><span>Tax (${sale.taxRate || 0}%)</span><span>${formatCurrency(sale.tax || 0)}</span></div>
             ${promotionLine}
             ${loyaltyLine}
             ${rawDiscountLine}
             <div class="row grand-total">
               <span>TOTAL</span>
-              <span>$${(sale.total || 0).toFixed(2)}</span>
+              <span>${formatCurrency(sale.total || 0)}</span>
             </div>
             ${sale.paidAmount > 0 ? `
               <div class="payment-info">
-                <div class="row"><span>Paid</span><span>$${sale.paidAmount.toFixed(2)}</span></div>
-                <div class="row"><span>Change</span><span>$${(sale.changeAmount || 0).toFixed(2)}</span></div>
+                <div class="row"><span>Paid</span><span>${formatCurrency(sale.paidAmount)}</span></div>
+                <div class="row"><span>Change</span><span>${formatCurrency(sale.changeAmount || 0)}</span></div>
                 <div class="row"><span>Payment</span><span>${sale.payments?.[0]?.paymentMethod || 'N/A'}</span></div>
               </div>
             ` : ''}
@@ -1302,9 +1298,6 @@ export function POS() {
    * discounts, or customer loyalty are applied. Local arithmetic
    * here would drift (e.g. if the tenant's tax rate differs from the
    * POS default), so we mirror the cart verbatim.
-   *
-   * Item counts are derived client-side from `cart.items` since the
-   * cart payload doesn't carry them.
    */
   const totals = useMemo(() => {
     const items: any[] = Array.isArray(cart?.items) ? cart.items : [];
@@ -1746,7 +1739,7 @@ export function POS() {
                             SKU: {product.sku}
                           </p>
                           <p className="font-bold text-gray-900 dark:text-white">
-                            ${product.unitPrice.toFixed(2)}
+                            {formatCurrency(product.unitPrice)}
                           </p>
                           <div className="flex items-center justify-between mt-1">
                             <span
@@ -1830,7 +1823,7 @@ export function POS() {
                         </div>
                         <div className="text-right flex-shrink-0">
                           <p className="font-bold text-gray-900 dark:text-white">
-                            ${product.unitPrice.toFixed(2)}
+                            {formatCurrency(product.unitPrice)}
                           </p>
                           <div className="flex gap-1 mt-1">
                             <button
@@ -2084,12 +2077,25 @@ export function POS() {
       {/* ============================================ */}
       {/* CHECKOUT MODAL (single source of truth)        */}
       {/* ============================================ */}
+      {/*
+        ⚠ No `currency` prop is passed.
+
+        `CheckoutModal` declares its own props (`CheckoutModalProps`)
+        and does NOT include a `currency` field. Passing one — even
+        the string `"USD"` — was a TS2322 and, worse, reintroduced
+        a hardcoded currency literal.
+
+        All currency formatting inside the modal goes through
+        `formatCurrency` (from `utils/formatters`), which resolves
+        the active currency via `Intl.NumberFormat`. The modal does
+        not need to be told which currency to display; the shared
+        formatter already knows.
+      */}
       <CheckoutModal
         isOpen={showCheckout}
         onClose={() => setShowCheckout(false)}
         onCancel={handleCheckoutCancel}
         total={totals.total}
-        currency="USD"
         cartId={cart?.id}
         customer={
           selectedCustomer
@@ -2166,7 +2172,7 @@ export function POS() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {discountType === 'percentage'
                     ? 'Percentage (%)'
-                    : 'Amount ($)'}
+                    : 'Amount'}
                 </label>
                 <input
                   type="number"

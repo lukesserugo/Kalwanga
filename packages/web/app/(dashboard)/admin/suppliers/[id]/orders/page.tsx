@@ -5,12 +5,24 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
-  ArrowLeft, FileText, RefreshCw, Loader2, Search, Lock, AlertCircle,
-  X, CheckCircle, Clock, Package, DollarSign, Filter,
-  ChevronDown, ChevronUp, Eye, Printer, Download, Calendar,
-  TrendingUp, TrendingDown, ShoppingBag, Truck, Star
+  ArrowLeft,
+  FileText,
+  RefreshCw,
+  Search,
+  Lock,
+  AlertCircle,
+  X,
+  CheckCircle,
+  Clock,
+  DollarSign,
+  List,
+  Grid,
+  Printer,
+  Calendar,
+  TrendingUp,
+  Truck,
 } from 'lucide-react';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../../hooks/usePermission';
@@ -49,7 +61,15 @@ interface PurchaseOrder {
 
 interface OrderFilters {
   search: string;
-  status: 'all' | 'PENDING' | 'APPROVED' | 'RECEIVED' | 'PARTIALLY_RECEIVED' | 'COMPLETED' | 'CANCELLED' | 'DRAFT';
+  status:
+    | 'all'
+    | 'PENDING'
+    | 'APPROVED'
+    | 'RECEIVED'
+    | 'PARTIALLY_RECEIVED'
+    | 'COMPLETED'
+    | 'CANCELLED'
+    | 'DRAFT';
   sortBy: 'orderDate' | 'total' | 'status' | 'itemsCount';
   sortOrder: 'asc' | 'desc';
   dateRange: 'all' | 'today' | 'week' | 'month' | 'quarter' | 'year';
@@ -68,7 +88,10 @@ interface OrderStats {
 // SUB-COMPONENTS
 // ============================================
 
-const OrderStatsCards: React.FC<{ stats: OrderStats; loading?: boolean }> = ({ stats, loading }) => {
+const OrderStatsCards: React.FC<{ stats: OrderStats; loading?: boolean }> = ({
+  stats,
+  loading,
+}) => {
   if (loading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -82,20 +105,51 @@ const OrderStatsCards: React.FC<{ stats: OrderStats; loading?: boolean }> = ({ s
   }
 
   const cards = [
-    { label: 'Total Orders', value: stats.total, icon: FileText, color: 'brand' },
-    { label: 'Total Spent', value: formatCurrency(stats.totalAmount), icon: DollarSign, color: 'success' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'warning' },
-    { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'success' },
-    { label: 'Avg. Order Value', value: formatCurrency(stats.averageOrderValue), icon: TrendingUp, color: 'brand-accent' },
+    {
+      label: 'Total Orders',
+      value: stats.total,
+      icon: FileText,
+      color: 'brand',
+    },
+    {
+      label: 'Total Spent',
+      value: formatCurrency(stats.totalAmount),
+      icon: DollarSign,
+      color: 'success',
+    },
+    {
+      label: 'Pending',
+      value: stats.pending,
+      icon: Clock,
+      color: 'warning',
+    },
+    {
+      label: 'Completed',
+      value: stats.completed,
+      icon: CheckCircle,
+      color: 'success',
+    },
+    {
+      label: 'Avg. Order Value',
+      value: formatCurrency(stats.averageOrderValue),
+      icon: TrendingUp,
+      color: 'brand-accent',
+    },
   ];
 
   const colorClasses: Record<string, string> = {
-    brand: 'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
-    'brand-accent': 'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
-    secondary: 'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-600 dark:text-secondary-400',
-    success: 'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
-    warning: 'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
-    danger: 'bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400',
+    brand:
+      'bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400',
+    'brand-accent':
+      'bg-brand-accent-50 dark:bg-brand-accent-900/20 text-brand-accent-600 dark:text-brand-accent-400',
+    secondary:
+      'bg-secondary-50 dark:bg-secondary-900/20 text-secondary-600 dark:text-secondary-400',
+    success:
+      'bg-success-50 dark:bg-success-900/20 text-success-600 dark:text-success-400',
+    warning:
+      'bg-warning-50 dark:bg-warning-900/20 text-warning-600 dark:text-warning-400',
+    danger:
+      'bg-danger-50 dark:bg-danger-900/20 text-danger-600 dark:text-danger-400',
   };
 
   return (
@@ -111,12 +165,20 @@ const OrderStatsCards: React.FC<{ stats: OrderStats; loading?: boolean }> = ({ s
             className="card-brand p-4 hover:shadow-card-hover transition-shadow"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{card.label}</p>
-              <div className={`p-1.5 rounded-lg ${colorClasses[card.color] || colorClasses.brand}`}>
+              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                {card.label}
+              </p>
+              <div
+                className={`p-1.5 rounded-lg ${
+                  colorClasses[card.color] || colorClasses.brand
+                }`}
+              >
                 <Icon className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">{card.value}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-white mt-1 tabular-nums">
+              {card.value}
+            </p>
           </motion.div>
         );
       })}
@@ -186,7 +248,9 @@ const OrderFiltersBar: React.FC<{
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {statusOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
 
@@ -197,7 +261,9 @@ const OrderFiltersBar: React.FC<{
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {dateRangeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
 
@@ -208,14 +274,24 @@ const OrderFiltersBar: React.FC<{
             className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 border-0 disabled:opacity-50"
           >
             {sortOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>Sort by {opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                Sort by {opt.label}
+              </option>
             ))}
           </select>
 
           <button
-            onClick={() => onFilterChange('sortOrder', filters.sortOrder === 'asc' ? 'desc' : 'asc')}
+            onClick={() =>
+              onFilterChange(
+                'sortOrder',
+                filters.sortOrder === 'asc' ? 'desc' : 'asc',
+              )
+            }
             disabled={loading}
             className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 focus-ring"
+            aria-label={`Sort ${
+              filters.sortOrder === 'asc' ? 'descending' : 'ascending'
+            }`}
           >
             {filters.sortOrder === 'asc' ? '↑' : '↓'}
           </button>
@@ -242,26 +318,36 @@ const OrderCard: React.FC<{
 }> = ({ order, index }) => {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'COMPLETED': 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300 border-success-200 dark:border-success-800',
-      'PENDING': 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300 border-warning-200 dark:border-warning-800',
-      'CANCELLED': 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 border-danger-200 dark:border-danger-800',
-      'APPROVED': 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 border-brand-200 dark:border-brand-800',
-      'DRAFT': 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300 border-gray-200 dark:border-gray-600',
-      'RECEIVED': 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300 border-secondary-200 dark:border-secondary-800',
-      'PARTIALLY_RECEIVED': 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300 border-brand-accent-200 dark:border-brand-accent-800',
+      COMPLETED:
+        'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300 border-success-200 dark:border-success-800',
+      PENDING:
+        'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300 border-warning-200 dark:border-warning-800',
+      CANCELLED:
+        'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300 border-danger-200 dark:border-danger-800',
+      APPROVED:
+        'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 border-brand-200 dark:border-brand-800',
+      DRAFT:
+        'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300 border-gray-200 dark:border-gray-600',
+      RECEIVED:
+        'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300 border-secondary-200 dark:border-secondary-800',
+      PARTIALLY_RECEIVED:
+        'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300 border-brand-accent-200 dark:border-brand-accent-800',
     };
-    return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300 border-gray-200 dark:border-gray-600';
+    return (
+      colors[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+    );
   };
 
   const getStatusIcon = (status: string) => {
     const icons: Record<string, React.ReactNode> = {
-      'COMPLETED': <CheckCircle className="w-4 h-4" />,
-      'PENDING': <Clock className="w-4 h-4" />,
-      'CANCELLED': <X className="w-4 h-4" />,
-      'APPROVED': <CheckCircle className="w-4 h-4" />,
-      'DRAFT': <FileText className="w-4 h-4" />,
-      'RECEIVED': <Truck className="w-4 h-4" />,
-      'PARTIALLY_RECEIVED': <Truck className="w-4 h-4" />,
+      COMPLETED: <CheckCircle className="w-4 h-4" />,
+      PENDING: <Clock className="w-4 h-4" />,
+      CANCELLED: <X className="w-4 h-4" />,
+      APPROVED: <CheckCircle className="w-4 h-4" />,
+      DRAFT: <FileText className="w-4 h-4" />,
+      RECEIVED: <Truck className="w-4 h-4" />,
+      PARTIALLY_RECEIVED: <Truck className="w-4 h-4" />,
     };
     return icons[status] || <FileText className="w-4 h-4" />;
   };
@@ -280,7 +366,9 @@ const OrderCard: React.FC<{
             <FileText className="w-5 h-5 text-brand-500" />
           </div>
           <div className="min-w-0">
-            <h4 className="font-medium text-gray-900 dark:text-white truncate">{order.orderNumber}</h4>
+            <h4 className="font-medium text-gray-900 dark:text-white truncate">
+              {order.orderNumber}
+            </h4>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <Calendar className="w-3 h-3" />
               <span>{formatDate(order.orderDate || order.createdAt)}</span>
@@ -288,7 +376,11 @@ const OrderCard: React.FC<{
           </div>
         </div>
         <div className="flex gap-1 flex-shrink-0 ml-2">
-          <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 border ${getStatusColor(order.status)}`}>
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 border ${getStatusColor(
+              order.status,
+            )}`}
+          >
             {getStatusIcon(order.status)}
             {order.status || 'DRAFT'}
           </span>
@@ -311,7 +403,7 @@ const OrderCard: React.FC<{
         <div className="text-center p-2 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
           <p className="text-xs text-gray-500 dark:text-gray-400">Date</p>
           <p className="text-sm font-semibold text-gray-900 dark:text-white">
-            {formatDate(order.createdAt, 'MMM d, yyyy')}
+            {formatDate(order.createdAt)}
           </p>
         </div>
       </div>
@@ -330,15 +422,25 @@ const OrderTable: React.FC<{
 }> = ({ orders }) => {
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'COMPLETED': 'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
-      'PENDING': 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
-      'CANCELLED': 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
-      'APPROVED': 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
-      'DRAFT': 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
-      'RECEIVED': 'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
-      'PARTIALLY_RECEIVED': 'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
+      COMPLETED:
+        'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-300',
+      PENDING:
+        'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300',
+      CANCELLED:
+        'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300',
+      APPROVED:
+        'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300',
+      DRAFT:
+        'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300',
+      RECEIVED:
+        'bg-secondary-100 text-secondary-700 dark:bg-secondary-900/30 dark:text-secondary-300',
+      PARTIALLY_RECEIVED:
+        'bg-brand-accent-100 text-brand-accent-700 dark:bg-brand-accent-900/30 dark:text-brand-accent-300',
     };
-    return colors[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300';
+    return (
+      colors[status] ||
+      'bg-gray-100 text-gray-700 dark:bg-gray-700/50 dark:text-gray-300'
+    );
   };
 
   return (
@@ -347,20 +449,35 @@ const OrderTable: React.FC<{
         <table className="w-full">
           <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order #</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">Date</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">Items</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Order #
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                Date
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Total
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                Items
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {orders.map((order) => (
-              <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+              <tr
+                key={order.id}
+                className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+              >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium text-gray-900 dark:text-white">{order.orderNumber}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {order.orderNumber}
+                    </span>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden sm:table-cell">
@@ -370,7 +487,11 @@ const OrderTable: React.FC<{
                   {formatCurrency(order.total)}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                      order.status,
+                    )}`}
+                  >
                     {order.status || 'DRAFT'}
                   </span>
                 </td>
@@ -410,7 +531,9 @@ export default function SupplierOrdersPage() {
     dateRange: 'all',
   });
 
-  const canViewOrders = canView(PermissionResource.SUPPLIER) || canManage(PermissionResource.SUPPLIER);
+  const canViewOrders =
+    canView(PermissionResource.SUPPLIER) ||
+    canManage(PermissionResource.SUPPLIER);
 
   useEffect(() => {
     setIsClient(true);
@@ -420,26 +543,34 @@ export default function SupplierOrdersPage() {
     if (isClient && supplierId) {
       loadOrders();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supplierId, isClient]);
 
   const loadOrders = async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
       setError(null);
-      const data = await supplierService.getSupplierOrderHistory(supplierId);
 
+      const response: any =
+        await supplierService.getSupplierOrderHistory(supplierId);
+
+      // The service returns a paginated envelope:
+      //   { orders: [...], total, page, limit, totalPages }
+      // We fall back to a raw array if the transport returned one.
       let ordersData: any[] = [];
-      if (data && typeof data === 'object') {
-        if ('data' in data && Array.isArray(data.data)) {
-          ordersData = data.data;
-        } else if (Array.isArray(data)) {
-          ordersData = data;
+      if (response && typeof response === 'object') {
+        if (Array.isArray(response.orders)) {
+          ordersData = response.orders;
+        } else if (Array.isArray(response.data)) {
+          ordersData = response.data;
         }
+      } else if (Array.isArray(response)) {
+        ordersData = response;
       }
 
       setOrders(ordersData);
-    } catch (error) {
-      console.error('Failed to load orders:', error);
+    } catch (err) {
+      console.error('Failed to load orders:', err);
       setError('Failed to load orders. Please try again.');
       toast.error('Failed to load orders');
       setOrders([]);
@@ -456,7 +587,7 @@ export default function SupplierOrdersPage() {
   };
 
   const handleFilterChange = (key: keyof OrderFilters, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleResetFilters = () => {
@@ -470,42 +601,52 @@ export default function SupplierOrdersPage() {
   };
 
   // Calculate stats
-  const stats = useMemo(() => {
+  const stats = useMemo<OrderStats>(() => {
     const total = orders.length;
     const totalAmount = orders.reduce((sum, o) => sum + (o.total || 0), 0);
-    const pending = orders.filter(o => o.status === 'PENDING').length;
-    const completed = orders.filter(o => o.status === 'COMPLETED' || o.status === 'RECEIVED').length;
-    const cancelled = orders.filter(o => o.status === 'CANCELLED').length;
+    const pending = orders.filter((o) => o.status === 'PENDING').length;
+    const completed = orders.filter(
+      (o) => o.status === 'COMPLETED' || o.status === 'RECEIVED',
+    ).length;
+    const cancelled = orders.filter((o) => o.status === 'CANCELLED').length;
     const averageOrderValue = total > 0 ? totalAmount / total : 0;
 
-    return { total, totalAmount, pending, completed, cancelled, averageOrderValue };
+    return {
+      total,
+      totalAmount,
+      pending,
+      completed,
+      cancelled,
+      averageOrderValue,
+    };
   }, [orders]);
 
   // Filter and sort orders
   const filteredOrders = useMemo(() => {
     let filtered = [...orders];
 
-    // Search filter
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(o =>
-        o.orderNumber?.toLowerCase().includes(searchLower)
+      filtered = filtered.filter((o) =>
+        o.orderNumber?.toLowerCase().includes(searchLower),
       );
     }
 
-    // Status filter
     if (filters.status !== 'all') {
-      filtered = filtered.filter(o => o.status === filters.status);
+      filtered = filtered.filter((o) => o.status === filters.status);
     }
 
-    // Date range filter
     if (filters.dateRange !== 'all') {
       const now = new Date();
       let startDate = new Date();
 
       switch (filters.dateRange) {
         case 'today':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          startDate = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+          );
           break;
         case 'week':
           startDate = new Date(now);
@@ -514,10 +655,11 @@ export default function SupplierOrdersPage() {
         case 'month':
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
           break;
-        case 'quarter':
+        case 'quarter': {
           const quarter = Math.floor(now.getMonth() / 3);
           startDate = new Date(now.getFullYear(), quarter * 3, 1);
           break;
+        }
         case 'year':
           startDate = new Date(now.getFullYear(), 0, 1);
           break;
@@ -525,18 +667,19 @@ export default function SupplierOrdersPage() {
           break;
       }
 
-      filtered = filtered.filter(o => {
+      filtered = filtered.filter((o) => {
         const orderDate = new Date(o.orderDate || o.createdAt);
         return orderDate >= startDate;
       });
     }
 
-    // Sort
     filtered.sort((a, b) => {
       let comparison = 0;
       switch (filters.sortBy) {
         case 'orderDate':
-          comparison = new Date(a.orderDate || a.createdAt).getTime() - new Date(b.orderDate || b.createdAt).getTime();
+          comparison =
+            new Date(a.orderDate || a.createdAt).getTime() -
+            new Date(b.orderDate || b.createdAt).getTime();
           break;
         case 'total':
           comparison = (a.total || 0) - (b.total || 0);
@@ -562,7 +705,9 @@ export default function SupplierOrdersPage() {
       <div className="flex items-center justify-center min-h-[60vh] bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-500 dark:border-brand-400 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading orders...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading orders...
+          </p>
         </div>
       </div>
     );
@@ -575,9 +720,12 @@ export default function SupplierOrdersPage() {
         <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
           <Lock className="w-12 h-12 text-gray-400 dark:text-gray-500" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
+        <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+          Access Restricted
+        </h2>
         <p className="text-gray-500 dark:text-gray-400 mt-2 text-center max-w-md">
-          You don't have permission to view supplier orders. Please contact your administrator.
+          You don't have permission to view supplier orders. Please contact
+          your administrator.
         </p>
         <button
           onClick={() => window.history.back()}
@@ -632,22 +780,32 @@ export default function SupplierOrdersPage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              onClick={() =>
+                setViewMode(viewMode === 'grid' ? 'list' : 'grid')
+              }
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Toggle view mode"
             >
-              {viewMode === 'grid' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
+              {viewMode === 'grid' ? (
+                <List className="w-4 h-4" />
+              ) : (
+                <Grid className="w-4 h-4" />
+              )}
             </button>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 focus-ring"
+              aria-label="Refresh orders"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
+              />
             </button>
             <button
               onClick={() => window.print()}
               className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
+              aria-label="Print orders"
             >
               <Printer className="w-4 h-4" />
             </button>
@@ -661,7 +819,9 @@ export default function SupplierOrdersPage() {
         {error && (
           <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-4 flex items-center gap-3">
             <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0" />
-            <span className="text-danger-700 dark:text-danger-300">{error}</span>
+            <span className="text-danger-700 dark:text-danger-300">
+              {error}
+            </span>
             <button
               onClick={() => loadOrders(false)}
               className="ml-auto px-3 py-1 bg-danger-100 dark:bg-danger-800/30 text-danger-700 dark:text-danger-300 rounded-lg hover:bg-danger-200 dark:hover:bg-danger-800/50 transition-colors text-sm focus-ring"
@@ -683,9 +843,13 @@ export default function SupplierOrdersPage() {
         {filteredOrders.length === 0 ? (
           <div className="card-brand p-12 text-center">
             <FileText className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">No orders found</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              No orders found
+            </h3>
             <p className="text-gray-500 dark:text-gray-400 mt-2">
-              {filters.search || filters.status !== 'all' || filters.dateRange !== 'all'
+              {filters.search ||
+              filters.status !== 'all' ||
+              filters.dateRange !== 'all'
                 ? 'Try adjusting your filters or search terms'
                 : 'No purchase orders from this supplier yet'}
             </p>
@@ -708,7 +872,8 @@ export default function SupplierOrdersPage() {
             {filters.dateRange !== 'all' && ` (${filters.dateRange})`}
           </span>
           <span className="tabular-nums">
-            Total: {formatCurrency(stats.totalAmount)} across {stats.total} orders
+            Total: {formatCurrency(stats.totalAmount)} across {stats.total}{' '}
+            orders
           </span>
           <span className="tabular-nums">
             Last updated: {new Date().toLocaleTimeString()}
@@ -718,6 +883,3 @@ export default function SupplierOrdersPage() {
     </div>
   );
 }
-
-// Add missing imports
-import { List, Grid } from 'lucide-react';

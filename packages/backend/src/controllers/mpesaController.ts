@@ -3,9 +3,32 @@
 import { Request, Response, NextFunction } from 'express';
 import { mpesaService } from '../services/mpesaService.js';
 import { paymentService } from '../services/paymentService.js';
+import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { z } from 'zod';
 import { logger } from '../lib/logger.js';
+
+// ============================================
+// DEFAULT CURRENCY
+// ============================================
+//
+// Mirrors the precedence in `paymentService`, `checkoutService`,
+// and `paymentController`: caller-supplied value wins, then
+// `DEFAULT_CURRENCY`, then a hardcoded UGX fallback (the deployment
+// is Ugandan — USD was the wrong default for every endpoint that
+// omitted a currency).
+//
+// ⚠ Phase 2: `Payment.currency` is now a REQUIRED column with no
+//   schema default. Every `paymentService.createPendingPayment`
+//   call site in this file must pass a resolved currency or a
+//   businessUnitId that lets the service resolve one. The
+//   fallback here matches the one in `paymentController`.
+
+const DEFAULT_CURRENCY_FALLBACK = 'UGX';
+
+function resolveDefaultCurrency(): string {
+  return process.env.DEFAULT_CURRENCY || DEFAULT_CURRENCY_FALLBACK;
+}
 
 // ============================================
 // VALIDATION SCHEMAS
@@ -20,6 +43,21 @@ import { logger } from '../lib/logger.js';
  */
 const PHONE_REGEX = /^[+\d][\d\s()-]{9,19}$/;
 
+/**
+ * STK Push body.
+ *
+ * ⚠ Phase 2: `currency` and `businessUnitId` are accepted here for
+ *   parity with `paymentController.mpesaSTKPushSchema`. The two
+ *   controllers serve the same logical operation (initiate an
+ *   M-Pesa STK push and create a PENDING Payment) and MUST accept
+ *   the same wire contract, or a client that works against one
+ *   fails mysteriously against the other.
+ *
+ *   Both are optional. `businessUnitId` is read by the service's
+ *   `resolveCurrency` when `currency` is absent. When neither is
+ *   supplied, the controller falls back to the platform default
+ *   via `resolveDefaultCurrency()`.
+ */
 const stkPushSchema = z.object({
   phoneNumber: z
     .string()
@@ -28,6 +66,34 @@ const stkPushSchema = z.object({
   accountReference: z.string().optional(),
   transactionDesc: z.string().optional(),
   callbackUrl: z.string().url().optional(),
+  /**
+   * Optional. When omitted, the controller supplies the platform
+   * default via `resolveDefaultCurrency()`. The service re-resolves
+   * through `currencyService` if the value is unknown.
+   */
+  currency: z.string().optional(),
+  /**
+   * Optional. Read by the service's `resolveCurrency` when
+   * `currency` is absent, and written to `Payment.businessUnitId`
+   * for audit attribution.
+   */
+  businessUnitId: z.string().optional(),
+  /**
+   * Optional linkage to a Sale or Order. Forwarded so the
+   * callback handler can complete the correct row.
+   */
+  saleId: z.string().optional(),
+  orderId: z.string().optional(),
+  /**
+   * Optional idempotency key for the Payment row. When omitted,
+   * the service derives a deterministic one from the payment's
+   * salient fields.
+   */
+  idempotencyKey: z.string().optional(),
+  /**
+   * Optional customer linkage written into `Payment.metadata.customerId`.
+   */
+  customerId: z.string().optional(),
 });
 
 const transactionStatusSchema = z.object({
@@ -42,6 +108,15 @@ const b2cPaymentSchema = z.object({
   commandId: z.enum(['BusinessPayment', 'SalaryPayment', 'PromotionPayment']),
   remarks: z.string().optional(),
   occasion: z.string().optional(),
+  /**
+   * ⚠ Accepted for forward compatibility but NOT consumed by the
+   *   B2C handler. Safaricom's B2C v1 API reads the currency from
+   *   the shortcode's country configuration on Safaricom's side;
+   *   `mpesaService.processB2CPayment` does not accept a currency
+   *   argument. Kept here so an existing client that sends it
+   *   doesn't trip a validation error.
+   */
+  currency: z.string().optional(),
 });
 
 // ============================================
@@ -74,6 +149,78 @@ function zodError(res: Response, error: z.ZodError) {
   });
 }
 
+/**
+ * Resolve the effective business unit for a request.
+ *
+ * Mirrors the precedence used elsewhere in the codebase (see
+ * `cartController.getBusinessUnitId`): explicit header / body /
+ * query value wins, then the user's own unit, then the most recent
+ * active unit. Returns `undefined` if nothing resolves — the
+ * service's `resolveCurrency` will then fall through to
+ * `DEFAULT_CURRENCY`.
+ *
+ * ⚠ Phase 2: The resolved value is passed to
+ *   `createPendingPayment`, which uses it (a) as the row's
+ *   `businessUnitId` for audit attribution and (b) as the
+ *   `currency` lookup key when no explicit currency is supplied.
+ *   Without this, a Ugandan business unit with its own currency
+ *   column would have its M-Pesa PENDING Payment written as the
+ *   platform default instead.
+ */
+async function resolveBusinessUnitId(
+  req: Request,
+): Promise<string | undefined> {
+  const user = (req as any).user;
+
+  // 1. Explicit override (header > body > query).
+  const explicit =
+    (req.headers['x-business-unit-id'] as string | undefined) ||
+    (req.body?.businessUnitId as string | undefined) ||
+    (req.query?.businessUnitId as string | undefined);
+
+  if (
+    explicit &&
+    explicit !== 'default' &&
+    explicit !== 'default-business-unit'
+  ) {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: explicit },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
+    }
+    logger.warn(
+      `[mpesa] Explicit businessUnitId "${explicit}" not found or inactive — falling back`,
+    );
+  }
+
+  // 2. User's own unit.
+  const userBu =
+    user?.businessUnitId ||
+    user?.businessUnits?.[0]?.businessUnitId ||
+    user?.businessUnits?.[0]?.id;
+
+  if (userBu && userBu !== 'default') {
+    const exists = await prisma.businessUnit.findUnique({
+      where: { id: userBu },
+      select: { id: true, isActive: true },
+    });
+    if (exists && exists.isActive) {
+      return exists.id;
+    }
+  }
+
+  // 3. Not resolved. Caller passes `undefined` to the service,
+  //    which then falls back to the platform default currency.
+  //    This is intentionally NOT the "most recent active unit"
+  //    walk — that path belongs to `cartController.getBusinessUnitId`
+  //    and would silently attribute the payment to an arbitrary
+  //    BU. M-Pesa callers who don't supply a BU get the platform
+  //    default and a null BU on the row.
+  return undefined;
+}
+
 // ============================================
 // CONTROLLER
 // ============================================
@@ -82,6 +229,13 @@ export const mpesaController = {
   /**
    * Initiate STK Push payment.
    * POST /mpesa/stk-push
+   *
+   * ⚠ Phase 2: The PENDING Payment row created here requires a
+   *   resolved currency. This handler forwards the caller's
+   *   `currency` and `businessUnitId`; when neither is supplied,
+   *   it falls back to `resolveDefaultCurrency()`. The service's
+   *   `resolveCurrency` re-validates the value through
+   *   `currencyService` before writing the row.
    */
   async initiateSTKPush(req: Request, res: Response, next: NextFunction) {
     try {
@@ -105,18 +259,41 @@ export const mpesaController = {
         callbackUrl: validatedData.callbackUrl,
       });
 
+      // ── Phase 2: currency resolution ─────────────────────
+      // Prefer the caller's `businessUnitId` when it resolves (the
+      // service will then read the BU's own currency). Fall back
+      // to the caller's explicit `currency` if no BU resolves.
+      // Final fallback is the platform default.
+      //
+      // The service's `resolveCurrency` handles the ordering
+      // authoritatively — this is just what we hand it.
+      const resolvedBusinessUnitId = await resolveBusinessUnitId(req);
+
       const payment = await paymentService.createPendingPayment({
         amount: validatedData.amount,
         paymentMethod: 'MOBILE_MONEY',
         userId,
+        saleId: validatedData.saleId,
+        orderId: validatedData.orderId,
+        currency:
+          validatedData.currency || resolveDefaultCurrency(),
+        businessUnitId:
+          validatedData.businessUnitId ?? resolvedBusinessUnitId,
         transactionId: result.CheckoutRequestID,
         reference: result.MerchantRequestID,
+        idempotencyKey: validatedData.idempotencyKey,
         metadata: {
           checkoutRequestId: result.CheckoutRequestID,
           merchantRequestId: result.MerchantRequestID,
           phoneNumber: validatedData.phoneNumber,
           provider: 'MPESA',
           source: 'mpesa-controller',
+          idempotencyKey: validatedData.idempotencyKey ?? null,
+          customerId: validatedData.customerId ?? null,
+          businessUnitId:
+            validatedData.businessUnitId ??
+            resolvedBusinessUnitId ??
+            null,
         },
       });
 
@@ -180,6 +357,13 @@ export const mpesaController = {
    *   The sibling handler at `paymentController.handleMpesaCallback`
    *   already does this. Both callbacks MUST behave identically
    *   regardless of which URL Safaricom was configured to hit.
+   *
+   * ⚠ Phase 2 note: This handler only UPDATEs the existing
+   *   `Payment` row (created by `initiateSTKPush`). It never
+   *   creates one, so no currency resolution is required here —
+   *   the row's `currency` column was already populated at
+   *   creation time. `markSalePaidFromWebhook` reads the currency
+   *   from the row when it needs to render a receipt.
    */
   async handleCallback(req: Request, res: Response, next: NextFunction) {
     try {
@@ -316,6 +500,13 @@ export const mpesaController = {
   /**
    * Process B2C payment (Business to Customer).
    * POST /mpesa/b2c
+   *
+   * ⚠ Currency is NOT forwarded. Safaricom's B2C v1 API reads the
+   *   currency from the shortcode's country configuration on
+   *   Safaricom's side — the request body has no `Currency` field
+   *   and `mpesaService.processB2CPayment` does not accept one.
+   *   `b2cPaymentSchema.currency` remains accepted at the wire
+   *   boundary for forward compatibility but is not consumed.
    */
   async processB2CPayment(req: Request, res: Response, next: NextFunction) {
     try {
@@ -335,6 +526,7 @@ export const mpesaController = {
         commandId: validatedData.commandId,
         remarks: validatedData.remarks || 'Payment from POS',
         occasion: validatedData.occasion,
+        // ⚠ No `currency` — see the JSDoc above.
       });
 
       res.json({

@@ -1,10 +1,31 @@
 // packages/web/services/customerService.ts
 import { api } from './api';
-import { Customer, CustomerSearchParams } from '../types';
+import type { Customer, CustomerSearchParams } from '../types';
 
-// ─────────────────────────────────────────────────────────────
-// Response shapes
-// ─────────────────────────────────────────────────────────────
+// ============================================================
+// RESPONSE SHAPES
+// ============================================================
+//
+// These mirror the BACKEND exactly. Source of truth:
+// packages/backend/src/services/customerService.ts.
+//
+// ⚠ `CustomerDetail` deliberately does NOT extend `Customer`.
+//
+//   The backend's `getCustomerById` includes the relations with a
+//   narrower projection than the list endpoint:
+//
+//     • `sales`          — take: 10, items include only
+//                          product.{id,name,sku}
+//     • `orders`         — take: 10
+//     • `giftCards`      — filtered to isActive: true
+//     • `loyaltyHistory` — take: 20
+//
+//   `Customer` (from ../types) declares these with the full
+//   relation types (`Sale[]`, `Order[]`, `GiftCard[]`, etc.).
+//   `extends Customer` and redeclaring them narrower is a TS2430
+//   error. `Omit` expresses the truth: "everything from Customer
+//   EXCEPT these four relations, which this interface redeclares
+//   with the projection the service actually returns."
 
 export interface PaginatedResponse<T> {
   data: T[];
@@ -13,6 +34,144 @@ export interface PaginatedResponse<T> {
   totalPages: number;
   limit: number;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Customer stats
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Mirrors backend `CustomerService.getCustomerStats()`.
+ * Do NOT add fields the backend doesn't return.
+ */
+export interface CustomerStats {
+  totalSpent: number;
+  totalSales: number;
+  averageSaleValue: number;
+  totalOrders: number;
+  activeGiftCards: number;
+  loyaltyPointsEarned: number;
+  loyaltyTransactions: number;
+  monthlySpent: number;
+  monthlySales: number;
+  yearlySpent: number;
+  yearlySales: number;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Customer sale (narrowed — the shape `getCustomerById` returns)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Line item as it appears inside `CustomerDetail.sales[].items`.
+ *
+ * The backend's include selects only `product.{id,name,sku}` — no
+ * images, no price, no category. `total` is the line total, not the
+ * product's unit price.
+ */
+export interface CustomerSaleItem {
+  id: string;
+  quantity: number;
+  total: number;
+  product?: { id: string; name: string; sku: string } | null;
+}
+
+/**
+ * Sale as returned by `getCustomerById`.
+ *
+ * ⚠ This is a NARROWER type than the canonical `Sale` in
+ *   `types/sale.ts`. It has:
+ *     - only the fields the customer-detail include selects
+ *     - `saleDate` typed as `string` (the wire format)
+ *     - `items` and `payments` optional (the include for the list
+ *       endpoint omits them; only `getCustomerById` pulls items)
+ *
+ * Do NOT widen this to `Sale` — the full type carries fields
+ * (`subtotal`, `tax`, `paidAmount`, `status`, `businessUnitId`, …)
+ * that aren't present on every code path.
+ */
+export interface CustomerSale {
+  id: string;
+  receiptNumber: string;
+  total: number;
+  saleDate: string;
+  items?: CustomerSaleItem[];
+  payments?: Array<{
+    id: string;
+    paymentMethod: string;
+    amount: number;
+    status: string;
+  }>;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Loyalty history
+// ─────────────────────────────────────────────────────────────
+
+export interface LoyaltyHistoryEntry {
+  id: string;
+  points: number;
+  type: string;
+  notes?: string | null;
+  createdAt: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Order (narrowed)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Order as returned by `getCustomerById`.
+ *
+ * The include doesn't pull `items`, `payments`, or `customer` — only
+ * the order row itself. Type it as `unknown` here so callers that
+ * need fields must narrow explicitly. If you later need a specific
+ * field (`orderNumber`, `status`, `total`), widen this to match the
+ * include on the backend.
+ */
+export type CustomerOrder = unknown;
+
+// ─────────────────────────────────────────────────────────────
+// Gift card (narrowed)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Gift card as returned by `getCustomerById` — filtered to
+ * `isActive: true`, no further narrowing.
+ */
+export type CustomerGiftCard = unknown;
+
+// ─────────────────────────────────────────────────────────────
+// CustomerDetail
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * What `GET /customers/:id` returns.
+ *
+ * Starts from `Customer` and removes the four relations whose
+ * projections differ from the list-endpoint type. Redeclaring them
+ * with the narrower shapes avoids the TS2430 extends conflict while
+ * keeping every other `Customer` field (id, email, name, address,
+ * loyaltyPoints, totalSpent, isActive, timestamps, etc.) inherited
+ * verbatim.
+ */
+export interface CustomerDetail
+  extends Omit<
+    Customer,
+    'sales' | 'orders' | 'giftCards' | 'loyaltyHistory'
+  > {
+  fullName: string;
+  salesCount: number;
+  ordersCount: number;
+  giftCardCount: number;
+  sales?: CustomerSale[];
+  orders?: CustomerOrder[];
+  giftCards?: CustomerGiftCard[];
+  loyaltyHistory?: LoyaltyHistoryEntry[];
+}
+
+// ─────────────────────────────────────────────────────────────
+// Backend envelope shapes (internal)
+// ─────────────────────────────────────────────────────────────
 
 interface BackendListResponse<T> {
   success: boolean;
@@ -31,75 +190,64 @@ interface BackendSingleResponse<T> {
   message?: string;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────
+// ============================================================
+// HELPERS
+// ============================================================
 
 /**
- * Peel off any accidental double-wrapping. Your `api.ts` may return
- * either:
- *   (a) the raw backend body: { success, data, pagination }
- *   (b) that body already unwrapped: { data, pagination }
- *   (c) an Axios response: { data: { success, data, pagination }, ... }
- *
- * This function returns the shape we actually care about, regardless
- * of how many layers the transport added.
+ * Unwrap nested envelope layers. `api.get<T>` already unwraps the
+ * standard `{ success, data }` wrapper — but the SDK was written
+ * before that behavior existed and defensively handles a raw axios
+ * response. This keeps both paths working.
  */
-function unwrap<T = any>(input: any): T {
+function unwrap<T = unknown>(input: unknown): T {
   if (!input || typeof input !== 'object') return input as T;
 
-  // Case (c): an Axios-like response where `.data` is the backend body
-  if ('status' in input && 'data' in input && 'headers' in input) {
-    return unwrap<T>((input as any).data);
+  const obj = input as Record<string, unknown>;
+  if ('status' in obj && 'data' in obj && 'headers' in obj) {
+    return unwrap<T>(obj.data);
   }
-
   return input as T;
 }
 
-/**
- * Normalizes the list response into the PaginatedResponse shape the
- * UI expects. Never throws — always returns a valid (possibly empty)
- * object so the caller can render a proper empty state.
- */
-function normalizeListResponse<T>(raw: any): PaginatedResponse<T> {
-  const body = unwrap<any>(raw);
+function normalizeListResponse<T>(raw: unknown): PaginatedResponse<T> {
+  const body = unwrap<Record<string, unknown>>(raw);
 
-  // Backend may return { success, data: [...], pagination: {...} }
-  // or      may return { data: [...], pagination: {...} }
-  // or      may return an array directly
   const items: T[] = Array.isArray(body?.data)
-    ? body.data
+    ? (body.data as T[])
     : Array.isArray(body)
-    ? body
+    ? (body as unknown as T[])
     : [];
 
-  const pagination = body?.pagination ?? body?.meta ?? {};
+  const pagination = (body?.pagination ?? body?.meta ?? {}) as Record<
+    string,
+    unknown
+  >;
 
-  return {
-    data: items,
-    total:
-      typeof pagination.total === 'number' ? pagination.total : items.length,
-    page: typeof pagination.page === 'number' ? pagination.page : 1,
-    limit: typeof pagination.limit === 'number' ? pagination.limit : items.length || 20,
-    totalPages:
-      typeof pagination.totalPages === 'number'
-        ? pagination.totalPages
-        : Math.max(1, Math.ceil((pagination.total ?? items.length) / (pagination.limit ?? items.length ?? 20))),
-  };
+  const total =
+    typeof pagination.total === 'number' ? pagination.total : items.length;
+  const limit =
+    typeof pagination.limit === 'number'
+      ? pagination.limit
+      : items.length || 20;
+  const page =
+    typeof pagination.page === 'number' ? pagination.page : 1;
+  const totalPages =
+    typeof pagination.totalPages === 'number'
+      ? pagination.totalPages
+      : Math.max(1, Math.ceil(total / (limit || 1)));
+
+  return { data: items, total, page, limit, totalPages };
 }
 
-/**
- * Normalizes a single-entity response: strips wrappers and returns
- * just the payload.
- */
-function normalizeSingleResponse<T>(raw: any): T {
-  const body = unwrap<any>(raw);
+function normalizeSingleResponse<T>(raw: unknown): T {
+  const body = unwrap<Record<string, unknown>>(raw);
   return (body?.data ?? body) as T;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Write-side sanitizer
-// ─────────────────────────────────────────────────────────────
+// ============================================================
+// PAYLOAD SANITIZERS
+// ============================================================
 
 const CUSTOMER_WRITABLE_FIELDS = [
   'firstName',
@@ -116,33 +264,20 @@ const CUSTOMER_WRITABLE_FIELDS = [
 ] as const;
 
 function sanitizeCustomerPayload(
-  data: Partial<Customer>
+  data: Partial<Customer>,
 ): Record<string, unknown> {
   const clean: Record<string, unknown> = {};
   for (const key of CUSTOMER_WRITABLE_FIELDS) {
-    const value = (data as any)[key];
+    const value = (data as Record<string, unknown>)[key];
     if (value !== undefined) {
       clean[key] = value;
     }
   }
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('🧹 Sanitized payload:', clean);
-    if ('companyId' in clean) {
-      console.error('❌ BUG: companyId leaked into sanitized payload');
-    }
-  }
-
   return clean;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Read-side sanitizer — drops undefined/null/empty/'default'
-// from query params so we never send them on the wire.
-// ─────────────────────────────────────────────────────────────
-
 function sanitizeQueryParams(
-  params?: CustomerSearchParams
+  params?: CustomerSearchParams,
 ): Record<string, unknown> {
   if (!params) return {};
 
@@ -157,37 +292,28 @@ function sanitizeQueryParams(
   return clean;
 }
 
-// ─────────────────────────────────────────────────────────────
-// Customer service
-// ─────────────────────────────────────────────────────────────
+// ============================================================
+// CUSTOMER SERVICE — mirrors backend routes 1:1
+// ============================================================
 
 export const customerService = {
-  /**
-   * GET /customers
-   * Backend scopes by req.user.companyId. Do not send companyId from here.
-   */
+  /** GET /customers */
   async getAllCustomers(
-    params?: CustomerSearchParams
+    params?: CustomerSearchParams,
   ): Promise<PaginatedResponse<Customer>> {
     const cleanParams = sanitizeQueryParams(params);
-
     const res = await api.get<BackendListResponse<Customer>>('/customers', {
       params: cleanParams,
     });
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('🔍 raw res from api.get:', res);
-    }
-
     return normalizeListResponse<Customer>(res);
   },
 
-  /** GET /customers/:id */
-  async getCustomerById(id: string): Promise<Customer> {
-    const res = await api.get<BackendSingleResponse<Customer>>(
-      `/customers/${id}`
+  /** GET /customers/:id — backend includes sales + loyaltyHistory */
+  async getCustomerById(id: string): Promise<CustomerDetail> {
+    const res = await api.get<BackendSingleResponse<CustomerDetail>>(
+      `/customers/${id}`,
     );
-    return normalizeSingleResponse<Customer>(res);
+    return normalizeSingleResponse<CustomerDetail>(res);
   },
 
   /** POST /customers */
@@ -195,7 +321,7 @@ export const customerService = {
     const payload = sanitizeCustomerPayload(data);
     const res = await api.post<BackendSingleResponse<Customer>>(
       '/customers',
-      payload
+      payload,
     );
     return normalizeSingleResponse<Customer>(res);
   },
@@ -203,12 +329,12 @@ export const customerService = {
   /** PUT /customers/:id */
   async updateCustomer(
     id: string,
-    data: Partial<Customer>
+    data: Partial<Customer>,
   ): Promise<Customer> {
     const payload = sanitizeCustomerPayload(data);
     const res = await api.put<BackendSingleResponse<Customer>>(
       `/customers/${id}`,
-      payload
+      payload,
     );
     return normalizeSingleResponse<Customer>(res);
   },
@@ -216,21 +342,26 @@ export const customerService = {
   /** DELETE /customers/:id */
   async deleteCustomer(id: string): Promise<{ message: string }> {
     const res = await api.delete<BackendSingleResponse<null>>(
-      `/customers/${id}`
+      `/customers/${id}`,
     );
-    const body = unwrap<any>(res);
-    return { message: body?.message || 'Customer deleted successfully' };
+    const body = unwrap<Record<string, unknown>>(res);
+    return {
+      message:
+        typeof body?.message === 'string'
+          ? body.message
+          : 'Customer deleted successfully',
+    };
   },
 
   /** POST /customers/:id/loyalty-points/add */
   async addLoyaltyPoints(
     customerId: string,
     points: number,
-    reason?: string
+    reason?: string,
   ): Promise<Customer> {
     const res = await api.post<BackendSingleResponse<Customer>>(
       `/customers/${customerId}/loyalty-points/add`,
-      { points, reason }
+      { points, reason },
     );
     return normalizeSingleResponse<Customer>(res);
   },
@@ -239,32 +370,33 @@ export const customerService = {
   async redeemLoyaltyPoints(
     customerId: string,
     points: number,
-    reason?: string
+    reason?: string,
   ): Promise<Customer> {
     const res = await api.post<BackendSingleResponse<Customer>>(
       `/customers/${customerId}/loyalty-points/redeem`,
-      { points, reason }
+      { points, reason },
     );
     return normalizeSingleResponse<Customer>(res);
   },
 
-  /** GET /customers/:id/stats */
-  async getCustomerStats(id: string): Promise<{
-    totalOrders: number;
-    totalSpent: number;
-    averageSaleValue: number;
-    totalSales: number;
-    activeGiftCards: number;
-    loyaltyPointsEarned: number;
-    monthlySpent: number;
-    monthlySales: number;
-    yearlySpent: number;
-    yearlySales: number;
-  }> {
-    const res = await api.get<BackendSingleResponse<any>>(
-      `/customers/${id}/stats`
+  /** GET /customers/:id/stats — matches backend CustomerStats shape */
+  async getCustomerStats(id: string): Promise<CustomerStats> {
+    const res = await api.get<BackendSingleResponse<CustomerStats>>(
+      `/customers/${id}/stats`,
     );
-    return normalizeSingleResponse<any>(res);
+    return normalizeSingleResponse<CustomerStats>(res);
+  },
+
+  /** GET /customers/:id/purchases */
+  async getCustomerPurchaseHistory(
+    id: string,
+    params?: { page?: number; limit?: number },
+  ): Promise<PaginatedResponse<CustomerSale>> {
+    const res = await api.get<BackendListResponse<CustomerSale>>(
+      `/customers/${id}/purchases`,
+      { params },
+    );
+    return normalizeListResponse<CustomerSale>(res);
   },
 
   /** GET /customers/search?q=... */
@@ -277,25 +409,25 @@ export const customerService = {
 
     const res = await api.get<BackendSingleResponse<Customer[]>>(
       '/customers/search',
-      { params: cleanParams }
+      { params: cleanParams },
     );
 
-    const body = unwrap<any>(res);
+    const body = unwrap<Record<string, unknown>>(res);
     const items = Array.isArray(body?.data)
-      ? body.data
+      ? (body.data as Customer[])
       : Array.isArray(body)
-      ? body
+      ? (body as unknown as Customer[])
       : [];
     return items;
   },
 
   /** POST /customers/import */
   async importCustomers(
-    file: File
-  ): Promise<{ results: Customer[]; errors: any[] }> {
-    return api.upload<{ results: Customer[]; errors: any[] }>(
+    file: File,
+  ): Promise<{ results: Customer[]; errors: unknown[] }> {
+    return api.upload<{ results: Customer[]; errors: unknown[] }>(
       '/customers/import',
-      file
+      file,
     );
   },
 
@@ -304,5 +436,13 @@ export const customerService = {
     return api.download(`/customers/export?format=${format}`);
   },
 };
+
+// Re-export the nested types so consumers that import them from the
+// service keep working. The canonical declaration lives here because
+// `CustomerDetail` is the type that composes them.
+export type {
+  Customer,
+  CustomerSearchParams,
+} from '../types';
 
 export default customerService;

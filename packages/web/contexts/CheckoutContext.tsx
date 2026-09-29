@@ -1,14 +1,66 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  ReactNode,
+  useEffect,
+} from 'react';
 import { toast } from '../utils/toast-manager';
-import { paymentService } from '../services/paymentService';
 import { checkoutService } from '../services/checkoutService';
+import type {
+  CheckoutSummary,
+  CanonicalPaymentMethod,
+} from '../types/checkout';
+import type { PaymentMethod } from '../services/saleService';
 import { usePayment } from './PaymentContext';
 
 // ============================================
-// TYPES
+// LOCAL TYPES
 // ============================================
+//
+// The summary endpoint (`GET /checkout/summary/:cartId`) is typed in
+// `types/checkout.ts` as a flattened `CheckoutSummary`, but the
+// backend service actually returns the raw Prisma cart shape with
+// nested `product` / `variant` on each item and a `customer` object.
+// These local interfaces describe what the endpoint really emits so
+// the mapping code below can read those fields without a cast.
+
+interface RawCartItem {
+  id: string;
+  productId: string;
+  product?: {
+    id: string;
+    name: string;
+    images?: string[] | null;
+    unitPrice?: number;
+  };
+  variantId?: string | null;
+  variant?: {
+    id: string;
+    name: string;
+    price?: number;
+  };
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+interface RawCartCustomer {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phoneNumber?: string | null;
+  address?: string | null;
+}
+
+interface RawCartSummary extends CheckoutSummary {
+  items: RawCartItem[];
+  customer?: RawCartCustomer | null;
+}
 
 interface CheckoutItem {
   id: string;
@@ -33,6 +85,16 @@ interface CustomerInfo {
   country?: string;
 }
 
+/**
+ * Payment methods this context can hold.
+ *
+ * Narrowed from `string` to the canonical union so downstream code
+ * (`checkoutService.processCheckout`) accepts the value without a
+ * cast. Includes both alias forms (`CARD`, `MOBILE`, …) and
+ * canonical Prisma enum values (`CREDIT_CARD`, `MOBILE_MONEY`, …).
+ */
+type CheckoutPaymentMethod = CanonicalPaymentMethod | PaymentMethod;
+
 interface CheckoutState {
   items: CheckoutItem[];
   subtotal: number;
@@ -40,7 +102,7 @@ interface CheckoutState {
   discount: number;
   total: number;
   customerInfo: CustomerInfo;
-  paymentMethod: string;
+  paymentMethod: CheckoutPaymentMethod;
   loyaltyPointsUsed: number;
   promotionCode: string;
   notes: string;
@@ -51,28 +113,19 @@ interface CheckoutState {
 
 interface CheckoutContextType {
   state: CheckoutState;
-  // Cart Management
   addItem: (item: CheckoutItem) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
   loadCart: (cartId: string) => Promise<void>;
-  // Customer Info
   updateCustomerInfo: (info: Partial<CustomerInfo>) => void;
-  // Payment
-  setPaymentMethod: (method: string) => void;
-  // Promotions
+  setPaymentMethod: (method: CheckoutPaymentMethod) => void;
   applyPromotion: (code: string) => Promise<void>;
   removePromotion: () => void;
-  // Loyalty
   applyLoyaltyPoints: (points: number) => void;
-  // Calculations
   calculateTotals: () => void;
-  // Order Placement
   placeOrder: () => Promise<any>;
-  // Payment Integration
   processPayment: () => Promise<any>;
-  // Reset
   resetCheckout: () => void;
 }
 
@@ -113,62 +166,69 @@ const CheckoutContext = createContext<CheckoutContextType | undefined>(undefined
 
 export function CheckoutProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CheckoutState>(initialState);
-  const { processPayment: processPaymentService, selectPaymentMethod, state: paymentState } = usePayment();
+  const {
+    processPayment: processPaymentService,
+    selectPaymentMethod,
+  } = usePayment();
 
   // Calculate totals
   const calculateTotals = useCallback(() => {
     setState(prev => {
       const subtotal = prev.items.reduce((sum, item) => sum + item.total, 0);
-      const tax = subtotal * 0.1; // 10% tax rate
+      const tax = subtotal * 0.1;
       const total = subtotal + tax - prev.discount;
       return { ...prev, subtotal, tax, total };
     });
   }, []);
 
-  // ✅ FIXED: Load cart from server - use 'customer' not 'customerId'
+  // Load cart
   const loadCart = useCallback(async (cartId: string) => {
     try {
-      const response = await checkoutService.getCheckoutSummaryByCart(cartId);
-      if (response) {
-        const items: CheckoutItem[] = (response.items || []).map((item: any) => ({
-          id: item.id || `item_${Date.now()}`,
-          productId: item.productId,
-          name: item.product?.name || 'Product',
-          quantity: item.quantity || 1,
-          unitPrice: item.unitPrice || 0,
-          total: (item.quantity || 1) * (item.unitPrice || 0),
-          image: item.product?.images?.[0],
-          variant: item.variant?.name,
-          variantId: item.variantId,
-        }));
+      // The summary endpoint returns the raw cart shape at runtime,
+      // even though the wire type is the flattened `CheckoutSummary`.
+      // Read it as `RawCartSummary` so the nested `product`,
+      // `variant`, and `customer` fields are available.
+      const response = (await checkoutService.getCheckoutSummaryByCart(
+        cartId,
+      )) as unknown as RawCartSummary;
 
-        // ✅ FIXED: Get customerId from customer object (response has 'customer', not 'customerId')
-        const customerId = response.customer?.id;
+      if (!response) return;
 
+      const items: CheckoutItem[] = (response.items || []).map(item => ({
+        id: item.id || `item_${item.productId}_${item.variantId ?? ''}`,
+        productId: item.productId,
+        name: item.product?.name || 'Product',
+        quantity: item.quantity || 1,
+        unitPrice: item.unitPrice || 0,
+        total: item.total ?? (item.quantity || 1) * (item.unitPrice || 0),
+        image: item.product?.images?.[0],
+        variant: item.variant?.name,
+        variantId: item.variantId ?? undefined,
+      }));
+
+      setState(prev => ({
+        ...prev,
+        items,
+        subtotal: response.subtotal || 0,
+        tax: response.tax || 0,
+        discount: response.discount || 0,
+        total: response.total || 0,
+        cartId,
+        customerId: response.customer?.id ?? response.customerId,
+      }));
+
+      if (response.customer) {
+        const c = response.customer;
         setState(prev => ({
           ...prev,
-          items,
-          subtotal: response.subtotal || 0,
-          tax: response.tax || 0,
-          discount: response.discount || 0,
-          total: response.total || 0,
-          cartId,
-          customerId: customerId,
+          customerInfo: {
+            ...prev.customerInfo,
+            name: `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim(),
+            email: c.email ?? '',
+            phone: c.phoneNumber ?? '',
+            address: c.address ?? '',
+          },
         }));
-
-        // If customer info is available, update customer info
-        if (response.customer) {
-          setState(prev => ({
-            ...prev,
-            customerInfo: {
-              ...prev.customerInfo,
-              name: `${response.customer.firstName || ''} ${response.customer.lastName || ''}`.trim(),
-              email: response.customer.email || '',
-              phone: response.customer.phoneNumber || '',
-              address: response.customer.address || '',
-            },
-          }));
-        }
       }
     } catch (error) {
       console.error('Failed to load cart:', error);
@@ -183,8 +243,12 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       if (existing) {
         const updated = prev.items.map(i =>
           i.id === item.id
-            ? { ...i, quantity: i.quantity + item.quantity, total: (i.quantity + item.quantity) * i.unitPrice }
-            : i
+            ? {
+                ...i,
+                quantity: i.quantity + item.quantity,
+                total: (i.quantity + item.quantity) * i.unitPrice,
+              }
+            : i,
         );
         return { ...prev, items: updated };
       }
@@ -213,7 +277,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       items: prev.items.map(item =>
         item.id === id
           ? { ...item, quantity, total: quantity * item.unitPrice }
-          : item
+          : item,
       ),
     }));
     calculateTotals();
@@ -234,45 +298,68 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Set payment method
-  const setPaymentMethod = useCallback((method: string) => {
-    setState(prev => ({ ...prev, paymentMethod: method }));
-    selectPaymentMethod(method);
-  }, [selectPaymentMethod]);
+  const setPaymentMethod = useCallback(
+    (method: CheckoutPaymentMethod) => {
+      setState(prev => ({ ...prev, paymentMethod: method }));
+      selectPaymentMethod(method);
+    },
+    [selectPaymentMethod],
+  );
 
   // Apply promotion
+  //
+  // ⚠ There is no standalone `POST /api/promotions/validate` endpoint.
+  //   Discounts are applied server-side via
+  //   `POST /checkout/:id/discount` (see `checkoutService.applyDiscount`).
   const applyPromotion = useCallback(async (code: string) => {
-    try {
-      const response = await fetch('/api/promotions/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, subtotal: state.subtotal }),
-      });
-      const data = await response.json();
-      if (data.valid) {
-        setState(prev => ({
-          ...prev,
-          discount: data.discount,
-          promotionCode: code,
-        }));
-        calculateTotals();
-        toast.success(`Promotion applied: ${data.discountAmount} off`);
-      } else {
-        toast.error(data.message || 'Invalid promotion code');
-      }
-    } catch (error) {
-      toast.error('Failed to apply promotion');
+    if (!state.cartId) {
+      toast.error('Cart is not ready. Please add items first.');
+      return;
     }
-  }, [state.subtotal, calculateTotals]);
+
+    try {
+      const result = await checkoutService.applyDiscount(state.cartId, {
+        code,
+      });
+
+      // The sale returned by `applyDiscount` carries the authoritative
+      // discount figure. Mirror it into local state.
+      const discountAmount = Number((result as any)?.discount) || 0;
+
+      setState(prev => ({
+        ...prev,
+        discount: discountAmount,
+        promotionCode: code,
+      }));
+
+      calculateTotals();
+      toast.success('Promotion applied');
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Invalid promotion code';
+      toast.error(message);
+      throw error;
+    }
+  }, [state.cartId, calculateTotals]);
 
   // Remove promotion
-  const removePromotion = useCallback(() => {
+  const removePromotion = useCallback(async () => {
+    if (state.cartId) {
+      try {
+        await checkoutService.removeDiscount(state.cartId);
+      } catch (error) {
+        console.error('Failed to remove discount server-side:', error);
+      }
+    }
     setState(prev => ({
       ...prev,
       discount: 0,
       promotionCode: '',
     }));
     calculateTotals();
-  }, [calculateTotals]);
+  }, [state.cartId, calculateTotals]);
 
   // Apply loyalty points
   const applyLoyaltyPoints = useCallback((points: number) => {
@@ -285,7 +372,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
     calculateTotals();
   }, [calculateTotals]);
 
-  // Process payment (integrated with PaymentContext)
+  // Process payment (delegated to PaymentContext)
   const processPayment = useCallback(async () => {
     try {
       const paymentData = {
@@ -303,12 +390,8 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       };
 
       const payment = await processPaymentService(paymentData);
-      
-      // Update checkout state with payment info
-      setState(prev => ({
-        ...prev,
-        total: payment.amount,
-      }));
+
+      setState(prev => ({ ...prev, total: payment.amount }));
 
       toast.success('Payment processed successfully');
       return payment;
@@ -318,47 +401,55 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
     }
   }, [state, processPaymentService]);
 
-  // Place order (integrated with payment)
-  const placeOrder = useCallback(async () => {
-    try {
-      // First process payment
-      const payment = await processPayment();
-
-      // Then create the order
-      const response = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...state,
-          payment,
-          orderDate: new Date().toISOString(),
-        }),
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        clearCart();
-        resetCheckout();
-        toast.success('Order placed successfully!');
-        return data.order;
-      }
-      throw new Error(data.message || 'Order failed');
-    } catch (error) {
-      console.error('Order placement failed:', error);
-      toast.error('Failed to place order');
-      throw error;
-    }
-  }, [state, processPayment, clearCart]);
-
   // Reset checkout
   const resetCheckout = useCallback(() => {
     setState(initialState);
   }, []);
 
-  // Calculate totals when items change
+  // Place order — offline checkout via `checkoutService.processCheckout`.
+  //
+  // ⚠ The previous implementation hit `/api/checkout` directly with
+  //   `fetch`, bypassing the API client (no auth header, no base URL
+  //   resolution, no error normalization). It also ran payment first,
+  //   then created the order — so a payment-then-order failure left
+  //   money captured with no sale row. The backend's `POST /checkout`
+  //   path creates the Sale and Payment atomically; use it.
+  const placeOrder = useCallback(async () => {
+    if (!state.cartId) {
+      throw new Error('No cart to check out');
+    }
+
+    try {
+      const response = await checkoutService.processCheckout({
+        cartId: state.cartId,
+        paymentMethod: state.paymentMethod,
+        paidAmount: state.total,
+        customerId: state.customerId,
+        customerEmail: state.customerInfo.email || undefined,
+        customerPhone: state.customerInfo.phone || undefined,
+        customerName: state.customerInfo.name || undefined,
+        customerAddress: state.customerInfo.address || undefined,
+        discount: state.discount,
+        notes: state.notes || undefined,
+        applyLoyaltyPoints: state.loyaltyPointsUsed > 0,
+        promotionCode: state.promotionCode || undefined,
+      });
+
+      clearCart();
+      resetCheckout();
+      toast.success('Order placed successfully!');
+      return response;
+    } catch (error) {
+      console.error('Order placement failed:', error);
+      toast.error('Failed to place order');
+      throw error;
+    }
+  }, [state, clearCart, resetCheckout]);
+
+  // Recalculate totals whenever items change
   useEffect(() => {
     calculateTotals();
-  }, [calculateTotals]);
+  }, [state.items, calculateTotals]);
 
   const value: CheckoutContextType = {
     state,
@@ -398,4 +489,10 @@ export function useCheckout() {
 }
 
 export { CheckoutContext };
-export type { CheckoutContextType, CheckoutState, CheckoutItem, CustomerInfo };
+export type {
+  CheckoutContextType,
+  CheckoutState,
+  CheckoutItem,
+  CustomerInfo,
+  CheckoutPaymentMethod,
+};

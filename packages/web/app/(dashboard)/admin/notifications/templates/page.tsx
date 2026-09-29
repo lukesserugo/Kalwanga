@@ -24,6 +24,103 @@ import type { NotificationTemplate } from '../../../../../types/notification';
 import { toast } from '../../../../../utils/toast-manager';
 import { useConfirm } from '../../../../../components/notifications/ConfirmProvider';
 
+// ============================================
+// TYPES
+// ============================================
+//
+// The backend exposes notification templates through
+// `notificationController.getTemplates/getTemplateById/createTemplate/
+// updateTemplate/deleteTemplate`, and `renderTemplate`.
+//
+// Those endpoints exist on the backend but were NOT wired into the
+// frontend `notificationService` object — the service is missing
+// `getTemplates`, `updateTemplate`, `deleteTemplate`, and
+// `createTemplate`. Because we can't modify the service here, this
+// page calls the API directly for those four operations via `api`
+// (the same low-level client the service itself uses).
+//
+// The route shapes below match the backend exactly:
+//
+//   GET    /notifications/templates               → { success, data: NotificationTemplate[] }
+//   GET    /notifications/templates/:id           → { success, data: NotificationTemplate }
+//   POST   /notifications/templates               → { success, data: NotificationTemplate }
+//   PUT    /notifications/templates/:id           → { success, data: NotificationTemplate }
+//   DELETE /notifications/templates/:id           → { success, message }
+//   POST   /notifications/templates/render        → { success, data: { subject, body } }
+
+import { api } from '../../../../../services/api';
+
+/**
+ * Response envelope the backend wraps every successful call in.
+ * Exported by neither the service nor the types module — declared
+ * locally so we can unwrap consistently.
+ */
+interface BackendSingle<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+
+interface BackendList<T> {
+  success: boolean;
+  data: T[];
+  count?: number;
+}
+
+// ============================================
+// LOCAL TEMPLATE CALLS
+// ============================================
+//
+// These mirror the four backend endpoints the service is missing.
+// They're kept local (not exported) so we don't accidentally shadow
+// the service's API surface.
+
+async function fetchTemplates(): Promise<NotificationTemplate[]> {
+  const response = await api.get<BackendList<NotificationTemplate>>(
+    '/notifications/templates',
+  );
+  const payload =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (Array.isArray(payload)) return payload as NotificationTemplate[];
+  if (payload && Array.isArray((payload as any).data)) {
+    return (payload as any).data as NotificationTemplate[];
+  }
+  return [];
+}
+
+async function updateTemplateRemote(
+  id: string,
+  data: Partial<NotificationTemplate>,
+): Promise<NotificationTemplate> {
+  const response = await api.put<BackendSingle<NotificationTemplate>>(
+    `/notifications/templates/${id}`,
+    data,
+  );
+  const payload =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (payload && typeof payload === 'object' && 'id' in payload) {
+    return payload as NotificationTemplate;
+  }
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return (payload as any).data as NotificationTemplate;
+  }
+  throw new Error('Template update returned an invalid response');
+}
+
+async function deleteTemplateRemote(id: string): Promise<void> {
+  await api.delete(`/notifications/templates/${id}`);
+}
+
+// ============================================
+// PAGE
+// ============================================
+
 export default function TemplatesPage() {
   const confirm = useConfirm();
   const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
@@ -45,7 +142,7 @@ export default function TemplatesPage() {
     try {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
-      const data = await notificationService.getTemplates();
+      const data = await fetchTemplates();
       if (!isMountedRef.current) return;
       setTemplates(data);
     } catch (err: any) {
@@ -85,7 +182,7 @@ export default function TemplatesPage() {
   const handleToggleActive = useCallback(async (t: NotificationTemplate) => {
     try {
       setWorkingId(t.id);
-      const updated = await notificationService.updateTemplate(t.id, {
+      const updated = await updateTemplateRemote(t.id, {
         isActive: !t.isActive,
       });
       setTemplates((prev) =>
@@ -113,7 +210,7 @@ export default function TemplatesPage() {
 
       try {
         setWorkingId(t.id);
-        await notificationService.deleteTemplate(t.id);
+        await deleteTemplateRemote(t.id);
         setTemplates((prev) => prev.filter((x) => x.id !== t.id));
         toast.success('Template deleted');
       } catch {
@@ -287,7 +384,7 @@ export default function TemplatesPage() {
                   </p>
                   {t.variables.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {t.variables.slice(0, 6).map((v) => (
+                      {t.variables.slice(0, 6).map((v: string) => (
                         <span
                           key={v}
                           className="inline-block px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[10px] font-mono text-gray-600 dark:text-gray-400"

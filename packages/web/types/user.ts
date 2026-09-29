@@ -1,19 +1,5 @@
 // D:\Projects\Kalwanga\packages\web\types\user.ts
 
-// ============================================
-// CANONICAL IMPORTS
-// ============================================
-//
-// Ownership map (do not deviate):
-//   User, Company, BusinessUnitMembership, Invitation, UserGroup → THIS FILE
-//   BusinessUnit → ./businessUnit   (this file only re-exports it)
-//
-// ⚠️ Do NOT import Company from './user'. This file IS './user'.
-//    Importing from itself produces the circular-alias error.
-//
-// The BusinessUnit import is type-only so the cycle
-//   user ↔ businessUnit
-// is erased at compile time.
 
 import type { BusinessUnit } from './businessUnit';
 
@@ -54,6 +40,59 @@ export interface User {
   companyId?: string | null;
   company?: Company | null;
   businessUnits?: BusinessUnitMembership[];
+}
+
+// ============================================
+// CREATE USER — REQUEST SHAPE
+// ============================================
+
+/**
+ * Body accepted by `POST /users`.
+ *
+ * Mirrors the backend controller's `createUserSchema`. Only `email`,
+ * `firstName`, `lastName`, `role`, and `password` are required by the
+ * schema; `password` is listed as required because the controller
+ * hashes it before writing and the transaction rejects a null.
+ *
+ * `permissions` is optional — when omitted the backend derives the
+ * role's default set via `getDefaultPermissionsForRole`. When
+ * supplied it *replaces* the default rather than merging with it.
+ */
+export interface CreateUserData {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber?: string;
+  role: string;
+  password: string;
+  isActive?: boolean;
+  companyId?: string;
+  businessUnitId?: string;
+  clerkId?: string;
+  permissions?: string[];
+  avatar?: string;
+}
+
+// ============================================
+// BULK ACTION — RESPONSE SHAPE
+// ============================================
+
+/**
+ * Response returned by the bulk user endpoints:
+ *   POST /users/bulk/activate
+ *   POST /users/bulk/deactivate
+ *   POST /users/bulk/delete
+ *
+ * The backend controllers in `userController.ts` return
+ * `{ success: true, message, count }`. `count` is the number of rows
+ * the underlying `updateMany` / `deleteMany` touched — not the number
+ * of IDs the caller supplied. Ids that didn't match a row are
+ * silently excluded from the count.
+ */
+export interface BulkActionResponse {
+  success: boolean;
+  message: string;
+  count: number;
 }
 
 // ============================================
@@ -143,4 +182,55 @@ export interface UserGroup {
   metadata?: Record<string, any> | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ============================================
+// USER ACTIVITY
+// ============================================
+
+export interface UserActivity {
+  id: string;
+  userId: string;
+  action: string;
+  description: string;
+  timestamp: string;
+  ipAddress?: string;
+  userAgent?: string;
+  device?: string;
+  location?: string;
+  status: 'success' | 'failed' | 'pending';
+  severity: 'info' | 'warning' | 'error' | 'critical';
+  resource?: string;
+  resourceId?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ActivityFilter {
+  page?: number;
+  limit?: number;
+  search?: string;
+  action?: string;
+  status?: string;
+  severity?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  device?: string;
+  location?: string;
+  ipAddress?: string;
+  resource?: string;
+  resourceId?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface ActivityStats {
+  total: number;
+  groupedBy?: string;
+  groupedStats?: Record<string, number>;
+  byAction?: Record<string, number>;
+  byStatus?: Record<string, number>;
+  bySeverity?: Record<string, number>;
+  byDevice?: Record<string, number>;
+  byLocation?: Record<string, number>;
+  recentActivities?: UserActivity[];
 }

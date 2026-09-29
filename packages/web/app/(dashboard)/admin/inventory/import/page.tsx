@@ -36,6 +36,183 @@ interface ImportOptions {
   validateOnly: boolean;
 }
 
+/**
+ * A single parsed row from the uploaded CSV, before it is mapped to
+ * the create payload. Every field is a string from `FileReader`;
+ * numeric coercion happens in `parseImportRow`.
+ */
+interface ParsedRow {
+  name: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  category: string;
+  location: string;
+  supplier: string;
+  minStock: number;
+  maxStock: number;
+  notes: string;
+  description: string;
+}
+
+// ============================================
+// CSV PARSING
+// ============================================
+//
+// ⚠️ The previous implementation split rows on `\n` and cells on `,`.
+//    That breaks the moment a value contains a comma (`"Acme, Inc."`)
+//    or an embedded newline (multi-line descriptions). Since the
+//    template we ship includes `description` and `notes`, both are
+//    plausible. This parser handles RFC-4180-style quoting:
+//
+//      • Fields may be wrapped in double quotes.
+//      • A doubled quote (`""`) inside a quoted field is one quote.
+//      • Commas and newlines inside quoted fields are literal.
+//      • `\r\n` and `\n` both terminate rows when unquoted.
+//
+//    It returns a `string[][]` — one array of cells per row — so the
+//    caller can map headers to values without re-parsing.
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < text.length) {
+    const char = text[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          // Escaped quote inside a quoted field.
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += char;
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+
+    if (char === ',') {
+      row.push(field);
+      field = '';
+      i += 1;
+      continue;
+    }
+
+    if (char === '\r' || char === '\n') {
+      // Consume CRLF as a single row terminator.
+      if (char === '\r' && text[i + 1] === '\n') i += 2;
+      else i += 1;
+
+      row.push(field);
+      field = '';
+
+      // Skip fully-empty trailing rows (blank lines in the file).
+      const isBlank = row.length === 1 && row[0].trim() === '';
+      if (!isBlank) rows.push(row);
+      row = [];
+      continue;
+    }
+
+    field += char;
+    i += 1;
+  }
+
+  // Flush the final field/row if the file did not end with a newline.
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    const isBlank = row.length === 1 && row[0].trim() === '';
+    if (!isBlank) rows.push(row);
+  }
+
+  return rows;
+}
+
+function toNumber(value: string | undefined, fallback = 0): number {
+  if (value === undefined || value === null) return fallback;
+  const trimmed = String(value).trim();
+  if (trimmed === '') return fallback;
+  const parsed = parseFloat(trimmed);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Map a header row + data rows into `ParsedRow[]`.
+ *
+ * Unknown headers are ignored. Missing headers fall back to sane
+ * defaults (`location: 'Warehouse'`, `minStock: 5`, `maxStock: 100`,
+ * auto-generated SKU). The returned array preserves row order so
+ * error messages can reference the original line number.
+ */
+function mapRows(
+  headers: string[],
+  dataRows: string[][],
+  startLine: number,
+): Array<{ row: ParsedRow; lineNumber: number }> {
+  const normalised = headers.map((h) => h.trim().toLowerCase());
+
+  const indexOf = (...keys: string[]): number => {
+    for (const key of keys) {
+      const idx = normalised.indexOf(key);
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+
+  const idx = {
+    name: indexOf('name', 'product name', 'item name'),
+    sku: indexOf('sku'),
+    quantity: indexOf('quantity', 'qty', 'stock', 'initial stock'),
+    price: indexOf('price', 'unit price', 'unitprice'),
+    category: indexOf('category'),
+    location: indexOf('location', 'warehouse'),
+    supplier: indexOf('supplier', 'supplier name'),
+    reorderPoint: indexOf('reorderpoint', 'reorder point', 'minstock', 'min stock'),
+    maxStock: indexOf('maxstock', 'max stock'),
+    notes: indexOf('notes', 'note'),
+    description: indexOf('description', 'desc'),
+  };
+
+  return dataRows.map((cells, offset) => {
+    const valueAt = (col: number): string =>
+      col >= 0 && col < cells.length ? cells[col].trim() : '';
+
+    const reorderRaw = valueAt(idx.reorderPoint);
+
+    const row: ParsedRow = {
+      name: valueAt(idx.name),
+      sku: valueAt(idx.sku),
+      quantity: toNumber(valueAt(idx.quantity), 0),
+      unitPrice: toNumber(valueAt(idx.price), 0),
+      category: valueAt(idx.category),
+      location: valueAt(idx.location) || 'Warehouse',
+      supplier: valueAt(idx.supplier),
+      minStock: reorderRaw ? toNumber(reorderRaw, 5) : 5,
+      maxStock: idx.maxStock !== -1
+        ? toNumber(valueAt(idx.maxStock), 100)
+        : 100,
+      notes: valueAt(idx.notes),
+      description: valueAt(idx.description),
+    };
+
+    return { row, lineNumber: startLine + offset };
+  });
+}
+
 // ============================================
 // MAIN COMPONENT
 // ============================================
@@ -44,13 +221,13 @@ export default function ImportPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { canCreate, canManage, hasPermission } = usePermission();
-  
+
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [previewData, setPreviewData] = useState<Record<string, string>[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [importOptions, setImportOptions] = useState<ImportOptions>({
@@ -59,12 +236,21 @@ export default function ImportPage() {
     validateOnly: false,
   });
 
-  const businessUnitId = user?.businessUnits?.[0]?.businessUnitId || 'default';
-  
-  const canImportInventory = canCreate?.(`${PermissionResource.INVENTORY}:create`) || 
-                             canManage?.(`${PermissionResource.INVENTORY}:manage`) ||
-                             hasPermission?.(`${PermissionResource.INVENTORY}:import`) ||
-                             false;
+  // ⚠ `businessUnitId` is read from the session user. The service
+  //   layer normalises it (and omits the param entirely when it is a
+  //   sentinel value) so the backend resolves the BU from
+  //   `req.user.businessUnitId` — the same value every other
+  //   inventory page uses.
+  const businessUnitId =
+    user?.businessUnits?.[0]?.businessUnitId ||
+    (user as any)?.businessUnitId ||
+    undefined;
+
+  const canImportInventory =
+    canCreate?.(`${PermissionResource.INVENTORY}:create`) ||
+    canManage?.(`${PermissionResource.INVENTORY}:manage`) ||
+    hasPermission?.(`${PermissionResource.INVENTORY}:import`) ||
+    false;
 
   if (!canImportInventory) {
     return (
@@ -78,8 +264,12 @@ export default function ImportPage() {
           <div className="w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
             <Lock className="w-12 h-12 text-gray-400" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">Access Restricted</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">You don't have permission to import inventory.</p>
+          <h2 className="text-2xl font-bold text-gray-700 dark:text-gray-300">
+            Access Restricted
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            You don't have permission to import inventory.
+          </p>
           <button
             onClick={() => router.push('/admin/inventory')}
             className="mt-4 px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors shadow-brand focus-ring"
@@ -96,42 +286,49 @@ export default function ImportPage() {
       toast.error('File size exceeds 5MB limit');
       return;
     }
-    
+
     setFile(selectedFile);
     setResult(null);
     setPreviewData([]);
     setShowPreview(false);
     setImportProgress(0);
-    
+
     if (selectedFile) {
       previewFile(selectedFile);
     }
   };
 
-  const previewFile = (selectedFile: File) => {
+  const previewFile = useCallback((selectedFile: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
-        const lines = text.split('\n').filter(line => line.trim());
-        const headers = lines[0]?.split(',').map(h => h.trim()) || [];
-        const data = lines.slice(1, 11).map(line => {
-          const values = line.split(',').map(v => v.trim());
+        const parsed = parseCsv(text);
+        if (parsed.length === 0) {
+          toast.error('File is empty');
+          return;
+        }
+
+        const headers = parsed[0].map((h) => h.trim());
+        const rows = parsed.slice(1, 11); // first 10 data rows
+
+        const preview = rows.map((cells) => {
           const obj: Record<string, string> = {};
           headers.forEach((h, i) => {
-            obj[h] = values[i] || '';
+            obj[h] = cells[i] ?? '';
           });
           return obj;
         });
-        setPreviewData(data);
-        setShowPreview(true);
+
+        setPreviewData(preview);
+        setShowPreview(preview.length > 0);
       } catch (error) {
         console.error('Failed to preview file:', error);
         toast.error('Failed to preview file. Please check the format.');
       }
     };
     reader.readAsText(selectedFile);
-  };
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -154,123 +351,114 @@ export default function ImportPage() {
 
   const handleImport = async () => {
     if (!file) return;
-    
+
     setLoading(true);
     setImportProgress(0);
-    
+
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
+      const text = await file.text();
+      const parsed = parseCsv(text);
+
+      if (parsed.length < 2) {
+        toast.error('File has no data rows');
+        setLoading(false);
+        return;
+      }
+
+      const headers = parsed[0].map((h) => h.trim());
+      const dataRows = parsed.slice(1);
+
+      const mapped = mapRows(headers, dataRows, 2);
+      const totalItems = mapped.length;
+
+      if (totalItems === 0) {
+        toast.error('File has no data rows');
+        setLoading(false);
+        return;
+      }
+
+      const results: unknown[] = [];
+      const errors: Array<{ row: number; message: string }> = [];
+
+      for (let i = 0; i < mapped.length; i++) {
+        const { row, lineNumber } = mapped[i];
+        setImportProgress(Math.round(((i + 1) / totalItems) * 100));
+
         try {
-          const text = e.target?.result as string;
-          const lines = text.split('\n').filter(line => line.trim());
-          const headers = lines[0]?.split(',').map(h => h.trim()) || [];
-          
-          const items = lines.slice(1).map((line, index) => {
-            const values = line.split(',').map(v => v.trim());
-            const obj: Record<string, any> = {};
-            headers.forEach((h, i) => {
-              if (h === 'quantity' || h === 'price' || h === 'reorderPoint' || h === 'minStock') {
-                obj[h] = parseFloat(values[i]) || 0;
-              } else {
-                obj[h] = values[i] || '';
-              }
+          if (!row.name) {
+            errors.push({ row: lineNumber, message: 'Name is required' });
+            continue;
+          }
+          if (row.quantity < 0) {
+            errors.push({
+              row: lineNumber,
+              message: 'Quantity cannot be negative',
             });
-            return {
-              name: obj.name || '',
-              sku: obj.sku || `SKU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-              quantity: obj.quantity || 0,
-              unitPrice: obj.price || obj.unitPrice || 0,
-              category: obj.category || '',
-              location: obj.location || 'Warehouse',
-              supplier: obj.supplier || '',
-              minStock: obj.reorderPoint || obj.minStock || 5,
-              maxStock: obj.maxStock || 100,
-              notes: obj.notes || '',
-              description: obj.description || '',
-            };
+            continue;
+          }
+          if (row.unitPrice < 0) {
+            errors.push({
+              row: lineNumber,
+              message: 'Price cannot be negative',
+            });
+            continue;
+          }
+
+          if (importOptions.validateOnly) {
+            results.push({ ...row, validated: true });
+            continue;
+          }
+
+          const created = await inventoryService.createItem({
+            name: row.name,
+            sku:
+              row.sku ||
+              `SKU-${Date.now()}-${Math.random()
+                .toString(36)
+                .substring(2, 7)
+                .toUpperCase()}`,
+            unitPrice: row.unitPrice,
+            quantity: row.quantity,
+            minStock: row.minStock,
+            maxStock: row.maxStock,
+            category: row.category || undefined,
+            location: row.location || 'Warehouse',
+            supplier: row.supplier || undefined,
+            notes: row.notes || undefined,
+            description: row.description || undefined,
+            businessUnitId,
           });
 
-          const totalItems = items.length;
-          const results = [];
-          const errors = [];
-          
-          const updateProgress = (index: number) => {
-            const progress = Math.round(((index + 1) / totalItems) * 100);
-            setImportProgress(progress);
-          };
-          
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            updateProgress(i);
-            
-            try {
-              if (!item.name) {
-                errors.push({ row: i + 2, message: 'Name is required' });
-                continue;
-              }
-              
-              if (importOptions.validateOnly) {
-                results.push({ ...item, validated: true });
-                continue;
-              }
-              
-              const result = await inventoryService.createItem({
-                name: item.name,
-                sku: item.sku,
-                unitPrice: item.unitPrice,
-                quantity: item.quantity,
-                minStock: item.minStock,
-                maxStock: item.maxStock,
-                category: item.category,
-                location: item.location,
-                supplier: item.supplier,
-                notes: item.notes,
-                description: item.description,
-                businessUnitId: businessUnitId,
-              });
-              results.push(result);
-            } catch (error: any) {
-              errors.push({
-                row: i + 2,
-                message: error?.response?.data?.message || error?.message || 'Import failed',
-              });
-            }
-          }
-          
-          setImportProgress(100);
-          
-          const importResult: ImportResult = {
-            success: errors.length < items.length,
-            total: items.length,
-            imported: results.length,
-            failed: errors.length,
-            errors: errors,
-          };
-          
-          setResult(importResult);
-          
-          if (importResult.imported > 0) {
-            toast.success(`Imported ${importResult.imported} items successfully`);
-          }
-          if (importResult.failed > 0) {
-            toast.warning(`${importResult.failed} items failed to import`);
-          }
+          results.push(created);
         } catch (error: any) {
-          console.error('Import error:', error);
-          toast.error(error?.message || 'Failed to import inventory');
-          setResult({
-            success: false,
-            total: 0,
-            imported: 0,
-            failed: 1,
-            errors: [{ row: 0, message: error?.message || 'Import failed' }],
+          errors.push({
+            row: lineNumber,
+            message:
+              error?.response?.data?.message ||
+              error?.message ||
+              'Import failed',
           });
-        } finally {
-          setLoading(false);
         }
+      }
+
+      setImportProgress(100);
+
+      const importResult: ImportResult = {
+        success: errors.length < totalItems,
+        total: totalItems,
+        imported: results.length,
+        failed: errors.length,
+        errors,
       };
-      reader.readAsText(file);
+
+      setResult(importResult);
+
+      if (importResult.imported > 0) {
+        toast.success(`Imported ${importResult.imported} items successfully`);
+      }
+      if (importResult.failed > 0) {
+        toast.warning(`${importResult.failed} items failed to import`);
+      }
     } catch (error: any) {
       console.error('Import error:', error);
       toast.error(error?.message || 'Failed to import inventory');
@@ -281,25 +469,52 @@ export default function ImportPage() {
         failed: 1,
         errors: [{ row: 0, message: error?.message || 'Import failed' }],
       });
+    } finally {
       setLoading(false);
     }
   };
 
   const handleDownloadTemplate = () => {
-    const headers = ['name', 'sku', 'quantity', 'price', 'category', 'location', 'supplier', 'reorderPoint', 'minStock', 'maxStock', 'notes', 'description'];
-    const sampleRow = ['Sample Product', 'SKU001', '10', '99.99', 'Electronics', 'Warehouse', 'Supplier A', '5', '10', '100', 'Sample notes', 'Sample description'];
-    
+    const headers = [
+      'name',
+      'sku',
+      'quantity',
+      'price',
+      'category',
+      'location',
+      'supplier',
+      'reorderPoint',
+      'maxStock',
+      'notes',
+      'description',
+    ];
+    const sampleRow = [
+      'Sample Product',
+      'SKU001',
+      '10',
+      '99.99',
+      'Electronics',
+      'Warehouse',
+      'Supplier A',
+      '5',
+      '100',
+      'Sample notes',
+      'Sample description',
+    ];
+
+    // ⚠ Quote every cell so the sample row survives a round-trip
+    //   through `parseCsv` even if a value ever contains a comma.
+    const quote = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const csvContent = [
-      headers.join(','),
-      sampleRow.join(','),
-      ',,,',
-      ',,,',
-      'Required columns: name, quantity, price',
-      'Optional: sku, category, location, supplier, reorderPoint, minStock, maxStock, notes, description',
-      'Note: SKU will be auto-generated if not provided'
+      headers.map(quote).join(','),
+      sampleRow.map(quote).join(','),
+      '',
+      '# Required columns: name, quantity, price',
+      '# Optional: sku, category, location, supplier, reorderPoint, maxStock, notes, description',
+      '# SKU will be auto-generated if not provided',
     ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -326,7 +541,9 @@ export default function ImportPage() {
           <div className="flex items-center gap-3">
             <FileSpreadsheet className="w-10 h-10 text-success-500" />
             <div className="text-left">
-              <p className="font-medium text-gray-900 dark:text-white">{file.name}</p>
+              <p className="font-medium text-gray-900 dark:text-white">
+                {file.name}
+              </p>
               <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
                 {(file.size / 1024).toFixed(1)} KB
               </p>
@@ -339,13 +556,13 @@ export default function ImportPage() {
               <X className="w-5 h-5 text-gray-500" />
             </button>
           </div>
-          
+
           {loading && (
             <div className="w-full max-w-md">
               <div className="flex items-center gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-brand-600" />
                 <span className="text-sm text-gray-600 dark:text-gray-300 tabular-nums">
-                  Importing... {importProgress}%
+                  Importing… {importProgress}%
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-1">
@@ -358,7 +575,7 @@ export default function ImportPage() {
               </div>
             </div>
           )}
-          
+
           {showPreview && previewData.length > 0 && !loading && (
             <div className="w-full mt-3">
               <p className="text-sm text-gray-500 dark:text-gray-400 text-left mb-2">
@@ -369,7 +586,10 @@ export default function ImportPage() {
                   <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
                     <tr>
                       {Object.keys(previewData[0] || {}).map((key) => (
-                        <th key={key} className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                        <th
+                          key={key}
+                          className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700"
+                        >
                           {key}
                         </th>
                       ))}
@@ -377,9 +597,15 @@ export default function ImportPage() {
                   </thead>
                   <tbody>
                     {previewData.map((row, idx) => (
-                      <tr key={idx} className="border-t border-gray-100 dark:border-gray-700">
-                        {Object.values(row).map((val: any, i) => (
-                          <td key={i} className="px-3 py-1 text-gray-700 dark:text-gray-300 max-w-xs truncate">
+                      <tr
+                        key={idx}
+                        className="border-t border-gray-100 dark:border-gray-700"
+                      >
+                        {Object.values(row).map((val, i) => (
+                          <td
+                            key={i}
+                            className="px-3 py-1 text-gray-700 dark:text-gray-300 max-w-xs truncate"
+                          >
                             {val || '-'}
                           </td>
                         ))}
@@ -403,7 +629,7 @@ export default function ImportPage() {
             browse
             <input
               type="file"
-              accept=".csv,.xlsx,.xls"
+              accept=".csv"
               onChange={(e) => {
                 if (e.target.files?.[0]) {
                   handleFileChange(e.target.files[0]);
@@ -414,12 +640,22 @@ export default function ImportPage() {
           </label>
         </p>
         <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-          Supported formats: CSV, Excel (.xlsx, .xls)
+          Supported format: CSV (comma-separated, UTF-8)
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4 mt-3 text-xs text-gray-400 dark:text-gray-500">
-          <span>Required: <span className="font-mono">name</span>, <span className="font-mono">quantity</span>, <span className="font-mono">price</span></span>
+          <span>
+            Required: <span className="font-mono">name</span>,{' '}
+            <span className="font-mono">quantity</span>,{' '}
+            <span className="font-mono">price</span>
+          </span>
           <span>|</span>
-          <span>Optional: <span className="font-mono">sku</span>, <span className="font-mono">category</span>, <span className="font-mono">location</span>, <span className="font-mono">supplier</span>, <span className="font-mono">reorderPoint</span></span>
+          <span>
+            Optional: <span className="font-mono">sku</span>,{' '}
+            <span className="font-mono">category</span>,{' '}
+            <span className="font-mono">location</span>,{' '}
+            <span className="font-mono">supplier</span>,{' '}
+            <span className="font-mono">reorderPoint</span>
+          </span>
         </div>
       </>
     );
@@ -441,7 +677,7 @@ export default function ImportPage() {
             Import Inventory
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Bulk import inventory items from CSV or Excel
+            Bulk import inventory items from a CSV file
           </p>
         </div>
       </div>
@@ -449,8 +685,12 @@ export default function ImportPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Upload File</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Supported formats: CSV, Excel (.xlsx, .xls)</p>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Upload File
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Supported format: CSV (comma-separated, UTF-8)
+            </p>
           </div>
           <button
             onClick={handleDownloadTemplate}
@@ -464,8 +704,11 @@ export default function ImportPage() {
         <div className="p-4 sm:p-6">
           <motion.div
             className={`border-2 border-dashed rounded-lg p-6 sm:p-8 text-center transition-colors ${
-              dragActive ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20' : 
-              file ? 'border-success-500 bg-success-50 dark:bg-success-950/20' : 'border-gray-300 dark:border-gray-600 hover:border-brand-400 dark:hover:border-brand-500'
+              dragActive
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/20'
+                : file
+                ? 'border-success-500 bg-success-50 dark:bg-success-950/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-brand-400 dark:hover:border-brand-500'
             }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
@@ -482,9 +725,13 @@ export default function ImportPage() {
                 className="w-full flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300 focus-ring"
               >
                 <span>Import Options</span>
-                {showOptions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                {showOptions ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
               </button>
-              
+
               <AnimatePresence>
                 {showOptions && (
                   <motion.div
@@ -498,26 +745,13 @@ export default function ImportPage() {
                       <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={importOptions.updateExisting}
-                          onChange={(e) => setImportOptions({ ...importOptions, updateExisting: e.target.checked })}
-                          className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
-                        />
-                        Update existing items
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={importOptions.skipDuplicates}
-                          onChange={(e) => setImportOptions({ ...importOptions, skipDuplicates: e.target.checked })}
-                          className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
-                        />
-                        Skip duplicates
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-                        <input
-                          type="checkbox"
                           checked={importOptions.validateOnly}
-                          onChange={(e) => setImportOptions({ ...importOptions, validateOnly: e.target.checked })}
+                          onChange={(e) =>
+                            setImportOptions({
+                              ...importOptions,
+                              validateOnly: e.target.checked,
+                            })
+                          }
                           className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 transition-colors"
                         />
                         Validate only (dry run)
@@ -534,7 +768,8 @@ export default function ImportPage() {
               {file && (
                 <span className="flex items-center gap-2">
                   <FileCheck className="w-4 h-4 text-success-500" />
-                  Ready to import: <span className="font-medium">{file.name}</span>
+                  Ready to import:{' '}
+                  <span className="font-medium">{file.name}</span>
                 </span>
               )}
             </div>
@@ -556,7 +791,11 @@ export default function ImportPage() {
                 ) : (
                   <Upload className="w-4 h-4" />
                 )}
-                {loading ? 'Importing...' : importOptions.validateOnly ? 'Validate' : 'Import'}
+                {loading
+                  ? 'Importing…'
+                  : importOptions.validateOnly
+                  ? 'Validate'
+                  : 'Import'}
               </button>
             </div>
           </div>
@@ -568,7 +807,9 @@ export default function ImportPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
                 className={`mt-6 p-4 rounded-lg ${
-                  result.success ? 'bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800' : 'bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800'
+                  result.success
+                    ? 'bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-800'
+                    : 'bg-brand-accent-50 dark:bg-brand-accent-950/20 border border-brand-accent-200 dark:border-brand-accent-800'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -582,7 +823,8 @@ export default function ImportPage() {
                       {result.success ? 'Import completed' : 'Import failed'}
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-300 tabular-nums">
-                      {result.imported} imported, {result.failed} failed out of {result.total} total
+                      {result.imported} imported, {result.failed} failed out of{' '}
+                      {result.total} total
                     </p>
                   </div>
                   <button
@@ -593,12 +835,17 @@ export default function ImportPage() {
                     <X className="w-4 h-4 text-gray-500" />
                   </button>
                 </div>
-                
+
                 {result.errors.length > 0 && (
                   <div className="mt-3 max-h-40 overflow-y-auto custom-scrollbar">
-                    <p className="text-sm font-medium text-brand-accent-600 dark:text-brand-accent-400">Errors:</p>
+                    <p className="text-sm font-medium text-brand-accent-600 dark:text-brand-accent-400">
+                      Errors:
+                    </p>
                     {result.errors.map((err, idx) => (
-                      <p key={idx} className="text-sm text-brand-accent-600 dark:text-brand-accent-400">
+                      <p
+                        key={idx}
+                        className="text-sm text-brand-accent-600 dark:text-brand-accent-400"
+                      >
                         Row {err.row}: {err.message}
                       </p>
                     ))}
@@ -608,16 +855,28 @@ export default function ImportPage() {
                 {result.success && (
                   <div className="mt-3 grid grid-cols-3 gap-3 text-center">
                     <div className="bg-white dark:bg-gray-700 p-2 rounded border border-success-200 dark:border-success-800">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
-                      <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">{result.total}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Total
+                      </p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-white tabular-nums">
+                        {result.total}
+                      </p>
                     </div>
                     <div className="bg-white dark:bg-gray-700 p-2 rounded border border-success-200 dark:border-success-800">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Imported</p>
-                      <p className="text-lg font-bold text-success-600 dark:text-success-400 tabular-nums">{result.imported}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Imported
+                      </p>
+                      <p className="text-lg font-bold text-success-600 dark:text-success-400 tabular-nums">
+                        {result.imported}
+                      </p>
                     </div>
                     <div className="bg-white dark:bg-gray-700 p-2 rounded border border-brand-accent-200 dark:border-brand-accent-800">
-                      <p className="text-xs text-gray-500 dark:text-gray-400">Failed</p>
-                      <p className="text-lg font-bold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">{result.failed}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Failed
+                      </p>
+                      <p className="text-lg font-bold text-brand-accent-600 dark:text-brand-accent-400 tabular-nums">
+                        {result.failed}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -642,14 +901,30 @@ export default function ImportPage() {
         <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-brand-500 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Need help?</h4>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Need help?
+            </h4>
             <ul className="text-sm text-gray-500 dark:text-gray-400 space-y-1 mt-1">
               <li>• Download the template to see the required format</li>
-              <li>• Required columns: <span className="font-mono">name</span>, <span className="font-mono">quantity</span>, <span className="font-mono">price</span></li>
-              <li>• Optional columns: <span className="font-mono">sku</span>, <span className="font-mono">category</span>, <span className="font-mono">location</span>, <span className="font-mono">supplier</span>, <span className="font-mono">reorderPoint</span></li>
+              <li>
+                • Required columns:{' '}
+                <span className="font-mono">name</span>,{' '}
+                <span className="font-mono">quantity</span>,{' '}
+                <span className="font-mono">price</span>
+              </li>
+              <li>
+                • Optional columns: <span className="font-mono">sku</span>,{' '}
+                <span className="font-mono">category</span>,{' '}
+                <span className="font-mono">location</span>,{' '}
+                <span className="font-mono">supplier</span>,{' '}
+                <span className="font-mono">reorderPoint</span>,{' '}
+                <span className="font-mono">maxStock</span>,{' '}
+                <span className="font-mono">notes</span>,{' '}
+                <span className="font-mono">description</span>
+              </li>
               <li>• SKU will be auto-generated if not provided</li>
               <li>• Maximum file size: 5MB</li>
-              <li>• Maximum rows: 1000 per import</li>
+              <li>• Quoted values are supported, e.g. <span className="font-mono">"Acme, Inc."</span></li>
             </ul>
           </div>
         </div>
@@ -657,4 +932,3 @@ export default function ImportPage() {
     </div>
   );
 }
-s

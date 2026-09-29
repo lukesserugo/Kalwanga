@@ -15,20 +15,13 @@ import {
   Shield,
   Settings,
   ShoppingCart,
-  Truck,
   RotateCcw,
-  FileText,
-  Gift,
-  Crown,
-  Barcode,
-  Receipt,
   Building2,
   Bell,
   Mail,
   Phone,
   MessageCircle,
   BookOpen,
-  Video,
   LifeBuoy,
   ChevronDown,
   ChevronRight,
@@ -41,7 +34,7 @@ import {
   ExternalLink,
   AlertCircle,
 } from 'lucide-react';
-import { useThemeStore } from '../stores/themeStore';
+import { useThemeStore } from '../../stores/themeStore';
 
 // ============================================
 // TYPES
@@ -511,18 +504,21 @@ export default function HelpPage() {
 
             {/* Quick jump pills */}
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-              {['Set up my account', 'Add products', 'Process a sale', 'Refunds'].map(
-                (label) => (
-                  <button
-                    key={label}
-                    onClick={() => setSearchQuery(label)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-white bg-white/15 backdrop-blur-sm border border-white/25 hover:bg-white/25 transition-all"
-                  >
-                    {label}
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                ),
-              )}
+              {[
+                'Set up my account',
+                'Add products',
+                'Process a sale',
+                'Refunds',
+              ].map((label) => (
+                <button
+                  key={label}
+                  onClick={() => setSearchQuery(label)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-white bg-white/15 backdrop-blur-sm border border-white/25 hover:bg-white/25 transition-all"
+                >
+                  {label}
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              ))}
             </div>
           </motion.div>
         </div>
@@ -807,7 +803,9 @@ export default function HelpPage() {
               <motion.a
                 key={channel.title}
                 href={channel.href}
-                target={channel.href.startsWith('http') ? '_blank' : undefined}
+                target={
+                  channel.href.startsWith('http') ? '_blank' : undefined
+                }
                 rel={
                   channel.href.startsWith('http')
                     ? 'noopener noreferrer'

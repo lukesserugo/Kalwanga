@@ -51,8 +51,10 @@ export function ProductBarcode({
       setLoading(true);
       setError(null);
 
+      // Service method is `getBarcodeByProduct` (route:
+      // GET /barcodes/product/:productId), not `getProductBarcode`.
       const [barcodeData, qrCodeData] = await Promise.all([
-        barcodeService.getProductBarcode(productId),
+        barcodeService.getBarcodeByProduct(productId),
         barcodeService.getProductQRCode(productId),
       ]);
 

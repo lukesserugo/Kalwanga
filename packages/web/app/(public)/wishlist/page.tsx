@@ -1,7 +1,8 @@
 // D:\Projects\Kalwanga\packages\web\app\wishlist\page.tsx
+
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,20 +22,98 @@ import { formatCurrency } from '../../../utils/formatters';
 import { useAuth } from '../../../hooks/useAuth';
 import { useThemeStore } from '../../stores/themeStore';
 
+// ============================================
+// TYPES
+// ============================================
+//
+// The `Product` type from `services/productService` is the canonical
+// wire shape. `WishlistProduct` is the UI's view-model for the grid —
+// it only declares the fields the grid actually renders.
+//
+// ⚠ `inventory` is declared as `Inventory[]` here (matching the wire
+//   shape when the backend nests a to-one relation as an array in a
+//   list response). The grid reads `product.inventory?.[0]` to grab
+//   the singular inventory row. When the backend returns a single
+//   object instead of an array, the code below normalises it.
+
+interface WishlistInventory {
+  quantity: number;
+  reserved: number;
+}
+
 interface WishlistProduct {
   id: string;
   name: string;
   sku: string;
   unitPrice: number;
   images?: string[];
-  category?: { id: string; name: string };
-  inventory?: Array<{ quantity: number; reserved: number }>;
-  rating?: number;
-  reviewCount?: number;
+  category?: { id: string; name: string } | null;
+  inventory?: WishlistInventory | WishlistInventory[] | null;
+  rating?: number | null;
+  reviewCount?: number | null;
   isActive: boolean;
   featured?: boolean;
-  description?: string;
+  description?: string | null;
 }
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Read the available stock from a product's inventory field.
+ *
+ * The backend serialises `Product.inventory` as a to-one relation,
+ * but the list endpoint sometimes wraps it in an array. This helper
+ * normalises both shapes and returns the max(0, quantity - reserved).
+ */
+function getAvailableStock(product: WishlistProduct): number {
+  const inv = product.inventory;
+  if (!inv) return 0;
+
+  const row = Array.isArray(inv) ? inv[0] : inv;
+  if (!row) return 0;
+
+  const quantity = typeof row.quantity === 'number' ? row.quantity : 0;
+  const reserved = typeof row.reserved === 'number' ? row.reserved : 0;
+
+  return Math.max(0, quantity - reserved);
+}
+
+/**
+ * Narrow an arbitrary string to the shape `WishlistProduct` needs.
+ *
+ * The service returns `string[]` from `getWishlist()`, so the page
+ * fetches the full product for each id. Each fetched product goes
+ * through this adapter before landing in state — it strips the
+ * wide-shape differences between the wire `Product` and the local
+ * `WishlistProduct` view-model.
+ */
+function toWishlistProduct(raw: any): WishlistProduct | null {
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
+    return null;
+  }
+
+  return {
+    id: raw.id,
+    name: raw.name,
+    sku: typeof raw.sku === 'string' ? raw.sku : '',
+    unitPrice: typeof raw.unitPrice === 'number' ? raw.unitPrice : 0,
+    images: Array.isArray(raw.images) ? raw.images : [],
+    category: raw.category ?? null,
+    inventory: raw.inventory ?? null,
+    rating: raw.rating ?? null,
+    reviewCount: raw.reviewCount ?? null,
+    isActive: raw.isActive !== undefined ? Boolean(raw.isActive) : true,
+    featured: Boolean(raw.featured),
+    description: raw.description ?? null,
+  };
+}
+
+// ============================================
+// PAGE
+// ============================================
 
 export default function WishlistPage() {
   const router = useRouter();
@@ -45,49 +124,45 @@ export default function WishlistPage() {
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect_url=/wishlist');
-      return;
-    }
-    loadWishlist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  // ============================================
+  // LOAD WISHLIST
+  // ============================================
+  //
+  // `productService.getWishlist()` returns `string[]` — an array of
+  // product IDs. The older code branched on whether the response was
+  // an array of strings or objects, but the service signature is now
+  // stable: it's always `string[]`. We fetch the product for each id
+  // in parallel and map the results through `toWishlistProduct`.
+  //
+  // Any individual fetch that fails (deleted product, network hiccup)
+  // is filtered out rather than failing the whole load.
 
-  const loadWishlist = async () => {
+  const loadWishlist = useCallback(async () => {
     try {
       setLoading(true);
-      const wishlistData = await productService.getWishlist();
 
-      // Check if wishlistData is an array
-      if (Array.isArray(wishlistData)) {
-        // Check if it's an array of strings (product IDs)
-        if (wishlistData.length > 0 && typeof wishlistData[0] === 'string') {
-          // It's an array of product IDs - fetch each product
-          const productIds = wishlistData as string[];
-          const productPromises = productIds.map((id) =>
-            productService.getProductById(id),
-          );
-          const productsData = await Promise.all(productPromises);
-          setProducts(productsData);
-        } else {
-          // It's already an array of products - check if it has product properties
-          const firstItem = wishlistData[0] as any;
-          if (
-            firstItem &&
-            typeof firstItem === 'object' &&
-            'id' in firstItem &&
-            'name' in firstItem
-          ) {
-            // Safe cast - we've verified the objects have the required properties
-            setProducts(wishlistData as unknown as WishlistProduct[]);
-          } else {
-            setProducts([]);
-          }
-        }
-      } else {
+      const ids = await productService.getWishlist();
+
+      if (!Array.isArray(ids) || ids.length === 0) {
         setProducts([]);
+        return;
       }
+
+      const fetched = await Promise.all(
+        ids.map((id) =>
+          productService
+            .getProductById(id)
+            .then((p) => toWishlistProduct(p))
+            .catch((err) => {
+              console.warn(`Failed to fetch wishlist product ${id}:`, err);
+              return null;
+            }),
+        ),
+      );
+
+      setProducts(
+        fetched.filter((p): p is WishlistProduct => p !== null),
+      );
     } catch (error) {
       console.error('Failed to load wishlist:', error);
       toast.error('Failed to load wishlist');
@@ -95,30 +170,41 @@ export default function WishlistPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleRemove = async (productId: string) => {
-    setRemoving(productId);
-    try {
-      const result = await productService.toggleWishlist(productId);
-      if (!result.added) {
-        setProducts((prev) => prev.filter((p) => p.id !== productId));
-        toast.success('Removed from wishlist');
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login?redirect_url=/wishlist');
+      return;
+    }
+    void loadWishlist();
+  }, [isAuthenticated, loadWishlist, router]);
+
+  // ============================================
+  // ACTIONS
+  // ============================================
+
+  const handleRemove = useCallback(
+    async (productId: string) => {
+      setRemoving(productId);
+      try {
+        const result = await productService.toggleWishlist(productId);
+        if (!result.added) {
+          setProducts((prev) => prev.filter((p) => p.id !== productId));
+          toast.success('Removed from wishlist');
+        }
+      } catch (error) {
+        toast.error('Failed to remove from wishlist');
+      } finally {
+        setRemoving(null);
       }
-    } catch (error) {
-      toast.error('Failed to remove from wishlist');
-    } finally {
-      setRemoving(null);
-    }
-  };
+    },
+    [],
+  );
 
-  const handleAddToCart = async (productId: string) => {
-    try {
-      toast.success('Added to cart');
-    } catch (error) {
-      toast.error('Failed to add to cart');
-    }
-  };
+  // ============================================
+  // RENDER HELPERS
+  // ============================================
 
   const renderStars = (rating: number = 0) => {
     return (
@@ -142,17 +228,25 @@ export default function WishlistPage() {
     );
   };
 
+  // ============================================
+  // LOADING
+  // ============================================
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 pt-24 md:pt-28 pb-8">
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 dark:border-orange-400"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 dark:border-orange-400" />
           </div>
         </div>
       </div>
     );
   }
+
+  // ============================================
+  // RENDER
+  // ============================================
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -211,10 +305,7 @@ export default function WishlistPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             <AnimatePresence>
               {products.map((product, index) => {
-                const inventory = product.inventory?.[0];
-                const available = inventory
-                  ? inventory.quantity - (inventory.reserved || 0)
-                  : 0;
+                const available = getAvailableStock(product);
                 const isOutOfStock = available <= 0;
 
                 return (
@@ -255,11 +346,12 @@ export default function WishlistPage() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            handleRemove(product.id);
+                            void handleRemove(product.id);
                           }}
                           disabled={removing === product.id}
                           className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors disabled:opacity-50"
                           title="Remove from wishlist"
+                          aria-label={`Remove ${product.name} from wishlist`}
                         >
                           {removing === product.id ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -298,21 +390,30 @@ export default function WishlistPage() {
                             href={`/shop/${product.id}`}
                             className="p-1.5 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-lg transition-colors"
                             title="View Details"
+                            aria-label={`View details for ${product.name}`}
                           >
                             <Eye className="w-4 h-4" />
                           </Link>
-                          <button
-                            onClick={() => handleAddToCart(product.id)}
-                            disabled={isOutOfStock}
+                          <Link
+                            href={`/shop/${product.id}`}
+                            aria-disabled={isOutOfStock}
+                            onClick={(e) => {
+                              if (isOutOfStock) e.preventDefault();
+                            }}
                             className={`p-1.5 rounded-lg transition-colors ${
                               isOutOfStock
                                 ? 'text-gray-400 cursor-not-allowed'
                                 : 'text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30'
                             }`}
-                            title="Add to Cart"
+                            title={
+                              isOutOfStock
+                                ? 'Out of stock'
+                                : 'Go to product to add to cart'
+                            }
+                            aria-label={`Open ${product.name} to add to cart`}
                           >
                             <ShoppingCart className="w-4 h-4" />
-                          </button>
+                          </Link>
                         </div>
                       </div>
                       {!isOutOfStock && available <= 5 && (

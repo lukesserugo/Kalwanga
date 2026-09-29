@@ -4,7 +4,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShoppingCart,
   RefreshCw,
@@ -53,16 +52,10 @@ interface LoyaltyResponse {
 
 /**
  * The page's cart shape. Structurally a superset of `cartService.Cart`
- * — every required field is present, and the extra fields used only by
- * this page are declared locally.
- *
- * NOTE: `CartSummary` and the other cart components consume
- * `cartService.Cart` from `types/cart.ts`. This page augments it with
- * a couple of display-only fields (`discount` on the item, nullable
- * `variantId`, `discount` on the cart). Those extras are declared here
- * rather than in the shared types to keep the shared types honest.
+ * and `guestCartService.GuestCart`. Every required field from both
+ * services is present, plus a couple of display-only fields this page
+ * uses locally.
  */
-
 interface CartItem {
   id: string;
   productId: string;
@@ -128,12 +121,62 @@ interface Cart {
 }
 
 // ============================================
+// ERROR HELPERS
+// ============================================
+
+/**
+ * Walk the error chain for an HTTP status code. axios, the backend's
+ * `AppError`, and wrapped errors all surface the status in different
+ * places; this returns the first finite number it finds.
+ */
+function getErrorStatus(error: any): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+
+  const seen = new Set<any>();
+  let node: any = error;
+
+  while (node && typeof node === 'object' && !seen.has(node)) {
+    seen.add(node);
+
+    const candidates = [
+      node.status,
+      node.statusCode,
+      node.response?.status,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        typeof candidate === 'number' &&
+        Number.isFinite(candidate) &&
+        candidate > 0
+      ) {
+        return candidate;
+      }
+    }
+
+    node = node.cause;
+  }
+
+  return undefined;
+}
+
+/**
+ * True when the status + body suggest the session expired.
+ */
+function isSessionExpired(error: any): boolean {
+  const status = getErrorStatus(error);
+  if (status === 401) return true;
+  if (status !== 403) return false;
+
+  const message = String(
+    error?.response?.data?.message || error?.message || '',
+  ).toLowerCase();
+  return message.includes('session') || message.includes('expired');
+}
+
+// ============================================
 // NORMALIZATION HELPERS
 // ============================================
-//
-// Both `cartService` and `guestCartService` return slightly different
-// shapes. These widen them into the page's own `Cart` type so the UI
-// never sees a union.
 
 function toImageArray(input: unknown): string[] {
   if (!input) return [];
@@ -337,10 +380,6 @@ export default function CartPage() {
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  const activeCartService = isAuthenticated
-    ? cartService
-    : guestCartService;
-
   // ============================================
   // FETCH CART
   // ============================================
@@ -350,7 +389,9 @@ export default function CartPage() {
       setLoading(true);
       setError(null);
 
-      const raw = await activeCartService.getCart();
+      const raw = isAuthenticated
+        ? await cartService.getCart()
+        : await guestCartService.getCart();
       const cartData = normalizeCart(raw);
 
       if (!cartData) {
@@ -386,7 +427,7 @@ export default function CartPage() {
       }
     } catch (err: any) {
       console.error('❌ Failed to fetch cart:', err);
-      if (err?.response?.status === 401 && isAuthenticated) {
+      if (isSessionExpired(err) && isAuthenticated) {
         router.push('/login?redirect_url=/cart');
       } else {
         setError(err?.message || 'Failed to load cart');
@@ -395,7 +436,7 @@ export default function CartPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeCartService, isAuthenticated, router]);
+  }, [isAuthenticated, router]);
 
   // ============================================
   // CART OPERATIONS
@@ -409,7 +450,7 @@ export default function CartPage() {
       try {
         const raw = isAuthenticated
           ? await cartService.updateItemQuantity(itemId, quantity)
-          : await guestCartService.updateItemQuantity(itemId, quantity);
+          : await guestCartService.updateItem(itemId, quantity);
         const updated = normalizeCart(raw);
         setCart(updated);
       } catch (err: any) {
@@ -427,7 +468,9 @@ export default function CartPage() {
     async (itemId: string) => {
       setUpdating(itemId);
       try {
-        const raw = await activeCartService.removeItem(itemId);
+        const raw = isAuthenticated
+          ? await cartService.removeItem(itemId)
+          : await guestCartService.removeItem(itemId);
         const updated = normalizeCart(raw);
         setCart(updated);
         toast.success('Item removed from cart');
@@ -439,7 +482,7 @@ export default function CartPage() {
         setUpdating(null);
       }
     },
-    [activeCartService, fetchCart],
+    [isAuthenticated, fetchCart],
   );
 
   const clearCart = useCallback(async () => {

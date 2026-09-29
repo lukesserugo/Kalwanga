@@ -339,15 +339,12 @@ export class CompanyService extends BaseService {
           });
 
           // 4. Create default sales settings
-          const currencySymbol =
-            data.currency === 'UGX'
-              ? 'UGX'
-              : data.currency === 'EUR'
-              ? '€'
-              : data.currency === 'GBP'
-              ? '£'
-              : '$';
-
+          //
+          // ⚠ Phase 1 removed `SalesSettings.currencySymbol`. The
+          //   display symbol is derived from `currencyCode` at read
+          //   time by the consumers (see `saleService.getSalesSettings`
+          //   and the checkout/cart settings readers). Only the code
+          //   is persisted here.
           await tx.salesSettings.create({
             data: {
               companyId: created.id,
@@ -360,7 +357,7 @@ export class CompanyService extends BaseService {
               emailReceipts: true,
               receiptFooter: 'Thank you for your business!',
               defaultPaymentMethod: 'CASH',
-              currencySymbol,
+              // ⚠ `currencySymbol` intentionally absent — see note.
               currencyCode: data.currency || 'USD',
               invoicePrefix: 'INV-',
               receiptPrefix: 'RCP-',
@@ -957,6 +954,10 @@ export class CompanyService extends BaseService {
    * for the `/companies/default` endpoint which is intentionally
    * unscoped. Do not add userId linkage here; onboarding uses
    * `createCompany(data, userId)` instead.
+   *
+   * ⚠ Phase 1 removed `SalesSettings.currencySymbol`. This path
+   *   used to seed it with `'$'`. It now writes only the currency
+   *   code; readers derive the symbol from the code.
    */
   async getOrCreateDefaultCompany(): Promise<any> {
     try {
@@ -1027,7 +1028,7 @@ export class CompanyService extends BaseService {
               emailReceipts: true,
               receiptFooter: 'Thank you for your business!',
               defaultPaymentMethod: 'CASH',
-              currencySymbol: '$',
+              // ⚠ `currencySymbol` intentionally absent — see JSDoc.
               currencyCode: 'USD',
               invoicePrefix: 'INV-',
               receiptPrefix: 'RCP-',

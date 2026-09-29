@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useId, useState } from 'react';
 import { Tag, Loader2, X } from 'lucide-react';
 import { toast } from '../../utils/toast-manager';
 import { cartService } from '../../services/cartService';
-import { guestCartService } from '../../services/guestCartService';
 import { useAuth } from '../../hooks/useAuth';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -24,6 +23,42 @@ interface CartDiscountInputProps {
   className?: string;
 }
 
+/**
+ * Resolve the currency symbol the tenant is transacting in.
+ *
+ * Prefers a value set by the app shell at boot (see
+ * `_app.tsx` / `layout.tsx` — `window.__TENANT_CURRENCY__`). Falls back
+ * to `$` so a client that hasn't wired the global still renders.
+ *
+ * ⚠ This is a display-only suffix. The actual currency used for the
+ *   discount calculation is decided server-side by
+ *   `cartService.applyDiscount` and the currency resolver.
+ */
+function getCurrencySymbol(): string {
+  if (typeof window === 'undefined') return '$';
+  const currency = (window as any).__TENANT_CURRENCY__;
+  switch (currency) {
+    case 'UGX':
+      return 'USh';
+    case 'KES':
+      return 'KSh';
+    case 'TZS':
+      return 'TSh';
+    case 'NGN':
+      return '₦';
+    case 'GHS':
+      return '₵';
+    case 'ZAR':
+      return 'R';
+    case 'EUR':
+      return '€';
+    case 'GBP':
+      return '£';
+    default:
+      return '$';
+  }
+}
+
 export function CartDiscountInput({
   onDiscountApplied,
   currentDiscount = 0,
@@ -33,6 +68,7 @@ export function CartDiscountInput({
   className = '',
 }: CartDiscountInputProps) {
   const { isAuthenticated } = useAuth();
+  const errorId = useId();
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState<'PERCENTAGE' | 'FIXED'>(
     'PERCENTAGE',
@@ -41,6 +77,7 @@ export function CartDiscountInput({
   const [error, setError] = useState<string | null>(null);
 
   const hasApplied = currentDiscount > 0;
+  const currencySymbol = getCurrencySymbol();
 
   const handleApplyDiscount = useCallback(
     async (e: React.FormEvent) => {
@@ -116,7 +153,11 @@ export function CartDiscountInput({
             <span className="text-xs text-success-500 dark:text-success-400">
               applied
               {currentDiscountType
-                ? ` (${currentDiscountType === 'PERCENTAGE' ? '%' : '$'})`
+                ? ` (${
+                    currentDiscountType === 'PERCENTAGE'
+                      ? '%'
+                      : currencySymbol
+                  })`
                 : ''}
             </span>
           </div>
@@ -167,14 +208,14 @@ export function CartDiscountInput({
                 : 'border-gray-300 dark:border-gray-600 focus:ring-success-500'
             }`}
             aria-invalid={error ? 'true' : 'false'}
-            aria-describedby={error ? 'discount-error' : undefined}
+            aria-describedby={error ? errorId : undefined}
           />
           {discount && (
             <button
               type="button"
               onClick={handleClearInput}
               disabled={disabled || isLoading}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-orange-50 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50 focus-ring"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-50 focus-ring"
               aria-label="Clear discount input"
             >
               <X className="w-3.5 h-3.5" />
@@ -192,7 +233,7 @@ export function CartDiscountInput({
           aria-label="Discount type"
         >
           <option value="PERCENTAGE">%</option>
-          <option value="FIXED">$</option>
+          <option value="FIXED">{currencySymbol}</option>
         </select>
 
         <button
@@ -221,7 +262,7 @@ export function CartDiscountInput({
 
       {error && (
         <p
-          id="discount-error"
+          id={errorId}
           className="text-sm text-danger-600 dark:text-danger-400"
         >
           {error}

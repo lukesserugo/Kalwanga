@@ -1,4 +1,4 @@
-// D:\Projects\Kalwanga\packages\web\services\cartService.ts
+// packages/web/services/cartService.ts
 
 import { api } from './api';
 import type { PaymentMethod } from './saleService';
@@ -39,10 +39,26 @@ import type {
 // ============================================
 
 export interface CheckoutOptions {
+  /**
+   * Optional cart id.
+   *
+   * When provided, the service checks out that specific cart instead
+   * of the caller's own active cart. Used by the admin cart-management
+   * pages, which let a MANAGER+ check out a cart belonging to a
+   * different user.
+   *
+   * When omitted, the service falls back to `getCart()` — the
+   * authenticated user's own cart. That's the POS path.
+   *
+   * ⚠ The backend's `POST /checkout` handler validates that the
+   *   caller can read the cart. A cashier passing an arbitrary cart
+   *   id will get a 403. Admin-level roles can pass any cart id.
+   */
+  cartId?: string;
   customerId?: string;
   /**
-   * Narrowed to the shared canonical set so a typo becomes a build-time
-   * error rather than a runtime 400 from the backend.
+   * Narrowed to the shared canonical set so a typo becomes a
+   * build-time error rather than a runtime 400 from the backend.
    */
   paymentMethod: PaymentMethod;
   /**
@@ -74,8 +90,19 @@ export interface CheckoutOptions {
   // better to fail the type check than mislead the caller.
 }
 
+/**
+ * Export format union.
+ *
+ * ⚠ CSV and JSON only. The backend cart export endpoints currently
+ *   always emit CSV (`Content-Type: text/csv`), regardless of the
+ *   `format` field on the request body. JSON is accepted here so a
+ *   future server-side branch can add it without a client type
+ *   change; `'excel'` and `'pdf'` were removed because no generator
+ *   exists — accepting them would have produced a mislabelled CSV
+ *   with an `.xlsx` or `.pdf` filename.
+ */
 export interface ExportOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   /**
    * Only meaningful for `/cart/analytics/export`. The
    * `/cart/history/export` and `/cart/abandoned/export` endpoints do
@@ -91,7 +118,7 @@ export interface ExportOptions {
 }
 
 export interface ExportHistoryOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   dateRange: string;
   startDate?: string;
   endDate?: string;
@@ -100,7 +127,7 @@ export interface ExportHistoryOptions {
 }
 
 export interface ExportAbandonedOptions {
-  format: 'csv' | 'excel' | 'json' | 'pdf';
+  format: 'csv' | 'json';
   hours: number;
   minValue?: number;
   status?: string;
@@ -182,14 +209,37 @@ function unwrapResponse<T>(response: any): T {
 
 /**
  * Coerce the result of a blob-typed request into an actual `Blob`.
- * Falls back to wrapping the payload so callers always receive a
- * `Blob` (even a diagnostic one) instead of `undefined`.
+ *
+ * Fallbacks, in order:
+ *   1. The response is already a Blob → return it.
+ *   2. The unwrapped response is a Blob → return it.
+ *   3. The unwrapped response is a string → wrap it as a text Blob.
+ *   4. Anything else → wrap it as a JSON Blob so a caller that
+ *      accidentally downloads the fallback still gets readable
+ *      content. Wrapping a plain object with `new Blob([obj])`
+ *      would produce `[object Object]`.
  */
 function ensureBlob(response: any): Blob {
   if (response instanceof Blob) return response;
+
   const unwrapped = unwrapResponse<any>(response);
   if (unwrapped instanceof Blob) return unwrapped;
-  return new Blob([unwrapped as any]);
+
+  if (typeof unwrapped === 'string') {
+    return new Blob([unwrapped], { type: 'text/plain;charset=utf-8' });
+  }
+
+  try {
+    return new Blob([JSON.stringify(unwrapped, null, 2)], {
+      type: 'application/json',
+    });
+  } catch {
+    // Circular structure or non-serializable value — fall back to a
+    // plain text stub so callers still receive a Blob.
+    return new Blob(['Export payload could not be serialized'], {
+      type: 'text/plain;charset=utf-8',
+    });
+  }
 }
 
 /**
@@ -252,6 +302,10 @@ export const cartService = {
    * Non-fatal: returns `{ count: 0 }` on failure so a broken count
    * request never breaks the header. Logged at `warn` level to avoid
    * spamming `console.error` when the network is flaky.
+   *
+   * ⚠ Do not change this to `throw` — callers rely on the
+   *   always-succeeds contract to avoid wrapping every header render
+   *   in a try/catch.
    */
   async getCartCount(): Promise<CartCountResponse> {
     try {
@@ -590,18 +644,31 @@ export const cartService = {
       throw new Error('Paid amount cannot be negative');
     }
 
-    // Resolve the active cart. The backend requires an explicit
-    // `cartId`; it does not accept a bare "checkout the current cart".
+    // Resolve the cart id.
+    //
+    // Priority:
+    //   1. `options.cartId` — caller passed an explicit cart. Used by
+    //      the admin cart-management pages.
+    //   2. The caller's own active cart via `getCart()`. Used by the
+    //      POS checkout path.
+    //
+    // The backend validates that the caller can read the resolved
+    // cart, so a cashier passing an arbitrary cart id gets a 403 at
+    // the endpoint rather than here.
     let cartId: string;
-    try {
-      const cart = await this.getCart();
-      cartId = cart.id;
-    } catch (error: any) {
-      logCartError(
-        '❌ checkoutCart - failed to resolve active cart:',
-        error,
-      );
-      throw new Error('No active cart to checkout');
+    if (options.cartId) {
+      cartId = options.cartId;
+    } else {
+      try {
+        const cart = await this.getCart();
+        cartId = cart.id;
+      } catch (error: any) {
+        logCartError(
+          '❌ checkoutCart - failed to resolve active cart:',
+          error,
+        );
+        throw new Error('No active cart to checkout');
+      }
     }
 
     const idempotencyKey =

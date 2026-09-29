@@ -2,7 +2,13 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -14,11 +20,16 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { usePermission } from '../../../../hooks/usePermission';
 import {
   locationService,
-  Location,
+  isValidBusinessUnitId,
   LOCATION_TYPES,
-  LOCATION_TYPE_LABELS, // ✅ NEW — sibling map for human-readable labels
+  LOCATION_TYPE_LABELS,
+  type Location,
 } from '../../../../services/locationService';
 import { toast } from '../../../../utils/toast-manager';
+
+// ============================================
+// TYPES
+// ============================================
 
 interface BusinessUnitOption {
   id: string;
@@ -47,22 +58,19 @@ const emptyForm: LocationFormData = {
   isDefault: false,
 };
 
-const SENTINEL_BU_IDS = new Set([
-  'default',
-  'default-business-unit',
-  'undefined',
-  'null',
-  '',
-]);
-
-function isValidBU(id?: string | null): id is string {
-  return !!id && !SENTINEL_BU_IDS.has(id);
-}
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export default function LocationsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { isLoading: permLoading, isSuperAdmin } = usePermission();
+  const {
+    isLoading: permLoading,
+    isSuperAdmin,
+    getBusinessUnits: getBusinessUnitsFromHook,
+    getCurrentBusinessUnit,
+  } = usePermission();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -82,87 +90,94 @@ export default function LocationsPage() {
   const [deleting, setDeleting] = useState(false);
 
   const booting = authLoading || permLoading;
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   // ────────────────────────────────────────────────────────────
-  // Load business units from localStorage (already populated by
-  // usePermission / other pages).
+  // Seed business units from usePermission (same source the
+  // backend trusts). No localStorage fallback — that was a source
+  // of stale-BU bugs.
   // ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (booting) return;
     if (!isAuthenticated) return;
 
-    try {
-      const stored = localStorage.getItem('businessUnits');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const mapped: BusinessUnitOption[] = parsed
-            .filter((bu: any) => isValidBU(bu?.id))
-            .map((bu: any) => ({
-              id: bu.id,
-              name: bu.name || 'Unnamed',
-              code: bu.code || '',
-              isActive: bu.isActive !== false,
-            }));
+    const hookUnits = getBusinessUnitsFromHook();
+    const hookCurrent = getCurrentBusinessUnit();
 
-          setBusinessUnits(mapped);
+    const mapped: BusinessUnitOption[] = Array.isArray(hookUnits)
+      ? hookUnits
+          .filter((bu: any) => isValidBusinessUnitId(bu?.id))
+          .map((bu: any) => ({
+            id: String(bu.id),
+            name: bu.name || 'Unnamed Business Unit',
+            code: bu.code || '',
+            isActive: bu.isActive !== false,
+          }))
+      : [];
 
-          const storedId =
-            localStorage.getItem('selectedBusinessUnitId') ||
-            localStorage.getItem('businessUnitId');
-          const preferred =
-            (storedId && mapped.find((u) => u.id === storedId)) ||
-            mapped.find((u) => u.isActive !== false) ||
-            mapped[0];
+    setBusinessUnits(mapped);
 
-          if (preferred) {
-            setSelectedBUId(preferred.id);
-            try {
-              localStorage.setItem('selectedBusinessUnitId', preferred.id);
-            } catch {
-              /* ignore */
-            }
-          }
-        }
+    if (mapped.length > 0) {
+      const preferred =
+        (hookCurrent && mapped.find((u) => u.id === hookCurrent.id)) ||
+        mapped.find((u) => u.isActive !== false) ||
+        mapped[0];
+
+      if (preferred) {
+        setSelectedBUId(preferred.id);
       }
-    } catch (err) {
-      console.warn('Failed to read businessUnits from localStorage:', err);
-    } finally {
-      setLoadingBUs(false);
     }
-  }, [booting, isAuthenticated]);
+
+    setLoadingBUs(false);
+  }, [booting, isAuthenticated, getBusinessUnitsFromHook, getCurrentBusinessUnit]);
 
   // ────────────────────────────────────────────────────────────
-  // Load locations whenever the selected BU changes.
+  // Load locations whenever the selected BU changes. Uses
+  // `listStrict` so a transient failure surfaces as an error
+  // toast instead of silently blanking the list.
   // ────────────────────────────────────────────────────────────
-  const loadLocations = useCallback(
-    async (buId: string) => {
-      if (!isValidBU(buId)) {
-        setLocations([]);
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      try {
-        const list = await locationService.list(buId);
-        setLocations(list);
-      } catch (err) {
-        console.error('Failed to load locations:', err);
-        toast.error('Failed to load locations');
-        setLocations([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const loadLocations = useCallback(async (buId: string) => {
+    if (!isValidBusinessUnitId(buId)) {
+      setLocations([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const list = await locationService.listStrict(buId);
+      setLocations(list);
+    } catch (err) {
+      console.error('[locations] load failed:', err);
+      toast.error('Failed to load locations');
+      setLocations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (booting) return;
     if (!isAuthenticated) return;
-    if (!isValidBU(selectedBUId)) return;
+    if (!isValidBusinessUnitId(selectedBUId)) return;
     loadLocations(selectedBUId);
   }, [booting, isAuthenticated, selectedBUId, loadLocations]);
+
+  // ────────────────────────────────────────────────────────────
+  // Close BU dropdown when clicking outside
+  // ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!showBUDropdown) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowBUDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showBUDropdown]);
 
   // ────────────────────────────────────────────────────────────
   // Form handlers
@@ -198,7 +213,7 @@ export default function LocationsPage() {
   };
 
   const handleSave = async () => {
-    if (!isValidBU(selectedBUId)) {
+    if (!isValidBusinessUnitId(selectedBUId)) {
       setFormError('Please select a business unit');
       return;
     }
@@ -210,34 +225,21 @@ export default function LocationsPage() {
     setSaving(true);
     setFormError(null);
     try {
+      const payload = {
+        name: form.name.trim(),
+        code: form.code.trim() || undefined,
+        type: form.type,
+        description: form.description.trim() || undefined,
+        address: form.address.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        isDefault: form.isDefault,
+      };
+
       if (editing) {
-        await locationService.update(
-          editing.id,
-          {
-            name: form.name.trim(),
-            code: form.code.trim() || undefined,
-            type: form.type,
-            description: form.description.trim() || undefined,
-            address: form.address.trim() || undefined,
-            phone: form.phone.trim() || undefined,
-            isDefault: form.isDefault,
-          },
-          selectedBUId
-        );
+        await locationService.update(editing.id, payload, selectedBUId);
         toast.success('Location updated');
       } else {
-        await locationService.create(
-          {
-            name: form.name.trim(),
-            code: form.code.trim() || undefined,
-            type: form.type,
-            description: form.description.trim() || undefined,
-            address: form.address.trim() || undefined,
-            phone: form.phone.trim() || undefined,
-            isDefault: form.isDefault,
-          },
-          selectedBUId
-        );
+        await locationService.create(payload, selectedBUId);
         toast.success('Location created');
       }
       closeForm();
@@ -255,7 +257,7 @@ export default function LocationsPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget || !isValidBU(selectedBUId)) return;
+    if (!deleteTarget || !isValidBusinessUnitId(selectedBUId)) return;
     setDeleting(true);
     try {
       await locationService.remove(deleteTarget.id, selectedBUId);
@@ -273,16 +275,20 @@ export default function LocationsPage() {
     }
   };
 
-  const filteredLocations = locations.filter((l) => {
+  const filteredLocations = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      l.name.toLowerCase().includes(q) ||
-      (l.code || '').toLowerCase().includes(q)
+    if (!q) return locations;
+    return locations.filter(
+      (l) =>
+        l.name.toLowerCase().includes(q) ||
+        (l.code || '').toLowerCase().includes(q),
     );
-  });
+  }, [locations, search]);
 
-  const selectedBU = businessUnits.find((bu) => bu.id === selectedBUId);
+  const selectedBU = useMemo(
+    () => businessUnits.find((bu) => bu.id === selectedBUId),
+    [businessUnits, selectedBUId],
+  );
 
   // ────────────────────────────────────────────────────────────
   // Gates
@@ -337,7 +343,7 @@ export default function LocationsPage() {
         </div>
         <button
           onClick={openCreate}
-          disabled={!isValidBU(selectedBUId)}
+          disabled={!isValidBusinessUnitId(selectedBUId)}
           className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus-ring"
         >
           <Plus className="w-4 h-4" />
@@ -347,7 +353,7 @@ export default function LocationsPage() {
 
       {/* BU SELECTOR + SEARCH */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative">
+        <div className="relative" ref={dropdownRef}>
           <button
             type="button"
             onClick={() => setShowBUDropdown(!showBUDropdown)}
@@ -379,11 +385,6 @@ export default function LocationsPage() {
                     onClick={() => {
                       setSelectedBUId(bu.id);
                       setShowBUDropdown(false);
-                      try {
-                        localStorage.setItem('selectedBusinessUnitId', bu.id);
-                      } catch {
-                        /* ignore */
-                      }
                     }}
                     className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring ${
                       bu.id === selectedBUId
@@ -422,7 +423,7 @@ export default function LocationsPage() {
           <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
           <p className="mt-2 text-sm text-gray-500">Loading locations...</p>
         </div>
-      ) : !isValidBU(selectedBUId) ? (
+      ) : !isValidBusinessUnitId(selectedBUId) ? (
         <div className="bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-xl p-6 text-center">
           <AlertCircle className="w-10 h-10 text-warning-500 mx-auto mb-2" />
           <p className="text-sm text-warning-700 dark:text-warning-300">
@@ -498,7 +499,6 @@ export default function LocationsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 hidden md:table-cell">
-                    {/* ✅ human-readable label instead of raw enum */}
                     {loc.type
                       ? LOCATION_TYPE_LABELS[loc.type] ?? loc.type
                       : 'OTHER'}
@@ -611,11 +611,6 @@ export default function LocationsPage() {
                       disabled={saving}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50"
                     >
-                      {/*
-                        ✅ LOCATION_TYPES is a string[] of raw enum values.
-                        Labels come from the sibling LOCATION_TYPE_LABELS map.
-                        Fallback to the raw enum name if a label is missing.
-                      */}
                       {LOCATION_TYPES.map((t) => (
                         <option key={t} value={t}>
                           {LOCATION_TYPE_LABELS[t] ?? t}

@@ -29,6 +29,193 @@ interface CartPageProps {
   className?: string;
 }
 
+// ============================================
+// ERROR HELPERS
+// ============================================
+
+/**
+ * Walk the error chain for an HTTP status code. axios, the backend's
+ * `AppError`, and wrapped errors all surface the status in different
+ * places; this returns the first finite number it finds.
+ */
+function getErrorStatus(error: any): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+
+  const seen = new Set<any>();
+  let node: any = error;
+
+  while (node && typeof node === 'object' && !seen.has(node)) {
+    seen.add(node);
+
+    const candidates = [
+      node.status,
+      node.statusCode,
+      node.response?.status,
+    ];
+
+    for (const candidate of candidates) {
+      if (
+        typeof candidate === 'number' &&
+        Number.isFinite(candidate) &&
+        candidate > 0
+      ) {
+        return candidate;
+      }
+    }
+
+    node = node.cause;
+  }
+
+  return undefined;
+}
+
+/**
+ * True when the status + body suggest the session expired and the
+ * user should be bounced to login. A bare 401 is always treated as
+ * expired; a 403 only when the body mentions "session" or "expired".
+ */
+function isSessionExpired(error: any): boolean {
+  const status = getErrorStatus(error);
+  if (status === 401) return true;
+  if (status !== 403) return false;
+
+  const message = String(
+    error?.response?.data?.message || error?.message || '',
+  ).toLowerCase();
+  return message.includes('session') || message.includes('expired');
+}
+
+// ============================================
+// CART ADAPTER
+// ============================================
+//
+// `guestCartService` exposes a *subset* of `cartService`'s methods,
+// with different names (`updateItem` vs `updateItemQuantity`), a
+// different return shape (`GuestCart | null` vs `Cart`), and no
+// support at all for discounts, promotions, or loyalty.
+//
+// Rather than thread `if (isAuthenticated)` branches through every
+// callback, we build a thin adapter at the top of the page that
+// presents a single, typed surface. The guest branch fills the
+// missing methods with descriptive throws; the page never calls
+// those on the guest path because every mutation that uses them is
+// already gated by `isAuthenticated`.
+
+interface CartAdapter {
+  getCart(): Promise<Cart | null>;
+  updateItemQuantity(itemId: string, quantity: number): Promise<Cart>;
+  removeItem(itemId: string): Promise<Cart>;
+  clearCart(): Promise<Cart>;
+  applyDiscount(
+    value: number,
+    type: 'PERCENTAGE' | 'FIXED',
+  ): Promise<Cart>;
+  applyPromotion(code: string): Promise<Cart>;
+  applyLoyaltyPoints(customerId: string, points: number): Promise<Cart>;
+}
+
+/**
+ * Normalize a `GuestCart | null` into the `Cart` shape the page
+ * expects. `GuestCart` is missing `itemCount` and may be missing
+ * other backend-authored fields; we compute what we can and fill the
+ * rest with safe defaults.
+ */
+function normalizeGuestCart(guest: any): Cart | null {
+  if (!guest) return null;
+
+  const items = Array.isArray(guest.items) ? guest.items : [];
+  const itemCount =
+    typeof guest.itemCount === 'number'
+      ? guest.itemCount
+      : items.reduce(
+          (sum: number, item: any) => sum + (item.quantity ?? 0),
+          0,
+        );
+
+  return {
+    id: guest.id ?? '',
+    items,
+    subtotal: guest.subtotal ?? 0,
+    tax: guest.tax ?? 0,
+    discount: guest.discount ?? 0,
+    total: guest.total ?? 0,
+    customerId: guest.customerId,
+    customer: guest.customer,
+    businessUnitId: guest.businessUnitId ?? '',
+    userId: guest.userId ?? '',
+    notes: guest.notes,
+    status: guest.status ?? 'ACTIVE',
+    itemCount,
+    discountType: guest.discountType,
+    promotionCode: guest.promotionCode,
+    promotionDiscount: guest.promotionDiscount,
+    loyaltyPointsUsed: guest.loyaltyPointsUsed,
+    loyaltyDiscount: guest.loyaltyDiscount,
+    createdAt: guest.createdAt ?? new Date().toISOString(),
+    updatedAt: guest.updatedAt ?? new Date().toISOString(),
+  } as Cart;
+}
+
+function makeAuthenticatedAdapter(): CartAdapter {
+  return {
+    async getCart() {
+      return cartService.getCart();
+    },
+    async updateItemQuantity(itemId, quantity) {
+      return cartService.updateItemQuantity(itemId, quantity);
+    },
+    async removeItem(itemId) {
+      return cartService.removeItem(itemId);
+    },
+    async clearCart() {
+      return cartService.clearCart();
+    },
+    async applyDiscount(value, type) {
+      return cartService.applyDiscount(value, type);
+    },
+    async applyPromotion(code) {
+      return cartService.applyPromotion(code);
+    },
+    async applyLoyaltyPoints(customerId, points) {
+      return cartService.applyLoyaltyPoints(customerId, points);
+    },
+  };
+}
+
+function makeGuestAdapter(): CartAdapter {
+  return {
+    async getCart() {
+      const guest = await guestCartService.getCart();
+      return normalizeGuestCart(guest);
+    },
+    async updateItemQuantity(itemId, quantity) {
+      const guest = await guestCartService.updateItem(itemId, quantity);
+      return normalizeGuestCart(guest) as Cart;
+    },
+    async removeItem(itemId) {
+      const guest = await guestCartService.removeItem(itemId);
+      return normalizeGuestCart(guest) as Cart;
+    },
+    async clearCart() {
+      const guest = await guestCartService.clearCart();
+      return normalizeGuestCart(guest) as Cart;
+    },
+    async applyDiscount() {
+      throw new Error('Sign in to apply a discount');
+    },
+    async applyPromotion() {
+      throw new Error('Sign in to apply a promotion');
+    },
+    async applyLoyaltyPoints() {
+      throw new Error('Sign in to use loyalty points');
+    },
+  };
+}
+
+// ============================================
+// COMPONENT
+// ============================================
+
 export function CartPage({ className = '' }: CartPageProps) {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
@@ -37,8 +224,18 @@ export function CartPage({ className = '' }: CartPageProps) {
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const activeCartService = useMemo(
-    () => (isAuthenticated ? cartService : guestCartService),
+  /**
+   * Resolve the active cart adapter.
+   *
+   * The adapter presents a single typed surface regardless of auth
+   * state, so every callback below can call the same method names
+   * without a `isAuthenticated` branch at every call site.
+   */
+  const activeCartService: CartAdapter = useMemo(
+    () =>
+      isAuthenticated
+        ? makeAuthenticatedAdapter()
+        : makeGuestAdapter(),
     [isAuthenticated],
   );
 
@@ -62,12 +259,12 @@ export function CartPage({ className = '' }: CartPageProps) {
       const cartData = await activeCartService.getCart();
       setCart(cartData);
 
-      if (!cartData.customerId) {
+      if (!cartData?.customerId) {
         setLocalLoyaltyPoints(0);
       }
     } catch (error: any) {
       console.error('❌ Failed to fetch cart:', error);
-      if (error?.response?.status === 401 && isAuthenticated) {
+      if (isSessionExpired(error) && isAuthenticated) {
         router.push(
           `/login?redirect_url=${encodeURIComponent('/cart')}`,
         );
@@ -86,8 +283,10 @@ export function CartPage({ className = '' }: CartPageProps) {
 
       setUpdating(itemId);
       try {
-        const updatedCart =
-          await activeCartService.updateItemQuantity(itemId, quantity);
+        const updatedCart = await activeCartService.updateItemQuantity(
+          itemId,
+          quantity,
+        );
         setCart(updatedCart);
       } catch (error: any) {
         console.error('❌ Failed to update quantity:', error);
@@ -141,8 +340,10 @@ export function CartPage({ className = '' }: CartPageProps) {
 
   /**
    * Apply a numeric discount. `type` is required — the caller must know
-   * whether they hold a percentage or a fixed value. This replaces the
-   * previous heuristic that guessed from `parseFloat(code)`.
+   * whether they hold a percentage or a fixed value.
+   *
+   * Guests cannot apply discounts; the adapter throws a descriptive
+   * error which the parent error handler surfaces.
    */
   const applyDiscountValue = useCallback(
     async (value: number, type: 'PERCENTAGE' | 'FIXED') => {
@@ -161,7 +362,8 @@ export function CartPage({ className = '' }: CartPageProps) {
   );
 
   /**
-   * Apply a promotion by code. The backend resolves the code server-side.
+   * Apply a promotion by code. The backend resolves the code
+   * server-side. Guests cannot apply promotions; the adapter throws.
    */
   const applyPromotion = useCallback(
     async (code: string) => {
@@ -290,7 +492,7 @@ export function CartPage({ className = '' }: CartPageProps) {
                 fetchCart();
                 toast.success('Cart refreshed');
               }}
-              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
+              className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus-ring"
               aria-label="Refresh cart"
             >
               <RefreshCw className="w-4 h-4" />

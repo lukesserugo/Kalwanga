@@ -83,6 +83,96 @@ interface DashboardStats {
 }
 
 // ============================================
+// CSV EXPORT HELPERS
+// ============================================
+//
+// ⚠ CSV export is now assembled **entirely client-side** from the
+//   sales list already loaded into the dashboard. The POS-oriented
+//   `saleService` in this codebase does NOT expose an `exportSales`
+//   method (see the TS2339 the previous version triggered). Fetching
+//   sales through the service's `getAllSales` — which the service
+//   *does* expose — and rendering the CSV here avoids depending on
+//   a method that doesn't exist.
+//
+//   This is also the correct architectural choice: the backend's
+//   `/sales/export` endpoint is a JSON dump, and the CSV/Excel/PDF
+//   variants are placeholders (`"Excel export would be generated
+//   here"`). Producing the file in the browser is the only path that
+//   actually delivers a downloadable artifact today.
+
+/**
+ * Escape a single CSV field per RFC 4180:
+ *   - wrap in quotes when the value contains a comma, quote, CR, or LF
+ *   - double any embedded quote
+ */
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (
+    str.includes(',') ||
+    str.includes('"') ||
+    str.includes('\n') ||
+    str.includes('\r')
+  ) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+/**
+ * Normalise the `getAllSales` envelope into a flat array of sales.
+ *
+ * The service method returns `{ sales, total, page, limit, totalPages, stats }`
+ * when the api client passes the backend envelope through unchanged.
+ * Some middleware configurations unwrap to just the array, or to
+ * `{ data: [...] }`. Accept all three.
+ */
+function extractSalesArray(response: any): any[] {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response.sales)) return response.sales;
+  if (Array.isArray(response.data)) return response.data;
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    Array.isArray(response.data.sales)
+  ) {
+    return response.data.sales;
+  }
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    Array.isArray(response.data.data)
+  ) {
+    return response.data.data;
+  }
+  return [];
+}
+
+/**
+ * Trigger a browser file download from a string payload.
+ *
+ * Creates a temporary anchor, clicks it, and revokes the object URL.
+ * The anchor is appended to the document because Firefox refuses to
+ * honour `.click()` on a detached element.
+ */
+function downloadTextFile(
+  content: string,
+  filename: string,
+  mimeType: string,
+): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ============================================
 // SUB-COMPONENTS
 // ============================================
 
@@ -391,6 +481,7 @@ export default function SalesDashboard() {
   const [exportFormat, setExportFormat] = useState<'csv' | 'excel' | 'pdf'>(
     'csv'
   );
+  const [exporting, setExporting] = useState(false);
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
@@ -414,6 +505,7 @@ export default function SalesDashboard() {
     if (canViewStats) {
       loadDashboardData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRange, canViewStats]);
 
   const loadDashboardData = useCallback(
@@ -463,41 +555,78 @@ export default function SalesDashboard() {
     [user, canViewStats]
   );
 
-  const handleExport = async () => {
+  /**
+   * Compute the [startDate, endDate] pair for the current `timeRange`.
+   * Both dates are `Date` instances; the caller converts to ISO.
+   */
+  const computeExportRange = useCallback((): {
+    startDate: Date;
+    endDate: Date;
+  } => {
+    const now = new Date();
+    const endDate = new Date(now);
+    let startDate = new Date(now);
+
+    switch (timeRange) {
+      case 'today':
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'year':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate.setDate(startDate.getDate() - 7);
+    }
+
+    return { startDate, endDate };
+  }, [timeRange]);
+
+  /**
+   * Export the current range's sales as a downloadable file.
+   *
+   * ⚠ The POS `saleService` in this codebase does NOT expose an
+   *   `exportSales` method — that was the source of the TS2339 this
+   *   rewrite addresses. Instead we call `saleService.getAllSales`,
+   *   which the service DOES expose, then assemble the CSV/JSON in
+   *   the browser. This is the only path that produces a genuinely
+   *   downloadable artifact today, because the backend's `/sales/export`
+   *   endpoint returns JSON regardless of the requested format and the
+   *   Excel/PDF variants are placeholders.
+   *
+   * Excel and PDF are downgraded to CSV: the browser cannot produce
+   * an xlsx or a PDF without pulling in a library (SheetJS, jsPDF)
+   * that this project doesn't currently ship. Emitting CSV with the
+   * requested extension would be worse than emitting CSV with the
+   * correct extension — a `.xlsx` file full of comma-separated text
+   * doesn't open, whereas a `.csv` file always does.
+   */
+  const handleExport = useCallback(async () => {
+    setExporting(true);
     try {
-      const now = new Date();
-      let startDate = new Date();
-      const endDate = new Date();
+      const { startDate, endDate } = computeExportRange();
 
-      switch (timeRange) {
-        case 'today':
-          startDate = new Date(now);
-          startDate.setHours(0, 0, 0, 0);
-          break;
-        case 'week':
-          startDate = new Date(now);
-          startDate.setDate(startDate.getDate() - 7);
-          break;
-        case 'month':
-          startDate = new Date(now);
-          startDate.setMonth(startDate.getMonth() - 1);
-          break;
-        case 'year':
-          startDate = new Date(now);
-          startDate.setFullYear(startDate.getFullYear() - 1);
-          break;
-      }
+      const businessUnitId =
+        user?.businessUnits?.[0]?.businessUnitId ?? undefined;
 
-      const result = await saleService.exportSales({
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
-        format: exportFormat,
-        businessUnitId: user?.businessUnits?.[0]?.businessUnitId,
+      // Fetch the sales for the requested range via the method that
+      // actually exists on the service.
+      const response = await saleService.getAllSales({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        businessUnitId,
+        limit: 1000,
       });
 
-      const rowsData: any[] = (result as any)?.data || [];
-      if (rowsData.length === 0) {
-        toast.error('No data to export');
+      const sales = extractSalesArray(response);
+
+      if (sales.length === 0) {
+        toast.error('No data to export for this period');
         return;
       }
 
@@ -518,49 +647,81 @@ export default function SalesDashboard() {
         'Status',
         'Items',
       ];
-      const rows = rowsData.map((sale: any) => {
+
+      const rows = sales.map((sale: any) => {
         const b = saleService.extractBreakdown(sale);
+        const customerName = sale.customer
+          ? `${sale.customer.firstName ?? ''} ${
+              sale.customer.lastName ?? ''
+            }`.trim()
+          : sale.customerName || 'Guest';
+
         return [
-          sale.receiptNumber || sale.id,
-          sale.date || sale.saleDate || '',
-          sale.customer || 'Guest',
-          sale.subtotal || 0,
-          sale.tax || 0,
-          sale.discount || 0,
+          sale.receiptNumber || sale.id || '',
+          sale.saleDate
+            ? new Date(sale.saleDate).toISOString().split('T')[0]
+            : sale.date || '',
+          customerName,
+          sale.subtotal ?? 0,
+          sale.tax ?? 0,
+          sale.discount ?? 0,
           b.discountType ?? '',
           b.promotionCode ?? '',
           b.promotionDiscount ?? 0,
           b.loyaltyPointsUsed ?? 0,
           b.loyaltyDiscount ?? 0,
-          sale.total || 0,
-          sale.paymentMethod || 'N/A',
-          sale.status || 'COMPLETED',
-          sale.items || 0,
+          sale.total ?? 0,
+          sale.paymentMethod ?? sale.payments?.[0]?.paymentMethod ?? 'N/A',
+          sale.status ?? 'COMPLETED',
+          Array.isArray(sale.items) ? sale.items.length : sale.items ?? 0,
         ];
       });
 
       const csvContent = [
-        headers.join(','),
-        ...rows.map((row: any[]) => row.join(',')),
+        headers.map(csvEscape).join(','),
+        ...rows.map((row) => row.map(csvEscape).join(',')),
       ].join('\n');
 
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sales-report-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const baseName = `sales-report-${startDate
+        .toISOString()
+        .split('T')[0]}-to-${endDate.toISOString().split('T')[0]}`;
 
-      toast.success('Sales report exported successfully');
+      // Only CSV is a first-class output. Excel and PDF fall back to
+      // CSV with a clear toast so the user isn't confused by a
+      // file that won't open.
+      const isCsvOrFallback =
+        exportFormat === 'csv' ||
+        exportFormat === 'excel' ||
+        exportFormat === 'pdf';
+
+      if (isCsvOrFallback) {
+        downloadTextFile(
+          csvContent,
+          `${baseName}.csv`,
+          'text/csv;charset=utf-8;'
+        );
+
+        if (exportFormat !== 'csv') {
+          toast.success(
+            `Exported as CSV — ${exportFormat.toUpperCase()} generation is not available in the browser.`,
+          );
+        } else {
+          toast.success('Sales report exported successfully');
+        }
+      }
+
       setShowExportModal(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Export error:', error);
-      toast.error('Failed to export sales report');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to export sales report',
+      );
+    } finally {
+      setExporting(false);
     }
-  };
+  }, [exportFormat, computeExportRange, user]);
 
   const handleViewSale = (sale: any) => {
     setSelectedSale(sale);
@@ -616,7 +777,9 @@ export default function SalesDashboard() {
             <p>${formatDate(sale.saleDate || sale.createdAt)}</p>
             <p>Customer: ${
               sale.customer
-                ? `${sale.customer.firstName} ${sale.customer.lastName}`
+                ? `${sale.customer.firstName ?? ''} ${
+                    sale.customer.lastName ?? ''
+                  }`.trim()
                 : 'Guest'
             }</p>
           </div>
@@ -1021,7 +1184,8 @@ export default function SalesDashboard() {
                 </h3>
                 <button
                   onClick={() => setShowExportModal(false)}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
+                  disabled={exporting}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring disabled:opacity-50"
                 >
                   <X className="w-5 h-5 text-gray-500" />
                 </button>
@@ -1036,7 +1200,8 @@ export default function SalesDashboard() {
                       <button
                         key={f}
                         onClick={() => setExportFormat(f as any)}
-                        className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors focus-ring ${
+                        disabled={exporting}
+                        className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors focus-ring disabled:opacity-50 ${
                           exportFormat === f
                             ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400'
                             : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -1046,20 +1211,32 @@ export default function SalesDashboard() {
                       </button>
                     ))}
                   </div>
+                  {exportFormat !== 'csv' && (
+                    <p className="mt-2 text-xs text-warning-600 dark:text-warning-400">
+                      {exportFormat.toUpperCase()} generation runs in-browser
+                      only for CSV. The file will be downloaded as CSV.
+                    </p>
+                  )}
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
                   <button
                     onClick={() => setShowExportModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring"
+                    disabled={exporting}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors focus-ring disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleExport}
-                    className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring"
+                    disabled={exporting}
+                    className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-colors flex items-center gap-2 focus-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Download className="w-4 h-4" />
-                    Export
+                    {exporting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                    {exporting ? 'Exporting…' : 'Export'}
                   </button>
                 </div>
               </div>

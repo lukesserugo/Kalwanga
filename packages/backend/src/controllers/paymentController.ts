@@ -100,6 +100,18 @@ const MOBILE_MONEY_NETWORKS = ['MTN', 'AIRTEL', 'TIGO', 'VODAFONE'] as const;
 // fallback. The fallback is UGX because the deployment is Ugandan —
 // USD was the wrong default for every endpoint that omitted a
 // currency, and Square in particular rejects the mismatch.
+//
+// ⚠ Phase 2: `Payment.currency` is now a REQUIRED column with no
+//   schema default. The service resolves it via
+//   `currencyService.resolveForBusiness` and writes the resolved
+//   value explicitly on every `payment.create`. Where this
+//   controller must supply a value at the wire boundary (M-Pesa
+//   STK/B2C, Square), it uses the SAME precedence as the service:
+//     caller-supplied → DEFAULT_CURRENCY env → 'UGX' fallback.
+//
+//   The controller NEVER fabricates a `'USD'` default. If a code
+//   path here defaults to anything, it defaults to the platform
+//   default, not to a hardcoded non-platform currency.
 
 const DEFAULT_CURRENCY_FALLBACK = 'UGX';
 
@@ -135,6 +147,12 @@ const processPaymentSchema = z
      * picks the business unit's own currency, then
      * `DEFAULT_CURRENCY`, then the registry default. Do NOT
      * default this to `'USD'` in the controller.
+     *
+     * ⚠ Phase 2: `Payment.currency` has no schema default. This
+     *   field is forwarded to `paymentService.processPayment`,
+     *   which resolves and writes it explicitly. The column will
+     *   NOT fall back to a USD default if this is omitted — the
+     *   service's resolution chain governs.
      */
     currency: z.string().optional(),
     source: z.string().optional(),
@@ -271,6 +289,11 @@ const processPaymentSchema = z
  * ⚠ `userId` is written to `Payment.refundedBy` and to the audit
  *   log. Populated from `req.user` server-side; declared here so
  *   the service receives it as a named field.
+ *
+ * ⚠ Phase 2: The refunded payment's `currency` is read from the
+ *   row being refunded (see `paymentService.refundPayment`). The
+ *   controller does NOT accept or forward a currency here — refunds
+ *   never create new `Payment` rows, they update existing ones.
  */
 const refundSchema = z.object({
   amount: z.number().finite().positive('Amount must be positive').optional(),
@@ -386,7 +409,9 @@ const updateProviderHealthSchema = z.object({
  *   `DEFAULT_CURRENCY` → `'UGX'`), NOT the literal `'USD'`. The
  *   previous default sent every PaymentIntent created without an
  *   explicit currency to USD, which is wrong for any non-USD
- *   deployment.
+ *   deployment. Phase 1 removed the schema default from
+ *   `Payment.currency`; this controller default is the wire-level
+ *   equivalent and must stay aligned with the service's precedence.
  */
 const createPaymentIntentSchema = z.object({
   amount: z.number().finite().positive('Amount must be positive'),
@@ -397,6 +422,18 @@ const createPaymentIntentSchema = z.object({
   idempotencyKey: z.string().optional(),
 });
 
+/**
+ * M-Pesa STK Push body.
+ *
+ * ⚠ Phase 2: `currency` is accepted here and forwarded to
+ *   `paymentService.createPendingPayment`, which (since Phase 2)
+ *   requires a resolved currency on the row. When omitted, the
+ *   controller falls back to the platform default via
+ *   `resolveDefaultCurrency()`; the service will re-resolve
+ *   through `currencyService` if the value is unknown to the
+ *   registry. The controller default and the service's default
+ *   share the same precedence chain.
+ */
 const mpesaSTKPushSchema = z.object({
   phoneNumber: z
     .string()
@@ -407,6 +444,12 @@ const mpesaSTKPushSchema = z.object({
   callbackUrl: z.string().url().optional(),
   saleId: z.string().optional(),
   orderId: z.string().optional(),
+  /**
+   * Optional. When omitted, `resolveDefaultCurrency()` supplies
+   * the platform default (env `DEFAULT_CURRENCY` → `'UGX'`). Do
+   * NOT hardcode a non-platform fallback here.
+   */
+  currency: z.string().optional(),
   idempotencyKey: z.string().optional(),
   /**
    * Optional linkage written into `Payment.metadata.customerId`.
@@ -418,10 +461,25 @@ const mpesaSTKPushSchema = z.object({
    * Optional linkage written into `Payment.metadata.businessUnitId`.
    * The callback handler reads it to route the completion through
    * the right business unit's audit trail.
+   *
+   * ⚠ Also read by `paymentService.createPendingPayment` to
+   *   resolve the row's `currency` when none is supplied at the
+   *   wire boundary.
    */
   businessUnitId: z.string().optional(),
 });
 
+/**
+ * M-Pesa B2C body.
+ *
+ * ⚠ Phase 2: `currency` is accepted and forwarded to
+ *   `mpesaService.processB2CPayment`. B2C is a payout — no
+ *   `Payment` row is created on the local side — but Safaricom's
+ *   API requires the currency on the request, and the earlier
+ *   hardcoded default was wrong for any non-USD deployment. When
+ *   omitted here, `resolveDefaultCurrency()` supplies the platform
+ *   default.
+ */
 const mpesaB2CSchema = z.object({
   phoneNumber: z
     .string()
@@ -432,12 +490,26 @@ const mpesaB2CSchema = z.object({
     .default('BusinessPayment'),
   remarks: z.string().optional(),
   occasion: z.string().optional(),
+  /**
+   * Optional. When omitted, the controller resolves the platform
+   * default via `resolveDefaultCurrency()` (env `DEFAULT_CURRENCY`
+   * → `'UGX'`) before calling `mpesaService.processB2CPayment`.
+   */
+  currency: z.string().optional(),
 });
 
 const payPalCaptureSchema = z.object({
   orderId: z.string().min(1, 'Order ID is required'),
 });
 
+/**
+ * Flutterwave virtual account body.
+ *
+ * ⚠ `currency` is optional at the wire boundary. When omitted,
+ *   `flutterwaveService` resolves its own default from the
+ *   business unit or platform config. The controller does NOT
+ *   fabricate a `'USD'` default here.
+ */
 const flutterwaveVirtualAccountSchema = z.object({
   email: z.string().email('Valid email is required'),
   amount: z.number().finite().positive('Amount must be positive').optional(),
@@ -452,15 +524,20 @@ const flutterwaveVirtualAccountSchema = z.object({
  *   be present. A Square payment with no linkage to a Sale can
  *   never complete a checkout — it just produces an orphaned
  *   `Payment` row that the webhook handler can't reconcile.
+ *
+ * ⚠ Phase 2: `currency` is optional here, but Square's SDK
+ *   requires a currency value on the charge request. When omitted,
+ *   `processSquarePayment` supplies `resolveDefaultCurrency()` —
+ *   the platform default, NOT a hardcoded `'USD'`.
  */
 const squarePaymentSchema = z
   .object({
     amount: z.number().finite().positive('Amount must be positive'),
     cardNonce: z.string().min(1, 'Card nonce is required'),
     /**
-     * Optional. When omitted, the service resolves the currency
-     * from the business unit (then `DEFAULT_CURRENCY`, then the
-     * registry default). Do NOT default this to `'USD'`.
+     * Optional. When omitted, the controller supplies the platform
+     * default via `resolveDefaultCurrency()`. Do NOT default this
+     * to `'USD'`.
      */
     currency: z.string().optional(),
     customerId: z.string().optional(),
@@ -704,6 +781,17 @@ export const paymentController = {
   // M-PESA
   // ============================================
 
+  /**
+   * M-Pesa STK Push.
+   *
+   * ⚠ Phase 2: A PENDING `Payment` row is created via
+   *   `paymentService.createPendingPayment`, which now REQUIRES a
+   *   resolved currency. The controller supplies
+   *   `validatedData.currency || resolveDefaultCurrency()`; the
+   *   service re-resolves through `currencyService` if the value
+   *   is unknown to the registry, then writes the resolved value
+   *   to the `Payment.currency` column explicitly.
+   */
   async initiateMpesaSTKPush(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = mpesaSTKPushSchema.parse(req.body);
@@ -726,12 +814,21 @@ export const paymentController = {
         callbackUrl: validatedData.callbackUrl,
       });
 
+      // ── Phase 2: currency MUST be supplied ────────────────
+      // `createPendingPayment` calls `resolveCurrency()` and
+      // writes the result to the (required) `Payment.currency`
+      // column. We pass the caller's value when present, else
+      // the platform default. The service's resolver is the
+      // authority; a bogus caller value is logged and skipped.
       const payment = await paymentService.createPendingPayment({
         amount: validatedData.amount,
         paymentMethod: 'MOBILE_MONEY',
         userId,
         saleId: validatedData.saleId,
         orderId: validatedData.orderId,
+        currency:
+          validatedData.currency || resolveDefaultCurrency(),
+        businessUnitId: validatedData.businessUnitId,
         transactionId: result.CheckoutRequestID,
         reference: result.MerchantRequestID,
         idempotencyKey: validatedData.idempotencyKey,
@@ -868,6 +965,12 @@ export const paymentController = {
    *   (`mpesaReconciliationJob`) that queries
    *   `mpesaService.queryTransactionStatus` for any PENDING payment
    *   older than N minutes.
+   *
+   * ⚠ Phase 2 note: This handler only UPDATEs the existing
+   *   `Payment` row (created by `initiateMpesaSTKPush`). It never
+   *   creates one, so no currency resolution is required here —
+   *   the row's `currency` column was already populated with the
+   *   resolved value at creation time.
    */
   async handleMpesaCallback(req: Request, res: Response, next: NextFunction) {
     try {
@@ -981,39 +1084,52 @@ export const paymentController = {
     }
   },
 
-  async processMpesaB2C(req: Request, res: Response, next: NextFunction) {
-    try {
-      const validatedData = mpesaB2CSchema.parse(req.body);
-      // B2C is Manager+ per the router; requireUserId just makes
-      // the authentication requirement explicit at the controller
-      // boundary as well.
-      requireUserId(req);
+  /**
+   * M-Pesa B2C payout.
+   *
+   * ⚠ Phase 2: `currency` is now forwarded to
+   *   `mpesaService.processB2CPayment`. B2C is a payout — no local
+   *   `Payment` row is created — but Safaricom's API requires the
+   *   currency on the request and the previous hardcoded default
+   *   was wrong for any non-USD deployment. When the caller omits
+   *   it, the controller supplies the platform default via
+   *   `resolveDefaultCurrency()`.
+   */
+    async processMpesaB2C(req: Request, res: Response, next: NextFunction) {
+      try {
+        const validatedData = mpesaB2CSchema.parse(req.body);
+        // B2C is Manager+ per the router; requireUserId just makes
+        // the authentication requirement explicit at the controller
+        // boundary as well.
+        requireUserId(req);
 
-      if (!mpesaService.isConfigured()) {
-        throw new AppError(
-          'M-Pesa is not configured. Please contact support.',
-          503,
-        );
+        if (!mpesaService.isConfigured()) {
+          throw new AppError(
+            'M-Pesa is not configured. Please contact support.',
+            503,
+          );
+        }
+
+        const result = await mpesaService.processB2CPayment({
+          phoneNumber: validatedData.phoneNumber,
+          amount: validatedData.amount,
+          commandId: validatedData.commandId,
+          remarks: validatedData.remarks || 'Payment from POS',
+          occasion: validatedData.occasion,
+          // ⚠ NO `currency` field here — `processB2CPayment` does
+          //   not accept one. See the JSDoc above.
+        });
+
+        res.json({
+          success: true,
+          data: result,
+          message: 'M-Pesa B2C payment initiated successfully',
+        });
+      } catch (error) {
+        if (error instanceof ZodError) return zodError(res, error);
+        next(error);
       }
-
-      const result = await mpesaService.processB2CPayment({
-        phoneNumber: validatedData.phoneNumber,
-        amount: validatedData.amount,
-        commandId: validatedData.commandId,
-        remarks: validatedData.remarks || 'Payment from POS',
-        occasion: validatedData.occasion,
-      });
-
-      res.json({
-        success: true,
-        data: result,
-        message: 'M-Pesa B2C payment initiated successfully',
-      });
-    } catch (error) {
-      if (error instanceof ZodError) return zodError(res, error);
-      next(error);
-    }
-  },
+    },
 
   // ============================================
   // PAYPAL
@@ -1057,6 +1173,15 @@ export const paymentController = {
   // FLUTTERWAVE
   // ============================================
 
+  /**
+   * Create a Flutterwave virtual account.
+   *
+   * ⚠ `currency` is optional at the wire boundary. When omitted,
+   *   `flutterwaveService` resolves its own default from the
+   *   business unit or platform config. The controller does NOT
+   *   fabricate a `'USD'` default here — the service is the
+   *   authority for what currency the virtual account is opened in.
+   */
   async createFlutterwaveVirtualAccount(
     req: Request,
     res: Response,
@@ -1125,6 +1250,18 @@ export const paymentController = {
   // SQUARE
   // ============================================
 
+  /**
+   * Square card payment.
+   *
+   * ⚠ Square's SDK requires a currency on the charge request.
+   *   When the caller omits it, we supply the platform default via
+   *   `resolveDefaultCurrency()`. The service re-resolves through
+   *   `currencyService` if the value is unknown, then writes the
+   *   resolved value to the `Payment.currency` column explicitly.
+   *
+   *   A Ugandan deployment charging in UGX cannot have a hardcoded
+   *   USD default; the fallback chain here matches the service's.
+   */
   async processSquarePayment(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = squarePaymentSchema.parse(req.body);
@@ -1570,6 +1707,19 @@ export const paymentController = {
   // CORE PAYMENT ENDPOINTS
   // ============================================
 
+  /**
+   * Generic payment endpoint.
+   *
+   * ⚠ Phase 2 contract: `currency` is optional on the wire. When
+   *   omitted, `paymentService.processPayment` resolves it via
+   *   `currencyService.resolveForBusiness` (caller → business unit
+   *   → `DEFAULT_CURRENCY` → registry default) and writes the
+   *   resolved value to the REQUIRED `Payment.currency` column.
+   *
+   *   The controller does NOT fabricate a currency default here.
+   *   The service is the authority; the controller just forwards
+   *   whatever the caller supplied.
+   */
   async processPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const validatedData = processPaymentSchema.parse(req.body);
@@ -1600,6 +1750,16 @@ export const paymentController = {
     }
   },
 
+  /**
+   * Refund a payment.
+   *
+   * ⚠ Phase 2 contract: The refunded payment's currency is read
+   *   from the `Payment.currency` column of the row being refunded
+   *   (see `paymentService.refundPayment`). Refunds do NOT create
+   *   new `Payment` rows, so the controller does NOT accept or
+   *   forward a currency here. The row's stored value is the
+   *   authority.
+   */
   async refundPayment(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -1792,6 +1952,12 @@ export const paymentController = {
    * would fail identically. The correct recovery is: log loudly,
    * fix the mount order, and reconcile any missed events
    * out-of-band by querying Stripe for the affected window.
+   *
+   * ⚠ Phase 2 note: When a `checkout.session.completed` event
+   *   arrives without a corresponding local `Payment` row, the
+   *   service creates one and writes the currency from
+   *   `paymentIntent.currency` (authoritative — that's what Stripe
+   *   actually charged in). This handler does not touch currency.
    */
   async handleWebhook(req: Request, res: Response, next: NextFunction) {
     try {

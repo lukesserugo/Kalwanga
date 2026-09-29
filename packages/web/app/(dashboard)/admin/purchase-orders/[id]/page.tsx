@@ -1,8 +1,8 @@
-// src/app/(dashboard)/purchase-orders/[id]/page.tsx
+// D:\Projects\Kalwanga\packages\web\app\(dashboard)\purchase-orders\[id]\page.tsx
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '../../../../../services/api';
 import { toast } from '../../../../../utils/toast-manager';
@@ -16,10 +16,19 @@ import {
 // TYPES
 // ============================================
 //
-// Matches the `PurchaseOrder` model exposed by
-// `GET /api/purchase-orders/:id` and the `PurchaseOrderStatus` enum:
-//   DRAFT | PENDING | APPROVED | ORDERED |
-//   PARTIALLY_RECEIVED | RECEIVED | CANCELLED | COMPLETED
+// The backend is the single source of truth. This page hits
+// `GET /api/purchase-orders/:id` and `POST /api/purchase-orders/:id/receive`,
+// which are exposed by the **purchase-order** controller
+// (`purchaseOrderController`), NOT by `orderController`.
+//
+// The two domains are distinct:
+//
+//   • `Order`         — customer orders (orderController.ts)
+//   • `PurchaseOrder` — supplier purchase orders (purchaseOrderController.ts)
+//
+// This page is about the latter. The status enum below mirrors the
+// `PurchaseOrderStatus` Prisma enum used by the backend's
+// purchase-order service, not the customer-order status enum.
 
 type PurchaseOrderStatus =
   | 'DRAFT'
@@ -74,7 +83,7 @@ interface ApiResponse<T> {
 // HELPERS
 // ============================================
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_COLORS: Record<PurchaseOrderStatus, string> = {
   DRAFT:
     'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300',
   PENDING:
@@ -93,10 +102,7 @@ const STATUS_COLORS: Record<string, string> = {
     'bg-danger-100 text-danger-800 dark:bg-danger-900/30 dark:text-danger-300',
 };
 
-const DEFAULT_STATUS_COLOR =
-  'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300';
-
-const STATUS_LABELS: Record<string, string> = {
+const STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
   DRAFT: 'Draft',
   PENDING: 'Pending',
   APPROVED: 'Approved',
@@ -107,17 +113,22 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Cancelled',
 };
 
-const getStatusColor = (status: string): string =>
-  STATUS_COLORS[status] || DEFAULT_STATUS_COLOR;
+const DEFAULT_STATUS_COLOR =
+  'bg-gray-100 text-gray-800 dark:bg-gray-700/50 dark:text-gray-300';
 
-const getStatusLabel = (status: string): string =>
-  STATUS_LABELS[status] || status;
+const getStatusColor = (status: PurchaseOrderStatus | string): string =>
+  STATUS_COLORS[status as PurchaseOrderStatus] || DEFAULT_STATUS_COLOR;
 
-const formatDateSafe = (date: string | Date | null | undefined): string => {
+const getStatusLabel = (status: PurchaseOrderStatus | string): string =>
+  STATUS_LABELS[status as PurchaseOrderStatus] || status;
+
+const formatDateSafe = (
+  date: string | Date | null | undefined,
+): string => {
   if (!date) return 'N/A';
   try {
     const d = typeof date === 'string' ? new Date(date) : date;
-    if (isNaN(d.getTime())) return 'N/A';
+    if (Number.isNaN(d.getTime())) return 'N/A';
     return d.toLocaleDateString();
   } catch {
     return 'N/A';
@@ -125,25 +136,26 @@ const formatDateSafe = (date: string | Date | null | undefined): string => {
 };
 
 const formatDateTimeSafe = (
-  date: string | Date | null | undefined
+  date: string | Date | null | undefined,
 ): string => {
   if (!date) return 'N/A';
   try {
     const d = typeof date === 'string' ? new Date(date) : date;
-    if (isNaN(d.getTime())) return 'N/A';
+    if (Number.isNaN(d.getTime())) return 'N/A';
     return d.toLocaleString();
   } catch {
     return 'N/A';
   }
 };
 
-/** Statuses where the receiving UI is active. */
-const RECEIVABLE_STATUSES: ReadonlySet<PurchaseOrderStatus> = new Set([
-  'PENDING',
-  'APPROVED',
-  'ORDERED',
-  'PARTIALLY_RECEIVED',
-]);
+/**
+ * Statuses where the receiving UI is active. Mirrors the backend's
+ * purchase-order service gate — a PO cannot be received unless it is
+ * in one of these states.
+ */
+const RECEIVABLE_STATUSES: ReadonlySet<PurchaseOrderStatus> = new Set<
+  PurchaseOrderStatus
+>(['PENDING', 'APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED']);
 
 // ============================================
 // MAIN COMPONENT
@@ -152,7 +164,7 @@ const RECEIVABLE_STATUSES: ReadonlySet<PurchaseOrderStatus> = new Set([
 export default function PurchaseOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const id = params?.id as string | undefined;
+  const id = params?.id;
 
   const [order, setOrder] = useState<PurchaseOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,15 +178,19 @@ export default function PurchaseOrderDetailPage() {
   // ============================================
 
   const fetchOrder = useCallback(async () => {
-    if (!id) return;
+    if (!id) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
       const response = await api.get<ApiResponse<PurchaseOrderDetail>>(
-        `/purchase-orders/${id}`
+        `/purchase-orders/${id}`,
       );
 
       const orderData = response?.data;
+
       if (!orderData) {
         setOrder(null);
         return;
@@ -193,7 +209,7 @@ export default function PurchaseOrderDetailPage() {
       toast.error(
         error?.response?.data?.message ||
           error?.message ||
-          'Failed to load purchase order'
+          'Failed to load purchase order',
       );
       setOrder(null);
     } finally {
@@ -203,7 +219,7 @@ export default function PurchaseOrderDetailPage() {
 
   useEffect(() => {
     if (id) {
-      fetchOrder();
+      void fetchOrder();
     }
   }, [id, fetchOrder]);
 
@@ -241,7 +257,7 @@ export default function PurchaseOrderDetailPage() {
 
       const response = await api.post<ApiResponse<unknown>>(
         `/purchase-orders/${id}/receive`,
-        { receivedQuantities: receivedItems }
+        { receivedQuantities: receivedItems },
       );
 
       if (response?.success) {
@@ -255,7 +271,7 @@ export default function PurchaseOrderDetailPage() {
       toast.error(
         error?.response?.data?.message ||
           error?.message ||
-          'Failed to receive order'
+          'Failed to receive order',
       );
     } finally {
       setReceiving(false);
@@ -265,7 +281,7 @@ export default function PurchaseOrderDetailPage() {
   const handleQuantityChange = (
     itemId: string,
     value: string,
-    max: number
+    max: number,
   ) => {
     const parsed = parseInt(value, 10);
     const safe = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
@@ -276,13 +292,43 @@ export default function PurchaseOrderDetailPage() {
   };
 
   // ============================================
+  // DERIVED
+  // ============================================
+  //
+  // These are computed BEFORE any early return so the hook order
+  // never changes across renders (rules-of-hooks).
+
+  const derived = useMemo(() => {
+    if (!order) {
+      return {
+        canReceive: false,
+        totalReceived: 0,
+        totalOrdered: 0,
+      };
+    }
+    const totalReceived = order.items.reduce(
+      (sum, item) => sum + (item.receivedQuantity || 0),
+      0,
+    );
+    const totalOrdered = order.items.reduce(
+      (sum, item) => sum + (item.quantity || 0),
+      0,
+    );
+    return {
+      canReceive: RECEIVABLE_STATUSES.has(order.status),
+      totalReceived,
+      totalOrdered,
+    };
+  }, [order]);
+
+  // ============================================
   // RENDER — LOADING
   // ============================================
 
   if (loading) {
     return (
       <div className="flex justify-center py-12">
-        <div className="animate-spin h-8 w-8 border-b-2 border-brand-600 rounded-full"></div>
+        <div className="animate-spin h-8 w-8 border-b-2 border-brand-600 rounded-full" />
       </div>
     );
   }
@@ -300,22 +346,10 @@ export default function PurchaseOrderDetailPage() {
   }
 
   // ============================================
-  // DERIVED
-  // ============================================
-
-  const canReceive = RECEIVABLE_STATUSES.has(order.status);
-  const totalReceived = order.items.reduce(
-    (sum, item) => sum + (item.receivedQuantity || 0),
-    0
-  );
-  const totalOrdered = order.items.reduce(
-    (sum, item) => sum + (item.quantity || 0),
-    0
-  );
-
-  // ============================================
   // RENDER
   // ============================================
+
+  const { canReceive, totalReceived, totalOrdered } = derived;
 
   return (
     <div className="max-w-container mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 py-8 animate-fade-in">
@@ -343,7 +377,7 @@ export default function PurchaseOrderDetailPage() {
         </div>
         <span
           className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-            order.status
+            order.status,
           )}`}
         >
           {getStatusLabel(order.status)}
@@ -363,13 +397,17 @@ export default function PurchaseOrderDetailPage() {
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Email</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Email
+            </p>
             <p className="font-medium text-gray-900 dark:text-white">
               {order.supplier?.email || 'N/A'}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Phone</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Phone
+            </p>
             <p className="font-medium text-gray-900 dark:text-white">
               {order.supplier?.phone || 'N/A'}
             </p>
@@ -526,7 +564,7 @@ export default function PurchaseOrderDetailPage() {
                               handleQuantityChange(
                                 item.id,
                                 e.target.value,
-                                remaining
+                                remaining,
                               )
                             }
                             className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-right tabular-nums bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 transition duration-250"
@@ -541,7 +579,7 @@ export default function PurchaseOrderDetailPage() {
             <tfoot className="bg-gray-50 dark:bg-gray-700/30 border-t border-gray-200 dark:border-gray-700">
               <tr>
                 <td
-                  colSpan={canReceive ? 5 : 5}
+                  colSpan={5}
                   className="px-6 py-4 text-right font-bold text-gray-900 dark:text-white"
                 >
                   Total:
@@ -549,7 +587,7 @@ export default function PurchaseOrderDetailPage() {
                 <td className="px-6 py-4 text-right font-bold tabular-nums text-gray-900 dark:text-white">
                   {formatCurrency(order.total)}
                 </td>
-                {canReceive && <td></td>}
+                {canReceive && <td />}
               </tr>
             </tfoot>
           </table>
@@ -585,10 +623,12 @@ export default function PurchaseOrderDetailPage() {
             </span>
           </div>
           <div>
-            <span className="text-gray-500 dark:text-gray-400">Status:</span>
+            <span className="text-gray-500 dark:text-gray-400">
+              Status:
+            </span>
             <span
               className={`ml-2 px-2 py-0.5 rounded-full text-2xs font-medium ${getStatusColor(
-                order.status
+                order.status,
               )}`}
             >
               {getStatusLabel(order.status)}

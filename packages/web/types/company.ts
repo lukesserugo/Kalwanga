@@ -58,6 +58,17 @@ export interface CompanySettings {
   updatedAt: string;
 }
 
+/**
+ * Sales settings as returned by the backend.
+ *
+ * ⚠ `currencySymbol` was removed. Phase 1 dropped the persisted
+ *   column from `SalesSettings`, `CartSettings`, and
+ *   `CheckoutSettings`; the display symbol is now derived from
+ *   `currencyCode` via `lib/currencies.ts` on the read path. Any
+ *   component that needs to render a symbol should call
+ *   `currencyService.tryGetCurrency(settings.currencyCode)?.symbol`
+ *   rather than reading a stored value.
+ */
 export interface SalesSettings {
   id: string;
   companyId: string;
@@ -70,8 +81,8 @@ export interface SalesSettings {
   emailReceipts: boolean;
   receiptFooter: string;
   defaultPaymentMethod: string;
-  currencySymbol: string;
   currencyCode: string;
+  // ⚠ `currencySymbol` intentionally absent — see JSDoc above.
   invoicePrefix: string;
   receiptPrefix: string;
   createdAt: string;

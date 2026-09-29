@@ -89,6 +89,24 @@ const paymentMethodSchema = z
 // business unit's `settings` JSON, but the shape itself is not
 // validated there. This schema bounds the allowed keys and value
 // types so a caller can't persist arbitrary JSON.
+//
+// ⚠ Phase 2: `currencySymbol` was REMOVED from this schema.
+//   Phase 1 deleted that column from `CartSettings`,
+//   `CheckoutSettings`, and `SalesSettings`; the symbol is now
+//   derived from `currencyCode` via `lib/currencies.ts` on the
+//   read path. Persisting it alongside the code allowed the two to
+//   drift (a code change to UGX with a stale `$` symbol), which is
+//   exactly what Phase 1 was fixing.
+//
+//   `.strict()` means a client that still sends `currencySymbol`
+//   gets a 400 here, not a silent drop. That is intentional: it
+//   surfaces the Phase 4 / Phase 5 client-side cleanup as a real
+//   error during rollout rather than silently accepting a field
+//   the backend will discard.
+//
+// ⚠ `currencyCode` is the ONLY currency field persisted by this
+//   endpoint. It is uppercased at the boundary so the stored value
+//   is canonical (`'ugx'` → `'UGX'`).
 
 const updateCheckoutSettingsSchema = z
   .object({
@@ -115,8 +133,15 @@ const updateCheckoutSettingsSchema = z
     taxRate: z.number().min(0).max(100).optional(),
     notifyOnAbandonedCart: z.boolean().optional(),
     abandonedCartHours: z.number().int().positive().optional(),
-    currencyCode: z.string().length(3).optional(),
-    currencySymbol: z.string().max(8).optional(),
+    // ── Phase 2: currency surface ─────────────────────────────
+    // `currencyCode` is the only persisted currency field.
+    // Normalized to uppercase at the boundary.
+    currencyCode: z
+      .string()
+      .length(3, 'Currency code must be exactly 3 characters')
+      .transform((v) => v.toUpperCase())
+      .optional(),
+    // ⚠ `currencySymbol` intentionally absent — see note above.
     showStockBadge: z.boolean().optional(),
     showVariantImages: z.boolean().optional(),
   })
@@ -228,6 +253,23 @@ function toInt(value: unknown, fallback: number): number {
  * The list of accepted aliases is intentionally broad so the
  * endpoint is forgiving of client-side drift. The controller still
  * reports exactly which canonical field is missing if one is absent.
+ *
+ * ⚠ Phase 2: No currency field is normalized here. Checkout bodies
+ *   do not carry a currency — the business unit's own `currency`
+ *   column is the authority (see `checkoutService.processCheckout`).
+ *   A caller that sends `currency` or `currencySymbol` on a
+ *   checkout body has it silently dropped by the shared schema's
+ *   `.strict()` check (which will 400 it). That is intentional:
+ *   currency is not a client-supplied value on this endpoint.
+ *
+ * ⚠ `null` normalization: the schemas declare several fields as
+ *   `.optional().nullable()`, which means a client can send
+ *   `customerId: null` to explicitly mean "no customer" and it
+ *   parses successfully. The service interfaces declare those
+ *   fields as `string | undefined` (or `DiscountType | null`
+ *   where the service tolerates null). The handler call sites
+ *   collapse `null` → `undefined` with `?? undefined` before
+ *   passing values into the service so the two contracts match.
  */
 function normalizeCheckoutBody(body: any) {
   const b = body ?? {};
@@ -349,6 +391,19 @@ export const checkoutController = {
   // supports cash / bank transfer / check. Card, PayPal, Flutterwave,
   // Paystack, Square, and Mobile Money are rejected here with a
   // clear message pointing at POST /checkout/online.
+  //
+  // ⚠ Phase 2: The `Payment.currency` column is resolved inside
+  //   `checkoutService.processCheckout` from the business unit and
+  //   written explicitly on the row. This controller does not see,
+  //   accept, or forward a currency. `businessUnitId` is dropped
+  //   (set to `undefined`) below so the cart's own BU is
+  //   authoritative — the Phase 1/2 contract requires that the
+  //   currency come from a single, trusted source.
+  //
+  // ⚠ `customerId` is declared `.optional().nullable()` on the
+  //   schema so a client can send `null` to mean "no customer".
+  //   `CheckoutData.customerId` is `string | undefined`, so the
+  //   value is collapsed with `?? undefined` below.
 
   async createCheckout(req: Request, res: Response, next: NextFunction) {
     try {
@@ -392,10 +447,17 @@ export const checkoutController = {
       // BU is authoritative; letting a client pick a different one
       // opens a cross-BU write surface (stock checks, currency,
       // audit row, Sale.businessUnitId).
+      //
+      // ⚠ Null-collapse on `customerId`: schema declares it
+      //   `.optional().nullable()` → `string | null | undefined`.
+      //   Service interface declares `string | undefined`. The
+      //   `?? undefined` here (and on discountType / promotionCode)
+      //   is the boundary coercion that keeps the two contracts in
+      //   agreement without loosening the service types.
       const result = await checkoutService.processCheckout(
         {
           cartId: validatedData.cartId,
-          customerId: validatedData.customerId,
+          customerId: validatedData.customerId ?? undefined,
           paymentMethod: validatedData.paymentMethod,
           paidAmount: validatedData.paidAmount,
           discount: validatedData.discount,
@@ -463,6 +525,15 @@ export const checkoutController = {
   //   PENDING / PROCESSING  → 201 with `nextAction: OFFLINE`
   //   COMPLETED             → 200 with `nextAction: NONE`
   //   CANCELLED             → **409 Conflict**
+  //
+  // ⚠ Phase 2: The PENDING `Payment` row created by
+  //   `checkoutService.processOnlineCheckout` carries an explicit
+  //   `currency` resolved from the business unit. Phase 1 removed
+  //   the schema default on that column, so this is the only source.
+  //   This controller does not see or forward a currency.
+  //
+  // ⚠ `customerId` null-collapse: same reasoning as
+  //   `createCheckout` above.
 
   async createOnlineCheckout(
     req: Request,
@@ -506,10 +577,13 @@ export const checkoutController = {
         throw new AppError('Cart does not belong to this user', 403);
       }
 
+      // ⚠ Null-collapse on `customerId`: same reason as
+      //   `createCheckout`. `OnlineCheckoutData.customerId` is
+      //   `string | undefined`.
       const result = await checkoutService.processOnlineCheckout(
         {
           cartId: validatedData.cartId,
-          customerId: validatedData.customerId,
+          customerId: validatedData.customerId ?? undefined,
           paymentMethod: validatedData.paymentMethod,
           // Server ignores this but the type requires it.
           paidAmount: 0,
@@ -1098,9 +1172,18 @@ export const checkoutController = {
       if (!id) throw new AppError('Checkout ID is required', 400);
       if (!userId) throw new AppError('User ID is required', 400);
 
+      // ⚠ Null-collapse on `variantId`: the schema declares it
+      //   `.optional().nullable()` → `string | null | undefined`.
+      //   `CheckoutService.addCheckoutItem`'s item param declares
+      //   `{ variantId?: string }` → `string | undefined`.
+      //   Coerce at the call site rather than loosening the
+      //   service interface.
       const result = await checkoutService.addCheckoutItem(
         id,
-        data,
+        {
+          ...data,
+          variantId: data.variantId ?? undefined,
+        },
         userId,
       );
 
@@ -1254,6 +1337,11 @@ export const checkoutController = {
   // ⚠ This handles SPLIT / PARTIAL payments added AFTER the initial
   //    checkout. It is NOT the gateway-call entry point — that is
   //    `createOnlineCheckout`.
+  //
+  // ⚠ Phase 2: `checkoutService.processPaymentForCheckout` resolves
+  //   the currency from the sale's business unit and writes it
+  //   explicitly on the `Payment` row. This controller does not
+  //   accept or forward a currency.
 
   async processPayment(req: Request, res: Response, next: NextFunction) {
     try {
@@ -1389,6 +1477,17 @@ export const checkoutController = {
     }
   },
 
+  /**
+   * GET /checkout/settings
+   *
+   * ⚠ Phase 2: The response shape carries `currencyCode` only.
+   *   Phase 1 removed the persisted `currencySymbol` column from
+   *   `CartSettings`, `CheckoutSettings`, and `SalesSettings`. If
+   *   the frontend needs the display symbol, it derives it from
+   *   `currencyCode` via `lib/currencies.ts` (the same registry the
+   *   backend uses). No controller-side change is needed — the
+   *   service returns the shape without the field.
+   */
   async getCheckoutSettings(
     req: Request,
     res: Response,
@@ -1406,6 +1505,21 @@ export const checkoutController = {
     }
   },
 
+  /**
+   * PUT /checkout/settings
+   *
+   * ⚠ Phase 2: `updateCheckoutSettingsSchema` no longer accepts
+   *   `currencySymbol`. A client that still sends it gets a 400
+   *   (`.strict()`), not a silent drop. That is intentional — it
+   *   surfaces the Phase 4 / Phase 5 client-side cleanup as a real
+   *   error during rollout instead of accepting a field the backend
+   *   will discard.
+   *
+   *   The service's own write path (`updateCheckoutSettings`) also
+   *   strips any stale `currencySymbol` key from a pre-Phase-1
+   *   stored blob, so an old `BusinessUnit.settings` row can't
+   *   resurrect the field either.
+   */
   async updateCheckoutSettings(
     req: Request,
     res: Response,

@@ -12,11 +12,11 @@ import React, {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../../../hooks/useAuth';
 import { usePermission } from '../../../../../hooks/usePermission';
-import { inventoryService } from '../../../../../services/inventoryService';
+import {
+  inventoryService,
+  type CreateItemData,
+} from '../../../../../services/inventoryService';
 import { barcodeService } from '../../../../../services/barcodeService';
-import { companyService } from '../../../../../services/companyService';
-import { locationService } from '../../../../../services/locationService';
-import { productService } from '../../../../../services/productService';
 import { toast } from '../../../../../utils/toast-manager';
 import {
   ArrowLeft,
@@ -50,7 +50,6 @@ import {
   Building2,
   ExternalLink,
 } from 'lucide-react';
-import { api } from '../../../../../services/api';
 
 // ============================================
 // TYPES
@@ -68,7 +67,6 @@ interface InventoryFormData {
   minStock: number;
   maxStock: number;
   location: string;
-  locationId?: string;
   supplier: string;
   supplierId?: string;
   notes: string;
@@ -195,14 +193,10 @@ const SENTINEL_LOCATION_VALUES = new Set([
   'default',
 ]);
 
-// ----- Canonical admin create-page routes -----
 const SUPPLIER_CREATE_ROUTE = '/admin/suppliers/create';
 const LOCATION_CREATE_ROUTE = '/admin/locations/create';
 const CATEGORY_CREATE_ROUTE = '/admin/categories/create';
 
-// Query-param names used to preselect the newly created entity when
-// the user returns from its create page. The create page is expected
-// to append the id to the returnTo URL it navigates back to.
 const PRESELECT_CATEGORY_PARAM = 'preselectCategoryId';
 const PRESELECT_SUPPLIER_PARAM = 'preselectSupplierId';
 const PRESELECT_LOCATION_PARAM = 'preselectLocationId';
@@ -213,16 +207,13 @@ const PRESELECT_LOCATION_PARAM = 'preselectLocationId';
 
 function generateInventorySKU(itemName: string): string {
   if (!itemName || itemName.trim().length === 0) return '';
-
   const prefix =
     itemName
       .replace(/[^a-zA-Z0-9]/g, '')
       .slice(0, 3)
       .toUpperCase() || 'INV';
-
   const timestamp = Date.now().toString(36).toUpperCase().slice(-6);
   const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-
   return `${prefix}-${timestamp}-${random}`;
 }
 
@@ -238,12 +229,6 @@ function isValidLocationValue(
   return !SENTINEL_LOCATION_VALUES.has(value);
 }
 
-/**
- * Unwrap a service response that may come back in any of these shapes:
- *   - the raw payload               { barcode: "..." }
- *   - a data-enveloped payload      { data: { barcode: "..." } }
- *   - a success envelope            { success: true, data: { barcode: "..." } }
- */
 function unwrapPayload<T = any>(response: any): T | null {
   if (!response) return null;
   if (typeof response !== 'object') return response as T;
@@ -251,10 +236,6 @@ function unwrapPayload<T = any>(response: any): T | null {
   return response as T;
 }
 
-/**
- * Unwrap the many list shapes services return. Returns an array of
- * whatever the payload's items are.
- */
 function unwrapArray<T = any>(response: any): T[] {
   if (!response) return [];
   if (Array.isArray(response)) return response as T[];
@@ -262,31 +243,16 @@ function unwrapArray<T = any>(response: any): T[] {
   if (typeof response === 'object') {
     if (Array.isArray((response as any).data)) return (response as any).data;
     if (Array.isArray((response as any).items)) return (response as any).items;
-    if (
-      (response as any).data &&
-      Array.isArray((response as any).data.data)
-    ) {
+    if ((response as any).data && Array.isArray((response as any).data.data)) {
       return (response as any).data.data;
     }
-    if (
-      (response as any).data &&
-      Array.isArray((response as any).data.items)
-    ) {
+    if ((response as any).data && Array.isArray((response as any).data.items)) {
       return (response as any).data.items;
     }
   }
-
   return [];
 }
 
-/**
- * Normalize a category row into `{ id, name, productCount? }`,
- * regardless of which service produced it.
- *
- *   productService.getCategories  → { id, name, _count: { products } }
- *   inventoryService.getCategories → { id, name } or { category, categoryId }
- *   inventoryService.getCategorySummary → { category, count }
- */
 function normalizeCategoryRow(raw: any): CategoryOption | null {
   if (!raw) return null;
 
@@ -317,9 +283,6 @@ function normalizeCategoryRow(raw: any): CategoryOption | null {
   return { id: id.trim(), name: name.trim(), productCount };
 }
 
-/**
- * Deduplicate a list of categories by id.
- */
 function dedupeCategories(rows: CategoryOption[]): CategoryOption[] {
   const seen = new Map<string, CategoryOption>();
   for (const row of rows) {
@@ -330,15 +293,6 @@ function dedupeCategories(rows: CategoryOption[]): CategoryOption[] {
   );
 }
 
-/**
- * Build a URL to a "create" page carrying a `returnTo` query param so
- * the target page can navigate the user back here after creation.
- *
- * `returnTo` may also carry preselect params we want the create page
- * to forward on its way back. We encode the full intended return path
- * (including any params we want appended) so the create page doesn't
- * have to know which entity it just created.
- */
 function buildCreateUrl(basePath: string): string {
   if (typeof window === 'undefined') return basePath;
   const returnTo = window.location.pathname + window.location.search;
@@ -361,9 +315,6 @@ export default function AddInventoryItemPage() {
     getCurrentBusinessUnit,
   } = usePermission();
 
-  // ────────────────────────────────────────────────────────────
-  // State
-  // ────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -371,7 +322,6 @@ export default function AddInventoryItemPage() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [createdItemId, setCreatedItemId] = useState<string | null>(null);
 
-  // Business Unit
   const [businessUnits, setBusinessUnits] = useState<BusinessUnitOption[]>([]);
   const [selectedBusinessUnitId, setSelectedBusinessUnitId] = useState('');
   const [loadingBusinessUnits, setLoadingBusinessUnits] = useState(true);
@@ -381,18 +331,15 @@ export default function AddInventoryItemPage() {
     null,
   );
 
-  // Barcode / QR
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [showBarcode, setShowBarcode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [barcodeInfo, setBarcodeInfo] = useState<BarcodeInfo | null>(null);
   const [isBarcodeValid, setIsBarcodeValid] = useState<boolean | null>(null);
-  const [checkingBarcode, setCheckingBarcode] = useState(false);
   const [barcodeSource, setBarcodeSource] = useState<
     'manual' | 'generated' | null
   >(null);
 
-  // Options
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -413,7 +360,6 @@ export default function AddInventoryItemPage() {
     minStock: 5,
     maxStock: 100,
     location: 'Warehouse',
-    locationId: '',
     supplier: '',
     supplierId: '',
     notes: '',
@@ -430,10 +376,6 @@ export default function AddInventoryItemPage() {
   });
 
   const booting = authLoading || permLoading;
-
-  // Guards against re-applying the preselect effect after the user
-  // manually clears a selection. We only consume each preselect param
-  // once per mount.
   const consumedPreselectRef = useRef<Set<string>>(new Set());
 
   // ────────────────────────────────────────────────────────────
@@ -473,11 +415,6 @@ export default function AddInventoryItemPage() {
             ...prev,
             businessUnitId: preferred.id,
           }));
-          try {
-            localStorage.setItem('businessUnitId', preferred.id);
-          } catch {
-            /* ignore */
-          }
         }
 
         setLoadingBusinessUnits(false);
@@ -490,24 +427,13 @@ export default function AddInventoryItemPage() {
   }, [booting, isAuthenticated]);
 
   // ────────────────────────────────────────────────────────────
-  // Preselect supplier / location / category on return from their
-  // create pages.
-  //
-  // The preselect fires when the relevant option list loads, because
-  // we need the list to resolve the id → name. Each param is consumed
-  // at most once per mount so the user can clear without the effect
-  // fighting them.
-  //
-  // The dependencies explicitly include the option lists' lengths so
-  // that arriving back with a brand-new category (which appears in
-  // the list only after loadOptions completes) triggers a re-run.
+  // Preselect on return from create pages
   // ────────────────────────────────────────────────────────────
   useEffect(() => {
     const preselectCategory = searchParams?.get(PRESELECT_CATEGORY_PARAM);
     const preselectSupplier = searchParams?.get(PRESELECT_SUPPLIER_PARAM);
     const preselectLocation = searchParams?.get(PRESELECT_LOCATION_PARAM);
 
-    // Category — needs categories list.
     if (
       preselectCategory &&
       !consumedPreselectRef.current.has(`cat:${preselectCategory}`) &&
@@ -524,7 +450,6 @@ export default function AddInventoryItemPage() {
       }
     }
 
-    // Supplier — needs suppliers list.
     if (
       preselectSupplier &&
       !consumedPreselectRef.current.has(`sup:${preselectSupplier}`) &&
@@ -541,7 +466,6 @@ export default function AddInventoryItemPage() {
       }
     }
 
-    // Location — needs locations list.
     if (
       preselectLocation &&
       !consumedPreselectRef.current.has(`loc:${preselectLocation}`) &&
@@ -551,7 +475,6 @@ export default function AddInventoryItemPage() {
       if (match) {
         setFormData((prev) => ({
           ...prev,
-          locationId: match.id,
           location: match.name,
         }));
         consumedPreselectRef.current.add(`loc:${preselectLocation}`);
@@ -568,22 +491,9 @@ export default function AddInventoryItemPage() {
     setBusinessUnitError(null);
 
     try {
-      let units: BusinessUnitOption[] = [];
-
-      try {
-        const response = await api.get('/business-units');
-        let data = response;
-
-        if (data && typeof data === 'object') {
-          if ('success' in data && (data as any).success && 'data' in data) {
-            data = (data as any).data;
-          } else if ('data' in data) {
-            data = (data as any).data;
-          }
-        }
-
-        if (Array.isArray(data) && data.length > 0) {
-          units = data
+      const hookUnits = getBusinessUnitsFromHook();
+      const mapped: BusinessUnitOption[] = Array.isArray(hookUnits)
+        ? hookUnits
             .filter((bu: any) => isValidBusinessUnitId(bu?.id))
             .map((bu: any) => ({
               id: bu.id,
@@ -591,112 +501,12 @@ export default function AddInventoryItemPage() {
               code: bu.code || '',
               type: bu.type || '',
               isActive: bu.isActive !== false,
-              companyId: bu.companyId || bu.company?.id || undefined,
-              companyName: bu.company?.name || undefined,
-            }));
-        }
-      } catch (apiError) {
-        console.warn('[inventory/add] /business-units failed:', apiError);
-      }
+              companyId: bu.companyId || undefined,
+              companyName: bu.companyName || undefined,
+            }))
+        : [];
 
-      if (units.length === 0) {
-        try {
-          const companies = await companyService.getAll({ limit: 100 });
-          if (companies && companies.data && Array.isArray(companies.data)) {
-            for (const company of companies.data) {
-              if (
-                company.businessUnits &&
-                Array.isArray(company.businessUnits)
-              ) {
-                company.businessUnits.forEach((bu: any) => {
-                  if (isValidBusinessUnitId(bu?.id)) {
-                    units.push({
-                      id: bu.id,
-                      name: bu.name || `${company.name} - Business Unit`,
-                      code: bu.code || '',
-                      type: bu.type || '',
-                      isActive: bu.isActive !== false,
-                      companyId: company.id,
-                      companyName: company.name,
-                    });
-                  }
-                });
-              }
-            }
-          }
-        } catch (companyError) {
-          console.warn('[inventory/add] companyService failed:', companyError);
-        }
-      }
-
-      if (units.length === 0) {
-        try {
-          const userAny = user as any;
-          if (userAny?.businessUnits && Array.isArray(userAny.businessUnits)) {
-            userAny.businessUnits.forEach((bu: any) => {
-              const id = bu.businessUnitId || bu.id || bu;
-              const name =
-                bu.businessUnit?.name ||
-                bu.name ||
-                bu.businessUnitName ||
-                'Unnamed Business Unit';
-              const code = bu.businessUnit?.code || bu.code || '';
-              const type = bu.businessUnit?.type || bu.type || '';
-              const isActive =
-                bu.businessUnit?.isActive !== undefined
-                  ? bu.businessUnit.isActive
-                  : bu.isActive !== undefined
-                    ? bu.isActive
-                    : true;
-
-              if (isValidBusinessUnitId(id)) {
-                units.push({
-                  id,
-                  name,
-                  code,
-                  type,
-                  isActive,
-                  companyId: bu.businessUnit?.companyId || undefined,
-                });
-              }
-            });
-          }
-        } catch (userError) {
-          console.warn('[inventory/add] user context failed:', userError);
-        }
-      }
-
-      if (units.length === 0) {
-        try {
-          const stored = localStorage.getItem('businessUnits');
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              units = parsed.filter((bu: any) => isValidBusinessUnitId(bu?.id));
-            }
-          }
-        } catch (storageError) {
-          console.warn('[inventory/add] localStorage failed:', storageError);
-        }
-      }
-
-      if (units.length === 0) {
-        const defaultBU =
-          typeof window !== 'undefined'
-            ? localStorage.getItem('businessUnitId')
-            : null;
-        if (isValidBusinessUnitId(defaultBU)) {
-          units.push({
-            id: defaultBU,
-            name: 'Default Business Unit',
-            code: 'DEFAULT',
-            type: 'STORE',
-            isActive: true,
-          });
-        }
-      }
-
-      const uniqueUnits = units.filter(
+      const uniqueUnits = mapped.filter(
         (unit, index, self) =>
           index === self.findIndex((u) => u.id === unit.id),
       );
@@ -711,11 +521,6 @@ export default function AddInventoryItemPage() {
           ...prev,
           businessUnitId: activeUnit.id,
         }));
-        try {
-          localStorage.setItem('businessUnitId', activeUnit.id);
-        } catch {
-          /* ignore */
-        }
       } else {
         setBusinessUnitError(
           'No business units available. Please create a business unit first.',
@@ -729,78 +534,11 @@ export default function AddInventoryItemPage() {
     } finally {
       setLoadingBusinessUnits(false);
     }
-  }, [user]);
+  }, [getBusinessUnitsFromHook]);
 
   // ============================================
   // LOAD CATEGORIES / SUPPLIERS / LOCATIONS
   // ============================================
-
-  /**
-   * Category fetch.
-   *
-   * The canonical `Category` table is written by the admin category
-   * create page via `productService.createCategory`. The inventory
-   * service's `getCategories` and `getCategorySummary` return
-   * aggregated views over inventory rows, which is a different set.
-   *
-   * So we try `productService.getCategories` first — that's the
-   * source of truth that the create page writes to — and only fall
-   * back to the inventory service's aggregate views if the product
-   * endpoint yields nothing.
-   */
-  const loadCategories = useCallback(async (buId: string) => {
-    const collected: CategoryOption[] = [];
-
-    // 1. Canonical product categories.
-    try {
-      const rows = await productService.getCategories({
-        businessUnitId: buId,
-        isActive: true,
-      });
-      const list = unwrapArray<any>(rows);
-      for (const raw of list) {
-        const normalized = normalizeCategoryRow(raw);
-        if (normalized) collected.push(normalized);
-      }
-    } catch (e) {
-      console.warn(
-        '[inventory/add] productService.getCategories failed:',
-        e,
-      );
-    }
-
-    // 2. Fallback — inventory service aggregate views.
-    if (collected.length === 0) {
-      try {
-        const rows = await inventoryService.getCategories(buId);
-        const list = unwrapArray<any>(rows);
-        for (const raw of list) {
-          const normalized = normalizeCategoryRow(raw);
-          if (normalized) collected.push(normalized);
-        }
-      } catch (e) {
-        console.warn('[inventory/add] inventoryService.getCategories failed:', e);
-      }
-    }
-
-    if (collected.length === 0) {
-      try {
-        const rows = await inventoryService.getCategorySummary(buId);
-        const list = unwrapArray<any>(rows);
-        for (const raw of list) {
-          const normalized = normalizeCategoryRow(raw);
-          if (normalized) collected.push(normalized);
-        }
-      } catch (e) {
-        console.warn(
-          '[inventory/add] inventoryService.getCategorySummary failed:',
-          e,
-        );
-      }
-    }
-
-    return dedupeCategories(collected);
-  }, []);
 
   const loadOptions = useCallback(
     async (buId: string) => {
@@ -812,83 +550,46 @@ export default function AddInventoryItemPage() {
       setLoadingOptions(true);
 
       try {
-        // Categories
-        const categoryList = await loadCategories(buId);
-        setCategories(categoryList);
+        // Categories — via inventoryService (backend route: /inventory/categories)
+        try {
+          const rows = await inventoryService.getCategories(buId);
+          const normalized = (rows || [])
+            .map((r) => normalizeCategoryRow(r))
+            .filter((c): c is CategoryOption => c !== null);
+          setCategories(dedupeCategories(normalized));
+        } catch (e) {
+          console.warn('[inventory/add] getCategories failed:', e);
+          setCategories([]);
+        }
 
-        // Suppliers
-        let suppliersLoaded = false;
-
+        // Suppliers — via inventoryService (backend route: /inventory/suppliers)
         try {
           const suppliersData = await inventoryService.getSuppliers(buId);
           const list = unwrapArray<any>(suppliersData);
-          if (list.length > 0) {
-            setSuppliers(
-              list
-                .filter((sup: any) => sup && typeof sup.id === 'string')
-                .map((sup: any) => ({
-                  id: sup.id,
-                  name: sup.name || 'Unnamed Supplier',
-                })),
-            );
-            suppliersLoaded = true;
-          }
+          setSuppliers(
+            list
+              .filter((sup: any) => sup && typeof sup.id === 'string')
+              .map((sup: any) => ({
+                id: sup.id,
+                name: sup.name || 'Unnamed Supplier',
+              })),
+          );
         } catch (e) {
           console.warn('[inventory/add] getSuppliers failed:', e);
+          setSuppliers([]);
         }
 
-        if (!suppliersLoaded) setSuppliers([]);
-
-        // Locations
-        let locationsLoaded = false;
-
-        try {
-          const locationsData = await locationService.list(buId);
-          const list = unwrapArray<any>(locationsData);
-          if (list.length > 0) {
-            setLocations(
-              list
-                .filter((loc: any) => loc && typeof loc.id === 'string')
-                .map((loc: any) => ({
-                  id: loc.id,
-                  name: loc.name || 'Unnamed Location',
-                  isDefault: loc.isDefault,
-                  isActive: loc.isActive !== false,
-                })),
-            );
-            locationsLoaded = true;
-
-            setFormData((prev) => {
-              if (
-                isValidLocationValue(prev.location) &&
-                prev.location !== 'Warehouse'
-              ) {
-                return prev;
-              }
-              const def =
-                list.find((l: any) => l.isDefault) ||
-                list.find((l: any) => l.isActive !== false) ||
-                list[0];
-              if (!def) return prev;
-              return { ...prev, location: def.name, locationId: def.id };
-            });
-          }
-        } catch (e) {
-          console.warn('[inventory/add] locationService.list failed:', e);
-        }
-
-        if (!locationsLoaded) {
-          setLocations(
-            FALLBACK_LOCATIONS.map((l) => ({ id: l.value, name: l.value })),
-          );
-        }
+        // Locations — fallback list; backend resolves/creates from name.
+        setLocations(
+          FALLBACK_LOCATIONS.map((l) => ({ id: l.value, name: l.value })),
+        );
       } catch (err) {
         console.error('[inventory/add] loadOptions error:', err);
       } finally {
         setLoadingOptions(false);
       }
     },
-    [loadCategories],
+    [],
   );
 
   useEffect(() => {
@@ -902,12 +603,6 @@ export default function AddInventoryItemPage() {
         ...prev,
         businessUnitId: selectedBusinessUnitId,
       }));
-
-      try {
-        localStorage.setItem('businessUnitId', selectedBusinessUnitId);
-      } catch {
-        /* ignore */
-      }
     }
   }, [selectedBusinessUnitId, loadOptions]);
 
@@ -915,103 +610,30 @@ export default function AddInventoryItemPage() {
   // BARCODE + QR HELPERS
   // ============================================
 
-  const checkBarcodeUniqueness = useCallback(
-    async (barcode: string): Promise<boolean> => {
-      if (!barcode || barcode.length < 3) return true;
-
-      setCheckingBarcode(true);
-      try {
-        const result = await productService.validateBarcode(barcode);
-
-        if (result && !result.valid) {
-          setIsBarcodeValid(false);
-          setErrors((prev) => ({
-            ...prev,
-            barcode:
-              result.message ||
-              'This barcode is already assigned to another product',
-          }));
-          return false;
-        }
-
-        setIsBarcodeValid(true);
-        setErrors((prev) => {
-          const next = { ...prev };
-          delete next.barcode;
-          return next;
-        });
-        return true;
-      } catch (err: any) {
-        if (err?.response?.status === 404 || err?.status === 404) {
-          setIsBarcodeValid(true);
-          setErrors((prev) => {
-            const next = { ...prev };
-            delete next.barcode;
-            return next;
-          });
-          return true;
-        }
-        console.error('[inventory/add] barcode check failed:', err);
-        return true;
-      } finally {
-        setCheckingBarcode(false);
-      }
+  const buildLocalBarcodeInfo = useCallback(
+    (barcode: string): BarcodeInfo => {
+      const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+        barcode,
+      )}&code=EAN-13&dpi=96`;
+      const qrData = {
+        type: 'INVENTORY_ITEM',
+        barcode,
+        name: formData.name,
+        sku: formData.sku,
+        price: formData.unitPrice,
+      };
+      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+        JSON.stringify(qrData),
+      )}`;
+      return {
+        barcode,
+        barcodeUrl,
+        qrCodeUrl,
+        qrData,
+        isGenerated: true,
+      };
     },
-    [],
-  );
-
-  const buildBarcodeInfo = useCallback(
-    async (
-      barcode: string,
-      formSnapshot: InventoryFormData,
-    ): Promise<BarcodeInfo> => {
-      try {
-        const [barcodeImageRaw, qrCodeRaw] = await Promise.all([
-          barcodeService.generateBarcodeImage(barcode),
-          barcodeService.generateQRCode({
-            itemName: formSnapshot.name,
-            sku: formSnapshot.sku,
-            price: formSnapshot.unitPrice,
-            barcode,
-            type: 'INVENTORY_ITEM',
-          }),
-        ]);
-
-        const barcodeImage = unwrapPayload<{ barcodeUrl?: string }>(
-          barcodeImageRaw,
-        );
-        const qrCode = unwrapPayload<{ qrCodeUrl?: string }>(qrCodeRaw);
-
-        const barcodeUrl =
-          barcodeImage?.barcodeUrl || buildBarcodeUrl(barcode);
-        const qrCodeUrl =
-          qrCode?.qrCodeUrl ||
-          buildQrCodeUrl(buildQrData({ formData: formSnapshot, barcode }));
-
-        return {
-          barcode,
-          barcodeUrl,
-          qrCodeUrl,
-          qrData: buildQrData({ formData: formSnapshot, barcode }),
-          isGenerated: true,
-        };
-      } catch (err) {
-        console.warn(
-          '[inventory/add] barcode service image render failed, using fallback URLs:',
-          err,
-        );
-        return {
-          barcode,
-          barcodeUrl: buildBarcodeUrl(barcode),
-          qrCodeUrl: buildQrCodeUrl(
-            buildQrData({ formData: formSnapshot, barcode }),
-          ),
-          qrData: buildQrData({ formData: formSnapshot, barcode }),
-          isGenerated: true,
-        };
-      }
-    },
-    [],
+    [formData.name, formData.sku, formData.unitPrice],
   );
 
   const handleGenerateBarcode = async () => {
@@ -1030,37 +652,27 @@ export default function AddInventoryItemPage() {
       });
 
       const payload = unwrapPayload<{ barcode?: string }>(raw);
-      const candidate =
-        payload?.barcode ?? (raw as any)?.barcode ?? null;
+      const candidate = payload?.barcode ?? (raw as any)?.barcode ?? null;
 
-      const validationError = validateBarcodeString(candidate);
-      if (validationError) {
-        console.warn(
-          '[inventory/add] barcode service returned invalid value, falling back:',
-          candidate,
-          validationError,
-        );
+      if (typeof candidate !== 'string' || candidate.trim().length < 3) {
         const fallback = `INV-${Date.now().toString(36)
           .toUpperCase()
           .slice(-8)}-${Math.random()
           .toString(36)
           .substring(2, 5)
           .toUpperCase()}`;
-
-        const info = await buildBarcodeInfo(fallback, formData);
+        const info = buildLocalBarcodeInfo(fallback);
         setFormData((prev) => ({ ...prev, barcode: fallback }));
         setBarcodeInfo(info);
         setBarcodeSource('generated');
         setIsBarcodeValid(true);
         setShowBarcode(true);
-        toast.success(
-          'Barcode generated locally (server returned an invalid value)',
-        );
+        toast.success('Barcode generated locally');
         return;
       }
 
-      const barcode = candidate as string;
-      const info = await buildBarcodeInfo(barcode, formData);
+      const barcode = candidate.trim();
+      const info = buildLocalBarcodeInfo(barcode);
 
       setFormData((prev) => ({ ...prev, barcode }));
       setBarcodeInfo(info);
@@ -1077,13 +689,19 @@ export default function AddInventoryItemPage() {
     }
   };
 
-  const handleBarcodeChange = async (value: string) => {
+  const handleBarcodeChange = (value: string) => {
     const cleanValue = value.toUpperCase().trim();
     setFormData((prev) => ({ ...prev, barcode: cleanValue }));
     setBarcodeSource('manual');
 
     if (cleanValue.length >= 4) {
-      await checkBarcodeUniqueness(cleanValue);
+      setIsBarcodeValid(true);
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.barcode;
+        return next;
+      });
+      setBarcodeInfo(buildLocalBarcodeInfo(cleanValue));
     } else {
       setIsBarcodeValid(null);
     }
@@ -1370,10 +988,6 @@ export default function AddInventoryItemPage() {
       newErrors.supplier = 'Supplier name must be less than 100 characters';
       isValid = false;
     }
-    if (formData.barcode && isBarcodeValid === false) {
-      newErrors.barcode = 'Barcode is already assigned to another product';
-      isValid = false;
-    }
     if (formData.maxStock && formData.maxStock < formData.minStock) {
       newErrors.maxStock = 'Max stock must be greater than min stock';
       isValid = false;
@@ -1381,7 +995,7 @@ export default function AddInventoryItemPage() {
 
     setErrors(newErrors);
     return isValid;
-  }, [formData, isBarcodeValid, selectedBusinessUnitId, businessUnits]);
+  }, [formData, selectedBusinessUnitId, businessUnits]);
 
   // ============================================
   // CHANGE HANDLERS
@@ -1446,28 +1060,17 @@ export default function AddInventoryItemPage() {
   // ============================================
   // "ADD NEW" NAVIGATION
   // ============================================
-  //
-  // The canonical create pages accept `returnTo`. On success they
-  // navigate back there. For category creation, the create page is
-  // expected to append `preselectCategoryId=<newId>` to that return
-  // URL — see the note at the bottom of this file.
 
   const handleAddNewSupplier = () => {
-    const url = buildCreateUrl(SUPPLIER_CREATE_ROUTE);
-    console.log('[inventory/add] Navigating to add supplier:', url);
-    router.push(url);
+    router.push(buildCreateUrl(SUPPLIER_CREATE_ROUTE));
   };
 
   const handleAddNewLocation = () => {
-    const url = buildCreateUrl(LOCATION_CREATE_ROUTE);
-    console.log('[inventory/add] Navigating to add location:', url);
-    router.push(url);
+    router.push(buildCreateUrl(LOCATION_CREATE_ROUTE));
   };
 
   const handleAddNewCategory = () => {
-    const url = buildCreateUrl(CATEGORY_CREATE_ROUTE);
-    console.log('[inventory/add] Navigating to add category:', url);
-    router.push(url);
+    router.push(buildCreateUrl(CATEGORY_CREATE_ROUTE));
   };
 
   // ============================================
@@ -1510,127 +1113,112 @@ export default function AddInventoryItemPage() {
 
     setLoading(true);
     try {
-      let workingData = { ...formData };
+      let workingBarcode = formData.barcode.trim();
 
-      let localBarcodeInfo: BarcodeInfo | null = barcodeInfo;
-
-      if (autoGenerateCodes && !workingData.barcode) {
+      // Auto-generate a barcode if empty and enabled.
+      if (autoGenerateCodes && !workingBarcode) {
         try {
           const raw = await barcodeService.generateUniqueBarcode({
             prefix: 'INV',
             length: 12,
-            productName: workingData.name,
-            sku: workingData.sku || undefined,
+            productName: formData.name,
+            sku: formData.sku || undefined,
           });
           const payload = unwrapPayload<{ barcode?: string }>(raw);
-          const candidate =
-            payload?.barcode ?? (raw as any)?.barcode ?? null;
-
-          const validationError = validateBarcodeString(candidate);
-          if (!validationError) {
-            workingData = { ...workingData, barcode: candidate as string };
-          } else {
-            const fallback = `INV-${Date.now().toString(36)
-              .toUpperCase()
-              .slice(-8)}-${Math.random()
-              .toString(36)
-              .substring(2, 5)
-              .toUpperCase()}`;
-            workingData = { ...workingData, barcode: fallback };
+          const candidate = payload?.barcode ?? (raw as any)?.barcode ?? null;
+          if (typeof candidate === 'string' && candidate.trim().length >= 3) {
+            workingBarcode = candidate.trim();
           }
         } catch (genErr) {
           console.warn(
             '[inventory/add] auto barcode generation failed, using local fallback:',
             genErr,
           );
-          const fallback = `INV-${Date.now().toString(36)
+        }
+
+        if (!workingBarcode) {
+          workingBarcode = `INV-${Date.now().toString(36)
             .toUpperCase()
             .slice(-8)}-${Math.random()
             .toString(36)
             .substring(2, 5)
             .toUpperCase()}`;
-          workingData = { ...workingData, barcode: fallback };
         }
-
-        localBarcodeInfo = await buildBarcodeInfo(
-          workingData.barcode,
-          workingData,
-        );
-        setBarcodeInfo(localBarcodeInfo);
-        setFormData((prev) => ({ ...prev, barcode: workingData.barcode }));
-      } else if (autoGenerateCodes && workingData.barcode && !barcodeInfo) {
-        localBarcodeInfo = await buildBarcodeInfo(
-          workingData.barcode,
-          workingData,
-        );
-        setBarcodeInfo(localBarcodeInfo);
       }
 
-      const itemData = {
-        name: workingData.name.trim(),
-        sku: workingData.sku.trim() || undefined,
-        unit: workingData.unit || 'each',
-        unitPrice: workingData.unitPrice,
-        costPrice: workingData.costPrice || undefined,
-        quantity: workingData.quantity,
-        minStock: workingData.minStock,
-        maxStock: workingData.maxStock || undefined,
-        category: workingData.category.trim() || undefined,
-        categoryId: workingData.categoryId || undefined,
-        location: workingData.location,
-        supplier: workingData.supplier.trim() || undefined,
-        supplierId: workingData.supplierId || undefined,
-        notes: workingData.notes.trim() || undefined,
-        description: workingData.description.trim() || undefined,
-        barcode: workingData.barcode.trim() || undefined,
+      // Build the payload matching the backend `createItemSchema`.
+      // `quantity` is the backend's field for initial stock.
+      //
+      // `CreateItemData` requires `name`, `quantity`, and `unitPrice`
+      // — we always supply those, so we can type the object directly
+      // and only sprinkle optional fields via conditional spreads.
+      const itemData: CreateItemData = {
+        name: formData.name.trim(),
+        quantity: formData.quantity,
+        unitPrice: formData.unitPrice,
+        unit: formData.unit || 'each',
+
+        ...(formData.sku.trim() && {
+          sku: formData.sku.trim().toUpperCase(),
+        }),
+        ...(formData.costPrice > 0 && { costPrice: formData.costPrice }),
+        ...(typeof formData.minStock === 'number' && {
+          minStock: formData.minStock,
+        }),
+        ...(typeof formData.maxStock === 'number' && {
+          maxStock: formData.maxStock,
+        }),
+        ...(formData.categoryId && { categoryId: formData.categoryId }),
+        ...(formData.category.trim() && {
+          category: formData.category.trim(),
+        }),
+        ...(formData.location && { location: formData.location }),
+        ...(formData.supplierId && { supplierId: formData.supplierId }),
+        ...(formData.supplier.trim() && {
+          supplier: formData.supplier.trim(),
+        }),
+        ...(formData.notes.trim() && { notes: formData.notes.trim() }),
+        ...(formData.description.trim() && {
+          description: formData.description.trim(),
+        }),
+        ...(workingBarcode && { barcode: workingBarcode }),
+        ...(formData.weight > 0 && { weight: formData.weight }),
+        ...(typeof formData.taxRate === 'number' &&
+          formData.taxRate > 0 && { taxRate: formData.taxRate }),
+        ...(formData.tags.trim() && {
+          tags: formData.tags
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean),
+        }),
+        ...(formData.images &&
+          formData.images.length > 0 && { images: formData.images }),
+
+        isActive: formData.isActive,
+        isDigital: formData.isDigital,
+        featured: formData.featured,
+
         businessUnitId: selectedBusinessUnitId,
-        userId:
-          user?.id ||
-          (user as any)?.userId ||
-          (user as any)?.uid ||
-          undefined,
-        weight: workingData.weight || undefined,
-        isActive: workingData.isActive,
-        isDigital: workingData.isDigital,
-        featured: workingData.featured,
-        tags: workingData.tags
-          ? workingData.tags
-              .split(',')
-              .map((t) => t.trim())
-              .filter(Boolean)
-          : [],
-        taxRate: workingData.taxRate || undefined,
-        images: workingData.images || [],
+        ...(user?.id && { userId: user.id }),
       };
 
       console.log('📤 [inventory/add] createItem payload:', itemData);
+
       const result = await inventoryService.createItem(itemData);
 
-      const itemId =
+      const createdId =
         result?.id ||
-        (result as any)?.inventory?.id ||
         (result as any)?.data?.id ||
+        (result as any)?.inventoryId ||
         null;
-      setCreatedItemId(itemId);
+      setCreatedItemId(createdId);
 
-      if (itemId) {
-        if (workingData.barcode && localBarcodeInfo) {
-          try {
-            await inventoryService.updateItem(itemId, {
-              barcode: workingData.barcode,
-              businessUnitId: selectedBusinessUnitId,
-            });
-          } catch (barcodeError) {
-            console.warn(
-              '[inventory/add] barcode association failed:',
-              barcodeError,
-            );
-          }
-        }
-
+      // If we have an item ID, regenerate the QR with the real ID
+      // so the printed tag references the record, not a guess.
+      if (createdId) {
         try {
           const qrResponse = await inventoryService.generateInventoryQRCode(
-            itemId,
+            createdId,
             selectedBusinessUnitId,
           );
           const qrPayload = unwrapPayload<{
@@ -1647,8 +1235,10 @@ export default function AddInventoryItemPage() {
                     qrData: qrPayload.qrData || prev.qrData,
                   }
                 : {
-                    barcode: workingData.barcode,
-                    barcodeUrl: buildBarcodeUrl(workingData.barcode),
+                    barcode: workingBarcode,
+                    barcodeUrl: `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(
+                      workingBarcode,
+                    )}&code=EAN-13&dpi=96`,
                     qrCodeUrl: qrPayload.qrCodeUrl!,
                     qrData: qrPayload.qrData,
                     isGenerated: true,
@@ -1678,7 +1268,6 @@ export default function AddInventoryItemPage() {
         minStock: 5,
         maxStock: 100,
         location: 'Warehouse',
-        locationId: '',
         supplier: '',
         supplierId: '',
         notes: '',
@@ -1710,22 +1299,18 @@ export default function AddInventoryItemPage() {
       console.error('[inventory/add] create failed:', err);
 
       let errorMessage = 'Failed to create inventory item';
-      if (err?.response?.data?.errors) {
-        const validationErrors = err.response.data.errors;
-        if (Array.isArray(validationErrors)) {
-          errorMessage = validationErrors
-            .map(
-              (e: any) =>
-                `${e.field || e.path || 'field'}: ${e.message}`,
-            )
-            .join(', ');
-        }
-      } else if (err?.response?.data?.error?.message) {
-        errorMessage = err.response.data.error.message;
-      } else if (err?.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err?.response?.data?.error) {
-        errorMessage = err.response.data.error;
+      const resp = err?.response?.data;
+      if (resp?.errors && Array.isArray(resp.errors)) {
+        errorMessage = resp.errors
+          .map(
+            (e: any) => `${e.field || e.path || 'field'}: ${e.message}`,
+          )
+          .join(', ');
+      } else if (resp?.message) {
+        errorMessage = resp.message;
+      } else if (resp?.error) {
+        errorMessage =
+          typeof resp.error === 'string' ? resp.error : errorMessage;
       } else if (err?.message) {
         errorMessage = err.message;
       }
@@ -1754,7 +1339,6 @@ export default function AddInventoryItemPage() {
       minStock: 5,
       maxStock: 100,
       location: 'Warehouse',
-      locationId: '',
       supplier: '',
       supplierId: '',
       notes: '',
@@ -1911,7 +1495,8 @@ export default function AddInventoryItemPage() {
           <div className="flex flex-wrap items-start gap-4">
             <div className="flex-1 min-w-[200px]">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Select Business Unit <span className="text-brand-accent-500">*</span>
+                Select Business Unit{' '}
+                <span className="text-brand-accent-500">*</span>
               </label>
               <div className="relative">
                 <button
@@ -1971,30 +1556,19 @@ export default function AddInventoryItemPage() {
                     ) : (
                       businessUnits.map((bu) => {
                         const isActive = bu.isActive !== false;
-                        const isSelected =
-                          selectedBusinessUnitId === bu.id;
+                        const isSelected = selectedBusinessUnitId === bu.id;
 
                         return (
                           <button
                             key={bu.id}
                             type="button"
-                            onClick={() =>
-                              handleBusinessUnitSelect(bu.id)
-                            }
+                            onClick={() => handleBusinessUnitSelect(bu.id)}
                             disabled={!isActive}
                             className={`
                               w-full px-4 py-2 text-left hover:bg-brand-50 dark:hover:bg-gray-700
                               transition-colors flex items-center justify-between focus-ring
-                              ${
-                                isSelected
-                                  ? 'bg-brand-50 dark:bg-brand-950/20'
-                                  : ''
-                              }
-                              ${
-                                !isActive
-                                  ? 'opacity-50 cursor-not-allowed'
-                                  : 'cursor-pointer'
-                              }
+                              ${isSelected ? 'bg-brand-50 dark:bg-brand-950/20' : ''}
+                              ${!isActive ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                             `}
                           >
                             <div className="flex-1 min-w-0">
@@ -2267,9 +1841,6 @@ export default function AddInventoryItemPage() {
                 </select>
               </div>
 
-              {/* CATEGORY — same shape as supplier/location.
-                  The "Add New" option navigates to the canonical
-                  category create page instead of the old inline flow. */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Category
@@ -2309,7 +1880,9 @@ export default function AddInventoryItemPage() {
                     ? 'Loading categories…'
                     : categories.length === 0
                       ? 'No categories yet. '
-                      : `${categories.length} categor${categories.length === 1 ? 'y' : 'ies'} available. `}
+                      : `${categories.length} categor${
+                          categories.length === 1 ? 'y' : 'ies'
+                        } available. `}
                   <button
                     type="button"
                     onClick={handleAddNewCategory}
@@ -2401,11 +1974,6 @@ export default function AddInventoryItemPage() {
                     placeholder="Enter barcode or click Generate"
                     disabled={loading || success}
                   />
-                  {checkingBarcode && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                    </div>
-                  )}
                   {isBarcodeValid === true && formData.barcode && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
                       <CheckCircle className="w-4 h-4 text-success-500" />
@@ -2457,7 +2025,9 @@ export default function AddInventoryItemPage() {
                 )}
               </div>
               {errors.barcode && (
-                <p className="mt-1 text-sm text-brand-accent-500">{errors.barcode}</p>
+                <p className="mt-1 text-sm text-brand-accent-500">
+                  {errors.barcode}
+                </p>
               )}
               {isBarcodeValid === true && formData.barcode && (
                 <p className="mt-1 text-sm text-success-500">
@@ -2541,8 +2111,8 @@ export default function AddInventoryItemPage() {
                     </div>
                     {barcodeSource === 'generated' && (
                       <p className="text-xs text-success-600 dark:text-success-400 mt-2">
-                        ✓ Auto-generated by the server. The QR code will be
-                        finalized with the real inventory id after save.
+                        ✓ Auto-generated. The QR code will be finalized with
+                        the real inventory id after save.
                       </p>
                     )}
                   </div>
@@ -2730,11 +2300,9 @@ export default function AddInventoryItemPage() {
                       handleAddNewLocation();
                       return;
                     }
-                    const match = locations.find((l) => l.name === value);
                     setFormData((prev) => ({
                       ...prev,
                       location: value,
-                      locationId: match?.id || '',
                     }));
                   }}
                   className={getInputClassName('location')}

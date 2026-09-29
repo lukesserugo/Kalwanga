@@ -1372,6 +1372,11 @@ export class PaymentService extends BaseService {
       // default. Unknown codes are logged and skipped, never
       // thrown — a mis-seeded business unit must not 500 the
       // checkout.
+      //
+      // NOTE (Phase 2): This value is now written to the
+      // `Payment.currency` column below. The column is REQUIRED
+      // with no schema default since Phase 1, so this resolved
+      // value is the authoritative record of what we charged in.
       const currency = await this.resolveCurrency(
         callerCurrency,
         businessUnitId,
@@ -1507,10 +1512,21 @@ export class PaymentService extends BaseService {
 
       let payment;
       try {
+        // ── Phase 2: `currency` is now passed EXPLICITLY ──────
+        // Phase 1 removed the `@default("USD")` from the
+        // `Payment.currency` column. This value MUST be resolved
+        // above (which it is, via `resolveCurrency`) and written
+        // here, or the insert fails the NOT NULL constraint.
+        //
+        // The same value is ALSO written into `metadata.currency`
+        // for audit-trail continuity — but the COLUMN is the
+        // authoritative source of truth. If they ever diverge,
+        // the column wins and the metadata is a bug.
         payment = await this.prisma.payment.create({
           data: {
             idempotencyKey,
             amount: amount + (tipAmount || 0),
+            currency, // ← authoritative; was relying on removed @default("USD")
             paymentMethod: paymentMethod as any,
             status: this.mapPaymentStatusToEnum(paymentResult.status),
             transactionId: transactionId,
@@ -1536,6 +1552,11 @@ export class PaymentService extends BaseService {
               // shows what we actually charged in — especially
               // useful when the caller omitted `currency` and the
               // platform default applied.
+              //
+              // ⚠ Still recorded here for audit clarity, but no
+              //   longer the authoritative source — the column
+              //   above is. The two must always agree; if they
+              //   diverge, the column wins and this is a bug.
               currency,
               ...metadata,
             },
@@ -1594,6 +1615,8 @@ export class PaymentService extends BaseService {
             status: payment.status,
             provider: providerName,
             transactionId: transactionId,
+            // Include the resolved currency in the audit trail.
+            currency,
           },
           severity: 'INFO',
           createdAt: new Date(),
@@ -1800,14 +1823,32 @@ export class PaymentService extends BaseService {
     }
   }
 
+  /**
+   * Create a `Payment` row in `PENDING` state, used by provider
+   * flows that need a row BEFORE the provider confirms payment
+   * (Flutterwave redirect, Paystack, etc.).
+   *
+   * ⚠ Phase 2: `currency` is now REQUIRED here. Phase 1 removed
+   *   the schema default from `Payment.currency`; this method
+   *   must therefore resolve and pass one. Callers should use
+   *   the same precedence as `processPayment`:
+   *     1. Explicit `data.currency` if known.
+   *     2. The owning business unit's `currency` column.
+   *     3. Platform default via `currencyService`.
+   *
+   *   The default resolution here delegates to the same private
+   *   helper so behaviour stays in lockstep with `processPayment`.
+   */
   async createPendingPayment(data: {
     amount: number;
     paymentMethod: string;
     userId: string;
     transactionId: string;
     reference: string;
+    currency?: string;
     saleId?: string;
     orderId?: string;
+    businessUnitId?: string;
     metadata?: Record<string, any>;
     idempotencyKey?: string;
   }): Promise<any> {
@@ -1815,11 +1856,22 @@ export class PaymentService extends BaseService {
       data.idempotencyKey ||
       `pending_${data.paymentMethod}_${data.transactionId}`;
 
+    // ── Phase 2: resolve currency before insert ─────────────
+    // No schema default on `Payment.currency` anymore — this
+    // MUST be resolved. Delegates to the same helper used by
+    // `processPayment`, so caller-supplied > business unit >
+    // platform default ordering is identical.
+    const currency = await this.resolveCurrency(
+      data.currency ?? null,
+      data.businessUnitId ?? null,
+    );
+
     try {
       return await this.prisma.payment.create({
         data: {
           idempotencyKey,
           amount: data.amount,
+          currency, // ← explicit; no longer relies on removed @default("USD")
           paymentMethod: data.paymentMethod as any,
           status: 'PENDING',
           transactionId: data.transactionId,
@@ -1827,8 +1879,15 @@ export class PaymentService extends BaseService {
           userId: data.userId,
           saleId: data.saleId || null,
           orderId: data.orderId || null,
+          businessUnitId: data.businessUnitId || null,
           processedAt: new Date(),
-          metadata: data.metadata,
+          metadata: {
+            ...(data.metadata || {}),
+            // Mirror the resolved currency into metadata for audit
+            // continuity with `processPayment`. The column is the
+            // source of truth; this is descriptive only.
+            currency,
+          },
         },
       });
     } catch (err: any) {
@@ -1871,6 +1930,16 @@ export class PaymentService extends BaseService {
   // REFUND METHODS
   // ============================================
 
+  /**
+   * Refund a `Payment`.
+   *
+   * ⚠ Phase 2 note: Refunds do NOT create new `Payment` rows —
+   *   they update existing ones in-place. The refunded payment's
+   *   `currency` column is read as-is and forwarded to the
+   *   provider. There is no schema default to rely on here; if a
+   *   refund ever needs to write a currency, it must be read
+   *   from the row being refunded (which it is, below).
+   */
   async refundPayment(
     paymentIdOrData: string | RefundData,
     amount?: number,
@@ -1972,16 +2041,16 @@ export class PaymentService extends BaseService {
                 ...(metadata || {}),
               };
 
-              // Currency comes from the payment's own metadata if
-              // it was recorded there, otherwise delegate to the
-              // shared resolver. `mobileMoneyService` overrides it
-              // with the country config anyway.
-              const refundCurrency =
-                ((payment.metadata as any)?.currency as string) ||
-                (await this.resolveCurrency(
-                  null,
-                  payment.businessUnitId,
-                ));
+              // ── Phase 2: currency from the payment row ──────
+              // The `Payment.currency` column is now authoritative
+              // (Phase 1 removed the schema default). Refund
+              // currency MUST come from the row being refunded —
+              // NOT from a caller fallback or platform default.
+              //
+              // `mobileMoneyService` overrides this with its
+              // country config anyway, but we always send the
+              // row's value so the audit trail is coherent.
+              const refundCurrency = payment.currency;
 
               refundResult = await handler.refundPayment(
                 payment.transactionId || payment.id,
@@ -2059,6 +2128,7 @@ export class PaymentService extends BaseService {
               changes: {
                 action: 'REFUND',
                 amount: refundAmountFinal,
+                currency: payment.currency,
                 previousStatus: payment.status,
                 newStatus: newStatus,
                 refundId: refundResult.id,
@@ -5120,10 +5190,14 @@ export class PaymentService extends BaseService {
             };
           }
 
+          // ── Phase 2: explicit `currency` on create ──────────
+          // The `Payment.currency` column is required with no
+          // schema default since Phase 1. `paymentIntent.currency`
+          // is the authoritative value Stripe actually charged in.
           const newPayment = await this.prisma.payment.create({
             data: {
               amount: paymentIntent.amount / 100,
-              currency: paymentIntent.currency.toUpperCase(),
+              currency: paymentIntent.currency.toUpperCase(), // ← explicit
               paymentMethod: 'CREDIT_CARD',
               status: 'PAID',
               transactionId: payment_intent,
@@ -5136,6 +5210,8 @@ export class PaymentService extends BaseService {
               metadata: {
                 sessionId: id,
                 stripeCustomerId: customer || null,
+                // Mirror into metadata for audit continuity.
+                currency: paymentIntent.currency.toUpperCase(),
               },
             },
           });

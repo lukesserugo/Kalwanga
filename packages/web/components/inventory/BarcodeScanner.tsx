@@ -1,22 +1,45 @@
+// packages/web/components/scanner/BarcodeScanner.tsx
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Scan, X, Package, Loader2, Check, AlertCircle,
-  Camera, Image as ImageIcon, Barcode, QrCode,
-  Copy, Printer, Download, RefreshCw, ZoomIn,
-  ZoomOut, RotateCw, Focus, Sun, Moon,
-  ShoppingCart, Plus, Minus, Eye, Edit,
+  Scan,
+  X,
+  Package,
+  Loader2,
+  Check,
+  AlertCircle,
+  ShoppingCart,
+  Eye,
   Lock,
 } from 'lucide-react';
+
 import { toast } from '../../utils/toast-manager';
-import { inventoryService } from '../../services/inventoryService';
 import { barcodeService } from '../../services/barcodeService';
 import { useAuth } from '../../hooks/useAuth';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency } from '../../utils/formatters';
 
-interface ProductResult {
+// ============================================
+// TYPES
+// ============================================
+
+/**
+ * Canonical product/variant result this component passes to `onScan`.
+ *
+ * ⚠ Some fields are `undefined` on every code path because the
+ *   canonical scan endpoint (`POST /barcodes/scan`) doesn't return
+ *   them. If a consumer needs `image`, `category`, `description`,
+ *   or `supplier`, it must fetch the full product via
+ *   `productService.getProductById(id)` after receiving this.
+ */
+interface ScanResult {
   id: string;
   name: string;
   sku: string;
@@ -26,27 +49,186 @@ interface ProductResult {
   reserved?: number;
   available?: number;
   unit?: string;
+  /** Populated only when a full product lookup was done; else undefined. */
   category?: string;
   location?: string;
+  /** Not returned by the scan endpoint; undefined unless enriched. */
   image?: string;
   description?: string;
   supplier?: string;
+  /** Not returned by the scan endpoint. */
   createdAt?: string;
   updatedAt?: string;
+
+  /**
+   * Present when the scanned code matched a `ProductVariant` rather
+   * than a `Product`. Consumers that need to distinguish (POS pricing,
+   * cart line identity) should read this.
+   */
+  variant?: {
+    id: string;
+    name: string;
+    sku: string;
+    price: number;
+    attributes: Record<string, unknown>;
+  } | null;
+
+  /** `'PRODUCT'` or `'VARIANT'` — which column matched. */
+  matchType: 'PRODUCT' | 'VARIANT';
 }
 
 interface BarcodeScannerProps {
-  onScan: (product: any) => void;
+  onScan: (product: ScanResult) => void;
   onClose: () => void;
   isOpen: boolean;
+  /**
+   * Called when a scan cannot complete — a network error, a
+   * "product not found" result, or a validation failure. Consumers
+   * use this to log failed scans or show a global error toast.
+   *
+   * ⚠ Not called for "user cancelled" or "empty input".
+   */
   onError?: (error: Error) => void;
+  /** Focus the input when the modal opens. Default `true`. */
   autoFocus?: boolean;
+  /**
+   * Delay (ms) between a successful scan and the auto-select in
+   * scanning mode. Default 5000. Set to 0 to select immediately.
+   */
   scanTimeout?: number;
   className?: string;
 }
 
+// ============================================
+// CONSTANTS
+// ============================================
+
 const HISTORY_KEY = 'barcode_scanner_history';
 const MAX_HISTORY = 20;
+
+// ============================================
+// HELPERS
+// ============================================
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
+/**
+ * Normalize whatever the backend emits into the `ScanResult` shape
+ * this component renders.
+ *
+ * `barcodeService.scanBarcode` is the canonical source — see the
+ * backend `BarcodeService.scanBarcode`. It returns product + optional
+ * variant + optional inventory, but NOT the full product row
+ * (no images, no category name, no description, no supplier).
+ * Fields the endpoint doesn't return are left `undefined` and the
+ * UI hides them.
+ */
+function normalizeScanResponse(raw: any): ScanResult | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const product = raw.product ?? {};
+  const variant = raw.variant ?? null;
+  const inventory = raw.inventory ?? null;
+
+  const matchType: 'PRODUCT' | 'VARIANT' =
+    raw.matchType === 'VARIANT' ? 'VARIANT' : 'PRODUCT';
+
+  // Prefer variant fields when the scan matched a variant — the
+  // variant's name, sku, and price are what the operator needs.
+  const name = variant?.name ?? product.name ?? 'Unknown product';
+  const sku = variant?.sku ?? product.sku ?? 'N/A';
+  const price = Number(
+    variant?.price ?? product.unitPrice ?? 0,
+  );
+
+  const stock = Number(inventory?.quantity ?? 0);
+  const reserved = Number(inventory?.reserved ?? 0);
+  const available = Number(
+    typeof inventory?.available === 'number'
+      ? inventory.available
+      : stock - reserved,
+  );
+
+  const id = product.id ?? variant?.id ?? '';
+
+  return {
+    id: String(id),
+    name,
+    sku,
+    barcode: String(raw.barcode ?? ''),
+    price,
+    stock,
+    reserved,
+    available,
+    unit: 'each',
+    matchType,
+    variant: variant
+      ? {
+          id: String(variant.id ?? ''),
+          name: String(variant.name ?? ''),
+          sku: String(variant.sku ?? ''),
+          price: Number(variant.price ?? 0),
+          attributes:
+            variant.attributes && typeof variant.attributes === 'object'
+              ? variant.attributes
+              : {},
+        }
+      : null,
+    // Fields the scan endpoint doesn't return — left undefined.
+    category: undefined,
+    location: undefined,
+    image: undefined,
+    description: undefined,
+    supplier: undefined,
+    createdAt: undefined,
+    updatedAt: undefined,
+  };
+}
+
+function loadHistoryFromStorage(): ScanResult[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem(HISTORY_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.slice(0, MAX_HISTORY);
+  } catch (error) {
+    console.warn('[BarcodeScanner] failed to load history:', error);
+    return [];
+  }
+}
+
+function persistHistory(history: ScanResult[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch (error) {
+    console.warn('[BarcodeScanner] failed to save history:', error);
+  }
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function BarcodeScanner({
   onScan,
@@ -57,173 +239,244 @@ export function BarcodeScanner({
   scanTimeout = 5000,
   className = '',
 }: BarcodeScannerProps) {
-  const { user, isAuthenticated } = useAuth();
-  const [scanning, setScanning] = useState(false);
+  const { isAuthenticated } = useAuth();
+
   const [barcode, setBarcode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [product, setProduct] = useState<ProductResult | null>(null);
+  const [product, setProduct] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [scanHistory, setScanHistory] = useState<ProductResult[]>([]);
+  const [scanHistory, setScanHistory] = useState<ScanResult[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isScanningMode, setIsScanningMode] = useState(false);
-  const [cameraPermission, setCameraPermission] = useState<boolean | null>(null);
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+  const scanRequestIdRef = useRef(0);
+
+  // ── Lifecycle ─────────────────────────────────────────────
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(HISTORY_KEY);
-      if (stored) {
-        const history = JSON.parse(stored);
-        if (Array.isArray(history)) {
-          setScanHistory(history.slice(0, MAX_HISTORY));
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load scan history:', e);
-    }
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
+  // Load history once on mount. Cross-tab sync isn't handled — a
+  // second tab's scans won't appear here until this component
+  // remounts. Add a `storage` event listener if that matters.
   useEffect(() => {
-    if (isOpen && autoFocus) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 300);
-    }
+    setScanHistory(loadHistoryFromStorage());
+  }, []);
+
+  // Focus the input when the modal opens.
+  useEffect(() => {
+    if (!isOpen || !autoFocus) return;
+    const t = setTimeout(() => inputRef.current?.focus(), 300);
+    return () => clearTimeout(t);
   }, [isOpen, autoFocus]);
 
+  /**
+   * Clear the auto-select timer whenever the modal closes. The modal
+   * content stays mounted when `isOpen` is false, so this is the only
+   * place the timeout gets cleaned up.
+   */
+  useEffect(() => {
+    if (isOpen) return;
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
+  }, [isOpen]);
+
+  // Cleanup on unmount.
   useEffect(() => {
     return () => {
       if (scanTimeoutRef.current) {
         clearTimeout(scanTimeoutRef.current);
+        scanTimeoutRef.current = null;
       }
     };
   }, []);
 
-  const saveToHistory = (product: ProductResult) => {
-    try {
-      const existing = scanHistory.filter((p) => p.barcode !== product.barcode);
-      const newHistory = [product, ...existing].slice(0, MAX_HISTORY);
-      setScanHistory(newHistory);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(newHistory));
-    } catch (e) {
-      console.warn('Failed to save scan history:', e);
-    }
-  };
+  // ── History helpers ───────────────────────────────────────
 
-  const handleScan = useCallback(async () => {
-    const barcodeValue = barcode.trim();
-    if (!barcodeValue) {
-      toast.warning('Please enter or scan a barcode');
-      setError('Please enter a barcode');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setProduct(null);
-
-    try {
-      const result = await inventoryService.getInventoryByBarcode(barcodeValue);
-
-      if (result) {
-        const productResult: ProductResult = {
-          id: result.id || '',
-          name: result.name || result.product?.name || 'Unknown Product',
-          sku: result.sku || result.product?.sku || 'N/A',
-          barcode: result.barcode || barcodeValue,
-          price: result.unitPrice || result.price || result.product?.unitPrice || 0,
-          stock: result.quantity || result.stock || 0,
-          reserved: result.reserved || 0,
-          available:
-            (result.quantity || result.stock || 0) - (result.reserved || 0),
-          unit: result.unit || 'each',
-          category: result.category || result.product?.category?.name,
-          location: result.location || 'Warehouse',
-          image: result.images?.[0] || result.product?.images?.[0],
-          description: result.description || result.product?.description,
-          supplier: result.supplier || result.product?.supplier?.name,
-          createdAt: result.createdAt,
-          updatedAt: result.updatedAt,
-        };
-
-        setProduct(productResult);
-        saveToHistory(productResult);
-        toast.success(`Product found: ${productResult.name}`);
-
-        if (isScanningMode) {
-          scanTimeoutRef.current = setTimeout(() => {
-            handleSelect();
-          }, scanTimeout);
-        }
-      } else {
-        setError('No product found with this barcode');
-        toast.error('Product not found');
-      }
-    } catch (err: any) {
-      console.error('Scan error:', err);
-      const errorMsg = err?.message || 'Failed to scan barcode';
-      setError(errorMsg);
-      toast.error(errorMsg);
-      if (onError) onError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [barcode, isScanningMode, scanTimeout, onError]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleScan();
-      } else if (e.key === 'Escape') {
-        onClose();
-      }
-    },
-    [handleScan, onClose]
-  );
-
-  const handleSelect = useCallback(() => {
-    if (product) {
-      onScan(product);
-      onClose();
-    }
-  }, [product, onScan, onClose]);
-
-  const handleClear = useCallback(() => {
-    setBarcode('');
-    setProduct(null);
-    setError(null);
-    setLoading(false);
-    if (scanTimeoutRef.current) {
-      clearTimeout(scanTimeoutRef.current);
-    }
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
+  const saveToHistory = useCallback((item: ScanResult) => {
+    setScanHistory((prev) => {
+      const without = prev.filter((p) => p.barcode !== item.barcode);
+      const next = [item, ...without].slice(0, MAX_HISTORY);
+      persistHistory(next);
+      return next;
+    });
   }, []);
 
-  const handleHistoryItemClick = useCallback((item: ProductResult) => {
+  const handleClearHistory = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.confirm('Clear scan history?')) return;
+    setScanHistory([]);
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {
+      /* ignore */
+    }
+    toast.success('History cleared');
+  }, []);
+
+  const handleHistoryItemClick = useCallback((item: ScanResult) => {
     setBarcode(item.barcode);
     setProduct(item);
     setError(null);
     setShowHistory(false);
   }, []);
 
-  const handleClearHistory = useCallback(() => {
-    if (confirm('Clear scan history?')) {
-      setScanHistory([]);
-      localStorage.removeItem(HISTORY_KEY);
-      toast.success('History cleared');
+  // ── Scan ──────────────────────────────────────────────────
+
+  const handleScan = useCallback(async () => {
+    const value = barcode.trim();
+
+    if (!value) {
+      setError('Please enter a barcode');
+      toast.warning('Please enter or scan a barcode');
+      inputRef.current?.focus();
+      return;
+    }
+
+    // Cancel any pending auto-select from a previous scan.
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
+
+    const requestId = ++scanRequestIdRef.current;
+
+    setLoading(true);
+    setError(null);
+    setProduct(null);
+
+    try {
+      // ⚠ Canonical scan endpoint — replaces the previous
+      //    `inventoryService.getInventoryByBarcode` call, which
+      //    resolved to a non-existent method.
+      const response = await barcodeService.scanBarcode(value);
+
+      if (requestId !== scanRequestIdRef.current) return;
+      if (!mountedRef.current) return;
+
+      const result = normalizeScanResponse(response);
+
+      if (!result) {
+        const message = 'Product not found with this barcode';
+        setError(message);
+        toast.error(message);
+        onError?.(new Error(message));
+        return;
+      }
+
+      setProduct(result);
+      saveToHistory(result);
+      toast.success(`Found: ${result.name}`);
+
+      if (isScanningMode) {
+        // Auto-select after `scanTimeout` ms. Capture `result` in
+        // the closure so we don't rely on `product` state, which is
+        // still the previous value at this point.
+        if (scanTimeout > 0) {
+          scanTimeoutRef.current = setTimeout(() => {
+            scanTimeoutRef.current = null;
+            onScan(result);
+            onClose();
+          }, scanTimeout);
+        } else {
+          onScan(result);
+          onClose();
+        }
+      }
+    } catch (err) {
+      if (requestId !== scanRequestIdRef.current) return;
+      if (!mountedRef.current) return;
+
+      const message = extractErrorMessage(err, 'Failed to scan barcode');
+      console.error('[BarcodeScanner] scan failed:', message);
+      setError(message);
+      toast.error(message);
+      onError?.(err instanceof Error ? err : new Error(message));
+    } finally {
+      if (requestId === scanRequestIdRef.current && mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [barcode, isScanningMode, scanTimeout, onScan, onClose, onError, saveToHistory]);
+
+  // ── Input handlers ────────────────────────────────────────
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void handleScan();
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    },
+    [handleScan, onClose],
+  );
+
+  const handleClear = useCallback(() => {
+    // Invalidate any in-flight scan so its response is discarded.
+    scanRequestIdRef.current++;
+
+    setBarcode('');
+    setProduct(null);
+    setError(null);
+    setLoading(false);
+
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+      scanTimeoutRef.current = null;
+    }
+
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
+  const handleSelect = useCallback(() => {
+    if (!product) return;
+    onScan(product);
+    onClose();
+  }, [product, onScan, onClose]);
+
+  const handlePasteFromClipboard = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) {
+      toast.error('Clipboard not available');
+      return;
+    }
+
+    try {
+      const text = await navigator.clipboard.readText();
+      // Strip whitespace and control characters — the same
+      // normalization `barcodeService` applies server-side.
+      const cleaned = text.replace(/[\r\n\t\s]+/g, '').trim();
+
+      if (!cleaned) {
+        toast.error('Clipboard is empty');
+        return;
+      }
+
+      setBarcode(cleaned);
+      setError(null);
+      toast.success('Barcode pasted');
+      inputRef.current?.focus();
+    } catch (err) {
+      console.warn('[BarcodeScanner] clipboard read failed:', err);
+      toast.error('Could not read clipboard');
     }
   }, []);
 
-  const getStockStatus = (product: ProductResult) => {
-    const available = product.available || product.stock || 0;
+  // ── Derived ───────────────────────────────────────────────
+
+  const stockStatus = useMemo(() => {
+    if (!product) return null;
+    const available = product.available ?? product.stock ?? 0;
     if (available <= 0) {
       return {
         label: 'Out of Stock',
@@ -240,13 +493,22 @@ export function BarcodeScanner({
       label: 'In Stock',
       color: 'text-success-600 dark:text-success-400',
     };
-  };
+  }, [product]);
+
+  // ── Render: not open ──────────────────────────────────────
 
   if (!isOpen) return null;
 
+  // ── Render: not authenticated ─────────────────────────────
+
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in">
+      <div
+        className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="scanner-login-title"
+      >
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm"
           onClick={onClose}
@@ -261,13 +523,17 @@ export function BarcodeScanner({
             <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
               <Lock className="w-8 h-8 text-gray-400" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-              Please Login
+            <h3
+              id="scanner-login-title"
+              className="text-lg font-bold text-gray-900 dark:text-white"
+            >
+              Please Log In
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               You need to be logged in to scan items
             </p>
             <button
+              type="button"
               onClick={onClose}
               className="mt-4 px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all focus-ring"
             >
@@ -279,8 +545,15 @@ export function BarcodeScanner({
     );
   }
 
+  // ── Render: main scanner ──────────────────────────────────
+
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in">
+    <div
+      className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="scanner-title"
+    >
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
@@ -293,6 +566,7 @@ export function BarcodeScanner({
         className={`relative card-brand shadow-card-hover max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar ${className}`}
       >
         <button
+          type="button"
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
           aria-label="Close scanner"
@@ -304,12 +578,15 @@ export function BarcodeScanner({
           <div className="w-16 h-16 bg-brand-100 dark:bg-brand-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
             <Scan className="w-8 h-8 text-brand-500 dark:text-brand-400" />
           </div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+          <h3
+            id="scanner-title"
+            className="text-lg font-bold text-gray-900 dark:text-white"
+          >
             Barcode Scanner
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {isScanningMode
-              ? 'Scanning mode active - auto-select on scan'
+              ? 'Scanning mode active — auto-select on scan'
               : 'Enter or scan a barcode to find a product'}
           </p>
         </div>
@@ -317,7 +594,9 @@ export function BarcodeScanner({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsScanningMode(!isScanningMode)}
+              type="button"
+              onClick={() => setIsScanningMode((v) => !v)}
+              aria-pressed={isScanningMode}
               className={`px-3 py-1.5 text-sm rounded-lg transition-colors focus-ring ${
                 isScanningMode
                   ? 'bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-300'
@@ -326,21 +605,13 @@ export function BarcodeScanner({
             >
               {isScanningMode ? '✓ Scanning Mode' : 'Scanning Mode'}
             </button>
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1.5 hover:bg-orange-50 dark:hover:bg-gray-700 rounded-lg transition-colors focus-ring"
-            >
-              {isDarkMode ? (
-                <Sun className="w-4 h-4" />
-              ) : (
-                <Moon className="w-4 h-4" />
-              )}
-            </button>
           </div>
 
           {scanHistory.length > 0 && (
             <button
-              onClick={() => setShowHistory(!showHistory)}
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              aria-expanded={showHistory}
               className="text-sm text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 transition-colors focus-ring rounded"
             >
               {showHistory ? 'Hide History' : `History (${scanHistory.length})`}
@@ -362,6 +633,7 @@ export function BarcodeScanner({
                     Recent Scans
                   </span>
                   <button
+                    type="button"
                     onClick={handleClearHistory}
                     className="text-2xs text-danger-600 dark:text-danger-400 hover:text-danger-800 dark:hover:text-danger-300 focus-ring rounded"
                   >
@@ -370,6 +642,7 @@ export function BarcodeScanner({
                 </div>
                 {scanHistory.map((item, index) => (
                   <button
+                    type="button"
                     key={`${item.barcode}-${index}`}
                     onClick={() => handleHistoryItemClick(item)}
                     className="w-full text-left px-2 py-1.5 hover:bg-orange-50 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm flex items-center justify-between focus-ring"
@@ -400,6 +673,8 @@ export function BarcodeScanner({
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Enter barcode or scan..."
+                aria-label="Barcode input"
+                aria-invalid={error ? 'true' : 'false'}
                 className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:outline-none bg-white dark:bg-gray-700 dark:text-white transition-colors ${
                   error
                     ? 'border-danger-500 dark:border-danger-500 focus:ring-danger-500'
@@ -407,13 +682,18 @@ export function BarcodeScanner({
                 }`}
                 autoFocus={autoFocus}
                 disabled={loading}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
               />
               {loading && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin text-brand-500" />
               )}
               {barcode && !loading && (
                 <button
+                  type="button"
                   onClick={handleClear}
+                  aria-label="Clear barcode"
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-orange-50 dark:hover:bg-gray-600 rounded-lg transition-colors focus-ring"
                 >
                   <X className="w-4 h-4 text-gray-400" />
@@ -421,8 +701,10 @@ export function BarcodeScanner({
               )}
             </div>
             <button
-              onClick={handleScan}
+              type="button"
+              onClick={() => void handleScan()}
               disabled={loading || !barcode.trim()}
+              aria-label="Scan barcode"
               className="px-4 py-3 bg-brand-gradient text-white rounded-xl shadow-brand hover:shadow-brand-lg disabled:opacity-50 transition-all flex items-center gap-2 focus-ring"
             >
               {loading ? (
@@ -437,6 +719,7 @@ export function BarcodeScanner({
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
+              role="alert"
               className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-3 flex items-start gap-2 animate-slide-down"
             >
               <AlertCircle className="w-4 h-4 text-danger-500 flex-shrink-0 mt-0.5" />
@@ -447,7 +730,7 @@ export function BarcodeScanner({
           )}
 
           <AnimatePresence>
-            {product && (
+            {product && stockStatus && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -473,25 +756,29 @@ export function BarcodeScanner({
                     <p className="font-medium text-gray-900 dark:text-white truncate">
                       {product.name}
                     </p>
+                    {product.variant && (
+                      <p className="text-2xs text-brand-600 dark:text-brand-400">
+                        Variant matched
+                      </p>
+                    )}
                     <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                       <span className="font-mono">SKU: {product.sku}</span>
                       {product.category && (
-                        <span className="text-gray-400">
-                          • {product.category}
-                        </span>
+                        <>
+                          <span className="text-gray-400">•</span>
+                          <span>{product.category}</span>
+                        </>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 mt-1 text-sm">
                       <span className="font-semibold text-gray-900 dark:text-white tabular-nums">
                         {formatCurrency(product.price)}
                       </span>
-                      <span className={getStockStatus(product).color}>
-                        {getStockStatus(product).label}
+                      <span className={stockStatus.color}>
+                        {stockStatus.label}
                       </span>
                       <span className="text-gray-500 dark:text-gray-400 tabular-nums">
-                        {product.available !== undefined
-                          ? product.available
-                          : product.stock}{' '}
+                        {product.available ?? product.stock}{' '}
                         {product.unit || 'units'}
                       </span>
                     </div>
@@ -510,32 +797,31 @@ export function BarcodeScanner({
 
                 <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-success-200 dark:border-success-800">
                   <button
+                    type="button"
                     onClick={handleSelect}
                     className="flex-1 px-4 py-2 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg transition-all flex items-center justify-center gap-2 text-sm focus-ring"
                   >
                     <Check className="w-4 h-4" />
-                    Select Product
+                    Select &amp; Close
                   </button>
                   <button
-                    onClick={() => {
-                      onScan(product);
-                    }}
+                    type="button"
+                    onClick={() => onScan(product)}
                     className="px-4 py-2 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors flex items-center justify-center gap-2 text-sm focus-ring"
                   >
                     <ShoppingCart className="w-4 h-4" />
-                    Add to Order
+                    Add (keep open)
                   </button>
-                  <button
-                    onClick={() => {
-                      if (product.id) {
-                        window.open(`/admin/inventory/${product.id}`, '_blank');
-                      }
-                    }}
+                  <a
+                    href={`/admin/inventory/${product.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
                     title="View Product"
+                    aria-label={`View ${product.name} in a new tab`}
                   >
                     <Eye className="w-4 h-4 text-gray-500" />
-                  </button>
+                  </a>
                 </div>
               </motion.div>
             )}
@@ -547,35 +833,15 @@ export function BarcodeScanner({
                 Quick actions:
               </span>
               <button
-                onClick={() => {
-                  if (navigator.clipboard) {
-                    navigator.clipboard
-                      .readText()
-                      .then((text) => {
-                        if (text) {
-                          setBarcode(text);
-                          toast.success('Barcode pasted');
-                        }
-                      })
-                      .catch(() => toast.error('Failed to read clipboard'));
-                  }
-                }}
+                type="button"
+                onClick={() => void handlePasteFromClipboard()}
                 className="px-2 py-1 text-2xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
               >
                 Paste
               </button>
-              <button
-                onClick={() => {
-                  const demoBarcode = `INV${Date.now().toString().slice(-8)}`;
-                  setBarcode(demoBarcode);
-                  toast.info('Demo barcode generated');
-                }}
-                className="px-2 py-1 text-2xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-orange-50 dark:hover:bg-gray-700 transition-colors focus-ring"
-              >
-                Demo
-              </button>
             </div>
             <button
+              type="button"
               onClick={handleClear}
               className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors focus-ring rounded"
             >
@@ -585,6 +851,7 @@ export function BarcodeScanner({
 
           <div className="flex justify-end gap-3 mt-2">
             <button
+              type="button"
               onClick={onClose}
               className="btn-secondary focus-ring"
             >
@@ -592,6 +859,7 @@ export function BarcodeScanner({
             </button>
             {product && (
               <button
+                type="button"
                 onClick={handleSelect}
                 className="px-6 py-2 bg-brand-gradient text-white rounded-xl shadow-brand hover:shadow-brand-lg transition-all flex items-center gap-2 focus-ring"
               >
@@ -606,9 +874,25 @@ export function BarcodeScanner({
   );
 }
 
+// ============================================
+// HOOK
+// ============================================
+
+/**
+ * Convenience wrapper for consumers that just want the open/close
+ * state and the last scan result. Pair with `<BarcodeScanner>`:
+ *
+ *   const scanner = useBarcodeScanner();
+ *   // …
+ *   <BarcodeScanner
+ *     isOpen={scanner.isOpen}
+ *     onClose={scanner.closeScanner}
+ *     onScan={scanner.handleScan}
+ *   />
+ */
 export function useBarcodeScanner() {
   const [isOpen, setIsOpen] = useState(false);
-  const [scanResult, setScanResult] = useState<any>(null);
+  const [scanResult, setScanResult] = useState<unknown>(null);
 
   const openScanner = useCallback(() => {
     setIsOpen(true);
@@ -619,7 +903,7 @@ export function useBarcodeScanner() {
     setIsOpen(false);
   }, []);
 
-  const handleScan = useCallback((product: any) => {
+  const handleScan = useCallback((product: unknown) => {
     setScanResult(product);
     setIsOpen(false);
   }, []);

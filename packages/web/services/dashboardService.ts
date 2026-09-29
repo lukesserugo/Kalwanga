@@ -1,216 +1,214 @@
-// D:\Projects\Kalwanga\packages\web\services\dashboardService.ts
-import { apiService } from './api';
+// packages/web/services/dashboardService.ts
+import { api } from './api';
 
-// Define types for dashboard data
-export interface SalesData {
-  today: {
-    total: number;
-    count: number;
-    trend?: 'up' | 'down' | 'neutral';
-  };
-  week: {
-    total: number;
-    count: number;
-    trend?: 'up' | 'down' | 'neutral';
-  };
-  month: {
-    total: number;
-    count: number;
-    trend?: 'up' | 'down' | 'neutral';
-  };
-}
+// ============================================
+// TYPES — mirror the backend exactly
+// ============================================
+//
+// Source of truth: packages/backend/src/services/dashboardService.ts.
+// The wire shapes are what the backend's `res.json({ data })` emits
+// after `api.get<T>` unwraps the envelope.
 
-export interface CustomersData {
+export interface SalesPeriodStats {
   total: number;
-  new: number;
-  trend?: 'up' | 'down' | 'neutral';
+  count: number;
 }
 
-export interface InventoryData {
-  totalValue: number;
-  totalItems: number;
-  lowStock: number;
-  outOfStock: number;
-}
-
-export interface RegistersData {
-  open: number;
-}
-
-export interface OrdersData {
-  pending: number;
-}
-
-export interface TopProduct {
-  id: string;
-  name: string;
-  sales: number;
+export interface DashboardTopProduct {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
   revenue: number;
 }
 
-export interface Notification {
-  id: string;
-  message: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-  createdAt: string;
-  isRead?: boolean;
+export interface DashboardStats {
+  sales: {
+    today: SalesPeriodStats;
+    week: SalesPeriodStats;
+    month: SalesPeriodStats;
+    year: SalesPeriodStats;
+  };
+  inventory: {
+    totalItems: number;
+    totalValue: number;
+    lowStock: number;
+    outOfStock: number;
+    reorderNeeded: number;
+  };
+  customers: {
+    total: number;
+    active: number;
+    /** ⚠ Field name is `newThisMonth`, NOT `new`. */
+    newThisMonth: number;
+  };
+  suppliers: {
+    total: number;
+    active: number;
+  };
+  registers: {
+    open: number;
+    total: number;
+    totalCash: number;
+  };
+  orders: {
+    pending: number;
+    completed: number;
+    cancelled: number;
+  };
+  /** Raw Prisma sale rows with customer + items included. */
+  recentActivity: unknown[];
+  /** Mapped product rows — see `DashboardTopProduct`. */
+  topProducts: DashboardTopProduct[];
+  /** Daily sales for the last 7 days. */
+  salesTrend: Array<{ date: string; total: number; count: number }>;
 }
 
-export interface LowStockItem {
+export interface RealtimeNotification {
+  id: string;
+  title?: string;
+  message: string;
+  type?: string;
+  isRead: boolean;
+  createdAt: string;
+  [key: string]: unknown;
+}
+
+export interface RealtimeLowStockItem {
   id: string;
   quantity: number;
   reorderPoint: number;
   product?: {
+    id: string;
     name: string;
     sku: string;
-  };
+    unitPrice: number;
+  } | null;
+}
+
+export interface RealtimeAlert {
+  type: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  message: string;
+  count: number;
 }
 
 export interface RealtimeData {
-  sales: Array<{ date: string; revenue: number; orders: number }>;
-  topProducts: TopProduct[];
-  notifications: Notification[];
-  lowStockInventory: LowStockItem[];
+  recentSales: unknown[];
+  lowStockInventory: RealtimeLowStockItem[];
+  notifications: RealtimeNotification[];
+  openRegisters: unknown[];
+  pendingOrders: unknown[];
+  alerts: RealtimeAlert[];
 }
 
-export interface DashboardStats {
-  sales: SalesData;
-  customers: CustomersData;
-  inventory: InventoryData;
-  registers: RegistersData;
-  orders: OrdersData;
+export interface TrendPoint {
+  /** ISO date, `YYYY-MM-DD`. */
+  date: string;
+  /** Currency amount for sales trends, order total for order trends. */
+  value: number;
 }
 
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  message?: string;
+export interface TrendsResult {
+  /** Backend echoes the range it used, e.g. `"7d"`. */
+  range: string;
+  sales: TrendPoint[];
+  orders: TrendPoint[];
 }
+
+export interface LowStockAlert {
+  productId: string;
+  productName: string;
+  sku: string;
+  currentQuantity: number;
+  reorderPoint: number;
+  deficit: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+}
+
+export interface DashboardActivityEvent {
+  id: string;
+  type: 'SALE' | 'ORDER' | 'LOW_STOCK' | 'SYSTEM';
+  title: string;
+  description: string;
+  amount: number;
+  status: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type DashboardRange = 'today' | 'week' | 'month' | 'quarter' | 'year';
+
+// ============================================
+// SERVICE
+// ============================================
 
 export const dashboardService = {
   /**
-   * Get dashboard statistics
+   * GET /dashboard/stats
+   *
+   * `api.get<T>` already unwraps `{ success, data }`, so this returns
+   * the payload directly. Do NOT reach for `.data`.
    */
   async getStats(): Promise<DashboardStats> {
-    const response = await apiService.get<ApiResponse<DashboardStats>>('/dashboard/stats');
-    return response.data;
+    return api.get<DashboardStats>('/dashboard/stats');
   },
 
-  /**
-   * Get real-time dashboard data
-   */
+  /** GET /dashboard/realtime */
   async getRealtimeData(): Promise<RealtimeData> {
-    const response = await apiService.get<ApiResponse<RealtimeData>>('/dashboard/realtime');
-    return response.data;
+    return api.get<RealtimeData>('/dashboard/realtime');
   },
 
-  /**
-   * Get sales data for chart
-   */
-  async getSalesData(range?: 'today' | 'week' | 'month' | 'year'): Promise<{ date: string; revenue: number; orders: number }[]> {
-    const response = await apiService.get<ApiResponse<{ date: string; revenue: number; orders: number }[]>>('/dashboard/sales', {
-      params: { range }
+  /** GET /dashboard/live — stats + realtime in one round trip. */
+  async getLiveDashboard(): Promise<DashboardStats & RealtimeData> {
+    return api.get<DashboardStats & RealtimeData>('/dashboard/live');
+  },
+
+  /** GET /dashboard/trends?range=week */
+  async getTrends(range: DashboardRange = 'week'): Promise<TrendsResult> {
+    return api.get<TrendsResult>('/dashboard/trends', { params: { range } });
+  },
+
+  /** GET /dashboard/activity?limit=10&range=week */
+  async getActivity(
+    limit = 10,
+    range: DashboardRange = 'week',
+  ): Promise<DashboardActivityEvent[]> {
+    return api.get<DashboardActivityEvent[]>('/dashboard/activity', {
+      params: { limit, range },
     });
-    return response.data;
   },
 
-  /**
-   * Get top products
-   */
-  async getTopProducts(limit: number = 5): Promise<TopProduct[]> {
-    const response = await apiService.get<ApiResponse<TopProduct[]>>('/dashboard/top-products', {
-      params: { limit }
+  /** GET /dashboard/top-products?limit=10&range=week */
+  async getTopProducts(
+    limit = 10,
+    range: DashboardRange = 'week',
+  ): Promise<DashboardTopProduct[]> {
+    return api.get<DashboardTopProduct[]>('/dashboard/top-products', {
+      params: { limit, range },
     });
-    return response.data;
   },
 
-  /**
-   * Get low stock items
-   */
-  async getLowStockItems(limit: number = 5): Promise<LowStockItem[]> {
-    const response = await apiService.get<ApiResponse<LowStockItem[]>>('/dashboard/low-stock', {
-      params: { limit }
-    });
-    return response.data;
+  /** GET /dashboard/low-stock */
+  async getLowStockAlerts(): Promise<LowStockAlert[]> {
+    return api.get<LowStockAlert[]>('/dashboard/low-stock');
   },
 
-  /**
-   * Get notifications
-   */
-  async getNotifications(limit: number = 10): Promise<Notification[]> {
-    const response = await apiService.get<ApiResponse<Notification[]>>('/dashboard/notifications', {
-      params: { limit }
-    });
-    return response.data;
+  /** GET /dashboard/sales-summary?startDate=…&endDate=… */
+  async getSalesSummary(params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<
+    Array<{
+      date: string;
+      totalSales: number;
+      totalTax: number;
+      totalDiscount: number;
+      transactionCount: number;
+    }>
+  > {
+    return api.get('/dashboard/sales-summary', { params });
   },
-
-  /**
-   * Get customer statistics
-   */
-  async getCustomerStats(): Promise<CustomersData> {
-    const response = await apiService.get<ApiResponse<CustomersData>>('/dashboard/customers');
-    return response.data;
-  },
-
-  /**
-   * Get inventory statistics
-   */
-  async getInventoryStats(): Promise<InventoryData> {
-    const response = await apiService.get<ApiResponse<InventoryData>>('/dashboard/inventory');
-    return response.data;
-  },
-
-  /**
-   * Get sales overview for a specific period
-   */
-  async getSalesOverview(period: 'today' | 'week' | 'month' | 'year' = 'today'): Promise<{
-    total: number;
-    count: number;
-    average: number;
-    trend: number;
-  }> {
-    const response = await apiService.get<ApiResponse<{
-      total: number;
-      count: number;
-      average: number;
-      trend: number;
-    }>>('/dashboard/sales-overview', {
-      params: { period }
-    });
-    return response.data;
-  },
-
-  /**
-   * Get revenue breakdown
-   */
-  async getRevenueBreakdown(): Promise<{
-    byCategory: Array<{ category: string; amount: number; percentage: number }>;
-    byPaymentMethod: Array<{ method: string; amount: number; percentage: number }>;
-    byTime: Array<{ hour: number; amount: number }>;
-  }> {
-    const response = await apiService.get<ApiResponse<{
-      byCategory: Array<{ category: string; amount: number; percentage: number }>;
-      byPaymentMethod: Array<{ method: string; amount: number; percentage: number }>;
-      byTime: Array<{ hour: number; amount: number }>;
-    }>>('/dashboard/revenue-breakdown');
-    return response.data;
-  },
-
-  /**
-   * Get performance metrics
-   */
-  async getPerformanceMetrics(): Promise<{
-    conversionRate: number;
-    averageOrderValue: number;
-    customerRetentionRate: number;
-    inventoryTurnover: number;
-  }> {
-    const response = await apiService.get<ApiResponse<{
-      conversionRate: number;
-      averageOrderValue: number;
-      customerRetentionRate: number;
-      inventoryTurnover: number;
-    }>>('/dashboard/performance-metrics');
-    return response.data;
-  }
 };
+
+export default dashboardService;

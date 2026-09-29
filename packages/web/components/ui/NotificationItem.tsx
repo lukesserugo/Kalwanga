@@ -21,7 +21,7 @@ export interface NotificationItemProps {
   isRead: boolean;
   createdAt: string;
   readAt?: string | null;
-  link?: string;
+  link?: string | null;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
   onView?: (id: string) => void;

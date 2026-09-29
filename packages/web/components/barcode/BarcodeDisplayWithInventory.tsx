@@ -1,7 +1,7 @@
 // components/barcode/BarcodeDisplayWithInventory.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   QrCode,
   Barcode,
@@ -10,92 +10,309 @@ import {
   Download,
   Printer,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
+
 import { barcodeService } from '../../services/barcodeService';
+import type { BarcodeInfo } from '../../services/barcodeService';
 import { inventoryService } from '../../services/inventoryService';
+import { toast } from '../../utils/toast-manager';
+
+// ============================================
+// TYPES
+// ============================================
 
 interface BarcodeDisplayWithInventoryProps {
   productId: string;
   productName: string;
   sku: string;
   unitPrice: number;
+  /**
+   * Business unit for the inventory lookup. Optional — when omitted,
+   * the `api` client uses the one in localStorage.
+   */
+  businessUnitId?: string;
   onBarcodeGenerated?: (barcode: string) => void;
 }
+
+/**
+ * The subset of the inventory row this component renders. Matches
+ * the shape `barcodeService.scanBarcode` returns, so the two data
+ * paths can't drift.
+ */
+interface InventorySummary {
+  quantity: number;
+  minStock?: number;
+  maxStock?: number | null;
+  location?: string | null;
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+/**
+ * Escape a value before it's interpolated into the print window's
+ * `document.write` HTML. Product names come from the DB and could
+ * contain markup; the print window treats its argument as HTML, so
+ * an unescaped `<script>` would execute.
+ */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  const anyErr = error as any;
+  const data = anyErr?.response?.data;
+
+  if (data) {
+    if (typeof data.error === 'string') return data.error;
+    if (data.error?.message) return String(data.error.message);
+    if (data.message) return String(data.message);
+    if (Array.isArray(data.errors) && data.errors.length > 0) {
+      return data.errors
+        .map((e: any) => `${e.field ?? 'field'}: ${e.message ?? 'invalid'}`)
+        .join(', ');
+    }
+  }
+
+  if (anyErr?.message) return String(anyErr.message);
+  return fallback;
+}
+
+// ============================================
+// COMPONENT
+// ============================================
 
 export function BarcodeDisplayWithInventory({
   productId,
   productName,
   sku,
   unitPrice,
+  businessUnitId,
   onBarcodeGenerated,
 }: BarcodeDisplayWithInventoryProps) {
-  const [barcodeData, setBarcodeData] = useState<{
-    barcode: string;
-    barcodeUrl: string;
-    qrCodeUrl: string;
-  } | null>(null);
-  const [inventory, setInventory] = useState<any>(null);
+  const [barcodeData, setBarcodeData] = useState<BarcodeInfo | null>(null);
+  const [inventory, setInventory] = useState<InventorySummary | null>(null);
+
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  /**
+   * Guards against React 18 StrictMode's double-invoke in dev, and
+   * against a stale fetch resolving after the component has
+   * unmounted or after `productId` has changed.
+   */
+  const fetchRequestId = useRef(0);
+  const mountedRef = useRef(true);
+
   useEffect(() => {
-    if (productId) {
-      loadBarcodeAndInventory();
-    }
-  }, [productId]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  const loadBarcodeAndInventory = async () => {
+  // ============================================
+  // LOAD
+  // ============================================
+
+  /**
+   * Fetch the barcode info and the inventory row in parallel.
+   *
+   * `barcodeService.getProductBarcodeInfo` is the endpoint that
+   * returns `{ barcode, barcodeUrl, qrCodeUrl, … }`. The sibling
+   * `getBarcodeByProduct` returns only `{ barcode, productId }` and
+   * would leave the images undefined.
+   */
+  const loadBarcodeAndInventory = useCallback(async () => {
+    const requestId = ++fetchRequestId.current;
+    setLoading(true);
+    setError(null);
+
     try {
-      setLoading(true);
-      const [barcode, inventoryData] = await Promise.all([
-        barcodeService.getBarcodeByProduct(productId),
-        inventoryService.getInventory(productId),
-      ]);
-      setBarcodeData(barcode);
-      setInventory(inventoryData);
-    } catch (error) {
-      console.error('Failed to load barcode and inventory:', error);
+      // `getProductBarcodeInfo` generates on read when the product
+      // has no barcode yet, so a fresh product is covered.
+      const info = await barcodeService.getProductBarcodeInfo(productId);
+
+      // Inventory is a separate resource. Wrap it in its own
+      // try/catch: a missing inventory row should not blank out the
+      // barcode panel.
+      let inv: InventorySummary | null = null;
+      try {
+        const invRaw = await inventoryService.getInventoryByProduct(
+          productId,
+          businessUnitId,
+        );
+        if (invRaw) {
+          inv = {
+            quantity: Number(invRaw.quantity ?? 0),
+            minStock:
+              typeof invRaw.reorderPoint === 'number'
+                ? invRaw.reorderPoint
+                : typeof invRaw.minStock === 'number'
+                ? invRaw.minStock
+                : undefined,
+            maxStock:
+              typeof invRaw.maxStock === 'number'
+                ? invRaw.maxStock
+                : null,
+            location:
+              typeof invRaw.location === 'string'
+                ? invRaw.location
+                : null,
+          };
+        }
+      } catch (invErr) {
+        // Non-fatal. Log so it's visible in the console, but don't
+        // surface a toast — the operator can still see and print
+        // the barcode.
+        console.warn(
+          '[BarcodeDisplay] inventory lookup failed:',
+          extractErrorMessage(invErr, 'unknown'),
+        );
+      }
+
+      // Drop stale responses.
+      if (requestId !== fetchRequestId.current) return;
+      if (!mountedRef.current) return;
+
+      setBarcodeData(info);
+      setInventory(inv);
+    } catch (err) {
+      if (requestId !== fetchRequestId.current) return;
+      if (!mountedRef.current) return;
+
+      const message = extractErrorMessage(err, 'Failed to load barcode');
+      console.error('[BarcodeDisplay] load failed:', message);
+      setError(message);
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestId.current && mountedRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, [productId, businessUnitId]);
 
-  const handleGenerateBarcode = async () => {
+  useEffect(() => {
+    if (!productId) return;
+    void loadBarcodeAndInventory();
+  }, [productId, loadBarcodeAndInventory]);
+
+  // ============================================
+  // GENERATE
+  // ============================================
+
+  /**
+   * Force-generate (or re-generate) the product's barcode, then
+   * re-fetch the info so the response carries the `barcodeUrl` /
+   * `qrCodeUrl` the panel needs.
+   *
+   * `barcodeService.generateBarcode` returns only `{ barcode,
+   * productId }` — using its return value directly would leave the
+   * images undefined.
+   */
+  const handleGenerateBarcode = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    setError(null);
+
     try {
-      setLoading(true);
       const result = await barcodeService.generateBarcode(productId);
-      setBarcodeData(result);
-      onBarcodeGenerated?.(result.barcode);
-      toast.success('Barcode generated successfully');
-    } catch (error) {
-      toast.error('Failed to generate barcode');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const handleCopyBarcode = async () => {
+      // Re-fetch the info so we get the images alongside the code.
+      const info = await barcodeService.getProductBarcodeInfo(productId);
+
+      if (!mountedRef.current) return;
+
+      setBarcodeData(info);
+      onBarcodeGenerated?.(result.barcode);
+      toast.success('Barcode generated');
+    } catch (err) {
+      if (!mountedRef.current) return;
+
+      const message = extractErrorMessage(err, 'Failed to generate barcode');
+      console.error('[BarcodeDisplay] generate failed:', message);
+      setError(message);
+      toast.error(message);
+    } finally {
+      if (mountedRef.current) setGenerating(false);
+    }
+  }, [productId, generating, onBarcodeGenerated]);
+
+  // ============================================
+  // COPY
+  // ============================================
+
+  const handleCopyBarcode = useCallback(async () => {
     if (!barcodeData?.barcode) return;
+
     try {
       await navigator.clipboard.writeText(barcodeData.barcode);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => {
+        if (mountedRef.current) setCopied(false);
+      }, 2000);
       toast.success('Barcode copied');
-    } catch {
-      toast.error('Failed to copy');
+    } catch (err) {
+      console.error('[BarcodeDisplay] copy failed:', err);
+      toast.error('Failed to copy barcode');
     }
-  };
+  }, [barcodeData?.barcode]);
 
-  const handlePrint = () => {
+  // ============================================
+  // PRINT
+  // ============================================
+
+  /**
+   * Open a print-ready window with the barcode, QR, and a few
+   * identifying fields.
+   *
+   * Every interpolated value goes through `escapeHtml` — the print
+   * window's `document.write` treats its argument as HTML, so an
+   * unescaped product name containing `<script>` would execute.
+   */
+  const handlePrint = useCallback(() => {
+    if (!barcodeData) return;
+
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    if (!printWindow) {
+      toast.error('Pop-up blocked — allow pop-ups to print');
+      return;
+    }
+
+    const safeName = escapeHtml(productName);
+    const safeSku = escapeHtml(sku);
+    const safeBarcode = escapeHtml(barcodeData.barcode);
+    const safePrice = escapeHtml(unitPrice.toFixed(2));
+    const safeQuantity = escapeHtml(inventory?.quantity ?? 0);
+    const safeBarcodeUrl = escapeHtml(barcodeData.barcodeUrl);
+    const safeQrUrl = barcodeData.qrCodeUrl
+      ? escapeHtml(barcodeData.qrCodeUrl)
+      : '';
 
     printWindow.document.write(`
+      <!doctype html>
       <html>
         <head>
-          <title>Barcode - ${productName}</title>
+          <meta charset="utf-8" />
+          <title>Barcode - ${safeName}</title>
           <style>
-            body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+            body {
+              font-family: Arial, sans-serif;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              min-height: 100vh;
+              margin: 0;
+            }
             .container { text-align: center; }
             .barcode-img { max-width: 300px; }
             .qr-img { max-width: 150px; margin-top: 10px; }
@@ -105,32 +322,37 @@ export function BarcodeDisplayWithInventory({
         </head>
         <body>
           <div class="container">
-            <h2>${productName}</h2>
-            <img src="${barcodeData?.barcodeUrl}" alt="Barcode" class="barcode-img" />
-            ${barcodeData?.qrCodeUrl ? `<img src="${barcodeData.qrCodeUrl}" alt="QR Code" class="qr-img" />` : ''}
+            <h2>${safeName}</h2>
+            <img src="${safeBarcodeUrl}" alt="Barcode" class="barcode-img" />
+            ${
+              safeQrUrl
+                ? `<img src="${safeQrUrl}" alt="QR Code" class="qr-img" />`
+                : ''
+            }
             <div class="info">
-              <p><strong>SKU:</strong> ${sku}</p>
-              <p><strong>Barcode:</strong> ${barcodeData?.barcode}</p>
-              <p><strong>Price:</strong> $${unitPrice.toFixed(2)}</p>
-              <p><strong>In Stock:</strong> ${inventory?.quantity || 0}</p>
+              <p><strong>SKU:</strong> ${safeSku}</p>
+              <p><strong>Barcode:</strong> ${safeBarcode}</p>
+              <p><strong>Price:</strong> $${safePrice}</p>
+              <p><strong>In Stock:</strong> ${safeQuantity}</p>
             </div>
           </div>
           <script>
-            window.onload = function() { window.print(); }
+            window.onload = function () { window.print(); };
           <\/script>
         </body>
       </html>
     `);
     printWindow.document.close();
-  };
+  }, [barcodeData, productName, sku, unitPrice, inventory?.quantity]);
 
-  if (loading) {
-    return (
-      <div className="card-brand animate-pulse">
-        <p className="text-gray-500 dark:text-gray-400">Loading barcode...</p>
-      </div>
-    );
-  }
+  // ============================================
+  // RENDER
+  // ============================================
+
+  // The card stays mounted while `loading` — only the barcode area
+  // shows a skeleton. The Generate button stays clickable (and
+  // shows a spinner while `generating`).
+  const showBarcodeSkeleton = loading && !barcodeData;
 
   return (
     <div className="card-brand !p-4">
@@ -139,16 +361,31 @@ export function BarcodeDisplayWithInventory({
           Product Identification
         </h3>
         <button
+          type="button"
           onClick={handleGenerateBarcode}
-          disabled={loading}
+          disabled={generating || loading}
           className="px-3 py-1 bg-brand-gradient text-white rounded-lg shadow-brand hover:shadow-brand-lg text-sm flex items-center gap-1 transition-all focus-ring disabled:opacity-50"
         >
-          <RefreshCw className="w-4 h-4" />
-          Generate
+          <RefreshCw
+            className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`}
+          />
+          {generating ? 'Generating…' : 'Generate'}
         </button>
       </div>
 
-      {barcodeData ? (
+      {error && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700 dark:border-danger-800 dark:bg-danger-900/20 dark:text-danger-300">
+          <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {showBarcodeSkeleton ? (
+        <div className="space-y-3">
+          <div className="h-12 w-48 mx-auto rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+          <div className="h-4 w-32 mx-auto rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+        </div>
+      ) : barcodeData ? (
         <div className="space-y-4">
           <div className="flex items-center justify-center gap-4">
             {/* Barcode */}
@@ -159,12 +396,12 @@ export function BarcodeDisplayWithInventory({
               {barcodeData.barcodeUrl ? (
                 <img
                   src={barcodeData.barcodeUrl}
-                  alt="Barcode"
+                  alt={`Barcode for ${productName}`}
                   className="h-12 w-auto"
                 />
               ) : (
-                <div className="h-12 flex items-center justify-center text-gray-400">
-                  No barcode
+                <div className="h-12 flex items-center justify-center text-gray-400 text-xs">
+                  No barcode image
                 </div>
               )}
               <div className="flex items-center gap-2 justify-center mt-1">
@@ -172,8 +409,10 @@ export function BarcodeDisplayWithInventory({
                   {barcodeData.barcode}
                 </code>
                 <button
+                  type="button"
                   onClick={handleCopyBarcode}
                   className="p-1 hover:bg-orange-50 dark:hover:bg-gray-700 rounded transition-colors focus-ring"
+                  aria-label="Copy barcode"
                 >
                   {copied ? (
                     <Check className="w-3 h-3 text-success-500" />
@@ -192,7 +431,7 @@ export function BarcodeDisplayWithInventory({
                 </p>
                 <img
                   src={barcodeData.qrCodeUrl}
-                  alt="QR Code"
+                  alt={`QR code for ${productName}`}
                   className="w-16 h-16 object-contain"
                 />
               </div>
@@ -207,7 +446,7 @@ export function BarcodeDisplayWithInventory({
                   Quantity
                 </p>
                 <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                  {inventory.quantity || 0}
+                  {inventory.quantity}
                 </p>
               </div>
               <div>
@@ -215,7 +454,7 @@ export function BarcodeDisplayWithInventory({
                   Min Stock
                 </p>
                 <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                  {inventory.minStock || 5}
+                  {inventory.minStock ?? 5}
                 </p>
               </div>
               <div>
@@ -223,7 +462,7 @@ export function BarcodeDisplayWithInventory({
                   Max Stock
                 </p>
                 <p className="font-medium text-gray-900 dark:text-white tabular-nums">
-                  {inventory.maxStock || 'N/A'}
+                  {inventory.maxStock ?? 'N/A'}
                 </p>
               </div>
               <div>
@@ -240,13 +479,21 @@ export function BarcodeDisplayWithInventory({
           {/* Actions */}
           <div className="flex gap-2 justify-end">
             <button
-              onClick={() => window.open(barcodeData.barcodeUrl, '_blank')}
+              type="button"
+              onClick={() =>
+                window.open(barcodeData.barcodeUrl, '_blank', 'noopener')
+              }
               className="btn-secondary focus-ring text-sm"
+              disabled={!barcodeData.barcodeUrl}
             >
               <Download className="w-4 h-4" />
               Download
             </button>
-            <button onClick={handlePrint} className="btn-secondary focus-ring text-sm">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="btn-secondary focus-ring text-sm"
+            >
               <Printer className="w-4 h-4" />
               Print
             </button>
@@ -266,3 +513,5 @@ export function BarcodeDisplayWithInventory({
     </div>
   );
 }
+
+export default BarcodeDisplayWithInventory;

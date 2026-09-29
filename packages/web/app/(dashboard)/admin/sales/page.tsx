@@ -50,6 +50,71 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { usePermission } from '../../../../hooks/usePermission';
 import { PermissionResource } from '../../../../types/enums';
 import type { Sale, SaleItem } from '../../../../types/sale';
+import { api } from '../../../../services/api';
+
+// ============================================
+// LOCAL SERVICE EXTENSIONS
+// ============================================
+//
+// The frontend `saleService` object does not yet declare `exportSales`
+// or `refundSale`. Both routes exist on the backend
+// (`saleController.exportSales`, `saleController.refundSale`), so
+// rather than mutate the shared service (which is out of scope here),
+// we call those endpoints through the same `api` client the service
+// itself uses. When the service gains these methods, swap the local
+// helpers for direct service calls.
+//
+// Backend contract:
+//
+//   GET    /sales/export?startDate=…&endDate=…&format=…  → JSON envelope
+//   POST   /sales/:id/refund                              → JSON envelope
+//
+// Both respond with `{ success, data, … }`.
+
+async function exportSalesRemote(params: {
+  startDate: string;
+  endDate: string;
+  format?: 'json' | 'csv' | 'excel' | 'pdf';
+  status?: string;
+  businessUnitId?: string;
+}): Promise<{ data: any[]; total?: number; format?: string }> {
+  const response = await api.get<any>('/sales/export', { params });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && Array.isArray(body.data)) {
+    return {
+      data: body.data,
+      total: typeof body.total === 'number' ? body.total : body.data.length,
+      format: typeof body.format === 'string' ? body.format : params.format,
+    };
+  }
+
+  if (Array.isArray(body)) {
+    return { data: body, total: body.length, format: params.format };
+  }
+
+  return { data: [], total: 0, format: params.format };
+}
+
+async function refundSaleRemote(
+  id: string,
+  reason: string,
+): Promise<{ success: boolean; data?: any; message?: string }> {
+  if (!id) throw new Error('Sale ID is required');
+  const response = await api.post<any>(`/sales/${id}/refund`, { reason });
+  const body =
+    response && typeof response === 'object' && 'data' in response
+      ? (response as any).data
+      : response;
+
+  if (body && typeof body === 'object' && 'success' in body) {
+    return body as { success: boolean; data?: any; message?: string };
+  }
+  return { success: true, data: body };
+}
 
 // ============================================
 // TYPES
@@ -193,11 +258,6 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-/**
- * Compact inline hint showing the promotion / loyalty attribution of
- * a sale. Returns `null` when the sale has neither, so it can be
- * rendered unconditionally.
- */
 const BreakdownHint: React.FC<{ sale: Sale }> = ({ sale }) => {
   if (!saleService.hasBreakdown(sale)) return null;
 
@@ -220,13 +280,6 @@ const BreakdownHint: React.FC<{ sale: Sale }> = ({ sale }) => {
   );
 };
 
-/**
- * Expanded breakdown block for the sale detail modal.
- *
- * Uses `getDiscountTypeLabel` from `saleService` — no `as DiscountType`
- * cast. Unknown legacy strings fall back to the raw value so
- * pre-migration rows still render.
- */
 const BreakdownPanel: React.FC<{ sale: Sale }> = ({ sale }) => {
   if (!saleService.hasBreakdown(sale)) return null;
 
@@ -336,7 +389,7 @@ export default function SalesPage() {
     return (
       canView?.(`${PermissionResource.SALE}:view`) ||
       ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'CASHIER'].includes(
-        userRole
+        userRole,
       )
     );
   }, [userRole, canView]);
@@ -418,7 +471,6 @@ export default function SalesPage() {
         if (dateRange.start) params.startDate = dateRange.start;
         if (dateRange.end) params.endDate = dateRange.end;
 
-        // Role-based filtering
         if (!canViewAllSales()) {
           if (userRole === 'CASHIER' || userRole === 'EMPLOYEE') {
             params.userId = authUser.id;
@@ -469,7 +521,7 @@ export default function SalesPage() {
       userRole,
       router,
       canViewAllSales,
-    ]
+    ],
   );
 
   const fetchStats = useCallback(async () => {
@@ -500,7 +552,7 @@ export default function SalesPage() {
           });
           todayRevenue = todayOrders.reduce(
             (sum, order) => sum + order.total,
-            0
+            0,
           );
           todaySales = todayOrders.length;
         }
@@ -513,8 +565,7 @@ export default function SalesPage() {
           todaySales: response.todaySales || todaySales || 0,
           pendingOrders: response.pendingOrders || 0,
           refundedOrders: response.refundedOrders || 0,
-          totalItemsSold:
-            response.totalItemsSold || response.totalItems || 0,
+          totalItemsSold: response.totalItemsSold || 0,
           totalSubtotal: response.totalSubtotal || 0,
           totalTax: response.totalTax || 0,
           totalDiscount: response.totalDiscount || 0,
@@ -537,14 +588,14 @@ export default function SalesPage() {
   };
 
   const handleFilterChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
+    e: React.ChangeEvent<HTMLSelectElement>,
   ) => {
     setFilter(e.target.value);
     setPage(1);
   };
 
   const safeFormatDate = (
-    date: string | Date | undefined | null
+    date: string | Date | undefined | null,
   ): string => {
     if (!date) return 'N/A';
     const dateStr = typeof date === 'string' ? date : date.toISOString();
@@ -552,18 +603,13 @@ export default function SalesPage() {
   };
 
   const safeFormatTime = (
-    date: string | Date | undefined | null
+    date: string | Date | undefined | null,
   ): string => {
     if (!date) return '';
     const dateStr = typeof date === 'string' ? date : date.toISOString();
     return formatTime(dateStr);
   };
 
-  /**
-   * Print a receipt. Extracts the breakdown once and injects the
-   * promotion/loyalty lines into the totals section, using a raw
-   * discount line only when neither source is present.
-   */
   const handlePrintReceipt = (order: Sale) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -630,7 +676,7 @@ export default function SalesPage() {
                 <span>${item.product?.name || 'Item'} × ${item.quantity}</span>
                 <span>${formatCurrency(item.total)}</span>
               </div>
-            `
+            `,
               )
               .join('')}
           </div>
@@ -660,7 +706,7 @@ export default function SalesPage() {
       const params: any = {
         startDate: dateRange.start,
         endDate: dateRange.end,
-        format: 'csv',
+        format: 'json',
       };
       if (filter) params.status = filter;
       if (userRole === 'MANAGER' && authUser?.businessUnits?.length) {
@@ -668,9 +714,10 @@ export default function SalesPage() {
           authUser.businessUnits[0].businessUnitId;
       }
 
-      const result = await saleService.exportSales(params);
-
-      const rowsData: any[] = (result as any)?.data || [];
+      const result = await exportSalesRemote(params);
+      const rowsData: any[] = Array.isArray(result.data)
+        ? result.data
+        : [];
 
       if (rowsData.length === 0) {
         toast.error('No data to export');
@@ -731,36 +778,41 @@ export default function SalesPage() {
       URL.revokeObjectURL(url);
 
       toast.success('Sales exported successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to export:', error);
-      toast.error('Failed to export sales');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to export sales',
+      );
     }
   };
 
   const handleRefund = async (order: Sale) => {
     if (
       !confirm(
-        `Are you sure you want to refund order #${order.receiptNumber}?`
+        `Are you sure you want to refund order #${order.receiptNumber}?`,
       )
     )
       return;
 
     try {
-      await saleService.refundSale(
-        order.id,
-        'Customer requested refund'
-      );
+      await refundSaleRemote(order.id, 'Customer requested refund');
       toast.success('Order refunded successfully');
       fetchOrders(true);
       fetchStats();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to refund:', error);
-      toast.error('Failed to refund order');
+      toast.error(
+        error?.response?.data?.message ||
+          error?.message ||
+          'Failed to refund order',
+      );
     }
   };
 
   // ============================================
-  // DERIVED — client-side discount filter
+  // DERIVED
   // ============================================
 
   const visibleOrders =
@@ -769,7 +821,7 @@ export default function SalesPage() {
       : orders.filter((order) => saleService.hasBreakdown(order));
 
   const discountedCount = orders.filter((order) =>
-    saleService.hasBreakdown(order)
+    saleService.hasBreakdown(order),
   ).length;
 
   // ============================================
@@ -819,8 +871,8 @@ export default function SalesPage() {
               {canViewAllSales()
                 ? 'View and manage all sales transactions'
                 : userRole === 'MANAGER'
-                ? 'View sales for your business unit'
-                : 'View your sales transactions'}
+                  ? 'View sales for your business unit'
+                  : 'View your sales transactions'}
               {totalOrders > 0 && ` · ${totalOrders} total orders`}
             </p>
           </div>
@@ -918,10 +970,10 @@ export default function SalesPage() {
               {userRole === 'CASHIER'
                 ? 'Showing only your sales. You can view your transaction history here.'
                 : userRole === 'EMPLOYEE'
-                ? 'Showing only your sales. You can view your transaction history here.'
-                : userRole === 'MANAGER'
-                ? 'Showing sales for your business unit. You can manage sales within your unit.'
-                : 'Showing your sales.'}
+                  ? 'Showing only your sales. You can view your transaction history here.'
+                  : userRole === 'MANAGER'
+                    ? 'Showing sales for your business unit. You can manage sales within your unit.'
+                    : 'Showing your sales.'}
             </span>
           </div>
         )}
@@ -1022,7 +1074,6 @@ export default function SalesPage() {
             />
           </div>
 
-          {/* Discount filter chips */}
           <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <Sparkles className="w-3.5 h-3.5 text-gray-400 shrink-0" />
             <button
@@ -1104,7 +1155,8 @@ export default function SalesPage() {
               No discounted orders on this page
             </h2>
             <p className="text-gray-500 dark:text-gray-400">
-              Try a different page, or clear the Discounted filter to see all orders.
+              Try a different page, or clear the Discounted filter to see all
+              orders.
             </p>
             <button
               onClick={() => setDiscountFilter('all')}
@@ -1131,7 +1183,6 @@ export default function SalesPage() {
                     transition={{ delay: index * 0.05 }}
                     className="card-brand p-0 overflow-hidden hover:shadow-card-hover transition-all"
                   >
-                    {/* Order Header */}
                     <div
                       className={`px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex flex-wrap items-center justify-between gap-3 ${
                         viewMode === 'grid'
@@ -1167,9 +1218,7 @@ export default function SalesPage() {
                       </div>
                     </div>
 
-                    {/* Order Body */}
                     <div className="p-6">
-                      {/* Customer and Payment Info */}
                       <div className="flex flex-wrap gap-4 mb-4 text-sm text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-1">
                           <User className="w-3.5 h-3.5" />
@@ -1192,10 +1241,8 @@ export default function SalesPage() {
                         )}
                       </div>
 
-                      {/* Breakdown hint */}
                       <BreakdownHint sale={order} />
 
-                      {/* Items */}
                       <div className="space-y-2 mt-3">
                         {order.items &&
                           order.items
@@ -1226,7 +1273,6 @@ export default function SalesPage() {
                           )}
                       </div>
 
-                      {/* Footer */}
                       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
                         <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
                           {order.items?.length || 0} items
@@ -1267,7 +1313,6 @@ export default function SalesPage() {
               </AnimatePresence>
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex flex-wrap justify-center items-center gap-2 mt-8">
                 <button
@@ -1305,7 +1350,7 @@ export default function SalesPage() {
                           {pageNum}
                         </button>
                       );
-                    }
+                    },
                   )}
                 </div>
                 <button
@@ -1348,11 +1393,11 @@ export default function SalesPage() {
                   </h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     {safeFormatDate(
-                      selectedSale.saleDate || selectedSale.createdAt
+                      selectedSale.saleDate || selectedSale.createdAt,
                     )}{' '}
                     at{' '}
                     {safeFormatTime(
-                      selectedSale.saleDate || selectedSale.createdAt
+                      selectedSale.saleDate || selectedSale.createdAt,
                     )}
                   </p>
                 </div>
@@ -1366,7 +1411,6 @@ export default function SalesPage() {
               </div>
 
               <div className="p-6 space-y-6">
-                {/* Status and Total */}
                 <div className="flex items-center justify-between">
                   <StatusBadge status={selectedSale.status} />
                   <span className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
@@ -1374,7 +1418,6 @@ export default function SalesPage() {
                   </span>
                 </div>
 
-                {/* Customer Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1426,7 +1469,6 @@ export default function SalesPage() {
                   )}
                 </div>
 
-                {/* Items */}
                 <div>
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
                     Items
@@ -1454,10 +1496,8 @@ export default function SalesPage() {
                   </div>
                 </div>
 
-                {/* Discount Breakdown */}
                 <BreakdownPanel sale={selectedSale} />
 
-                {/* Totals */}
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                   <div className="space-y-2 max-w-xs ml-auto">
                     <div className="flex justify-between text-sm">
@@ -1477,7 +1517,6 @@ export default function SalesPage() {
                       </span>
                     </div>
 
-                    {/* Promotion and loyalty lines only when present */}
                     {(() => {
                       const b = saleService.extractBreakdown(selectedSale);
                       const hasPromotion = (b.promotionDiscount ?? 0) > 0;
@@ -1554,14 +1593,13 @@ export default function SalesPage() {
                                   {formatCurrency(payment.amount)}
                                 </span>
                               </div>
-                            )
+                            ),
                           )}
                         </div>
                       )}
                   </div>
                 </div>
 
-                {/* Notes */}
                 {selectedSale.notes && (
                   <div className="p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
                     <p className="text-sm font-medium text-warning-800 dark:text-warning-200">
@@ -1573,7 +1611,6 @@ export default function SalesPage() {
                   </div>
                 )}
 
-                {/* Actions */}
                 <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     onClick={() => handlePrintReceipt(selectedSale)}

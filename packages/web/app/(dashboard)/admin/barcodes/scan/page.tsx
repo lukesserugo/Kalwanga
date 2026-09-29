@@ -50,7 +50,17 @@ export default function BarcodeScanPage() {
     setProduct(null);
 
     try {
-      const result = await barcodeService.lookupProductByBarcode(barcode.trim());
+      // `getProductByBarcode` resolves to `null` when the barcode
+      // doesn't match — it does NOT throw on a miss. The result is
+      // checked here before being treated as a success.
+      const result = await barcodeService.getProductByBarcode(barcode.trim());
+
+      if (!result) {
+        setError('Product not found for this barcode');
+        toast.error('Product not found');
+        return;
+      }
+
       setProduct(result);
       toast.success('Product found!');
     } catch (error: any) {
